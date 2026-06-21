@@ -61,3 +61,14 @@ ratchet: testFiles +1 (muse-version.test.ts, 7 cases) · `muse --version` ~500ms
 - **레퍼런스**: CLI 시작-성능 최적화(--version/--help는 최빈 호출, lazy-load가 최대 win). https://github.com/oclif/oclif/issues/606
 - note: smoke:cli 7 pass / 2 fail(`muse chat`·`--stream` "got null"=spawnSync 30s 타임아웃, 박스 포화). **A/B 격리**: index.ts를 원래 static import로 되돌려 rebuild→재실행해도 동일 2 chat 라운드트립이 똑같이 실패 → 내 슬라이스 탓 아님(포화/머지發). 비-라운드트립 프로브(`--version` 포함) 전부 PASS. 슬라이스 게이트(build/버전테스트 격리 7/7/mutation/lint) green이라 출하.
 - lesson: stop-condition 게이트(smoke:cli)가 RED일 때 "환경 탓"이라 단정 말고 **A/B로 격리**(내 변경을 임시 되돌려 동일 실패 재현 확인)하면 회귀-아님을 증명할 수 있다. git stash 금지라 `cp`로 임시 백업/복원.
+
+## fire 6 · 2026-06-21 · skill v2.1.0 · 1b6a01c1
+meta: value-class=empty-state · pkg=@muse/cli · kind=empty-state · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles +0 (4 cases into commands-notes-rag.test.ts) · @muse/cli notes-rag 테스트 격리 green · lint 0 · fabrication 0
+
+- **무엇**: `muse notes reindex`가 마크다운 0개일 때도 `Done. 0 embedded, 0 cached, 0 failed`를 찍어 silent-failure와 구분 불가였음 → `ReindexSummary.totalFiles`(additive) + 순수 `formatReindexOutcome`가 totalFiles===0이면 액션-담은 빈-상태("No notes to index — found 0 ... under <dir>" + `muse note` + `MUSE_NOTES_DIR` + ask/recall 안내) 출력, 아니면 기존 Done 라인. found-but-all-failed 경로는 불변(Done+counts+Ollama 안내 유지).
+- **왜**: RAG over notes가 second-brain 근간(ask/recall/today --connect/status). `muse setup local` 직후 첫 reindex에서 빈/오설정 vault면 막다른 길이었다(NN/G "totally empty state" 안티패턴). 모든 수치=fs walk, 모든 제안 명령=실재(fabrication 0).
+- **리뷰지점**: 테스트가 헬퍼 반환 문자열 + 실제 tmp-dir totalFiles + 라이브 명령 grade(선언 아님), mutation-first RED(빈-상태 분기 비활성화/totalFiles 0-고정 둘 다 RED). all-failed 엣지가 빈-상태에 안 먹힘을 judge가 독립 확인. 독립 Opus ④b judge PASS(7/7). 여신 아트 불가침, 저-contention 파일.
+- **리스크**: 낮음. diff 2파일(commands-notes-rag.ts + 테스트). totalFiles는 additive(타 호출부 3곳 필드만 읽음, shape assert 없음). 다양성: fire1-5(info-projection/onboarding/identity-copy/render/perf) → fire6 empty-state, 새 kind.
+- **레퍼런스**: NN/G empty-state 디자인 가이드(빈 상태는 다음 행동을 제시해야). https://www.nngroup.com/articles/empty-state-interface-design/
+- note: smoke:cli 7 pass / 2 fail(`muse chat`·`--stream` "got null"=30s 타임아웃) — fire 5에서 A/B로 환경성 확정한 그 프로브, 내 슬라이스는 notes 경로라 chat/api 무관(신규 실패 0).
