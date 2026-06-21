@@ -28,6 +28,16 @@ describe("decompositionJsonFields — surface fan-out trust signals on `muse ask
     expect(out.decomposition?.truncated).toBe(false);
     expect(out.decomposition?.subtaskConflicts).toBeUndefined();
     expect(out.decomposition?.synthesisIncomplete).toBeUndefined();
+    expect(out.decomposition?.subtaskRedundancies).toBeUndefined();
+    expect(out.decomposition?.reasoningActionGaps).toBeUndefined();
+  });
+  it("ALSO emits subtaskRedundancies + reasoningActionGaps (the fire-7/fire-10 signals a `--json` consumer was blind to)", () => {
+    const out = decompositionJsonFields({
+      answer: "x", groundingSources: [], toolsUsed: [], decomposed: true, subtaskCount: 3, reason: "structural decomposition",
+      truncated: false, subtaskRedundancies: ['"회의록 요약" ≈ "액션아이템 추출"'], reasoningActionGaps: ['"일정 등록"']
+    });
+    expect(out.decomposition?.subtaskRedundancies).toEqual(['"회의록 요약" ≈ "액션아이템 추출"']);
+    expect(out.decomposition?.reasoningActionGaps).toEqual(['"일정 등록"']);
   });
 });
 

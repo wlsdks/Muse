@@ -4,6 +4,38 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 14 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=wiring(gap-fix) · pkg=@muse/cli · kind=json-serialization · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles +0 (cases added to commands-ask.test.ts) · fabrication 0 · eval:orchestration/decomposition PASS · DIVERSE (cli/json-serialization, not multi-agent package) · ★found a REAL gap the fire-11/13 exhaustion claim MISSED
+
+**What** — `decompositionJsonFields` (the `muse ask --json` + run-log trust-signal serializer) emitted only
+`subtaskConflicts` + `synthesisIncomplete`, OMITTING `subtaskRedundancies` (fire 7) and `reasoningActionGaps`
+(fire 10) — two coordination signals already computed in production and carried on `DecomposedAskResult`, but
+never serialized. A `--json` machine consumer was BLIND to worker-duplication (MAST step-repetition) and
+blind-step (FM-2.6) coordination failures while seeing a clean `groundedVerdict` (a GROUNDED≠TRUE-adjacent
+leak). Added both to `DecompositionTrustSignals` + emitted them (mirroring the conflicts pattern, empty-array
+guarded). The judge verified the SAME `decompositionSignals` value feeds BOTH the --json payload AND the
+run-log, so one fix covers both surfaces.
+
+**Why** — Sibling-audit completion of fires 7/10: they wired the signals to the result + the human stderr, but
+missed the MACHINE serialization layer. This closes it.
+
+**Review points** — (1) MUTATION-FIRST: the new test RED before the emit lines (the JSON omitted the arrays),
+GREEN after; judge re-ran the mutation. (2) Faithful mirror (empty-array `.length > 0` guard, single-run path
+still `{}`). (3) The 2 fields are real production data (lead-worker.ts → ask-decompose.ts:191-192 pass-through),
+not phantom. (4) Completeness: judge traced both consumers (run-log + --json) go through this one function — no
+other omitting site.
+
+**Risk** — Pure additive serialization; no model/egress, floor untouched. ★LESSON: do NOT declare a theme
+"exhausted" without checking the SERIALIZATION/EXPOSURE layers — fires 11/13 no-shipped on "exhausted" but a
+real gap (the JSON serializer omitting 2 signals) was sitting in the cli exposure layer. A signal added to a
+result object must be sibling-audited through to EVERY surface that serializes it. DEFERRED (still): the HUMAN
+stderr surfacing of redundancies/reasoningActionGaps (commands-ask prints the conflicts ⚠️ line only — god-file,
+untestable, the fire-4 blocker). Theme is still mature but NOT fully exhausted — the exposure layer had a gap.
+
+review: gates green — cli build clean · decompositionJsonFields 4 pass · lint 0 · `pnpm check` exit 0 ·
+eval:orchestration/decomposition PASS · independent Opus ④ judge VERDICT PASS.
+
 ## fire 13 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · NO-SHIP (theme exhausted — 2nd; repoint still pending)
 meta: value-class=none(no-ship) · pkg=none · kind=theme-exhaustion · verdict=NO-SHIP · firesSinceDrill=1
 ratchet: testFiles +0 · fabrication 0 · self-eval green (regression sentinel held) · no source

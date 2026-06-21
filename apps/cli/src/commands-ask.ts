@@ -540,6 +540,8 @@ export interface DecompositionTrustSignals {
   readonly subtaskCount: number;
   readonly truncated: boolean;
   readonly subtaskConflicts?: readonly string[];
+  readonly subtaskRedundancies?: readonly string[];
+  readonly reasoningActionGaps?: readonly string[];
   readonly synthesisIncomplete?: readonly string[];
 }
 
@@ -560,6 +562,8 @@ export function decompositionJsonFields(
       subtaskCount: decomposed.subtaskCount,
       truncated: decomposed.truncated,
       ...(decomposed.subtaskConflicts && decomposed.subtaskConflicts.length > 0 ? { subtaskConflicts: decomposed.subtaskConflicts } : {}),
+      ...(decomposed.subtaskRedundancies && decomposed.subtaskRedundancies.length > 0 ? { subtaskRedundancies: decomposed.subtaskRedundancies } : {}),
+      ...(decomposed.reasoningActionGaps && decomposed.reasoningActionGaps.length > 0 ? { reasoningActionGaps: decomposed.reasoningActionGaps } : {}),
       ...(decomposed.synthesisIncomplete && decomposed.synthesisIncomplete.length > 0 ? { synthesisIncomplete: decomposed.synthesisIncomplete } : {})
     }
   };
