@@ -95,8 +95,33 @@ function downscale(img, cols) {
   return { cell, cols, rowsPx };
 }
 
+// Unsharp mask + contrast on the downscaled grid. Box-average downscaling
+// blurs crisp B&W line-art into grays; this restores edge definition.
+function sharpen(cell, cols, rowsPx, amount = 1.1, contrast = 1.35) {
+  const at = (x, y) => cell[Math.max(0, Math.min(rowsPx - 1, y)) * cols + Math.max(0, Math.min(cols - 1, x))];
+  const out = new Array(cols * rowsPx);
+  const clamp = (v) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+  for (let y = 0; y < rowsPx; y++) for (let x = 0; x < cols; x++) {
+    const p = cell[y * cols + x];
+    const o = { a: p.a };
+    for (const ch of ["r", "g", "b"]) {
+      let blur = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) blur += at(x + dx, y + dy)[ch];
+      blur /= 9;
+      const sharp = p[ch] + amount * (p[ch] - blur);
+      o[ch] = clamp((sharp - 128) * contrast + 128);
+    }
+    out[y * cols + x] = o;
+  }
+  return out;
+}
+
 const img = decodePng(readFileSync(input));
-const { cell, rowsPx } = downscale(img, cols);
+const down = downscale(img, cols);
+const rowsPx = down.rowsPx;
+const amount = process.env.SHARPEN_AMOUNT !== undefined ? Number(process.env.SHARPEN_AMOUNT) : 0.7;
+const contrast = process.env.SHARPEN_CONTRAST !== undefined ? Number(process.env.SHARPEN_CONTRAST) : 1.2;
+const cell = sharpen(down.cell, cols, rowsPx, amount, contrast);
 const rows = rowsPx / 2;
 const ESC = "\x1b";
 const opaque = (p) => p.a >= ALPHA_THRESHOLD;
