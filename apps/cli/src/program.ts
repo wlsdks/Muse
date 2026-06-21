@@ -12,6 +12,7 @@ import {
 import { formatCitations } from "./human-formatters.js";
 import { closestCommandName } from "./closest-command.js";
 import { MUSE_TAGLINE } from "./muse-identity.js";
+import { MUSE_CLI_VERSION } from "./muse-version.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import {
   appendLastChatTurn,
@@ -257,7 +258,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   program
     .name("muse")
     .description(MUSE_TAGLINE)
-    .version("0.0.0")
+    .version(MUSE_CLI_VERSION)
     .option("--api-url <url>", "Muse API base URL")
     .option("--token <token>", "Bearer token for authenticated API calls")
     .configureOutput({
