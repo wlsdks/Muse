@@ -541,7 +541,7 @@ ratchet: web tests 83/83 (+20) · testFiles +3 · fabrication 0 · self-eval exi
 - **리스크**: 없음(apps/web 격리 leaf·reference graph 밖, web build tsc+vite·web 83/83·pnpm check exit 0·smoke:broad 51/0·lint clean, 2개 독립 Opus judge[FAIL→fix→PASS]).
 - **lesson**: 웹 NAV 단축키를 추가할 땐 nav-key 충돌뿐 아니라 **예약 leader 키("g")**도 검사하라 — 빌더가 "g가 다른 nav와 안 겹침"만 확인하고 leader 예약을 놓쳐 死 단축키를 냄. 이제 `LEADER_KEY` 단일출처 + `NavKeys.test` 가드가 이 클래스를 기계적으로 막는다. 확률(0~1)을 %로 그리는 모든 새 표면은 `formatProbabilityPct`를 재사용(극값-붕괴 오정보 클래스, fire 55).
 
-## fire 60 · 2026-06-21 · skill v2.0.0 · <pending>
+## fire 60 · 2026-06-21 · skill v2.0.0 · e778da32
 meta: surface=api · value-class=new-capability · pkg=@muse/api · kind=self-improve-playbook-api · verdict=PASS · firesSinceDrill=9
 ratchet: api tests 880/880 (+8) · testFiles +0(기존 파일 확장) · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 51/0 · consecutive allPASS: fire 59 judge-catch로 리셋 → 다음 fire 61=firesSinceDrill 10 → ★JUDGE-DRILL 강제
 
