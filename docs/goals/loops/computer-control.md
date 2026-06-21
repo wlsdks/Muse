@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 28 · 2026-06-21 · skill v2.0 · <commit-pending> (false-done backstop THIRD leg — answerClaimsAction code-fix claims; backstop now end-to-end)
+## fire 28 · 2026-06-21 · skill v2.0 · 6d0f0101 (false-done backstop THIRD leg — answerClaimsAction code-fix claims; backstop now end-to-end)
 meta: value-class=new-capability · pkg=@muse/agent-core · kind=honesty/false-done · verdict=PASS · firesSinceDrill=9
 ratchet: testFiles 1071→1071 (+2 cases casual-prompt: code-claim positives + future/offer/advice negatives, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2537 · pnpm check exit 0 · lint clean
 - 무엇: 백스톱 3다리(query=classifyActionRequest[f27] && answer=answerClaimsAction && tools=!actionToolRan[f25]) 중 **answer 다리**가 code-fix 완료주장("I fixed the bug"/"수정했습니다") 미인식 → `&&` 단락으로 fires 25+27에도 백스톱이 안 걸렸음. FIX: `CODE_DONE_RE` 브랜치(1인칭 past-tense mutation 동사 EN `/iu` + KO 수정했/고쳤/편집했).
