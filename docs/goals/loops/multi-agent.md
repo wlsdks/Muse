@@ -4,6 +4,38 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 6 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=observability · pkg=@muse/multi-agent+@muse/api · kind=persistence-exposure · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles +1 (orchestrate-history-signals) · fabrication 0 · eval:orchestration/decomposition SKIP (Ollama down) · consecutive allPASS=2 · NEW (pkg,kind) cell (observability/persistence)
+
+**What** — The orchestrator computes coordination outcomes at fan-in (cross-worker `conflicts`,
+objective-coverage `verification` verdict) but `OrchestrationHistoryEntry` recorded only counts/status —
+so those outcomes were LOST after the live response (a past run's "workers disagreed" / "answer incomplete"
+was not queryable). Added `conflicts?`/`verificationSatisfied?` to the entry; reordered the
+`MultiAgentOrchestrator.run` success path to build the response BEFORE `recordHistory` and persist the
+signals from `response.raw`; exposed both in `GET /orchestrations/:runId` (the persisted twin of fire 3's
+live response signal).
+
+**Why** — MAST coordination-health observability: a detected disagreement / incomplete coverage should
+survive in the audit trail, not vanish. Lets a consumer surface coordination-failure trends across runs.
+
+**Review points** — (1) MUTATION-FIRST: pre-change the 2 positive package tests RED (entry fields undefined,
+recorded before the response existed), control GREEN; post-change all pass. (2) REORDER SAFETY (the main
+risk): independent Opus ④ judge confirmed `buildOrchestrationResponse` never publishes to the messageBus
+(so `getConversation()` is unchanged) AND is fully fail-soft (every callback try-wrapped; only pure string
+ops un-wrapped) so it can't throw on the success path → the reorder can't skip `recordHistory`. (3) durationMs
+now covers synthesis (more accurate; no test/consumer pinned the old value). (4) Optional fields →
+summary/list endpoints unaffected; `verificationSatisfied !== undefined` distinguishes a real `false` from
+absent; empty-array guard avoids persisting `[]`. (5) End-to-end: package store-query tests + HTTP POST→GET
+round-trip (shared history store).
+
+**Risk** — Pure recording + response-shaping; no model call, no egress, fabrication floor untouched. The
+conflicts fixture proves the persistence plumbing, not detector semantics (the detector has its own tests).
+LLM evals SKIP (Ollama down).
+
+review: gates green — `pnpm --filter @muse/multi-agent build` clean · full pkg 221 pass · apps/api 888 pass ·
+lint 0 · `pnpm check` exit 0 · independent Opus ④ judge VERDICT PASS.
+
 ## fire 5 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · 2aed9a83
 meta: value-class=security-guard · pkg=@muse/multi-agent · kind=injection-neutralization · verdict=PASS · firesSinceDrill=3
 ratchet: testFiles +0 (2 cases added to orchestrate-synthesis.test.ts) · fabrication 0 · injection-defense STRENGTHENED · eval:orchestration/decomposition SKIP (Ollama down) · consecutive allPASS=1 (reset by f4 no-ship) · pkg=f2 same but KIND distinct (correctness-guard→injection-neutralization)

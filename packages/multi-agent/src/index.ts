@@ -430,6 +430,24 @@ export class MultiAgentOrchestrator {
       throw error;
     }
 
+    // Build the response BEFORE recording history so the coordination outcomes the
+    // fan-in computed (cross-worker conflicts, objective-coverage verdict) are persisted
+    // on the entry, not lost after the live response — a past run's "workers disagreed"
+    // / "answer incomplete" stays queryable. (finishedAt now also covers synthesis time.)
+    const response = await buildOrchestrationResponse(
+      runId,
+      input.model,
+      results,
+      options.maxOutputCharsPerWorker,
+      options.summarizeWorkerOutput,
+      options.synthesizeFinalAnswer,
+      objectiveFromInput(input),
+      options.verifyFinalAnswer,
+      options.detectConflicts
+    );
+    const raw = response.raw as
+      | { readonly conflicts?: readonly string[]; readonly verification?: { readonly satisfied: boolean } }
+      | undefined;
     const completedCount = results.filter((step) => step.status === "completed").length;
     this.recordHistory({
       completedCount,
@@ -439,25 +457,12 @@ export class MultiAgentOrchestrator {
       runId,
       startedAt,
       status: "completed",
-      workerCount: selectedWorkers.length
+      workerCount: selectedWorkers.length,
+      ...(raw?.conflicts && raw.conflicts.length > 0 ? { conflicts: raw.conflicts } : {}),
+      ...(raw?.verification ? { verificationSatisfied: raw.verification.satisfied } : {})
     });
 
-    return {
-      mode,
-      response: await buildOrchestrationResponse(
-        runId,
-        input.model,
-        results,
-        options.maxOutputCharsPerWorker,
-        options.summarizeWorkerOutput,
-        options.synthesizeFinalAnswer,
-        objectiveFromInput(input),
-        options.verifyFinalAnswer,
-        options.detectConflicts
-      ),
-      results,
-      runId
-    };
+    return { mode, response, results, runId };
   }
 
   private recordHistory(entry: Omit<OrchestrationHistoryEntry, "durationMs" | "conversation">): void {
