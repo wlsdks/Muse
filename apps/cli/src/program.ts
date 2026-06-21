@@ -228,6 +228,28 @@ const defaultIO: ProgramIO = {
 // the test that imports it from `./program.js`.
 export { defaultConfigPath } from "./program-helpers.js";
 
+/**
+ * The "first 60 seconds" quickstart block appended to `muse --help` /
+ * the piped (non-TTY) first screen. The discovery surface for someone
+ * who runs `muse` in a script / CI / `muse | cat` — commander's bare
+ * command list alone doesn't say what to DO first or that Muse is
+ * local-first. Every line is a REAL command (no fabricated guidance),
+ * leads with the local-by-default identity, and orders the steps by
+ * fastest-path-to-value. Pure string → directly testable.
+ */
+export function museQuickstartHelp(): string {
+  return [
+    "Quickstart (local-first — your data stays on your machine):",
+    "  muse                  start chatting with your local model",
+    "  muse setup local      install / point at a local Ollama model",
+    "  muse remember \"...\"    teach Muse a fact or preference about you",
+    "  muse status           see what Muse knows + your privacy posture",
+    "",
+    "Muse runs on a LOCAL model by default; cloud egress is refused unless you opt out.",
+    "Run `muse <command> --help` for any command's options."
+  ].join("\n");
+}
+
 export function createProgram(io: ProgramIO = defaultIO): Command {
   const program = new Command();
 
@@ -241,6 +263,8 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       writeErr: io.stderr,
       writeOut: io.stdout
     });
+
+  program.addHelpText("after", () => `\n${museQuickstartHelp()}`);
 
   program
     .command("config-path")
