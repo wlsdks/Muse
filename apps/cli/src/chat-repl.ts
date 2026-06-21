@@ -23,7 +23,7 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly, resolveNotesDir, resolveTasksFile } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { actionToolRan, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, isUnbackedActionClaim, type KnowledgeMatch } from "@muse/agent-core";
+import { classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, isUnbackedActionClaim, runResistingFalseDone, type KnowledgeMatch } from "@muse/agent-core";
 import type { AskTimeNudge, WeaknessEntry } from "@muse/mcp";
 
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
@@ -631,14 +631,16 @@ export async function runLocalChat(
   // with a clean one). Re-run the action turn with NO prior history to clear the
   // poisoning, and keep the retry only when it ACTUALLY acted — never let an
   // unbacked "done" stand.
-  if (isUnbackedActionClaim({ query: message, answer: result.response.output, toolNames: result.toolsUsed ?? [] })) {
-    const actNow = await assembly.agentRuntime.run({
+  const agentRuntime = assembly.agentRuntime;
+  result = await runResistingFalseDone({
+    query: message,
+    firstResult: result,
+    retry: () => agentRuntime.run({
       messages: [{ content: systemContent, role: "system" as const }, { content: message, role: "user" as const }],
       ...(hasMetadata ? { metadata } : {}),
       model: model ?? assembly.defaultModel ?? "default"
-    });
-    if (actionToolRan(actNow.toolsUsed ?? [])) result = actNow;
-  }
+    })
+  });
 
   // Deterministic anti-fabrication gate: for a recall of the user's OWN data,
   // refuse honestly when the answer isn't grounded in the evidence (retrieved

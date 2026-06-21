@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 32 · 2026-06-21 · skill v2.0 · <commit-pending> (runResistingFalseDone — re-prompt extracted to a shared bounded-retry wrapper; decompose 30b)
+meta: value-class=refactor/seam · pkg=@muse/agent-core+apps/cli · kind=refactor/seam+bounded-retry · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 1071→1072 (+1 file false-done-reprompt 4 cases, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2542 · @muse/cli 격리 2827 · pnpm check exit 0 · lint clean · Ollama DOWN
+- 무엇: 백스톱 ACTION 반쪽(unbacked면 clean-history 1회 재실행, 실제 행동시만 채택)이 chat-repl:634 inline → `runResistingFalseDone({query,firstResult,retry})` generic wrapper로 추출(agent-core). caller가 retry thunk 제공→AgentRuntime 의존 없음. chat-repl DRY.
+- 왜: fire-30 분해 30b — re-prompt가 1개 공유 tested 정의가 돼 chat-repl + eval harness(30c)가 같은 걸 조성. reflection-guard 준수(정확히 1 retry, 결정론 verifier=actionToolRan, fail-closed). Ollama down으로 eval delta(30c)는 보류지만 wrapper 로직은 synthetic으로 완전 테스트.
+- 리뷰지점: behavior-IDENTICAL(④b leg-for-leg diff; 클로저 narrowing은 const-capture; actionToolRan import 제거·isUnbackedActionClaim 유지; builds exit 0). mutation-valid(use-if-acted→always-retried면 "재실행도 실패→첫째 유지" RED).
+- 리스크: 낮음 — behavior-preserving 추출(조건/재실행 로직 불변). ④b PASS. honest: eval 미조성(30c, Ollama 필요).
+lesson: `&&` 가드(30a)와 그 *행동*(re-prompt, 30b)을 둘 다 generic helper로 추출하면 inline drift 제거 + 미래 caller(eval harness)의 seam. 클로저로 옮긴 optional 접근은 const-capture로 narrowing 유지. bounded-retry는 결정론 verifier+1회 cap로 reflection-guard 준수.
+
 ## fire 31 · 2026-06-21 · skill v2.0 · aabe7905 (isUnbackedActionClaim helper — false-done condition extracted; decompose 30a)
 meta: value-class=refactor/seam · pkg=@muse/agent-core+apps/cli · kind=refactor/seam · verdict=PASS · firesSinceDrill=2
 ratchet: testFiles 1071→1071 (+1 case casual-prompt composition, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2538 · @muse/cli 격리 2827 · pnpm check exit 0 · lint clean
