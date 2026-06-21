@@ -4,12 +4,14 @@ import {
 } from "@muse/agent-specs";
 import { extractBearerToken } from "@muse/auth";
 import {
+  createGateEmbedder,
   parseBoolean,
   resolveActionLogFile,
   resolveContactsFile,
   resolveObjectivesFile,
   resolvePendingApprovalsFile,
   resolveVetoesFile,
+  resolvePlaybookFile,
   resolveWeaknessesFile
 } from "@muse/autoconfigure";
 import { queryContacts, runActuatorByName } from "@muse/mcp";
@@ -189,7 +191,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     agentRuntime: options.agentRuntime,
     agentSpecRegistry,
     defaultModel: options.defaultModel,
-    modelProvider: options.modelProvider
+    modelProvider: options.modelProvider,
+    embed: createGateEmbedder(process.env)
   });
   registerCompatibilityRoutes(server, {
     admin: options.admin,
@@ -319,7 +322,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   registerSelfImprovementRoutes(server, {
     authService,
-    weaknessesFile: options.weaknessesFile ?? resolveWeaknessesFile(process.env)
+    weaknessesFile: options.weaknessesFile ?? resolveWeaknessesFile(process.env),
+    playbookFile: options.playbookFile ?? resolvePlaybookFile(process.env)
   });
 
   // Optional Phase B daemon: every MUSE_REMINDER_TICK_MS (default
