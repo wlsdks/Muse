@@ -536,7 +536,7 @@ export function suggestPatternHints(
  * matches the `muse doctor` warn-detail format
  * ("inferred from GEMINI_API_KEY").
  */
-function resolveModelInfo(): { model?: string; modelInferredFrom?: string } {
+function resolveModelInfo(): { model?: string; modelInferredFrom?: string; modelLocalOnlyIgnoredKey?: string } {
   const merged = mergeModelKeysFromFile({ ...process.env });
   const explicit = (merged.MUSE_MODEL?.trim() || merged.MUSE_DEFAULT_MODEL?.trim() || "") || undefined;
   if (explicit) {
@@ -545,6 +545,20 @@ function resolveModelInfo(): { model?: string; modelInferredFrom?: string } {
   const resolved = resolveDefaultModel(merged);
   if (!resolved) {
     return {};
+  }
+  // Under local-only (the default) the runtime IGNORES ambient cloud keys and
+  // runs the local default; attributing the model to a cloud key here would
+  // falsely contradict the privacy line shown right below (mirrors muse
+  // doctor's modelEnvCheck). Derive the posture from the canonical evaluator.
+  if (evaluateLocalOnlyPosture(merged).enabled) {
+    const ignoredCloudKey = [
+      "GEMINI_API_KEY",
+      "GOOGLE_API_KEY",
+      "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "OPENROUTER_API_KEY"
+    ].find((k) => typeof merged[k] === "string" && (merged[k] as string).trim().length > 0);
+    return ignoredCloudKey ? { model: resolved, modelLocalOnlyIgnoredKey: ignoredCloudKey } : { model: resolved };
   }
   const inferredFrom = [
     "GEMINI_API_KEY",
@@ -678,7 +692,9 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
       const modelLine = snap.model
         ? snap.modelInferredFrom
           ? `${snap.model} (inferred from ${snap.modelInferredFrom})`
-          : snap.model
+          : snap.modelLocalOnlyIgnoredKey
+            ? `${snap.model} (local-only default — ${snap.modelLocalOnlyIgnoredKey} ignored)`
+            : snap.model
         : "(unset — set MUSE_MODEL or run muse setup model)";
       io.stdout(`  model: ${modelLine}\n`);
       if (snap.providers.total > 0) {
