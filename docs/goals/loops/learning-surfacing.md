@@ -143,3 +143,12 @@ ratchet: testFiles +1 (belief-provenance-store.test.ts NEW, 4 cases) · @muse/me
 - **리뷰지점**: **3-way distinct**(judge 확인) — 변경(factHistory, distinctValueCount≥2)·flip-flop(volatile, ≥2)·첫-학습(===1) 상호배타 → double-count 없음. fail-soft + safeRecapText. age≥0(미래 firstSeen 제외) + Number.isFinite(NaN 제외).
 - **리스크**: 없음 — additive, memory 47 + recap 33 green, 독립 Opus ④b judge가 distinctness+window+무회귀 재확인 PASS.
 - **lesson**: 한 갭(첫-학습)을 닫을 땐 *데이터 소스가 다를 수 있다* — 변경은 factHistory, 첫-학습은 belief-provenance(firstSeen). 두 소스를 한 표면에 합칠 땐 distinctValueCount 같은 결정론 키로 상호배타를 보장해 double-count를 코드로 막아라(judge의 #1 점검).
+
+## fire 16 · 2026-06-21 · skill v2.1.0 · pending
+meta: value-class=new-capability · pkg=@muse/cli · kind=brief-surface · verdict=PASS · firesSinceDrill=6 · firesSinceMainMerge=3→0(main FF-merge this fire)
+ratchet: testFiles +1 (brief-learned.test.ts NEW, 3 cases) · @muse/cli 2895 green · lint clean · fabrication 0
+
+- **무엇**: `muse brief`(아침)에 **"📝 Lately about you — <cited 1줄>"** beat — 저녁 recap(fire14)·status(fire5)의 **아침 형제**. `brief-learned.ts`(`formatBriefLearnedLine`: `summarizeRecentlyLearned`[fire4] + escape/neutralize) + brief action이 이미 읽은 `userMemory`로 `projectRecentlyLearned`(30일)→stdout(fail-soft).
+- **왜**: **형제-감사** — recap만 학습 섹션 있었음(아침 brief 갭). 이제 데일리-드라이버가 하루 양끝(아침·저녁)에서 학습 체감. fires 1/4 재사용.
+- **리뷰지점**: 기존 brief beat 패턴(`try{read→select→format→stdout}catch{}`) 그대로. cited text는 escape+neutralize(주입 승격 방지, `<<end>>` 테스트). forgotten 제외 상속. `userMemory` 재사용(중복 read 없음).
+- **리스크**: 없음 — additive beat, cli 2895 green, 독립 Opus ④b judge가 consume+citation+security+무회귀 재확인 PASS.
