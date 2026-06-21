@@ -1,6 +1,6 @@
 import { openLoops, overdueContacts } from "@muse/agent-core";
 import { resolveActionLogFile, resolveContactsFile, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile, resolveWeaknessesFile } from "@muse/autoconfigure";
-import { defaultBeliefProvenanceFile, deriveFactProvenance, FileUserMemoryStore, projectRecentlyLearned, readBeliefProvenance, renderRecentlyLearnedLines, selectVolatileBeliefs } from "@muse/memory";
+import { defaultBeliefProvenanceFile, deriveFactProvenance, FileUserMemoryStore, projectRecentlyLearned, readBeliefProvenance, renderRecentlyLearnedLines, selectRecentlyLearnedFacts, selectVolatileBeliefs } from "@muse/memory";
 
 import { resolveMemoryUserId } from "./commands-memory.js";
 import { detectNoteFamilyAbsence, detectTopicAbsence, type NoteActivityEvent, readActionLog, readContacts, readEpisodes, readFollowups, readReminders, readTasks, readWeaknesses, remediationHint, resolveUpcomingBirthdays, selectRemediableWeaknesses } from "@muse/mcp";
@@ -362,15 +362,22 @@ export async function gatherEveningRecap(
   // Whetstone (H4): auto beliefs the extractor keeps flipping → nudge the user to
   // confirm the current value (which re-states it as durable user-source).
   const volatileBeliefs: string[] = [];
+  // First-time learnings (no supersession exists for a brand-new fact, so the
+  // factHistory projection below can't catch them) — derived from the same
+  // provenance read, cited by the recorded firstSeen date.
+  const firstLearned: string[] = [];
   try {
     const provFile = env.MUSE_BELIEF_PROVENANCE_FILE ?? defaultBeliefProvenanceFile();
     const provenance = deriveFactProvenance(await readBeliefProvenance(provFile));
     for (const b of selectVolatileBeliefs(provenance, { maxResults: 3, now: now.getTime() })) {
       volatileBeliefs.push(`"${safeRecapText(b.key)}" (now "${safeRecapText(b.currentValue)}", ${b.distinctValueCount.toString()} different values) — \`muse memory set ${b.kind} ${safeRecapText(b.key)} <value>\` to confirm`);
     }
+    for (const f of selectRecentlyLearnedFacts(provenance, { maxResults: 5, now: now.getTime(), withinDays: 30 })) {
+      firstLearned.push(safeRecapText(`${f.key.replace(/_/gu, " ")}: ${f.value} (learned ${f.firstSeen.slice(0, 10)})`));
+    }
   } catch { /* fail-soft — no provenance log */ }
-  // Learns you: the cited recent-learnings recap, from the recorded factHistory
-  // within a 30-day window — the same project→render the memory/status surfaces use.
+  // Learns you: the cited recent-learnings recap — CHANGES from factHistory (the
+  // project→render the memory/status surfaces use) followed by first-time learnings.
   const recentlyLearned: string[] = [];
   try {
     const store = new FileUserMemoryStore(env.MUSE_USER_MEMORY_FILE ? { file: env.MUSE_USER_MEMORY_FILE } : {});
@@ -381,6 +388,7 @@ export async function gatherEveningRecap(
       );
     }
   } catch { /* fail-soft — no memory store */ }
+  recentlyLearned.push(...firstLearned);
   return { comingUp, goneQuiet, now, openFollowups, openLoops: openLoopLines, performedToday, reconnect, recentlyLearned, sessionsToday, slipping, volatileBeliefs, weaknesses };
 }
 

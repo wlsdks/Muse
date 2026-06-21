@@ -133,3 +133,13 @@ ratchet: testFiles +0 (commands-recap.test +2) · @muse/cli 2892 green · lint c
 - **왜**: 테마의 문자 그대로 **"Muse가 배운 걸 *먼저* 보여주는"** — 저녁마다 자발적으로 "이번에 너에 대해 이런 걸 배웠어"(출처 인용). fires 1/2/6 재사용.
 - **리뷰지점**: 🔄 volatileBeliefs(≥2값 confirm-nudge)와 **distinct**(📝 recent supersession informative; judge 확인). fail-soft + safeRecapText. `recentlyLearned` optional(기존 무영향). standalone 명령(chat보다 덜 contended).
 - **리스크**: 없음 — optional 추가, cli 2892 green, 독립 Opus ④b judge가 redundancy(distinct)+fail-soft+security+무회귀 재확인 PASS.
+
+## fire 15 · 2026-06-21 · skill v2.1.0 · pending
+meta: value-class=new-capability · pkg=@muse/memory+@muse/cli · kind=first-learned-selection · verdict=PASS · firesSinceDrill=5 · firesSinceMainMerge=2
+ratchet: testFiles +1 (belief-provenance-store.test.ts NEW, 4 cases) · @muse/memory 47 green · @muse/cli recap 33 green · lint clean · fabrication 0
+
+- **무엇**: `selectRecentlyLearnedFacts(provenance, {now, withinDays, maxResults})`(@muse/memory, `selectVolatileBeliefs` 형제) — **첫-학습 fact surface**(firstSeen 윈도우 내 + `distinctValueCount===1` 안정). `muse recap`이 이미 읽는 provenance에서 계산해 recentlyLearned에 합침(변경 먼저, 첫-학습 뒤, `safeRecapText`). `belief-provenance-store.ts`의 **첫 테스트 파일**.
+- **왜**: **GAP** — 기존 표면은 변경(supersession)만 보임; 새 fact는 supersession이 없어 안 떴음. provenance.firstSeen가 첫-학습 신호 → recap이 "이번에 처음 알게 된 것"도 인용 표시.
+- **리뷰지점**: **3-way distinct**(judge 확인) — 변경(factHistory, distinctValueCount≥2)·flip-flop(volatile, ≥2)·첫-학습(===1) 상호배타 → double-count 없음. fail-soft + safeRecapText. age≥0(미래 firstSeen 제외) + Number.isFinite(NaN 제외).
+- **리스크**: 없음 — additive, memory 47 + recap 33 green, 독립 Opus ④b judge가 distinctness+window+무회귀 재확인 PASS.
+- **lesson**: 한 갭(첫-학습)을 닫을 땐 *데이터 소스가 다를 수 있다* — 변경은 factHistory, 첫-학습은 belief-provenance(firstSeen). 두 소스를 한 표면에 합칠 땐 distinctValueCount 같은 결정론 키로 상호배타를 보장해 double-count를 코드로 막아라(judge의 #1 점검).

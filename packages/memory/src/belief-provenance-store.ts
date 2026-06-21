@@ -398,6 +398,43 @@ export function selectVolatileBeliefs(
     .map((p) => ({ currentValue: p.value, distinctValueCount: p.distinctValueCount, key: p.key, kind: p.kind }));
 }
 
+export interface RecentlyLearnedFact {
+  readonly key: string;
+  readonly kind: "fact" | "preference";
+  readonly value: string;
+  /** ISO timestamp Muse first learned this key. */
+  readonly firstSeen: string;
+}
+
+/**
+ * The facts Muse learned for the FIRST time within a recency window — the
+ * other half of "recently learned about you". The factHistory projection only
+ * catches CHANGES (a key with a prior value); a brand-new fact records no
+ * supersession, so it would never surface there. This selects keys whose
+ * `firstSeen` is within the window AND that have stayed STABLE
+ * (`distinctValueCount === 1`) — a changed/flip-flopping key is the
+ * supersession/volatile signal, not a first-learning, so it's excluded (no
+ * double-count). Newest-first; capped. Pure — the code selects, citing the
+ * recorded firstSeen, never the model.
+ */
+export function selectRecentlyLearnedFacts(
+  provenance: readonly FactProvenance[],
+  opts: { readonly now: number; readonly withinDays?: number; readonly maxResults?: number }
+): readonly RecentlyLearnedFact[] {
+  const windowMs = Math.max(1, opts.withinDays ?? DEFAULT_FACT_STALE_DAYS) * 86_400_000;
+  const max = Math.max(1, Math.trunc(opts.maxResults ?? 5));
+  return provenance
+    .filter((p) => p.distinctValueCount === 1)
+    .filter((p) => {
+      const age = opts.now - Date.parse(p.firstSeen);
+      return Number.isFinite(age) && age >= 0 && age <= windowMs;
+    })
+    .slice()
+    .sort((a, b) => Date.parse(b.firstSeen) - Date.parse(a.firstSeen))
+    .slice(0, max)
+    .map((p) => ({ firstSeen: p.firstSeen, key: p.key, kind: p.kind, value: p.value }));
+}
+
 export function defaultBeliefProvenanceFile(): string {
   const fromEnv = process.env.MUSE_BELIEF_PROVENANCE_FILE?.trim();
   if (fromEnv && fromEnv.length > 0) return fromEnv;

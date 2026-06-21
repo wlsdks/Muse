@@ -401,6 +401,7 @@ export {
   provisionalFactKeys,
   readBeliefProvenance,
   selectPromotableFacts,
+  selectRecentlyLearnedFacts,
   selectVolatileBeliefs,
   staleFactKeys,
   writeBeliefProvenance,
@@ -409,6 +410,7 @@ export {
   type FactFreshness,
   type FactProvenance,
   type PromotableFact,
+  type RecentlyLearnedFact,
   type VolatileBelief
 } from "./belief-provenance-store.js";
 
