@@ -5,6 +5,16 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 56 · 2026-06-21 · skill v2.0 · <commit> (★JUDGE-DRILL PASS + real fix: re-verification nudge wired into the model loop; firesSinceDrill reset)
+meta: value-class=new-capability(reliability-mechanism)+judge-drill · pkg=@muse/agent-core · kind=model-loop/reverify-nudge · verdict=PASS · firesSinceDrill=0
+ratchet: testFiles +2(reverify-nudge unit + model-loop-reverify behavioral) · fabrication 0 · @muse/agent-core 2589 · apps/cli 2890(isolation) · lint 0/0 · mutation RED-confirmed · ④b judge PASS · Ollama UP(but eval saturated)
+- ★JUDGE-DRILL(firesSinceDrill≥10 의무): 먼저 INERT 슬라이스 주입(reverify-nudge.ts 헬퍼+12 단위테스트 GREEN이나 model-loop에 미배선=선언-only) → 독립 Opus judge가 정확히 FAIL("not wired, eval 여전히 FAIL, declaration-only", grep 증거+누락 배선 명시) → judge 비-rubber-stamp 입증 → 진짜 fix로 진행. drill 성공.
+- 무엇(real fix): fire 55가 발굴한 갭(12B가 편집 후 재-READ로 확인하고 재-EXECUTE 안 함) 수정 — `ReverifyNudgeTracker`(write→pendingEdit, execute→clear; consumeNudge=one-shot) + executeModelLoop·executeStreamingModelLoop **양쪽** termination 가드에 배선: 모델이 미검증 편집 후 종료하려 하면(tools live·run-intent·execute도구 존재) REVERIFY_NUDGE user 메시지 1회 주입+continue(재실행 유도). 형제-audit: 양 루프.
+- 왜: fire 55 측정 발견이 정당화. 다양성: @muse/agent-core/model-loop = scripts/eval(53/54/55) 연속 깸. reflection-guard 준수(재시도가 결정론 "재실행했나" 체크로 게이트, one-shot).
+- 리뷰지점: **결정론 행동 테스트**(scripted provider로 executeModelLoop 구동 — edit→finish는 nudge 주입+재프롬프트, edit→run→finish는 nudge 없음, edit→finish→finish는 1회만+종료, no-run-intent는 nudge 없음). mutation: consumeNudge 무력화→nudge-fires 2 테스트 RED, 음성 2 GREEN. 독립 Opus ④b judge가 배선·형제·종료·over-fire·가드·메시지페어링·정직-caveat 전수 검증(자체 mutation 재실행) → VERDICT PASS.
+- 리스크/정직: ★e2e eval:reverify-fix(12B FAIL→PASS) **이 fire 미확정** — 박스 포화(동시루프)로 eval 1케이스가 >560s 타임아웃. 그래서 결정론 배선(루프가 nudge 주입+재프롬프트)은 증명, 확률적 12B-준수(그후 재실행+beta수정)는 미검증→backlog(클린박스 확인). over-fire는 1턴·one-shot로 bounded. pnpm check 1-FAIL은 apps/cli /forget 렌더 포화-flake(격리 2890 GREEN, 내 변경 무관). fire 56은 ×3 아님→main 머지 없음.
+lesson: 무인 retry/nudge 슬라이스는 박스 포화로 e2e LLM eval이 막혀도 — scripted-provider 결정론 행동 테스트로 *메커니즘*(루프가 재프롬프트한다)을 증명 가능; 확률적 LLM-준수는 정직히 분리·backlog. drill은 inert-but-green 슬라이스(헬퍼+단위테스트만, 미배선)가 가장 현실적인 나쁜-슬라이스 — judge가 grep으로 잡음.
+
 ## fire 55 · 2026-06-21 · skill v2.0 · ee783e75 (eval:reverify-fix — RE-VERIFICATION probe surfaces a REAL blocker: 12B re-reads its edit but doesn't re-run)
 meta: value-class=new-capability(harder-eval/flywheel)+finding · pkg=scripts/eval · kind=eval-fixture/re-verification · verdict=PASS(probe valid; 12B FAILs it=finding) · firesSinceDrill=9
 ratchet: testFiles unchanged · fabrication 0 · eval:reverify-fix valid+discriminating(neither/only-reported→FAIL, both→PASS, 결정론 검증) · 12B FAIL 1/1(genuine gap) · lint 0/0 · Ollama UP
