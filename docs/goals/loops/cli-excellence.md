@@ -38,3 +38,14 @@ ratchet: testFiles +1 (muse-identity.ts new; tests in program-help+muse-banner) 
 - **리스크**: 낮음. diff 5파일(muse-identity.ts 신규 + program.ts + muse-banner.ts + 2 테스트). 다양성: fire1=info-projection(status)→fire2=onboarding(--help quickstart)→fire3=identity-copy(태그라인, --help+배너), 다른 kind.
 - **레퍼런스**: claude-code/gemini-cli 첫화면 헤드라인·정체성 표기 관행. https://shipyard.build/blog/claude-code-vs-gemini-cli/
 - note: 풀 `pnpm check`는 @muse/model/web-search-policy property-fuzz가 "Test timed out 5000ms"(8.6s)로 1개 RED였으나 — 박스 포화(~17 동시 루프)發 false-timeout(격리 재실행 384 green, 내 @muse/cli 슬라이스 무관). [[project_test_hygiene_loop]] 패턴. 슬라이스 자체는 build/narrow-test/mutation/smoke/lint 전부 green이라 출하.
+
+## fire 4 · 2026-06-21 · skill v2.1.0 · c9fc1ce6
+meta: value-class=new-capability · pkg=@muse/cli · kind=render · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles +0 (2 cases into chat-ink-render.test.ts) · @muse/cli HUD 테스트 격리 green · smoke:cli 9/9 · lint 0 · fabrication 0
+
+- **무엇**: 인터랙티브 chat REPL 하단 HUD에 local-only posture 배지 추가 — model 뒤에 `🔒 local`(green) / `⚠ cloud`(yellow). `evaluateLocalOnlyPosture(process.env).enabled`(doctor·status와 동일 진실원)에서 파생, `proactiveOn` prop 흐름 그대로 미러. props.localOnly 추가 + runChatInk 계산 + HUD 렌더.
+- **왜**: 가장 많이 보는 첫화면(라이브 REPL)이 Muse #1 정체성(클라우드 egress 차단)에 침묵했다. fire1(status)·fire3(태그라인)에 이어 세 첫화면(--help/배너/status/HUD)이 이제 모두 posture 일치 — fabrication 0(불리언에 strict).
+- **리뷰지점**: ink-testing-library가 실제 렌더 프레임(lastFrame) grade(on→🔒/off→⚠), mutation-first RED 확인(배지 상수화→off-case RED). required prop이라 모든 생성자(runChatInk + test makeProps)가 공급 → undefined 렌더 없음(tsc 보증). 독립 Opus ④b judge PASS(7/7). 여신 아트 불가침.
+- **리스크**: 낮음. diff 2파일(chat-ink.ts + 테스트). chat-ink.ts는 고-contention이라 다음 머지서 충돌 가능 — HUD 세그먼트는 독립 flex child라 격리적. 다양성: fire1 info-projection→fire2 onboarding→fire3 identity-copy→fire4 render, 모두 다른 kind.
+- **레퍼런스**: starship/oh-my-posh 상태 세그먼트(prompt에 posture 배지) 관행. https://starship.rs/
+- note: 풀 @muse/cli test에 2 RED 있었으나 둘 다 "Test timed out 5000ms"(document-reader PDF 5251ms, 기존 /forget 6992ms) — 박스 포화 false-timeout, 격리 재실행 둘 다 green, 내 HUD 테스트 아님. 슬라이스 게이트(build/HUD-test격리/mutation/smoke/lint) 전부 green이라 출하.
