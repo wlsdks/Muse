@@ -70,7 +70,7 @@ ratchet: testFiles +0 (recently-learned.test +4 cases) · @muse/memory 529 green
 - **리스크**: 없음(now). ④b judge가 **File-store가 디스크 직렬화에서 scope를 드롭하는 버그**를 잡음 → 3 round-trip 사이트(type+memoryToStored+storedToMemory) fix + 직렬화경계 넘는 round-trip 테스트(RED-on-removal teeth 확인) → 재judge PASS.
 - **lesson**: 지속(persistent) store를 만지는 슬라이스의 e2e 테스트는 InMemory가 아니라 **직렬화 경계를 건너야**(write→fresh-instance read). InMemory-only e2e는 직렬화 버그를 못 잡고 거짓 통과 — ④b adversarial judge가 정확히 이걸 적발(gating verifier 가치 실증).
 
-## fire 8 · 2026-06-21 · skill v2.1.0 · pending
+## fire 8 · 2026-06-21 · skill v2.1.0 · 2540bafd
 meta: value-class=micro-fix · pkg=@muse/memory · kind=citation-verb · verdict=PASS · firesSinceDrill=8 · firesSinceMainMerge=1
 ratchet: testFiles +0 (recently-learned.test +1 case) · @muse/memory 531 green · @muse/cli surfaces 50 green · lint clean · fabrication 0
 
