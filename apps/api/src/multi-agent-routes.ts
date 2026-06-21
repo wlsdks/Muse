@@ -6,6 +6,7 @@ import {
   InMemoryOrchestrationHistoryStore,
   MultiAgentOrchestrator,
   detectFanInConflicts,
+  detectFanInRedundancy,
   planTieredRun,
   type AgentMessage,
   type AgentWorker,
@@ -130,6 +131,7 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
       status: entry.status,
       workerCount: entry.workerCount,
       ...(entry.conflicts && entry.conflicts.length > 0 ? { conflicts: entry.conflicts } : {}),
+      ...(entry.redundancies && entry.redundancies.length > 0 ? { redundancies: entry.redundancies } : {}),
       ...(entry.verificationSatisfied !== undefined ? { verificationSatisfied: entry.verificationSatisfied } : {}),
       ...(entry.error ? { error: entry.error } : {})
     };
@@ -200,6 +202,10 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
       ? (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) =>
           detectFanInConflicts(parts, options.embed!)
       : undefined;
+    const detectRedundancies = options.embed
+      ? (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) =>
+          detectFanInRedundancy(parts, options.embed!)
+      : undefined;
 
     try {
       const orchestration = await orchestrator.run(input, {
@@ -211,7 +217,8 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
         ...(summarizer ? { summarizeWorkerOutput: summarizer } : {}),
         ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {}),
         ...(verifier ? { verifyFinalAnswer: verifier } : {}),
-        ...(detectConflicts ? { detectConflicts } : {})
+        ...(detectConflicts ? { detectConflicts } : {}),
+        ...(detectRedundancies ? { detectRedundancies } : {})
       });
 
       return {
@@ -305,6 +312,10 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
       ? (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) =>
           detectFanInConflicts(parts, options.embed!)
       : undefined;
+    const detectRedundancies = options.embed
+      ? (parts: ReadonlyArray<{ readonly workerId: string; readonly output: string }>) =>
+          detectFanInRedundancy(parts, options.embed!)
+      : undefined;
     const orchestrationOptions = {
       ...(effectiveMode ? { mode: effectiveMode } : {}),
       ...(parsed.value.maxWorkers !== undefined ? { maxWorkers: parsed.value.maxWorkers } : {}),
@@ -314,7 +325,8 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
       ...(summarizer ? { summarizeWorkerOutput: summarizer } : {}),
       ...(synthesizer ? { synthesizeFinalAnswer: synthesizer } : {}),
       ...(verifier ? { verifyFinalAnswer: verifier } : {}),
-      ...(detectConflicts ? { detectConflicts } : {})
+      ...(detectConflicts ? { detectConflicts } : {}),
+      ...(detectRedundancies ? { detectRedundancies } : {})
     };
 
     reply.header("content-type", "text/event-stream; charset=utf-8");
