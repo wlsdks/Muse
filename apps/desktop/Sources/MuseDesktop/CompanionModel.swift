@@ -58,7 +58,7 @@ final class CompanionModel: ObservableObject {
     /// the bubble is empty), and clears itself after a few seconds.
     func startIdleChatter() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in self?.showIdleLine() }
-        let timer = Timer(timeInterval: 150, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 45, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.showIdleLine() }
         }
         RunLoop.main.add(timer, forMode: .common)
