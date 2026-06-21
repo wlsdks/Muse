@@ -40,6 +40,7 @@ import {
   readPersonaStore,
   resolveActivePersonaPreamble
 } from "./persona-store.js";
+import { formatRelativeTime } from "./human-formatters.js";
 import { resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 import { readTrust } from "./commands-trust.js";
@@ -629,6 +630,11 @@ export function resolveStatusWatchIntervalMs(raw: string | undefined): number {
 }
 
 function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStatus>>): void {
+  // At-a-glance means readable time: humanise stored ISO timestamps to
+  // "3h ago" / "in 2d" (or a local datetime past 7d), never a raw UTC `Z`
+  // string. Deterministic transform of the real timestamp — the raw ISO
+  // stays in the `--json` snapshot for machine consumers.
+  const rel = (iso: string): string => formatRelativeTime(iso);
   io.stdout("Muse status:\n");
       io.stdout("\n");
       io.stdout(`  user: ${snap.persona.userId}\n`);
@@ -659,7 +665,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
         if (snap.persona.goalCount > 0) parts.push(`${snap.persona.goalCount.toString()} goal(s)`);
         io.stdout(`    persona: ${parts.join(", ")}\n`);
         if (snap.persona.updatedAt) {
-          io.stdout(`    last update: ${snap.persona.updatedAt}\n`);
+          io.stdout(`    last update: ${rel(snap.persona.updatedAt)}\n`);
         }
       } else {
         io.stdout(`    persona: (empty — Muse hasn't learned anything about you yet)\n`);
@@ -696,7 +702,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
           const summary = snap.followups.nextScheduledSummary
             ? ` — ${snap.followups.nextScheduledSummary.slice(0, 80)}`
             : "";
-          io.stdout(`    next: ${snap.followups.nextScheduledFor}${summary}\n`);
+          io.stdout(`    next: ${rel(snap.followups.nextScheduledFor)}${summary}\n`);
         }
         io.stdout("\n");
       }
@@ -709,7 +715,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
       }
       if (snap.episodes.total > 0) {
         io.stdout(`  episodes: ${snap.episodes.total.toString()} captured`);
-        io.stdout(snap.episodes.lastEndedAt ? `, last ${snap.episodes.lastEndedAt}\n` : "\n");
+        io.stdout(snap.episodes.lastEndedAt ? `, last ${rel(snap.episodes.lastEndedAt)}\n` : "\n");
         if (snap.episodes.lastSummary) {
           io.stdout(`    last: ${snap.episodes.lastSummary.slice(0, 120)}\n`);
         }
@@ -717,7 +723,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
       }
       if (snap.patterns.total > 0) {
         io.stdout(`  patterns: ${snap.patterns.total.toString()} fired`);
-        io.stdout(snap.patterns.lastFiredAtIso ? `, last ${snap.patterns.lastFiredAtIso}\n` : "\n");
+        io.stdout(snap.patterns.lastFiredAtIso ? `, last ${rel(snap.patterns.lastFiredAtIso)}\n` : "\n");
         io.stdout("\n");
       }
       if (snap.reminders.total > 0) {
@@ -725,7 +731,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
         io.stdout(`  reminders: ${snap.reminders.pending.toString()} pending${overdueClause}, ${snap.reminders.fired.toString()} fired\n`);
         if (snap.reminders.nextDueAt) {
           const text = snap.reminders.nextText ? ` — ${snap.reminders.nextText.slice(0, 80)}` : "";
-          io.stdout(`    next: ${snap.reminders.nextDueAt}${text}\n`);
+          io.stdout(`    next: ${rel(snap.reminders.nextDueAt)}${text}\n`);
         }
         io.stdout("\n");
       }
@@ -737,7 +743,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
         const runs = typeof snap.cost.runs === "number" ? ` over ${snap.cost.runs.toString()} run(s)` : "";
         io.stdout(`  cost (today): ${usd}, ${tokens}${runs}\n`);
         if (snap.cost.asOfIso) {
-          io.stdout(`    as of: ${snap.cost.asOfIso}\n`);
+          io.stdout(`    as of: ${rel(snap.cost.asOfIso)}\n`);
         }
         io.stdout("\n");
       }
@@ -747,7 +753,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
           : `  rag: not indexed — run \`muse notes reindex\` for \`muse ask\` / \`muse recall\` grounding\n\n`
       );
       if (snap.lastNotice) {
-        io.stdout(`  last notice: [${snap.lastNotice.firedAtIso ?? "?"}] via ${snap.lastNotice.providerId ?? "?"}\n`);
+        io.stdout(`  last notice: [${snap.lastNotice.firedAtIso ? rel(snap.lastNotice.firedAtIso) : "?"}] via ${snap.lastNotice.providerId ?? "?"}\n`);
         if (snap.lastNotice.text) {
           io.stdout(`    "${snap.lastNotice.text.slice(0, 120)}"\n`);
         }

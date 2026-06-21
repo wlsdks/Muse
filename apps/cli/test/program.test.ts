@@ -6410,7 +6410,10 @@ describe("cli program", () => {
       await program.parseAsync(["node", "muse", "status", "--user", "stark"], { from: "node" });
       const text = output.join("");
       expect(text).toContain("cost (today): $1.2340, 5678 tokens over 12 run(s)");
-      expect(text).toContain("as of: 2026-05-14T12:00:00Z");
+      // The dashboard humanises timestamps; a >7d-old `asOfIso` renders as a
+      // readable local datetime (not the raw UTC ISO).
+      expect(text).toContain(`as of: ${formatLocalDateTime("2026-05-14T12:00:00Z")}`);
+      expect(text).not.toContain("as of: 2026-05-14T12:00:00Z");
     } finally {
       if (prev === undefined) delete process.env.MUSE_TOKEN_COST_TODAY_FILE;
       else process.env.MUSE_TOKEN_COST_TODAY_FILE = prev;
