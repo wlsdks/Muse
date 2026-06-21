@@ -840,7 +840,7 @@ export async function recordChatWeaknessForTurn(
 export interface ChatRepeatNudgeDeps {
   /** Injectable ledger reader + selection/render/topic seams (tests assert the nudge OUTCOME without a live store). */
   readonly readWeaknesses?: (file: string) => Promise<readonly WeaknessEntry[]>;
-  readonly selectNudge?: (entries: readonly WeaknessEntry[], topic: string) => AskTimeNudge | undefined;
+  readonly selectNudge?: (entries: readonly WeaknessEntry[], topic: string, opts?: { readonly nowMs?: number }) => AskTimeNudge | undefined;
   readonly render?: (nudge: AskTimeNudge, ko: boolean) => string;
   readonly topicKey?: (message: string) => string;
   readonly weaknessesFile?: string;
@@ -863,7 +863,7 @@ export async function chatRepeatWeaknessNudge(message: string, deps: ChatRepeatN
     const render = deps.render ?? mcp!.renderAskTimeNudge;
     const topicKey = deps.topicKey ?? mcp!.topicKeyFromMessage;
     const file = deps.weaknessesFile ?? (await import("@muse/autoconfigure")).resolveWeaknessesFile(process.env as Record<string, string | undefined>);
-    const nudge = selectNudge(await readWeaknesses(file), topicKey(message));
+    const nudge = selectNudge(await readWeaknesses(file), topicKey(message), { nowMs: Date.now() });
     if (!nudge) return undefined;
     return `\n\n(${render(nudge, /[가-힣]/u.test(message))})`;
   } catch {

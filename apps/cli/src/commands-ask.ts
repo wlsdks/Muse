@@ -2879,7 +2879,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           const { askTimeWeaknessNudge, readWeaknesses, renderAskTimeNudge, topicKeyFromMessage } = await import("@muse/mcp");
           const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
           const weaknessEntries = await readWeaknesses(resolveWeaknessesFile(process.env as Record<string, string | undefined>));
-          const nudge = askTimeWeaknessNudge(weaknessEntries, topicKeyFromMessage(query));
+          const nudge = askTimeWeaknessNudge(weaknessEntries, topicKeyFromMessage(query), { nowMs: Date.now() });
           if (nudge) {
             io.stderr(`💡 ${renderAskTimeNudge(nudge, /[가-힣]/u.test(query))}\n`);
           }

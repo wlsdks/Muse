@@ -574,7 +574,7 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   // plain `muse doctor` shows what the agent keeps getting wrong — best-effort,
   // never fails the doctor on a ledger read.
   try {
-    const fuel = weaknessFuelCheck(selectDevFixableWeaknesses(await readWeaknesses(resolveWeaknessesFile(env))));
+    const fuel = weaknessFuelCheck(selectDevFixableWeaknesses(await readWeaknesses(resolveWeaknessesFile(env)), { nowMs: Date.now() }));
     if (fuel) {
       checks.push(fuel);
     }
@@ -635,13 +635,14 @@ const WEAKNESS_AXIS_LABEL: Record<string, string> = {
  * Muse has noticed it keeps getting wrong, busiest first. Pure (no I/O) so it is
  * unit-testable. Empty ledger → an honest "nothing noticed yet" line.
  */
-export function formatWeaknesses(entries: readonly WeaknessEntry[]): string {
+export function formatWeaknesses(entries: readonly WeaknessEntry[], opts?: { readonly nowMs?: number }): string {
   // A MASTERED topic (BKT pKnown ≥ WEAKNESS_MASTERED_AT) has been resolved enough
   // times that it is no longer a CURRENT weakness — exclude it from the "what I'm
   // weak at" report so the inventory matches what the runtime nudges suppress
   // (consistency with isMasteredWeakness; otherwise doctor keeps nagging a topic
-  // the user already fixed).
-  const active = [...entries].filter((entry) => !isMasteredWeakness(entry));
+  // the user already fixed). With nowMs, BKT-Forget idle decay re-counts a topic
+  // whose mastery has gone stale (long since the last grounded confirmation) as active.
+  const active = [...entries].filter((entry) => !isMasteredWeakness(entry, { nowMs: opts?.nowMs }));
   const masteredCount = entries.length - active.length;
   const masteredNote = masteredCount > 0 ? ` · ${masteredCount.toString()} mastered` : "";
   if (active.length === 0) {
@@ -676,11 +677,11 @@ export function formatDevFixableWeaknesses(list: readonly DevFixableWeakness[]):
 async function runWeaknessesDoctor(io: ProgramIO, asJson: boolean): Promise<void> {
   const file = resolveWeaknessesFile(process.env as Record<string, string | undefined>);
   const entries = await readWeaknesses(file);
-  const devFixable = selectDevFixableWeaknesses(entries);
+  const devFixable = selectDevFixableWeaknesses(entries, { nowMs: Date.now() });
   if (asJson) {
     io.stdout(`${JSON.stringify({ devFixable, weaknesses: entries }, null, 2)}\n`);
     return;
   }
-  io.stdout(formatWeaknesses(entries));
+  io.stdout(formatWeaknesses(entries, { nowMs: Date.now() }));
   io.stdout(formatDevFixableWeaknesses(devFixable));
 }

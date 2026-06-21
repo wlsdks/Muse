@@ -23,6 +23,7 @@ import {
   selfLearningCheck,
   type OllamaTagsEntry
 } from "./commands-doctor.js";
+import type { WeaknessEntry } from "@muse/mcp";
 
 describe("conformal abstention calibration (muse doctor --calibration)", () => {
   it("parseAlpha clamps to (0,1), defaults 0.1 on bad input", () => {
@@ -74,6 +75,21 @@ describe("formatWeaknesses — the Whetstone ledger as an honest self-report", (
   it("renders a hint line when present", () => {
     const out = formatWeaknesses([{ axis: "grounding-gap", count: 2, firstSeen: "2026-06-01T00:00:00Z", lastSeen: "2026-06-06T00:00:00Z", topic: "rent", hint: "ask the user to add a note" }]);
     expect(out).toContain("ask the user to add a note");
+  });
+
+  it("BKT-Forget idle decay: a long-mastered topic that RECURS counts as ACTIVE again with a clock (arXiv:2105.00385)", () => {
+    // Mastered 5 months ago (lastResolved old), but failing again now (lastSeen recent).
+    const recurring: WeaknessEntry = {
+      axis: "misgrounding", count: 5, firstSeen: "2026-01-01T00:00:00Z",
+      lastResolved: "2026-01-10T00:00:00Z", lastSeen: "2026-05-30T00:00:00Z", pKnown: 0.99, topic: "office vpn mtu"
+    };
+    const NOW = Date.parse("2026-06-01T00:00:00.000Z");
+    // Clockless: the high pKnown masks it (counted as mastered, not active).
+    expect(formatWeaknesses([recurring])).toContain("1 topic mastered");
+    // With a clock: stale mastery decayed → listed as an ACTIVE weak spot again.
+    const out = formatWeaknesses([recurring], { nowMs: NOW });
+    expect(out).toContain("office vpn mtu");
+    expect(out).toContain("what I've noticed I'm weak at");
   });
 });
 

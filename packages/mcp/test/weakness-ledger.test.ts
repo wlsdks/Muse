@@ -412,6 +412,69 @@ describe("isMasteredWeakness", () => {
   });
 });
 
+describe("isMasteredWeakness — BKT-Forget idle-mastery decay (arXiv:2105.00385)", () => {
+  const NOW = Date.parse("2026-06-01T00:00:00.000Z");
+  const mastered = (lastResolvedIso: string, over: Partial<WeaknessEntry> = {}): WeaknessEntry => ({
+    axis: "misgrounding", count: 4, firstSeen: "2026-01-01T00:00:00.000Z",
+    lastSeen: lastResolvedIso, lastResolved: lastResolvedIso, pKnown: 0.99, topic: "office vpn mtu", ...over
+  });
+
+  it("with NO clock, mastery is the pure pKnown check (backward-compat — clockless callers unaffected)", () => {
+    expect(isMasteredWeakness(mastered("2026-01-01T00:00:00.000Z"))).toBe(true); // 5 months idle, but no nowMs → still mastered
+  });
+
+  it("stays mastered when the last grounded confirmation is WITHIN the retention horizon", () => {
+    expect(isMasteredWeakness(mastered("2026-05-20T00:00:00.000Z"), { nowMs: NOW })).toBe(true); // ~12 days
+  });
+
+  it("DECAYS to not-mastered once the last grounded confirmation is older than the retention horizon", () => {
+    expect(isMasteredWeakness(mastered("2026-01-01T00:00:00.000Z"), { nowMs: NOW })).toBe(false); // ~150 days > 90
+  });
+
+  it("decays off lastResolved, NOT lastSeen — a topic mastered long ago but failing AGAIN is no longer mastered", () => {
+    const recurring = mastered("2026-01-10T00:00:00.000Z", { lastSeen: "2026-05-30T00:00:00.000Z" });
+    expect(isMasteredWeakness(recurring, { nowMs: NOW })).toBe(false);
+  });
+
+  it("a pKnown below threshold is never mastered, clock or not", () => {
+    expect(isMasteredWeakness(mastered("2026-05-31T00:00:00.000Z", { pKnown: 0.5 }), { nowMs: NOW })).toBe(false);
+  });
+
+  it("an unparseable confirmation timestamp keeps a real win mastered (never spuriously un-masters)", () => {
+    expect(isMasteredWeakness(mastered("not-a-date", { lastSeen: "also-bad" }), { nowMs: NOW })).toBe(true);
+  });
+});
+
+describe("idle-mastery decay re-surfaces a RECURRING long-mastered topic on the doctor/nudge selectors", () => {
+  const NOW = Date.parse("2026-06-01T00:00:00.000Z");
+  // Mastered 5 months ago (lastResolved old), but failing AGAIN this week (lastSeen recent).
+  const recurringDev: WeaknessEntry = {
+    axis: "misgrounding", count: 5, firstSeen: "2026-01-01T00:00:00.000Z",
+    lastResolved: "2026-01-10T00:00:00.000Z", lastSeen: "2026-05-30T00:00:00.000Z",
+    pKnown: 0.99, topic: "office vpn mtu"
+  };
+
+  it("selectDevFixableWeaknesses: suppressed clockless, RE-LISTED with a clock (stale mastery decayed)", () => {
+    expect(selectDevFixableWeaknesses([recurringDev]).map((w) => w.topic)).toEqual([]); // no nowMs → mastered → suppressed
+    expect(selectDevFixableWeaknesses([recurringDev], { nowMs: NOW }).map((w) => w.topic)).toEqual(["office vpn mtu"]);
+  });
+
+  it("selectDevFixableWeaknesses: a FRESH-mastered topic stays suppressed even with a clock", () => {
+    const fresh: WeaknessEntry = { ...recurringDev, lastResolved: "2026-05-20T00:00:00.000Z", topic: "fresh topic" };
+    expect(selectDevFixableWeaknesses([fresh], { nowMs: NOW }).map((w) => w.topic)).toEqual([]);
+  });
+
+  it("askTimeWeaknessNudge: a long-mastered user-remediable topic that recurs nudges again with a clock", () => {
+    const recurringUser: WeaknessEntry = {
+      axis: "grounding-gap", count: 3, firstSeen: "2026-01-01T00:00:00.000Z",
+      lastResolved: "2026-01-10T00:00:00.000Z", lastSeen: "2026-05-30T00:00:00.000Z",
+      pKnown: 0.99, topic: "homecity"
+    };
+    expect(askTimeWeaknessNudge([recurringUser], "homecity")).toBeUndefined(); // clockless → mastered → silent
+    expect(askTimeWeaknessNudge([recurringUser], "homecity", { nowMs: NOW })?.topic).toBe("homecity");
+  });
+});
+
 describe("selectRemediableWeaknesses — mastered entries suppressed", () => {
   const nowMs = Date.parse("2026-06-13T02:00:00.000Z");
   const e = (over: Partial<WeaknessEntry>): WeaknessEntry => ({

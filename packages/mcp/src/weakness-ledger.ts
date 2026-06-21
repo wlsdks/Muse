@@ -29,6 +29,14 @@ export const BKT_LEARN = 0.2;
 export const BKT_GUESS = 0.2;
 export const BKT_SLIP = 0.1;
 export const WEAKNESS_MASTERED_AT = 0.95;
+// BKT-Forget P(F)>0: mastery is RETAINED for this many days since the last grounded
+// confirmation (`lastResolved`), then expires — the model likely forgot over a long
+// idle gap, so a topic that recurs after it should re-surface on the FIRST recurrence
+// instead of needing ~3 fresh failures to claw pKnown back below the 0.95 threshold.
+// A quarter, matching the belief-provenance fact-stale horizon + fire 30's idle fade.
+// (Modeled as a retention horizon, not a continuous decay-through-threshold: the
+// mastered band [0.95, 1.0] is too narrow for a stable gradual decay.)
+export const WEAKNESS_MASTERY_RETENTION_DAYS = 90;
 
 export type WeaknessAxis = "grounding-gap" | "misgrounding" | "source-conflict" | "unbacked-action" | "wrong-tool" | "time-parse" | "other";
 
@@ -154,11 +162,30 @@ export function bktUpdate(pKnown: number | undefined, observedSuccess: boolean):
 }
 
 /**
- * Returns true when a weakness entry has been mastered (pKnown ≥ WEAKNESS_MASTERED_AT).
+ * Returns true when a weakness entry is currently mastered (pKnown ≥ WEAKNESS_MASTERED_AT).
  * Legacy entries without pKnown are never mastered — they behave exactly as before.
+ *
+ * With `opts.nowMs`, applies BKT-Forget idle decay: a mastery is RETAINED only while the
+ * last grounded confirmation (`lastResolved`, falling back to `lastSeen`) is within
+ * {@link WEAKNESS_MASTERY_RETENTION_DAYS}; past that horizon the mastery has decayed (the
+ * model likely forgot), so the topic re-surfaces on the doctor/nudge surfaces. WITHOUT
+ * `nowMs` the decay is off — the pure pKnown check (backward-compatible for callers that
+ * have no clock). An unparseable timestamp keeps the entry mastered (never spuriously
+ * un-masters a real win). arXiv:2105.00385.
  */
-export function isMasteredWeakness(entry: WeaknessEntry): boolean {
-  return typeof entry.pKnown === "number" && entry.pKnown >= WEAKNESS_MASTERED_AT;
+export function isMasteredWeakness(entry: WeaknessEntry, opts?: { readonly nowMs?: number; readonly retentionDays?: number }): boolean {
+  if (!(typeof entry.pKnown === "number" && entry.pKnown >= WEAKNESS_MASTERED_AT)) {
+    return false;
+  }
+  if (opts?.nowMs === undefined) {
+    return true;
+  }
+  const confirmedAt = Date.parse(entry.lastResolved ?? entry.lastSeen);
+  if (!Number.isFinite(confirmedAt)) {
+    return true;
+  }
+  const retentionMs = Math.max(1, opts.retentionDays ?? WEAKNESS_MASTERY_RETENTION_DAYS) * 86_400_000;
+  return opts.nowMs - confirmedAt <= retentionMs;
 }
 
 function isWeaknessEntry(value: unknown): value is WeaknessEntry {
@@ -249,7 +276,7 @@ export function selectRemediableWeaknesses(
   const recentMs = Math.max(1, opts.recentDays ?? 30) * 86_400_000;
   const max = Math.max(1, Math.trunc(opts.maxResults ?? 3));
   return entries
-    .filter((entry) => USER_REMEDIABLE_AXES.has(entry.axis) && entry.count >= minCount && !isMasteredWeakness(entry))
+    .filter((entry) => USER_REMEDIABLE_AXES.has(entry.axis) && entry.count >= minCount && !isMasteredWeakness(entry, { nowMs: opts.nowMs }))
     .filter((entry) => {
       const seen = Date.parse(entry.lastSeen);
       return Number.isFinite(seen) && opts.nowMs - seen <= recentMs;
@@ -279,11 +306,11 @@ export interface AskTimeNudge {
 export function askTimeWeaknessNudge(
   entries: readonly WeaknessEntry[],
   topic: string,
-  opts?: { readonly minRecurrence?: number }
+  opts?: { readonly minRecurrence?: number; readonly nowMs?: number }
 ): AskTimeNudge | undefined {
   const minRecurrence = Math.max(2, Math.trunc(opts?.minRecurrence ?? 2));
   const candidates = entries.filter(
-    (entry) => entry.topic === topic && USER_REMEDIABLE_AXES.has(entry.axis) && entry.count >= minRecurrence && !isMasteredWeakness(entry)
+    (entry) => entry.topic === topic && USER_REMEDIABLE_AXES.has(entry.axis) && entry.count >= minRecurrence && !isMasteredWeakness(entry, { nowMs: opts?.nowMs })
   );
   if (candidates.length === 0) return undefined;
   const top = candidates.reduce((a, b) => (b.count > a.count ? b : a));
@@ -339,7 +366,7 @@ const GROUNDED_SUCCESS_RESOLVABLE_AXES: ReadonlySet<WeaknessAxis> = new Set<Weak
  */
 export function selectDevFixableWeaknesses(
   entries: readonly WeaknessEntry[],
-  opts: { readonly minCount?: number; readonly maxResults?: number } = {}
+  opts: { readonly minCount?: number; readonly maxResults?: number; readonly nowMs?: number } = {}
 ): readonly DevFixableWeakness[] {
   const minCount = Math.max(2, Math.trunc(opts.minCount ?? 2));
   const max = Math.max(1, Math.trunc(opts.maxResults ?? 5));
@@ -347,7 +374,8 @@ export function selectDevFixableWeaknesses(
     // Mastery-aware (parity with selectRemediableWeaknesses): a topic Muse demonstrably
     // re-learned (BKT pKnown high via recordWeaknessResolved) drops off the doctor list —
     // else a fixed misgrounding topic nags `muse doctor` forever, eroding the self-eval signal.
-    .filter((entry) => DEV_FIXABLE_AXES.has(entry.axis) && entry.count >= minCount && !isMasteredWeakness(entry))
+    // With nowMs, BKT-Forget idle decay re-lists a topic whose mastery has gone stale.
+    .filter((entry) => DEV_FIXABLE_AXES.has(entry.axis) && entry.count >= minCount && !isMasteredWeakness(entry, { nowMs: opts.nowMs }))
     .slice()
     .sort((a, b) => b.count - a.count || Date.parse(b.lastSeen) - Date.parse(a.lastSeen))
     .slice(0, max)

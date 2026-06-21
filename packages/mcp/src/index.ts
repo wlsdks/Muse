@@ -978,6 +978,7 @@ export {
   BKT_PRIOR,
   BKT_SLIP,
   WEAKNESS_MASTERED_AT,
+  WEAKNESS_MASTERY_RETENTION_DAYS,
   bktUpdate,
   askTimeWeaknessNudge,
   isMasteredWeakness,
