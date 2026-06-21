@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 34 · 2026-06-21 · skill v2.0 · <commit-pending> (run_command timeout → actionable message; fire-23 spawn-error sibling)
+meta: value-class=new-capability · pkg=crates/runner · kind=reliability-nudge · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 1072→1072 (+2 cargo: helper + E2E timeout; TS 무변경) · fabrication 0 · crates/runner cargo 12 · @muse/tools 격리 289(무회귀) · pnpm check exit 0 · lint clean · Ollama DOWN(30c 보류)
+- 무엇: Rust runner가 타임아웃 시 `{timed_out:true, error:None}` — bare flag, 메시지 없음(12B가 놓침). FIX(`describe_timeout`): timeout 경로 `error`에 `"timed out after {ms}ms, killed — retry with larger timeoutMs"`(ms=effective clamped). 와이어링 `error: if timed_out {Some} else {None}`; TS는 error passthrough(무편집).
+- 왜: Ollama down으로 30c 보류 → gap-scout. probe로 timeout시 error=None 실측. fire-23 spawn-error 형제(run_command 실패-메시지 family 완성). 다양성: fs/agent-core 후 crates/runner.
+- 리뷰지점: mutation-valid 양쪽(helper hint 제거→RED; 와이어링 revert→**E2E RED**=실제 sleep 5+50ms 타임아웃으로 와이어링 outcome-grade). ④b judge PASS — no-weakening(timeout 경로 메시지만, timed_out/ok/kill/drainer 불변, non-timeout은 None), 정확 ms(effective clamped), E2E non-flaky(#[cfg(unix)], 50ms vs 5s 무race).
+- 리스크: 낮음 — 순수 에러-메시지 추가(실행/kill 로직 0 변경). ④b PASS.
+lesson: 실패 신호는 *구조적 flag*(timed_out)뿐 아니라 *액추에이터 family 일관 메시지*(error)로도 줘야 — 12B는 bare flag를 놓침. Rust 와이어링은 helper 단위테스트 + 실제 e2e(sleep+timeout) 둘 다로 OUTCOME-grade(e2e가 와이어링을 잡음).
+
 ## fire 33 · 2026-06-21 · skill v2.0 · db078c66 (file_read refuses binary-content text files; read↔grep sibling; 3-fire merge)
 meta: value-class=micro-fix(real-bug) · pkg=@muse/fs · kind=correctness/reliability · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles 1072→1072 (+1 case fs-read-tools, mutation-valid) · fabrication 0 · @muse/fs 격리 168 · pnpm check exit 0 · lint clean · Ollama DOWN(30c 보류)
