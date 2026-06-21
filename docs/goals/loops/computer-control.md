@@ -5,6 +5,15 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 52 · 2026-06-21 · skill v2.0 · <commit> (★MILESTONE validated: BOTH hard multi-step evals now PASS — theme goal achieved; consolidation + next-direction)
+meta: value-class=measure(milestone-validation) · pkg=docs(validation) · kind=outcome-validation · verdict=N/A · firesSinceDrill=6
+ratchet: testFiles unchanged · fabrication 0 · self-eval green · ★eval:multifile-fix PASS · ★eval:edit-run-verify PASS(fire 52, model-ran-test=true) · eval:computer-task PASS · Ollama UP
+- 검증: edit-run-verify 재측정 PASS(test-passes=true, model-ran-test=true, tools=[run_command,file_read,file_grep,file_edit]) — **fire 51 exposure reserve가 OUTCOME으로 확증**(run_command이 이제 노출+사용됨; trace: run_command→TEST FAIL→read→edit→verify). fire 51의 미확정 OUTCOME이 이번에 확정.
+- ★MILESTONE: 세 eval 전부 PASS — computer-task(단일), multifile-fix(다중파일, fires 47 not-exposed + 49 repetition), edit-run-verify(edit→run→verify, fire 51 exposure). 테마 헤드라인 목표(로컬12B 멀티스텝 신뢰성↑)가 측정으로 달성. 결정론 메커니즘은 단위테스트로 CI-gated(fires 40-51), eval PASS는 통합 확증.
+- 왜 코드 슬라이스 없음: 결정론 veins(fs/tools/agent-core tool-call 경계+exposure) 12 fire(40-51)에 걸쳐 대거 소진, 양 hard eval PASS. agent-core 5연속(47-51)이라 다양성 RATCHET이 또-agent-core 마이크로픽스를 금지(judge 2회 노트). EXHAUSTION+⑥: 강행 대신 정직히 검증+다음방향 기록.
+- 리뷰지점: 측정이 fires 47/49/50/51 누적효과를 OUTCOME으로 검증(추정 아님). pass^1 관측이나 인과 trace 명확(run_command 노출→사용). 리스크: stochastic 단일관측이라 pass^k는 미수립(다음 fire에서 가능).
+lesson: 측정-주도 루프의 정점 — 측정이 (a)진단(early-stop→step-repetition→exposure-starvation 정정) (b)수정 검증(FAIL→PASS) (c)다음방향을 모두 구동. 테마 성숙 시 정직한 출구는 강제 슬라이스가 아니라 검증+repoint-후보. 다음방향(backlog ★): (1)양 eval pass^k CI-gate화 (2)더 어려운 멀티스텝 fixture(2-edit/cascading/wrong-first-fix 재이터레이션) (3)테마 repoint(deterministic vein 소진).
+
 ## fire 51 · 2026-06-21 · skill v2.0 · 232f04e9 (run-intent execute-tool exposure reserve — run_command no longer starved by the file cluster; fire-4 sibling)
 meta: value-class=new-capability · pkg=@muse/agent-core · kind=tool-filter/exposure-reserve · verdict=PASS · firesSinceDrill=5
 ratchet: testFiles +0 / +2 cases (run-intent reserve positive+no-over-exposure) · fabrication 0 · @muse/agent-core 2573 · tool-filter 37 · pnpm check exit 0 · lint 0/0 · Ollama UP · ★main ff-merge(fire 51=×3, delivers 49/50/51)
