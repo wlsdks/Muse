@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 27 · 2026-06-21 · skill v2.0 · <commit-pending> (false-done request-gate via STRUCTURAL signal — resolves fire-26 blocker; 3-fire merge)
+## fire 27 · 2026-06-21 · skill v2.0 · 7e56df59 (false-done request-gate via STRUCTURAL signal — resolves fire-26 blocker; 3-fire merge)
 meta: value-class=new-capability · pkg=@muse/agent-core · kind=honesty/false-done · verdict=PASS(judge#4) · firesSinceDrill=8
 ratchet: testFiles 1071→1071 (+2 cases casual-prompt: file-positives + path-prefix/homonym negatives, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2535 · pnpm check exit 0 · lint clean
 - 무엇: fire-26 블로커 해소(RIGHT DESIGN 구현) — false-done 백스톱 request-side(`classifyActionRequest`)가 code-fix 미인식이라 fire-25 actuator fix에도 백스톱이 컴퓨터-제어에 안 걸림. fix: fuzzy 텍스트 분류 대신 **구조적 신호** = 쿼리에 명시적 **code-extension 파일명**(`FILE_PATH_TOKEN`=optional path + `name.<code-ext>`) 있을 때만 매칭. edit동사 START-앵커(질문 배제), KO 미러(파일명+고쳐/수정).
