@@ -133,3 +133,13 @@ ratchet: (scripts, measurement-infra) 1/8 윈도우(fire 1 이후 처음) · fab
 - 리스크: 없음 — 패키지 소스 0줄 → 정확성 회귀 0. eval:cascade는 standalone(어떤 aggregate gate에도 없음, opt-in/manual).
   검증: cascade-eval.test 8/8 · MUTATION-FIRST(gate `!==`→`===` 4 RED; revert→green) · LIVE 23.9% latency win 측정 · 러너 load시 clean skip(exit 0) 확인 · smoke:broad 52/0 · lint rc=0 · pnpm check는 web-search-policy property-fuzz "Test timed out 5000ms" load-flake만(isolated 1/3 green, 박스 load 35 = Ollama 35B resident+동시루프, 내 변경 scripts-only로 무관) · 독립 Opus ④ judge PASS(자체 mutation 재현, 0%-escalation 정직성·load-flake nuance·value-first 판정; defect 2건[fetch timeout·gateCorrect 자기일관성] 지적 → fetch timeout 수정+claim 정직화 완료).
   decompose: 라이브 escalate-arm 실증(hard prompt/낮은 threshold) → backlog ◦. ask --tiered single-query cascade도 잔존.
+
+## fire 14 · 2026-06-21 · local-speed · <commit>
+meta: value-class=new-capability · pkg=apps/api · kind=startup-latency(warmup) · verdict=PASS · firesSinceDrill=5
+ratchet: (apps/api) 2/8 윈도우(fire 11 cascade-wiring vs 14 startup-warmup = distinct kind) · fabrication 0 · default-off startup byte-identical
+- 무엇: opt-in 모델 워밍업 `MUSE_WARMUP_MODEL`(apps/api `warmUpModelIfConfigured`) — 서버 시작 시 작은 fire-and-forget generate(maxOutputTokens:1)로 모델을 Ollama에 미리 로드 → 첫 사용자 요청이 warm. server.ts 시작 훅(데몬들 옆)에 1줄 배선.
+- 왜: keep_alive(어댑터 디폴트)는 요청 *사이*에만 모델 resident 유지 → 서버 start 후 *첫* 요청은 풀 cold load(12B 수십초) 부담. always-on 컴패니언(Muse 정체성)에서 첫-요청 cold-start가 체감 최악 지연. cascade 벤 완료 후 남은 다른 종류의 지연 레버.
+- 리뷰지점: opt-in 기본-off(미설정→generate 호출 0 = startup byte-identical), fail-soft(`Promise.resolve().then(()=>generate).catch()` — sync throw + async rejection 둘 다 삼킴, unhandled rejection 없음, server start 절대 안 깸 — ④ judge가 3 mutation으로 .catch/wrapper 둘 다 load-bearing 확인), void 반환(listen 지연 안 함), 워밍업 결과 discard(어떤 요청 답/grounding에도 안 닿음), 비-cloud(기존 provider 재사용, 새 egress 경로 없음).
+- 리스크: 없음 — 기본-off → 정확성 회귀 0. 워밍업은 모델 로드만(생성 토큰 discard), grounding/tool 무관.
+  검증: apps/api 959 pass isolated(신규 5 OUTCOME — fires-when-enabled/default-off/guard/fail-soft sync+async) · MUTATION-FIRST(enabled=true → default-off RED; ④ judge가 bare-void→sync-throw escape RED, .catch 제거→unhandled-rejection leak 추가 확인) · build rc=0 · lint rc=0 · 독립 Opus ④ judge PASS(자체 3 mutation 재현, fail-soft 정확성·box-saturation 정직성·value-first 판정, 결함 0). ⚠️pnpm check + smoke:broad는 박스 극단 saturation(6 동시루프 + Ollama 35B resident)으로 TIMEOUT(autoconfigure runtime-assembly-e2e 18× "Test timed out 5000ms", smoke >300s) — 내 변경 apps/api-only이고 autoconfigure는 apps/api 의존 안 함(역방향) → 깰 수 없음, 박스-포화 flake로 판정(apps/api isolated 959 + build + lint green).
+  형제-감사: MUSE_WARMUP_MODEL을 museSpeedEnvCheck(doctor)에 노출 + per-box cold-start delta 측정 → backlog ◦.

@@ -2489,6 +2489,12 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   test caught that `parseInteger` rejects 0). num_thread keeps `> 0`. Completes the Ollama adapter
   speed-knob family (num_ctx/num_batch/num_predict/keep_alive/num_thread/num_gpu). Per-box win still
   needs `bench:local` (C3-style) measurement.
+- ✓ **model warmup on server start — DONE fire 14** `MUSE_WARMUP_MODEL` (apps/api `warmUpModelIfConfigured`)
+  fires a tiny fire-and-forget generate at server startup so the FIRST user request is warm — keep_alive only
+  keeps the model resident BETWEEN requests, so the first request after a start otherwise pays the full cold
+  load (tens of seconds for a 12B). Opt-in (default off → startup byte-identical), fail-soft (a warmup error
+  never blocks server start). SIBLING ◦: surface MUSE_WARMUP_MODEL in `museSpeedEnvCheck` (doctor) like
+  num_batch/num_predict, and a per-box cold-start delta measurement.
 - ✓→Done **injection-pattern cross-span tightening** — the EN role_override family + 2 KO
   role_override + 1 KO extraction regexes used unbounded `.*`/`/s`, so three unrelated words from
   DIFFERENT sentences combined into a false hit (live repro: "disregard the noise … finally …
