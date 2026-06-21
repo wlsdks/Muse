@@ -88,7 +88,7 @@ ratchet: testFiles +0 · no code change (planner step) · fabrication 0
 - **리뷰지점**: 코드 변경 없음 → ④b judge N/A(검증할 행동 없음). chat-ink/web/today는 surfaces 루프 소유라 각 슬라이스에 dedup 필요 명시.
 - **lesson**: 단일-pkg cheap seam이 마르면(monoculture) 억지 micro-fix 대신 다음 다른-(pkg,kind) 큰 작업을 **DECOMPOSE해 backlog 적재** — 다음 fire ROI↑. 무인 루프는 이걸 스스로 판단(질문 없이).
 
-## fire 10 · 2026-06-21 · skill v2.1.0 · pending
+## fire 10 · 2026-06-21 · skill v2.1.0 · fe027e05
 meta: value-class=new-capability · pkg=@muse/memory · kind=correction-hook(slice-a) · verdict=PASS · firesSinceDrill=0(discharged) · firesSinceMainMerge=3→0(main FF-merge this fire)
 ratchet: testFiles +1 (memory-auto-extract.test.ts NEW — 이 훅의 첫 테스트) · @muse/memory 543 green · lint clean · fabrication 0
 
