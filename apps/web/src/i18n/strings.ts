@@ -187,7 +187,14 @@ const en = {
   "dash.tokensPerDay": "Tokens per day",
   "dash.latency": "Run latency",
   "dash.samples": "Samples",
-  "dash.topTools": "Most-used tools"
+  "dash.topTools": "Most-used tools",
+
+  "nav.selfImprovement": "Self-improvement",
+  "si.title": "Self-improvement",
+  "si.subtitle": "What Muse has noticed it couldn't answer or do. {n} weaknesses across {a} areas.",
+  "si.count": "seen {n}×",
+  "si.mastery": "mastery",
+  "si.lastSeen": "last seen"
 } as const;
 
 export type StringKey = keyof typeof en;
@@ -374,7 +381,14 @@ const ko: Strings = {
   "dash.tokensPerDay": "일별 토큰",
   "dash.latency": "실행 레이턴시",
   "dash.samples": "표본 수",
-  "dash.topTools": "많이 쓴 도구"
+  "dash.topTools": "많이 쓴 도구",
+
+  "nav.selfImprovement": "자기강화",
+  "si.title": "자기강화",
+  "si.subtitle": "Muse가 답하거나 하지 못했다고 스스로 인지한 것. {a}개 영역에 걸쳐 {n}건.",
+  "si.count": "{n}회 관측",
+  "si.mastery": "숙달도",
+  "si.lastSeen": "최근 관측"
 };
 
 export const DICTIONARIES: Record<Lang, Strings> = { en, ko };

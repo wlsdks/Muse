@@ -11,6 +11,7 @@ import {
   resolveObjectivesFile,
   resolvePendingApprovalsFile,
   resolveVetoesFile,
+  resolvePlaybookFile,
   resolveWeaknessesFile
 } from "@muse/autoconfigure";
 import { queryContacts, runActuatorByName } from "@muse/mcp";
@@ -321,7 +322,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   registerSelfImprovementRoutes(server, {
     authService,
-    weaknessesFile: options.weaknessesFile ?? resolveWeaknessesFile(process.env)
+    weaknessesFile: options.weaknessesFile ?? resolveWeaknessesFile(process.env),
+    playbookFile: options.playbookFile ?? resolvePlaybookFile(process.env)
   });
 
   // Optional Phase B daemon: every MUSE_REMINDER_TICK_MS (default
