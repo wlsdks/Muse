@@ -99,3 +99,32 @@ browser-check: palette opened, 16 cmds on empty query; real-title substring "오
 
 mutation-first: changing the prefix score 100→60 turned the ranking test RED;
 restored → 7/7 GREEN. ④b independent Opus judge: PASS.
+
+## fire 5 · 2026-06-22 · skill v2.1.0 · (pending commit)
+meta: value-class=shipped-asset-integrity · area=tests · kind=test · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles +1 (MuseSpriteTests, 6 cases) · companion×refactor 1 · settings×feature 1 · server×refactor 1 · web×ux 1 · tests×test 1 · fabrication 0
+browser-check: n/a (Swift unit test only)
+
+- **What**: added the only missing MuseDesktopCore test class — MuseSpriteTests —
+  validating the integrity of the SHIPPED mascot `MuseSprite.default` (rectangular
+  rows, palette covers every cell, valid hexes, dims match declared w/h, animation
+  override rows in range + width-matched + palette-mapped). Test-only, no source change.
+- **Why**: the renderer SILENTLY skips unmapped glyphs / unparseable hexes, so a
+  hand-edited ASCII-art row or a typo'd palette key would ship a holed/skewed
+  mascot with no crash and nothing else catching it. MuseSprite was the last
+  untested Core type.
+- **Review point**: pins ACTUAL shipped data, not a fixture. Independent Opus ④b
+  judge ran 5 mutations (ragged row, unmapped grid char, out-of-range mouth index,
+  short override row, unmapped override char) — each caught by the precise test.
+- **Risk**: none — test-only, no shipped-code change, no security surface.
+
+EXHAUSTION note: after this, every MuseDesktopCore type has a test class — the
+"add Core coverage" vein is dry; next tests-area work should target web (vitest)
+or a new behavior, not more Core coverage.
+lesson (process): initial pick duplicated VoiceGateTests (VoiceGate was already
+tested inside PresentationTests.swift); the file-name-based untested scan missed
+it. Caught at compile (redeclaration), deleted, repointed to MuseSprite. Grep for
+the test CLASS, not the file name, when assessing coverage.
+
+mutation-first: truncating a shipped grid row turned 2 tests RED; restored → 6/6
+GREEN. ④b independent Opus judge: PASS.
