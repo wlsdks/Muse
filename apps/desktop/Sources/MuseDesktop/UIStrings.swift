@@ -26,6 +26,12 @@ struct UIStrings {
     var characterGoddess: String { t("여신", "Goddess") }
     var characterOrb: String { t("오브", "Orb") }
 
+    // Menu-bar status line
+    var statusLocalOn: String { t("🔒 로컬 전용", "🔒 Local-only") }
+    var statusLocalOff: String { t("⚠️ 클라우드 허용", "⚠️ Cloud allowed") }
+    var statusServerOn: String { t("서버 켜짐", "server running") }
+    var statusServerOff: String { t("서버 꺼짐", "server stopped") }
+
     // Settings window
     var settingsTitle: String { t("Muse 설정", "Muse Settings") }
     var tagline: String { t("세상이 아니라, 너를 학습한다.", "Learns you, not the world.") }

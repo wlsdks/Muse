@@ -23,6 +23,10 @@ final class ServerManager {
     private var intentionalStop = false
     private let maxRestarts = 3
 
+    /// Cheap, non-blocking hint for the menu-bar status line (we spawned a server
+    /// that hasn't intentionally stopped). Not a health check.
+    var isLikelyRunning: Bool { process != nil }
+
     private var binPath: String? {
         guard let p = Bundle.main.resourceURL?.appendingPathComponent("muse-api-bin").path,
               FileManager.default.isExecutableFile(atPath: p) else { return nil }

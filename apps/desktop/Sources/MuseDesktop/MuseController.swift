@@ -9,11 +9,12 @@ extension Notification.Name {
 
 /// Owns the companion's app-level pieces: the floating panel, a menu-bar item,
 /// and a global hotkey. One small coordinator so `AppDelegate` stays trivial.
-final class MuseController: NSObject {
+final class MuseController: NSObject, NSMenuDelegate {
     private let panel = FloatingPanel()
     private var statusItem: NSStatusItem?
     private var hotKey: GlobalHotKey?
     private var muteItem: NSMenuItem?
+    private weak var statusInfoItem: NSMenuItem?
     private lazy var settingsWindow = SettingsWindowController()
     private lazy var webWindow = MuseWebWindowController()
 
@@ -53,6 +54,15 @@ final class MuseController: NSObject {
 
         let s = UIStrings.current()
         let menu = NSMenu()
+        menu.delegate = self
+
+        // Live status: privacy posture · model · server (refreshed on open).
+        let info = NSMenuItem(title: statusTitle(), action: nil, keyEquivalent: "")
+        info.isEnabled = false
+        menu.addItem(info)
+        menu.addItem(.separator())
+        statusInfoItem = info
+
         // The primary action first — one click into the full app (chat + everything).
         let openItem = add(menu, s.menuOpenFull, #selector(openFullApp))
         openItem.image = NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: nil)
@@ -101,6 +111,19 @@ final class MuseController: NSObject {
         mi.target = self
         menu.addItem(mi)
         return mi
+    }
+
+    /// Refresh the status line each time the menu opens (model/server can change).
+    func menuWillOpen(_ menu: NSMenu) { statusInfoItem?.title = statusTitle() }
+
+    private func statusTitle() -> String {
+        let s = UIStrings.current()
+        let env = ProcessInfo.processInfo.environment
+        let localOnly = (env["MUSE_LOCAL_ONLY"] ?? "true") != "false"
+        let model = env["MUSE_MODEL"] ?? "ollama/gemma4:12b"
+        let modelShort = model.split(separator: "/").last.map(String.init) ?? model
+        let server = ServerManager.shared.isLikelyRunning ? s.statusServerOn : s.statusServerOff
+        return "\(localOnly ? s.statusLocalOn : s.statusLocalOff) · \(modelShort) · \(server)"
     }
 
     @objc private func toggleFromMenu() { toggleVisibility() }
