@@ -19,6 +19,7 @@ import { SettingsView } from "../views/Settings.js";
 import { TasksView } from "../views/Tasks.js";
 import { TodayView } from "../views/Today.js";
 import { McpServersView } from "../views/McpServers.js";
+import { SelfImprovementView } from "../views/SelfImprovement.js";
 import { ToolsView } from "../views/Tools.js";
 import { useShortcuts } from "./useShortcuts.js";
 
@@ -46,6 +47,7 @@ type ViewId =
   | "dashboard"
   | "tools"
   | "mcp"
+  | "self-improvement"
   | "settings";
 type GroupKey = "group.workspace" | "group.knowledge" | "group.system";
 
@@ -58,7 +60,7 @@ interface NavEntry {
   readonly Component: ComponentType<{ client: ApiClient }>;
 }
 
-const NAV: readonly NavEntry[] = [
+export const NAV: readonly NavEntry[] = [
   { Component: TodayView, group: "group.workspace", icon: Icon.home, id: "today", key: "t", labelKey: "nav.today" },
   { Component: ChatView, group: "group.workspace", icon: Icon.chat, id: "chat", key: "c", labelKey: "nav.chat" },
   { Component: TasksView, group: "group.workspace", icon: Icon.task, id: "tasks", key: "k", labelKey: "nav.tasks" },
@@ -72,6 +74,7 @@ const NAV: readonly NavEntry[] = [
   { Component: DashboardView, group: "group.system", icon: Icon.chart, id: "dashboard", key: "d", labelKey: "nav.dashboard" },
   { Component: ToolsView, group: "group.system", icon: Icon.tool, id: "tools", key: "o", labelKey: "nav.tools" },
   { Component: McpServersView, group: "group.system", icon: Icon.plug, id: "mcp", key: "p", labelKey: "nav.mcp" },
+  { Component: SelfImprovementView, group: "group.system", icon: Icon.brain, id: "self-improvement", key: "w", labelKey: "nav.selfImprovement" },
   { Component: SettingsView, group: "group.system", icon: Icon.settings, id: "settings", key: "s", labelKey: "nav.settings" }
 ];
 

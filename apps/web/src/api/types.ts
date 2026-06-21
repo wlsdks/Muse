@@ -241,6 +241,21 @@ export interface VetoesResponse {
   readonly total: number;
 }
 
+export interface WeaknessView {
+  axis: string;
+  topic: string;
+  count: number;
+  firstSeen: string;
+  lastSeen: string;
+  hint: string | null;
+  pKnown: number | null;
+}
+
+export interface WeaknessesResponse {
+  total: number;
+  entries: WeaknessView[];
+}
+
 export interface UserMemoryResponse {
   readonly facts?: Record<string, string>;
   readonly preferences?: Record<string, string>;
