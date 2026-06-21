@@ -24,7 +24,7 @@ ratchet: pkg/kind DIFFERS from fire 1 (scripts/measurement-infra → model+autoc
   검증: model 366 pass + autoconfigure 622 pass · MUTATION-FIRST 2종(A: num_batch 절대-미방출→2 RED; B: 항상-512→5 RED 기존 와이어 스냅샷 포함; revert→green) · pnpm check rc=0(api 864 + cli 2857) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(자체 mutation 재현, 전 edge값 omit 추적, 결함 0).
   형제-감사: num_thread/num_gpu(하드웨어-오프로드 노브)는 enumerate 후 backlog ◦ defer(하드웨어-특정·Ollama 자동탐지 보통 정확·박스별 bench 필요).
 
-## fire 3 · 2026-06-21 · local-speed · <commit>
+## fire 3 · 2026-06-21 · local-speed · 3a038607
 meta: value-class=new-capability · pkg=@muse/multi-agent · kind=cascade-routing(paper) · verdict=PASS · firesSinceDrill=3
 ratchet: pkg/kind DIFFERS (scripts/infra → model/adapter → multi-agent/cascade) · fabrication 0 · 기본경로 byte-identical
 - 무엇: FrugalGPT(arXiv:2305.05176) 캐스케이드 escalation 결정 프리미티브 C1. `shouldEscalateToHeavy(confidence, threshold=-1.0)` + `DEFAULT_CASCADE_ESCALATE_LOGPROB`(@muse/multi-agent tiering.ts) + `planTieredRun`에 optional `priorConfidence?: ReadonlyMap<id, number|undefined>`/`escalateThreshold` — fast로 분류됐고 priorConfidence에 존재하며 fast-pass mean-logprob이 낮은 task를 heavy로 escalate(plan assignment = 실제 terminal state 변화). confidence=mean token logprob(≤0, 높을수록 자신감), undefined/NaN/-Inf → escalate(안전방향, classifyTier의 default-to-heavy 미러).
