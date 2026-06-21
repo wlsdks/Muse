@@ -22,3 +22,12 @@ ratchet: testFiles +0 (same file +4 cases) · @muse/memory 41 files/513 tests gr
 - **리뷰지점**: 순수함수. citation은 항상 `(${source})`로 임베드(누락 경로 없음). forget-filter가 핵심 결정. surfaces 0겹침(@muse/memory leaf).
 - **리스크**: 없음 — additive, 513 green, lint clean, 독립 Opus ④b judge가 forget-filter mutation 직접 재확인 PASS.
 - **lesson**: Tier2 published 브랜치는 fire 시작 시 `rebase origin/main` 쓰지 마라 — 이미 push된 fire 커밋을 재작성해 force-push가 필요(계약 위반). **`git merge origin/main`을 써라**(published 커밋 보존, push가 fast-forward). 루프 프롬프트의 "rebase" 문구는 merge로 실행할 것([[project_paper_grounded_loop]] 재확인).
+
+## fire 3 · 2026-06-21 · skill v2.1.0 · pending
+meta: value-class=wiring · pkg=@muse/cli · kind=surface-wiring · verdict=PASS · firesSinceDrill=3 · firesSinceMainMerge=3→0(main FF-merge this fire)
+ratchet: testFiles +0 (human-formatters.test +2 cases) · @muse/cli 245 files/2861 tests green · lint clean · fabrication 0
+
+- **무엇**: `muse memory show`가 **"Recently learned about you:"** 섹션을 출력 — `readLocalMemory`(commands-memory.ts)가 `projectRecentlyLearned`→`renderRecentlyLearnedLines`로 계산, `formatMemoryShow`(human-formatters.ts)가 각 출처-인용 줄을 렌더. 사용자가 처음으로 "내가 너에 대해 배운 것"을 *보는* 표면.
+- **왜**: fire 1·2의 @muse/memory 결정론 토대를 실제 화면으로. 정체성 "Learns you, not the world."의 첫 가시적 증거 — 그것도 무근거 주장은 코드가 못 내보내는 채로.
+- **리뷰지점**: local/file 경로 한정(factHistory 있는 곳; API 경로는 부재=정직, 서버측 factHistory 미populate). 섹션은 8B 무관 순수 project→render. surfaces 루프가 commands-memory.ts는 안 만짐(today만) → 충돌 회피 타깃.
+- **리스크**: 없음 — 기존 memory-show 동작(facts/prefs/veto/goal/topics) 무변, 빈/부재 시 헤더 생략(false-header 테스트), 독립 Opus ④b judge가 전체 cli 2861 + mutation 재확인 PASS.
