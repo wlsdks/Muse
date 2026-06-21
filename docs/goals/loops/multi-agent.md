@@ -4,6 +4,36 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 20 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit> — ★NEW CAPABILITY (breaks the sentinel streak)
+meta: value-class=new-capability · pkg=@muse/multi-agent · kind=termination-guard · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles +0 (3 cases added to parallel-failure.test.ts, suite 245→248) · fabrication 0 · eval:orchestration PASS · FRESH kind (termination-guard, never done) · breaks 4-fire no-ship streak
+
+**What** — Added an OPT-IN per-worker wall-clock DEADLINE to `MultiAgentOrchestrator` (`workerTimeoutMs?`). Before
+this, a HUNG worker (a wedged model call that never resolves) stalled the WHOLE orchestration forever — there was
+NO timeout anywhere in worker execution (runSequential + runParallel both `await worker.run()` bare). New private
+`runWorkerWithDeadline` `Promise.race`s worker.run against a timer; on timeout it rejects, the EXISTING per-worker
+catch marks that worker `failed`, and the run proceeds with survivors. Omitted ⇒ transparent worker.run (legacy).
+Wired into both runSequential + runParallel.
+
+**Why** — This is the theme's THIRD pillar ("명시적 termination") and it was genuinely UNCOVERED — fire-16's audit
+checked the COUNCIL's termination (round cap) but MISSED that the orchestrator has no hung-worker bound. MAST
+"unaware of termination" (a hung sub-agent). A real new capability, not exposure/hardening.
+
+**Review points** — (1) MUTATION-FIRST: forcing the no-deadline path hangs BOTH hung-worker tests to the 3000ms
+cap (RED); the no-deadline backward-compat test stays green. (2) Mechanism: timer cleared in `finally` (no leak),
+`new Promise<never>` executor synchronous (no async-executor lint). (3) HONEST scope: doc states the deadline
+bounds the WAIT not the compute (no provider cancellation → abandoned call may still run; AbortSignal deferred).
+(4) Independent Opus ④ judge PASS — proved correctness + that the pre-existing pnpm-check RED is unrelated.
+
+**Risk** — ★pnpm check is RED but ONLY in `@muse/autoconfigure` (diagnostic-provider runtime-assembly e2e, 5s
+timeouts) — PROVEN PRE-EXISTING + UNRELATED: (a) reverting this slice still fails identically; (b) the judge
+verified @muse/autoconfigure does NOT depend on @muse/multi-agent (absent from package.json) so this change
+STRUCTURALLY cannot cause it. The cause is a sibling local-speed loop's Ollama-adapter merges (num_predict/
+num_thread/num_batch). Logged as a backlog blocker for that loop. My slice's blast radius is clean (multi-agent
+248 pass · api orchestrate consumers 11 pass + builds · lint 0 · eval:orchestration PASS). DEFERRED follow-ups:
+(i) the `SupervisorAgent.run` route path (different class) still bare-awaits worker.run — wrap it too; (ii)
+AbortSignal/provider cancellation to free the GPU, not just the wait.
+
 ## fire 19 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · NO-SHIP (sentinel — 4th straight, compact)
 meta: value-class=none(no-ship) · pkg=none · kind=regression-sentinel · verdict=NO-SHIP · firesSinceDrill=7
 ratchet: testFiles 1090 · fabrication 0 · self-eval green · sibling merge touched 0 orchestration source files

@@ -356,6 +356,7 @@ export class MultiAgentOrchestrator {
   private readonly messageBus?: AgentMessageBus;
   private readonly historyStore?: OrchestrationHistoryStore;
   private readonly clock: () => Date;
+  private readonly workerTimeoutMs?: number;
 
   constructor(options: {
     readonly workers: readonly AgentWorker[];
@@ -363,6 +364,16 @@ export class MultiAgentOrchestrator {
     readonly messageBus?: AgentMessageBus;
     readonly historyStore?: OrchestrationHistoryStore;
     readonly clock?: () => Date;
+    /**
+     * Per-worker wall-clock deadline (ms). A worker whose run exceeds it is
+     * marked `failed` (MAST "unaware of termination" — explicit termination of a
+     * hung sub-agent) and the run proceeds with the survivors instead of hanging
+     * forever. Opt-in: omitted ⇒ no deadline (legacy behavior). The deadline
+     * bounds the WAIT, not the underlying compute — without provider-level
+     * cancellation the abandoned call may still run; see backlog for the
+     * AbortSignal follow-up.
+     */
+    readonly workerTimeoutMs?: number;
   }) {
     if (options.workers.length === 0) {
       throw new NoAgentWorkerError("MultiAgentOrchestrator requires at least one worker");
@@ -373,6 +384,33 @@ export class MultiAgentOrchestrator {
     this.messageBus = options.messageBus;
     this.historyStore = options.historyStore;
     this.clock = options.clock ?? (() => new Date());
+    this.workerTimeoutMs = options.workerTimeoutMs;
+  }
+
+  /**
+   * Run a worker under the optional per-worker deadline. With no deadline set
+   * this is a transparent `worker.run`. With one, a hung worker rejects at the
+   * deadline so the caller's existing catch marks it `failed` and the run
+   * continues — the same path a throwing worker takes. The timer is always
+   * cleared so a fast worker leaves no dangling handle.
+   */
+  private async runWorkerWithDeadline(worker: AgentWorker, input: AgentRunInput): Promise<AgentRunResult> {
+    const timeoutMs = this.workerTimeoutMs;
+    if (!timeoutMs || timeoutMs <= 0) {
+      return worker.run(input);
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`worker "${worker.id}" exceeded the ${timeoutMs.toString()}ms deadline`)),
+        timeoutMs
+      );
+    });
+    try {
+      return await Promise.race([worker.run(input), deadline]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async run(input: AgentRunInput, options: OrchestrationRunOptions = {}): Promise<MultiAgentOrchestrationResult> {
@@ -502,7 +540,7 @@ export class MultiAgentOrchestrator {
 
     for (const worker of workers) {
       try {
-        const raw = await worker.run(withSelectedWorker(currentInput, worker));
+        const raw = await this.runWorkerWithDeadline(worker, withSelectedWorker(currentInput, worker));
         const parsed = parseWorkerResult(raw);
         if (!parsed.ok) {
           results.push({ error: parsed.reason, status: "failed", workerId: worker.id });
@@ -538,7 +576,7 @@ export class MultiAgentOrchestrator {
   private async runParallel(input: AgentRunInput, workers: readonly AgentWorker[]): Promise<readonly OrchestrationStepResult[]> {
     return Promise.all(workers.map(async (worker): Promise<OrchestrationStepResult> => {
       try {
-        const raw = await worker.run(withSelectedWorker(input, worker));
+        const raw = await this.runWorkerWithDeadline(worker, withSelectedWorker(input, worker));
         const parsed = parseWorkerResult(raw);
         if (!parsed.ok) {
           await this.publishWorkerFailure(worker.id, new Error(parsed.reason)).catch(() => undefined);
