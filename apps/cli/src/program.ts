@@ -266,6 +266,13 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       writeOut: io.stdout
     });
 
+  // Muse exposes ~80 commands; insertion order makes `muse --help` an
+  // unscannable wall. Sort commands + options alphabetically so a name is
+  // findable by its first letter (the quickstart block below still
+  // highlights the daily-driver few).
+
+  program.configureHelp({ sortSubcommands: true, sortOptions: true });
+
   program.addHelpText("after", () => `\n${museQuickstartHelp()}`);
 
   program
