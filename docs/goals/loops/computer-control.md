@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 46 · 2026-06-21 · skill v2.0 · <commit> (JUDGE-DRILL: verifier caught inert slice → real wired grep-narrowing hint shipped)
+## fire 46 · 2026-06-21 · skill v2.0 · 63cf3d63 (JUDGE-DRILL: verifier caught inert slice → real wired grep-narrowing hint shipped)
 meta: value-class=new-capability+judge-drill · pkg=@muse/fs · kind=grep-result-actionability · verdict=DRILL-PASS+PASS · firesSinceDrill=0(reset)
 ratchet: testFiles +0 files / +3 grep-hint OUTCOME cases · fabrication 0 · @muse/fs 62 (mutation-verified) · pnpm check exit 0 · lint 0/0 · Ollama DOWN (evals skip)
 - JUDGE-DRILL (의무, 연속 allPASS=8): 고의 INERT 슬라이스 주입 — `suggestNarrowerGlob` helper를 export+isolated 단위테스트만 하고 createFileGrepTool에 **배선 안 함**(게이트는 GREEN). 독립 Opus ④b judge가 정확히 적발: "exported+unit-tested but NEVER called in executed path; truncated returns 불변; wired-but-inert; behavioral delta=ZERO; mutation: helper body 비우면 isolated 테스트만 깨짐." → verifier가 rubber-stamp 아님 입증. git restore 롤백.
