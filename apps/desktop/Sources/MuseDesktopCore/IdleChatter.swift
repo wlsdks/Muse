@@ -9,6 +9,15 @@ public enum IdleChatter {
     /// A thought longer than this reads as a paragraph, not a one-liner.
     public static let maxThoughtLength = 160
 
+    /// How long the idle bubble should stay up for a line of `length` characters
+    /// — proportional to reading time so a long generated thought isn't cleared
+    /// before it can be read, clamped to a sane [6s, 20s] window. A short
+    /// greeting gets the floor; the 160-char max gets near the ceiling.
+    public static func displaySeconds(forTextLength length: Int) -> Double {
+        let raw = 4.0 + Double(max(0, length)) * 0.09
+        return min(20, max(6, raw))
+    }
+
     /// The next canned greeting to show, avoiding an immediate repeat of `last`
     /// (so even a single-step index or a changed line list won't say the same
     /// thing twice in a row). Deterministic — no randomness.

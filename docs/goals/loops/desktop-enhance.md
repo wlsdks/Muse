@@ -263,3 +263,24 @@ browser-check: n/a (native WKNavigationDelegate, not web content)
 
 mutation-first: exact host-match → contains() (security bypass) turned the
 lookalike test RED; restored → 6/6 GREEN. ④b independent Opus judge: PASS.
+
+## fire 12 · 2026-06-22 · skill v2.1.0 · (pending commit)
+meta: value-class=companion-readability · area=companion · kind=feature · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles +0 (2 cases added to IdleChatterTests) · companion×refactor 1 · companion×feature 2 · settings×feature 1 · server×refactor 1 · web×ux 1 · web×i18n 1 · web×a11y 1 · tests×test 1 · menu×refactor 1 · onboarding×refactor 1 · webview×refactor 1 · fabrication 0
+browser-check: n/a (Swift-only; bubble timer is AppKit)
+
+- **What**: adaptive idle-bubble display time — pure `displaySeconds(forTextLength:)`
+  (reading-time proportional, clamped [6,20]) replacing the fixed 16s; the clear
+  moved into setIdle as a CANCELLABLE DispatchWorkItem so a long generated thought
+  that replaces a short greeting re-arms its own longer window.
+- **Why**: a 160-char generated thought was cleared at the same 16s as a 4-char
+  "안녕", sometimes before it could be read; short lines lingered too long.
+- **Review point**: float-equality of the 100→13 test is sound (100*0.09 rounds to
+  exactly 9.0 — ④b judge verified); cancel() prevents the old canned timer firing
+  early after a replace; handleLoadProgress (voice flow) intentionally not auto-
+  cleared. Independent Opus ④b ran 3 mutations (factor, clamp, floor) — all caught.
+- **Risk**: low — pure fn + setIdle timer refactor; [weak self], no retain cycle.
+  No security surface.
+
+mutation-first: zeroing the length factor (0.09→0.0) turned 3 tests RED;
+restored → 14/14 GREEN. ④b independent Opus judge: PASS.

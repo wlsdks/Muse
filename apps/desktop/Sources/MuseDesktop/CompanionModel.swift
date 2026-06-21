@@ -52,6 +52,7 @@ final class CompanionModel: ObservableObject {
     private var showingIdleLine = false
     private var lastIdleText = ""
     private var recentIdle: [String] = []
+    private var idleClearWork: DispatchWorkItem?
 
     /// Muse greets you and, while idle, drifts a friendly line into a speech
     /// bubble now and then — so she feels present and talks first, instead of a
@@ -86,17 +87,22 @@ final class CompanionModel: ObservableObject {
         idleLineIndex += 1
         setIdle(canned)
         Task { [weak self] in await self?.generateIdleThought() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 16) { [weak self] in
-            guard let self, self.showingIdleLine, self.bubble == self.lastIdleText else { return }
-            self.showingIdleLine = false
-            self.bubble = ""
-        }
     }
 
     private func setIdle(_ text: String) {
         lastIdleText = text
         bubble = text
         showingIdleLine = true
+        // Re-arm an adaptive auto-clear for THIS line: a longer (e.g. generated)
+        // thought that replaces a short greeting gets its own, longer window.
+        idleClearWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.showingIdleLine, self.bubble == self.lastIdleText else { return }
+            self.showingIdleLine = false
+            self.bubble = ""
+        }
+        idleClearWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + IdleChatter.displaySeconds(forTextLength: text.count), execute: work)
         recentIdle.append(text)
         if recentIdle.count > 4 { recentIdle.removeFirst(recentIdle.count - 4) }
     }

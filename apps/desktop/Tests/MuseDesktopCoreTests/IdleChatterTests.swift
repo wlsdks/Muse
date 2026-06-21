@@ -67,6 +67,20 @@ final class IdleChatterTests: XCTestCase {
         XCTAssertEqual(IdleChatter.timeGreeting(hour: -1, language: .english), "It's late — don't overdo it 🌙")
     }
 
+    func testDisplaySecondsScalesWithLengthWithinClamp() {
+        XCTAssertEqual(IdleChatter.displaySeconds(forTextLength: 0), 6)    // floor
+        XCTAssertEqual(IdleChatter.displaySeconds(forTextLength: 5), 6)    // still floored (4.45 → 6)
+        XCTAssertEqual(IdleChatter.displaySeconds(forTextLength: 100), 13) // 4 + 9 = 13, mid-range
+        XCTAssertEqual(IdleChatter.displaySeconds(forTextLength: 1000), 20) // ceiling
+    }
+
+    func testDisplaySecondsIsMonotonicAndLongerThanShort() {
+        XCTAssertGreaterThan(
+            IdleChatter.displaySeconds(forTextLength: 160),
+            IdleChatter.displaySeconds(forTextLength: 10)
+        )
+    }
+
     func testRejectsNearDuplicateOfRecent() {
         // Same words, different case/whitespace/punctuation ⇒ treated as a repeat.
         XCTAssertNil(IdleChatter.acceptThought("Hi there!", recent: ["hi  there"]))

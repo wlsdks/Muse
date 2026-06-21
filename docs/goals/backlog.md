@@ -2937,3 +2937,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ extract+test onboarding fix-it guidance (OnboardingGuidance) — desktop-enhance fire 10
 - ✓ extract+test WebView navigation security gate (WebNavPolicy) — desktop-enhance fire 11
 - ◦ WebNavPolicy hardening nits: host.lowercased() for case-symmetry + treat IPv6 [::1] as loopback (fail-safe today) — desktop-enhance follow-up
+- ✓ adaptive idle-bubble display duration (IdleChatter.displaySeconds + cancellable clear) — desktop-enhance fire 12
