@@ -5,7 +5,7 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 32 · 2026-06-21 · skill v2.0 · <commit-pending> (runResistingFalseDone — re-prompt extracted to a shared bounded-retry wrapper; decompose 30b)
+## fire 32 · 2026-06-21 · skill v2.0 · 58d3fa0e (runResistingFalseDone — re-prompt extracted to a shared bounded-retry wrapper; decompose 30b)
 meta: value-class=refactor/seam · pkg=@muse/agent-core+apps/cli · kind=refactor/seam+bounded-retry · verdict=PASS · firesSinceDrill=3
 ratchet: testFiles 1071→1072 (+1 file false-done-reprompt 4 cases, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2542 · @muse/cli 격리 2827 · pnpm check exit 0 · lint clean · Ollama DOWN
 - 무엇: 백스톱 ACTION 반쪽(unbacked면 clean-history 1회 재실행, 실제 행동시만 채택)이 chat-repl:634 inline → `runResistingFalseDone({query,firstResult,retry})` generic wrapper로 추출(agent-core). caller가 retry thunk 제공→AgentRuntime 의존 없음. chat-repl DRY.
