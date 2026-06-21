@@ -5,6 +5,16 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 46 · 2026-06-21 · skill v2.0 · <commit> (JUDGE-DRILL: verifier caught inert slice → real wired grep-narrowing hint shipped)
+meta: value-class=new-capability+judge-drill · pkg=@muse/fs · kind=grep-result-actionability · verdict=DRILL-PASS+PASS · firesSinceDrill=0(reset)
+ratchet: testFiles +0 files / +3 grep-hint OUTCOME cases · fabrication 0 · @muse/fs 62 (mutation-verified) · pnpm check exit 0 · lint 0/0 · Ollama DOWN (evals skip)
+- JUDGE-DRILL (의무, 연속 allPASS=8): 고의 INERT 슬라이스 주입 — `suggestNarrowerGlob` helper를 export+isolated 단위테스트만 하고 createFileGrepTool에 **배선 안 함**(게이트는 GREEN). 독립 Opus ④b judge가 정확히 적발: "exported+unit-tested but NEVER called in executed path; truncated returns 불변; wired-but-inert; behavioral delta=ZERO; mutation: helper body 비우면 isolated 테스트만 깨짐." → verifier가 rubber-stamp 아님 입증. git restore 롤백.
+- 진짜 fix: judge가 처방한 대로 배선 — createFileGrepTool의 truncated return(files+content 양 모드)에 `hint` 추가("result capped — narrow the search … 더 구체적 pattern" + glob 미지정 시 glob 제안). truncated일 때만(완전 결과 무오염), glob 이미 지정 시 glob 제안 생략. 정적 가이드 문자열(fabrication 0).
+- 왜: truncated grep이 가이드 0이면 12B가 맹목 페이징/부분 매치셋으로 오결론 — grep→edit 체인 핵심. fire 43(경로거부 힌트)·44(run_command truncation flag) 형제, 다른 surface(grep 결과 actionability).
+- 리뷰지점: drill bad→judge FAIL(구체적), real→mutation-first(narrowingHint=undefined면 정확히 2 hint 테스트 RED, no-hint GREEN)→독립 Opus judge가 mutation 재현+양모드 배선 확인 → VERDICT PASS. 180/180 @muse/fs.
+- 리스크: live OUTCOME 미검증(Ollama down)이나 결정론 OUTCOME 테스트(execute() 반환객체의 hint)로 완전 커버. fire 46은 3의 배수 아님 → main 머지 없음.
+lesson: JUDGE-DRILL 레시피 검증됨 — INERT(배선 누락) 슬라이스가 가장 현실적인 적대 케이스(녹색 게이트+제로 행동변화); judge는 "executed path에서 호출되나? mutation이 TOOL 행동 테스트를 깨나?"로 잡는다. drill 후 firesSinceDrill=0 리셋.
+
 ## fire 45 · 2026-06-21 · skill v2.0 · 8c9746cb (eval:multifile-fix grades OUTCOME not path + reflection-guard registry regression fix)
 meta: value-class=eval-correctness+regression-fix · pkg=scripts/eval · kind=outcome-grading · verdict=PASS · firesSinceDrill=8
 ratchet: testFiles +0 (scripts) / +6 grader cases + reflection-guard repoint · fabrication 0 · self-eval:test 48/48 · grader 6/6 (mutation-verified) · lint 0/0 · pnpm check @muse/resilience SIGABRT(134)=saturation (isolated 26/26, scripts-only change) · Ollama DOWN · ★main ff-merge (fire 45=×3)
