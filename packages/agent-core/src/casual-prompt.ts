@@ -167,10 +167,14 @@ export function answerClaimsAction(answer: string): boolean {
 }
 
 // A state-CHANGING tool name: the `.add/.update/.delete/.complete/.save/.create/
-// .remove` actuator verbs, or a `_action` tool. A read/list tool (e.g.
-// `muse.tasks.list`, `knowledge_search`) is NOT one — so "did an actuator run?"
-// stays distinct from "did any tool run?".
-const ACTION_TOOL_RE = /\.(add|update|delete|complete|save|create|remove)\b|_action\b/u;
+// .remove` actuator verbs, a `_action` tool, or a @muse/fs computer-control
+// mutator (`file_edit/file_write/file_multi_edit/file_delete/file_move`,
+// `run_command`). A read/list tool (`muse.tasks.list`, `knowledge_search`,
+// `file_read/file_grep/file_list`) is NOT one — so "did an actuator run?" stays
+// distinct from "did any tool run?". Without the fs/run_command arm, a real
+// `file_edit` on a code-fix task was misread as NO action, so the false-claim
+// backstop wrongly flagged an honest "I fixed it" as unbacked.
+const ACTION_TOOL_RE = /\.(add|update|delete|complete|save|create|remove)\b|_action\b|\b(?:file_(?:edit|write|multi_edit|delete|move)|run_command)\b/u;
 
 /** True when at least one STATE-CHANGING (actuator) tool ran — used to tell a real action from a false promise. */
 export function actionToolRan(toolNames: readonly string[]): boolean {

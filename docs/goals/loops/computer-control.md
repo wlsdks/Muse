@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 25 · 2026-06-21 · skill v2.0 · <commit-pending> (false-done backstop recognises fs/run_command actuators)
+meta: value-class=micro-fix(real-bug) · pkg=@muse/agent-core · kind=honesty/false-done · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles 1071→1071 (+1 case casual-prompt, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2533 · pnpm check exit 0 · lint clean · Ollama DOWN
+- 무엇: SCOUT — false-done/persistence 백스톱이 *이미 존재+배선*됨(`answerClaimsAction`+`actionToolRan` → commands-ask:2590 flag + chat-repl:553 re-prompt). BUG: `actionToolRan`의 `ACTION_TOOL_RE`가 fs 도구 도입 전이라 `.add/.update/…`+`_action`만 인식 → `file_edit`/`file_write`/`file_multi_edit`/`file_delete`/`file_move`/`run_command` 미인식 → 실제 file_edit한 코드-fix를 "no action"으로 오독 → 정직한 "I fixed it"을 unbacked로 오탐(+chat 헛 re-prompt). FIX: 분류기에 fs/run_command arm 추가.
+- 왜: 멀티스텝 *완성* 검증의 핵심 — 백스톱이 테마의 바로 그 액추에이터(fs)를 몰라 컴퓨터-제어 작업을 매번 오탐. dup 모듈 지을 뻔 했으나 scout가 기존 export 발견(answerClaimsAction/actionToolRan) → 기존 머신 수정이 정답.
+- 리뷰지점: mutation-valid(RED 전; 6 mutator→true, read 3→false). ④b judge PASS — **false-positive 교정 + true-positive 보존**(actionToolRan([])===false인 진짜 false-done 여전히 발화), over-match 0(file_editor_config/run_commander/profile_edit false; `\b`+닫힌 alternation), tasks/calendar verb arm byte-identical, 2533 green. run_command(execute-risk) 포함 타당.
+- 리스크: 낮음 — 분류기 정규식 1 arm 추가(claim 검출/wiring 불변). ④b PASS.
+lesson: 새 capability(detector) 짓기 전 *기존 머신 scout 필수* — false-done 백스톱이 이미 완비+배선돼 있었고 진짜 갭은 "fs 액추에이터 미등록"(테마 도구가 backstop보다 늦게 생겨 분류기가 stale). 중복 회피 + 실제 버그 수정. agentic-persistence re-prompt는 *이미 존재*하며 이 fire로 컴퓨터-제어서 작동.
+
 ## fire 24 · 2026-06-21 · skill v2.0 · 7474abed (file_read nextOffset paging hint; 3-fire merge)
 meta: value-class=new-capability · pkg=@muse/fs · kind=reliability-nudge(output-paging) · verdict=PASS · firesSinceDrill=5
 ratchet: testFiles 1071→1071 (+2 cases fs-read-tools paging+char-cap, mutation-valid) · fabrication 0 · @muse/fs 격리 166 · pnpm check exit 0 · lint clean · Ollama DOWN(measure-first 불가, gap-scout fallback)

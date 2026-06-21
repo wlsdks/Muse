@@ -10,6 +10,16 @@ describe("actionToolRan — did a STATE-CHANGING (actuator) tool run?", () => {
     expect(actionToolRan(["muse.tasks.list", "knowledge_search"])).toBe(false);
     expect(actionToolRan([])).toBe(false);
   });
+
+  it("recognises the @muse/fs computer-control actuators (so a real file_edit isn't flagged as a false claim)", () => {
+    for (const tool of ["file_edit", "file_write", "file_multi_edit", "file_delete", "file_move", "run_command"]) {
+      expect(actionToolRan([tool])).toBe(true);
+    }
+    // reads are NOT state-changing — they must stay non-actuators.
+    for (const tool of ["file_read", "file_grep", "file_list"]) {
+      expect(actionToolRan([tool])).toBe(false);
+    }
+  });
 });
 
 describe("classifyCasualPrompt — pure social prompts only (precision-first)", () => {
