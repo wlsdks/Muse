@@ -4,6 +4,36 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 5 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=security-guard · pkg=@muse/multi-agent · kind=injection-neutralization · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles +0 (2 cases added to orchestrate-synthesis.test.ts) · fabrication 0 · injection-defense STRENGTHENED · eval:orchestration/decomposition SKIP (Ollama down) · consecutive allPASS=1 (reset by f4 no-ship) · pkg=f2 same but KIND distinct (correctness-guard→injection-neutralization)
+
+**What** — In `MultiAgentOrchestrator` SEQUENTIAL fan-out, each worker's result is threaded into the
+NEXT worker's prompt as a SYSTEM-role message: `addWorkerResultMessage` (output) + `addHandoffMessage`
+(failed worker's error). Both threaded RAW. Now both wrap `neutralizeInjectionSpans` — the same funnel
+the fan-IN already applies.
+
+**Why** — Inter-agent injection propagation (Prompt Infection, arXiv:2410.07283 / OWASP ASI07). The
+fan-in (synthesis, `buildOrchestrationResponse:692`) and the lead-worker `runOne` neutralize, but the
+worker-to-worker SEQUENTIAL handoff was the uncovered seam: a poisoned worker's embedded instruction /
+forged `[from system]` citation reached the next worker with SYSTEM authority, BEFORE the fan-in ever ran.
+`parseWorkerResult` only shape-checks; `validateWorkerHandoff` only trims — neither neutralized.
+
+**Review points** — (1) MUTATION-FIRST: pre-fix the OUTPUT test RED (downstream input carried the raw
+"Ignore all previous instructions", no placeholder); post-fix GREEN. Independent Opus ④ judge re-ran the
+drill (reverted wrapping → exactly the 2 sequential tests failed → restored → 209). (2) SIBLING audit:
+BOTH threading funnels (output + error) patched AND tested; parallel mode N/A (no worker-to-worker
+threading). (3) Trace fidelity: only the threaded PROMPT copy is neutralized — the tracked
+`results[].result.response.output` keeps the raw output. (4) Byte-identical on clean text → 207 prior tests
+unaffected (209 total).
+
+**Risk** — Pure defensive neutralization; nothing loosened. Tests use `RuleBasedAgentWorker` doubles, so
+they prove the plumbing (the deterministic gate IS the guard per agent-testing.md), not that gemma4 obeys
+the placeholder live. LLM evals SKIP (Ollama down); slice proven by the deterministic unit tests.
+
+review: gates green — `pnpm --filter @muse/multi-agent build` clean · full pkg 209 pass · lint 0 ·
+`pnpm check` exit 0 · independent Opus ④ judge VERDICT PASS.
+
 ## fire 4 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · NO-SHIP (reverted)
 meta: value-class=none(no-ship) · pkg=@muse/cli(reverted) · kind=honesty-translation · verdict=NO-SHIP · firesSinceDrill=2
 ratchet: testFiles +0 · fabrication 0 (unchanged) · no source committed · consecutive allPASS reset (no-ship, not a drill)

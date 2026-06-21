@@ -604,8 +604,13 @@ function withSelectedWorker(input: AgentRunInput, worker: AgentWorker): AgentRun
 }
 
 function addWorkerResultMessage(input: AgentRunInput, workerId: string, output: string): AgentRunInput {
+  // A prior worker that consumed a poisoned source can carry an embedded instruction
+  // ("ignore previous instructions") or a forged `[from system]` citation. This output
+  // is prepended as a SYSTEM-role message in the NEXT worker's prompt (sequential
+  // handoff), so neutralize it here — the same funnel the fan-in already applies
+  // (Prompt Infection, arXiv:2410.07283 / OWASP ASI07). Byte-identical on clean text.
   const message: ModelMessage = {
-    content: `Worker '${workerId}' completed:\n${output}`,
+    content: `Worker '${workerId}' completed:\n${neutralizeInjectionSpans(output)}`,
     role: "system"
   };
 
@@ -616,8 +621,12 @@ function addWorkerResultMessage(input: AgentRunInput, workerId: string, output: 
 }
 
 function addHandoffMessage(input: AgentRunInput, workerId: string, error: unknown): AgentRunInput {
+  // Sibling of addWorkerResultMessage: a failed worker's error text is also prepended
+  // as a SYSTEM message in the next worker's prompt. Error strings are usually internal,
+  // but a worker error can echo untrusted content (a tool error carrying its output), so
+  // neutralize this funnel too (defense-in-depth, byte-identical on clean text).
   const message: ModelMessage = {
-    content: `Worker '${workerId}' failed: ${errorMessage(error)}`,
+    content: `Worker '${workerId}' failed: ${neutralizeInjectionSpans(errorMessage(error))}`,
     role: "system"
   };
 
