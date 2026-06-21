@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction } from "../src/index.js";
+import { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, isUnbackedActionClaim, requestsToolAction } from "../src/index.js";
 
 describe("actionToolRan — did a STATE-CHANGING (actuator) tool run?", () => {
   it("true for an actuator verb tool / _action tool, false for read-only tools or none", () => {
@@ -19,6 +19,21 @@ describe("actionToolRan — did a STATE-CHANGING (actuator) tool run?", () => {
     for (const tool of ["file_read", "file_grep", "file_list"]) {
       expect(actionToolRan([tool])).toBe(false);
     }
+  });
+});
+
+describe("isUnbackedActionClaim — the composed false-done backstop condition (all three legs)", () => {
+  it("TRUE only when a code-fix request is answered with a done-claim and NO actuator ran", () => {
+    const q = "fix the bug in add.ts", a = "I fixed the bug.";
+    // all three legs satisfied → a false done.
+    expect(isUnbackedActionClaim({ query: q, answer: a, toolNames: [] })).toBe(true);
+    expect(isUnbackedActionClaim({ query: q, answer: a, toolNames: ["file_read", "file_grep"] })).toBe(true);
+    // a REAL edit ran → not unbacked (the actuator leg).
+    expect(isUnbackedActionClaim({ query: q, answer: a, toolNames: ["file_edit"] })).toBe(false);
+    // not an action request (no file) → the request leg is false.
+    expect(isUnbackedActionClaim({ query: "what does add.ts do?", answer: a, toolNames: [] })).toBe(false);
+    // the answer claims nothing → the claim leg is false.
+    expect(isUnbackedActionClaim({ query: q, answer: "I read add.ts; the bug is on line 5.", toolNames: [] })).toBe(false);
   });
 });
 

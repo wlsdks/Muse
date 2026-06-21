@@ -238,6 +238,23 @@ export function actionToolRan(toolNames: readonly string[]): boolean {
   return toolNames.some((tool) => ACTION_TOOL_RE.test(tool));
 }
 
+/**
+ * The false-done backstop's composed condition: the user asked Muse to DO
+ * something ({@link requestsToolAction}), the answer CLAIMS it was done
+ * ({@link answerClaimsAction}), yet NO state-changing actuator ran
+ * ({@link actionToolRan}) — a claimed-but-unbacked action. Extracted from the
+ * three inlined call sites (commands-ask, chat-repl ×2) so every surface — and
+ * a future AgentRuntime re-prompt — shares ONE definition; adding a leg can
+ * never again diverge between sites.
+ */
+export function isUnbackedActionClaim(input: {
+  readonly query: string;
+  readonly answer: string;
+  readonly toolNames: readonly string[];
+}): boolean {
+  return requestsToolAction(input.query) && answerClaimsAction(input.answer) && !actionToolRan(input.toolNames);
+}
+
 /** True when the prompt asks for a whole-corpus overview/listing, not a specific recall. */
 export function classifyCorpusOverview(query: string): boolean {
   const q = query.trim().toLowerCase();

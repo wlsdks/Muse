@@ -23,7 +23,7 @@ import type { Readable } from "node:stream";
 import { createMuseRuntimeAssembly, resolveNotesDir, resolveTasksFile } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { actionToolRan, answerClaimsAction, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, requestsToolAction, type KnowledgeMatch } from "@muse/agent-core";
+import { actionToolRan, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, isUnbackedActionClaim, type KnowledgeMatch } from "@muse/agent-core";
 import type { AskTimeNudge, WeaknessEntry } from "@muse/mcp";
 
 import { detectArithmeticQuery, formatArithmeticResult } from "./arithmetic-query.js";
@@ -631,7 +631,7 @@ export async function runLocalChat(
   // with a clean one). Re-run the action turn with NO prior history to clear the
   // poisoning, and keep the retry only when it ACTUALLY acted — never let an
   // unbacked "done" stand.
-  if (requestsToolAction(message) && answerClaimsAction(result.response.output) && !actionToolRan(result.toolsUsed ?? [])) {
+  if (isUnbackedActionClaim({ query: message, answer: result.response.output, toolNames: result.toolsUsed ?? [] })) {
     const actNow = await assembly.agentRuntime.run({
       messages: [{ content: systemContent, role: "system" as const }, { content: message, role: "user" as const }],
       ...(hasMetadata ? { metadata } : {}),
@@ -695,7 +695,7 @@ export async function runLocalChat(
   // didn't act), don't let the false "done" stand — admit it honestly so the
   // user knows nothing happened, matching the cited-recall edge ("I'm not sure"
   // over a confident fabrication).
-  const unbackedAction = requestsToolAction(message) && answerClaimsAction(finalResponse) && !actionToolRan(toolsUsed);
+  const unbackedAction = isUnbackedActionClaim({ query: message, answer: finalResponse, toolNames: toolsUsed });
   if (unbackedAction) {
     finalResponse = `${finalResponse}\n\n${/[가-힣]/u.test(message)
       ? "⚠️ 그런데 방금은 실제로 처리하지 못했어요. 한 번 더 말씀해 주시겠어요?"
