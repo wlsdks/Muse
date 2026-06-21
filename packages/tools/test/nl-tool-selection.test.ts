@@ -54,4 +54,20 @@ describe("parseNaturalLanguageToolSelection (Natural Language Tools, arXiv 2510.
     expect(parseNaturalLanguageToolSelection("Use time_diff here, not time_now.", TOOLS).tool).toBe("time_diff");
     expect(parseNaturalLanguageToolSelection("Cannot answer without time_now data.", TOOLS).tool).toBe("time_now");
   });
+
+  it("skips an EXCLUSION-LED mention ('rather than X' / 'instead of X') even when the rejected tool is named FIRST", () => {
+    expect(parseNaturalLanguageToolSelection("Rather than time_now, use time_diff.", TOOLS).tool).toBe("time_diff");
+    expect(parseNaturalLanguageToolSelection("Instead of time_now, call time_diff.", TOOLS).tool).toBe("time_diff");
+    expect(parseNaturalLanguageToolSelection("In place of time_now, I'd use time_diff.", TOOLS).tool).toBe("time_diff");
+  });
+
+  it("a single exclusion-led tool with no alternative resolves to no tool, not the rejected one", () => {
+    expect(parseNaturalLanguageToolSelection("Instead of web_search, just answer directly.", TOOLS).tool).toBeUndefined();
+    expect(parseNaturalLanguageToolSelection("Rather than time_now, just reason it out.", TOOLS).tool).toBeUndefined();
+  });
+
+  it("does NOT over-skip a TRAILING 'instead of B' / 'rather than B' after a real pick", () => {
+    expect(parseNaturalLanguageToolSelection("Use time_diff instead of time_now.", TOOLS).tool).toBe("time_diff");
+    expect(parseNaturalLanguageToolSelection("I'd call time_diff rather than time_now.", TOOLS).tool).toBe("time_diff");
+  });
 });
