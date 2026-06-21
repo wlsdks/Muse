@@ -205,7 +205,7 @@ describe("decideWebSearchPolicy", () => {
           }
         }
       }
-    });
+    }, 30_000); // ~10.7k-iteration CPU fuzz — the default 5s is too tight under concurrent-loop box saturation (false timeouts)
 
     it("a falsy MUSE_WEB_SEARCH spelling (any case/whitespace) is an ABSOLUTE kill switch — override=true cannot re-enable", () => {
       for (const spell of ["false", "0", "no", "off", "FALSE", "  Off  ", "\tNO\n", "On".replace("On", "off")]) {
