@@ -273,6 +273,7 @@ button {
 
 .content {
   flex: 1;
+  min-height: 0; /* let the flex child shrink below content size so overflow scrolls */
   overflow-y: auto;
   padding: var(--s-lg);
 }
