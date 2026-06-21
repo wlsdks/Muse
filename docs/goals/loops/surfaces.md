@@ -693,3 +693,15 @@ ratchet: self-eval exit 0 · main up-to-date · gap-scout CLEAN · fabrication 0
 - **블로커(다음 deliberate fire)**: 토글 = `applyRuntimeFlagOverrides(env, runtimeSettings)` 순수 헬퍼 + createMuseRuntimeAssembly env-resolution 초입 배선(additive·override無면 noop) + daemon-flags GET이 동일 merge 적용(restart-applied로 정직 라벨) + 기존 admin settings PUT로 override write. 중앙조립 변경이라 신중한 fire 필요(무관 state 손상 검증 강하게).
 - **리스크**: 없음(no-ship, 코드변경 0).
 - **lesson**: 우물 고갈+gap-scout clean+남은게 중앙-조립 아키텍처 변경이면, 무인 마라톤 꼬리에서 강행 금지 — speculative/위험 슬라이스보다 정직한 블로커가 옳다(⑥). 테마는 살아있되(토글 가치 큼) deliberate fire 대상.
+
+## fire 75 · 2026-06-21 · skill v2.0.0 · <pending>
+meta: surface=web · value-class=a11y-hardening · pkg=@muse/web · kind=input-accessible-names · verdict=PASS · firesSinceDrill=6
+ratchet: web 121/121 · fabrication 0 · self-eval exit 0 · lint clean · ★다양성 전환(web,a11y) + judge가 vacuous-test 적발→couple-to-prod fix → PASS · ⚠pnpm check는 타루프 autoconfigure HANG으로 RED(무관)
+
+- **무엇**: 웹 콘솔 search/filter/add 인풋(placeholder-only=접근가능명 없음, WCAG 4.1.2 위반)에 `aria-label` 추가 — Tools filter·Notes search/name/body·Tasks add·Memory userId·MCP allowlist add. 기존 placeholder i18n 키 재사용(신규 문자열 0)·additive 속성만. + 실뷰 렌더 a11y 테스트.
+- **왜**: easy 우물 고갈 후 다양성 RATCHET이 web-view에서 전환 요구 → (web, a11y) 새 kind. a11y는 진짜 품질(스크린리더가 인풋 식별 불가). 두 fire 무출하(73·74) 후 작지만 실(實) 출하가 정직.
+- **★maker≠judge(vacuous test 적발→fix)**: judge#1 FAIL — 빌더의 테스트가 실뷰 대신 **인라인 미러카피** 마크업을 테스트(실 Tools.tsx aria-label 제거해도 125 그린=프로덕션 미커플). **수정**: 테스트를 실 `ToolsView/NotesView/MemoryView`를 `renderToStaticMarkup`+QueryClientProvider+I18nProvider로 렌더해 aria-label 단언하게 재작성. mutation 실증: 실 Tools.tsx aria-label 제거→RED(judge#2 독립 재확인). fresh judge#2 PASS.
+- **리뷰지점**: mutation-first(실뷰 커플). additive aria-label(로직변경 0·신규 i18n 0). 기존 `<label htmlFor>` 있는 폼(Calendar/Reminders/Autonomy/Messaging)은 미접촉. 형제-감사: 남은 placeholder-only 인풋 전부 이 fire에 처리. 정직한 갭: 인풋별 개별 테스트 아닌 대표 3뷰 커플(패턴 입증).
+- **리스크**: 없음(apps/web 6파일 additive, web 121/121·lint clean, judge#1→fix→judge#2 PASS). **단 pnpm check RED**(아래 블로커, 무관).
+- **★BLOCKER(공유 main 회귀, 비-surfaces, HIGH)**: `@muse/autoconfigure` runtime-assembly e2e(autoconfigure.test·runtime-assembly-{e2e,cache-e2e,streaming-e2e}·background-review-wiring) **HANG**(60s timeout도 미완=진짜 행, saturation 아님). origin/main에 타루프(agent-core logprobs `792a408a` / execute-tool `232f04e9` / model 변경 후보)가 머지한 회귀로 추정 — full agent-run이 멈춤. **전 루프 pnpm check + API 조립 차단**. surfaces 도메인 아님(agent-core/model/multi-agent 소유) → 해당 루프/진안이 bisect+fix 필요. surfaces fire 75 merge-to-main은 이 행으로 deferred(main 깨짐, 게이트 그린 불가).
+- **lesson**: a11y(또는 어떤) 테스트가 뷰 마크업을 *복제*해 테스트하면 프로덕션과 디커플=tautology(빌더 흔한 실수, useQuery 뷰 렌더가 귀찮을 때). 반드시 **실 컴포넌트를 렌더**(QueryClientProvider+I18nProvider로 useQuery 뷰도 static 렌더 가능)해 mutation이 프로덕션에서 RED 나는지 확인. ④b judge가 이 디커플을 잡음.

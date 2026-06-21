@@ -149,6 +149,7 @@
       - ◦ S3: `PUT /api/settings/daemon-flags/:key`가 runtime-settings에 override write(auth·bool 검증·contract-faithful 라운드트립) + fire-67 GET이 effective(override 반영) 보고 — **S2와 같은 fire에**(없으면 inert/거짓표기)
       - ◦ S4+: 나머지 플래그 read-site 점진 배선(플래그당 1 fire, honor 확인 후에만 GET이 그 플래그 override 반영)
       - 주의: S3를 S2 없이 단독 출하 금지(정직성). 첫 honest 슬라이스 = S1+S2+S3 한 플래그 end-to-end.
+- 🛑 BLOCKER-HIGH(공유 main 회귀, 비-surfaces): `@muse/autoconfigure` runtime-assembly e2e가 **HANG**(`runtime-assembly-e2e/cache-e2e/streaming-e2e`·`autoconfigure.test`·`background-review-wiring`, 60s timeout도 미완=진짜 행, saturation 아님). origin/main 머지된 타루프 agent-run 회귀 추정(agent-core logprobs `792a408a` / execute-tool reserve `232f04e9` / model 변경). **전 루프 pnpm check + API 조립 차단**. agent-core/model/multi-agent 오너가 bisect+fix 필요(surfaces 도메인 아님). 발견 surfaces fire 75.
 - ⚠ FLAKY(공유, 비-surfaces): `@muse/model/src/web-search-policy.test.ts > property fuzz > never throws…`가 ~1/3 비결정 실패(격리 2/3 통과) — 모든 루프 merge-to-main을 간헐 차단. @muse/model 오너/test-hygiene 루프가 fuzz 생성기 seed 고정 필요
   - ✓ web MCP allowlist 보안 섹션 (읽기) — `McpServersView`가 `GET /api/mcp/security` 소비, 허용목록·도구출력 상한 표시; summarizeAllowlist의 빈목록=unrestricted 정직신호 — surfaces fire 66 (`eac90550`)
   - ✓ web MCP allowlist 편집 — `McpServersView` Security 섹션 add/remove 컨트롤이 `PUT /api/mcp/security` 호출(addToAllowlist/removeFromAllowlist, effective 정책 read-modify-write로 allowedStdioCommands+maxToolOutputLength 보존) — surfaces fire 72 (judge가 stdio-clobber 적발→shaper/타입에 allowedStdioCommands 노출+보존으로 fix) (`a3a357a9`)
