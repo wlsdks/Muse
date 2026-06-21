@@ -1,4 +1,4 @@
-import { readPlaybook, readWeaknesses, readSkillRewards, isSkillAvoided, type PlaybookEntry, type WeaknessEntry } from "@muse/mcp";
+import { readPlaybook, readWeaknesses, readSkillRewards, adjustSkillReward, isSkillAvoided, type PlaybookEntry, type WeaknessEntry } from "@muse/mcp";
 import { loadSkillsFromDirectory, type Skill } from "@muse/skills";
 import type { FastifyInstance } from "fastify";
 
@@ -114,6 +114,22 @@ export function shapeSkills(skills: readonly Skill[], rewards: Record<string, nu
   return { total: skills.length, entries: sorted };
 }
 
+/**
+ * Validates the `delta` field from an incoming reward-adjustment body.
+ * Returns the delta if it is a finite, non-zero number; otherwise undefined.
+ * Covers missing, null, string, NaN, Infinity, and zero inputs.
+ */
+export function parseRewardDelta(body: unknown): number | undefined {
+  if (body === null || body === undefined || typeof body !== "object" || Array.isArray(body)) {
+    return undefined;
+  }
+  const delta = (body as Record<string, unknown>)["delta"];
+  if (typeof delta !== "number" || !Number.isFinite(delta) || delta === 0) {
+    return undefined;
+  }
+  return delta;
+}
+
 export interface SelfImprovementRoutesGate {
   readonly authService: ServerOptions["authService"];
   readonly weaknessesFile: string;
@@ -156,5 +172,23 @@ export function registerSelfImprovementRoutes(server: FastifyInstance, gate: Sel
       readSkillRewards(gate.skillRewardsFile)
     ]);
     return shapeSkills(skills, rewards);
+  });
+
+  // Adjust a skill's learned reward (thumbs up/down). Local self-tuning —
+  // not outbound to a third party, so auth gate only (no draft-first).
+  server.post("/api/self-improvement/skills/:name/reward", async (request, reply) => {
+    if (!authed(request, reply)) {
+      return reply;
+    }
+    const { name } = request.params as { name: string };
+    const delta = parseRewardDelta(request.body);
+    if (delta === undefined) {
+      return reply.status(400).send({ error: "invalid delta" });
+    }
+    const reward = await adjustSkillReward(gate.skillRewardsFile, decodeURIComponent(name), delta);
+    if (reward === undefined) {
+      return reply.status(400).send({ error: "invalid skill name" });
+    }
+    return { name: decodeURIComponent(name), reward };
   });
 }

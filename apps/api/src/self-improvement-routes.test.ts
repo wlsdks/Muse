@@ -2,7 +2,61 @@ import type { PlaybookEntry, WeaknessEntry } from "@muse/mcp";
 import type { Skill } from "@muse/skills";
 import { describe, expect, it } from "vitest";
 
-import { shapePlaybook, shapeSkills, shapeWeaknesses } from "./self-improvement-routes.js";
+import { parseRewardDelta, shapePlaybook, shapeSkills, shapeWeaknesses } from "./self-improvement-routes.js";
+
+describe("parseRewardDelta", () => {
+  it("returns a positive finite number when delta is valid", () => {
+    expect(parseRewardDelta({ delta: 2 })).toBe(2);
+  });
+
+  it("returns a negative finite number when delta is valid", () => {
+    expect(parseRewardDelta({ delta: -1 })).toBe(-1);
+  });
+
+  it("returns a fractional finite number when delta is valid", () => {
+    expect(parseRewardDelta({ delta: 0.5 })).toBe(0.5);
+  });
+
+  it("returns undefined for missing delta field", () => {
+    expect(parseRewardDelta({})).toBeUndefined();
+  });
+
+  it("returns undefined when delta is 0", () => {
+    expect(parseRewardDelta({ delta: 0 })).toBeUndefined();
+  });
+
+  it("returns undefined when delta is a string", () => {
+    expect(parseRewardDelta({ delta: "2" })).toBeUndefined();
+  });
+
+  it("returns undefined when delta is NaN", () => {
+    expect(parseRewardDelta({ delta: NaN })).toBeUndefined();
+  });
+
+  it("returns undefined when delta is Infinity", () => {
+    expect(parseRewardDelta({ delta: Infinity })).toBeUndefined();
+  });
+
+  it("returns undefined when delta is -Infinity", () => {
+    expect(parseRewardDelta({ delta: -Infinity })).toBeUndefined();
+  });
+
+  it("returns undefined when body is null", () => {
+    expect(parseRewardDelta(null)).toBeUndefined();
+  });
+
+  it("returns undefined when body is undefined", () => {
+    expect(parseRewardDelta(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when body is a number (not an object)", () => {
+    expect(parseRewardDelta(42)).toBeUndefined();
+  });
+
+  it("returns undefined when body is an array", () => {
+    expect(parseRewardDelta([{ delta: 1 }])).toBeUndefined();
+  });
+});
 
 function entry(partial: Partial<WeaknessEntry> & { topic: string; count: number; lastSeen: string }): WeaknessEntry {
   return {

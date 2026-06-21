@@ -582,3 +582,13 @@ ratchet: web tests 92/92 (+4) · testFiles +2 · fabrication 0 · self-eval exit
 - **리뷰지점**: mutation-first — summarizeSkills(avoided 하드코딩 0→2 RED·active/avoided swap→RED, 둘 다 빌더+독립 judge 확인). 보안: read-only GET·스킬 name/description escaped React children(dangerouslySetInnerHTML 없음)·queryKey `["skills",baseUrl]`(self-improvement과 분리). nav: key "j" free(leader "g" 아님)·NavKeys.test 통과(leader충돌·중복키 가드)·settings 특례 무손상. i18n en/ko 키셋+토큰({n}/{a}) 패리티. 정직한 갭: reward/curate/author 액션은 후속(이번 read-only).
 - **빌더 deviation(타당)**: 순수 헬퍼를 `skills.ts` 대신 `skill-list.ts`로 명명 — macOS 대소문자 무시 FS에서 `Skills.tsx`와 충돌(TS2305/1261). mcp-status.ts↔McpServers.tsx 동일 패턴.
 - **리스크**: 없음(apps/web 6파일, web build tsc+vite·web 92/92·pnpm check exit 0·smoke:broad 51/0·lint clean, 독립 Opus ④b judge가 행동검증·avoided 정직신호·렌더안전·nav·i18n·다양성·mutation 검증 후 PASS).
+
+## fire 64 · 2026-06-21 · skill v2.0.0 · <pending>
+meta: surface=api · value-class=new-capability · pkg=@muse/api · kind=skill-reward-actuator(STATE-CHANGE) · verdict=PASS · firesSinceDrill=3
+ratchet: api 924/924 isolated · smoke:broad 52/0 (+1) · fabrication 0 · self-eval exit 0 · lint clean · ★첫 웹콘솔 상태변경 라우트
+
+- **무엇**: 웹 콘솔 **첫 상태변경(write) 라우트** — `POST /api/self-improvement/skills/:name/reward`가 스킬 reward를 delta만큼 조정(`adjustSkillReward`→`~/.muse/skill-rewards.json` 영속, 누적 [-5,5] clamp는 store가). 순수 `parseRewardDelta`(유한·비0 number만 통과, 그외 undefined→400) + auth 게이트(read 라우트와 동일 `authed`) + `:name` decodeURIComponent. fire 62 read-only skills API의 write 카운터파트.
+- **왜**: 진안 "스킬 컨트롤"을 read 너머 실제 control로 — 첫 웹 thumbs up/down 토대. **다양성 RATCHET 돌파**: 최근 web-view×4·api-wiring(read GET)×3 모노컬처에서 처음으로 (api, actuator/state-change) 새 kind. 로컬 self-tuning(제3자 outbound 아님)이라 outbound-safety draft-first 불요, 적용 게이트=auth(tasks complete·mcp connect와 동일).
+- **리뷰지점(상태변경=게이트 증명이 핵심)**: **contract-faithful 실HTTP smoke**(가짜 레지스트리 아님)가 τ-bench no-partial-side-effect 증명 — reward 누적 persist(+2→2→+1→3), 무효 delta 3종(문자열·누락·0) 각 400, **무효 후 유효 +1이 정확히 4 착지**(무효가 mutate했다면 4 아님)로 부작용-0 입증. auth: write前 동일 authed 게이트 우회 없음. mutation-first: parseRewardDelta(Number.isFinite 제거→NaN/Inf 3 RED·비0 제거→0 RED). 입력안전: name은 고정 파일의 JSON 키일 뿐 경로탈출 불가. 독립 Opus ④b judge가 5축(게이트증명·auth·행동검증·입력안전·다양성) 검증 후 PASS.
+- **리스크**: 없음(apps/api 3파일, api 924/924 isolated·smoke 52/0·lint clean·build clean).
+- **환경 플레이크 메모(무관, 비차단)**: 풀 `pnpm check`에서 `apps/api/test/messaging-webhooks.test.ts`(LINE webhook gating)가 ~20s 타임아웃 1건 — 동시 6+ 루프 포화로 buildServer가 vitest 20s 한도 초과. **격리 단독 4/4 GREEN**(이 fire 첫 check 64a에선 통과)이라 내 슬라이스(self-improvement, messaging과 무관)와 무관한 환경 false-timeout. fire 64는 3배수 아니라 main-merge 없음, 브랜치 push만. 후속: 이 클래스는 박스 포화 신호, 테스트 회귀 아님([[project_test_hygiene_loop]]).

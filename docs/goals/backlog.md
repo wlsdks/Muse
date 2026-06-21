@@ -86,7 +86,9 @@
   - ◦ web 스킬 컨트롤 — skills 목록 + reward/curate/author (신규 API + 웹):
     - ✓ skills 목록 API — read-only `GET /api/self-improvement/skills` (shapeSkills: authored 스킬+reward 병합, reward DESC·name ASC, avoided=isSkillAvoided; autoconfigure `resolveSkillRewardsFile` 신설) — surfaces fire 62 (`cffe2d94`); NEXT=웹 뷰가 이 API 소비(새 Skills 뷰/nav)
     - ✓ web Skills 뷰 — `SkillsView`(자체 nav key "j") fire 62 skills API 소비, 이름·설명·source·reward·avoided 배지(정직신호) read-only 렌더; summarizeSkills 헬퍼 — surfaces fire 63 (`a1f44f18`); reward/curate/author 액션은 후속
-    - ◦ web Skills 액션 — reward(thumbs up/down)·curate·author (상태변경 PUT/POST, outbound-safety 게이트 준수; 현재 read-only뿐)
+    - ✓ skill reward API (상태변경) — `POST /api/self-improvement/skills/:name/reward` (parseRewardDelta·auth·adjustSkillReward, 무효→400 no-op, smoke 누적+부작용0 증명) — surfaces fire 64, 첫 웹콘솔 write 라우트 (`<pending>`); NEXT=Skills 뷰에 thumbs up/down 버튼이 이 라우트 호출
+    - ◦ web Skills reward 버튼 — `SkillsView`에 ▲/▼ 버튼이 fire 64 POST reward 라우트 호출(useMutation+invalidate, McpServers connect/disconnect 패턴)
+    - ◦ web Skills curate/author — 스킬 활성/비활성·세션에서 스킬 작성(authorSkillsFromSession 기존) 웹 노출 (상태변경, 후속)
     - ◦ CLI 스킬 resolver 통일(형제) — `apps/cli/commands-skills.ts`의 private `resolveAuthoredSkillsDir`/`resolveSkillRewardsFile`를 autoconfigure 공유본으로 통일(commands-skills·commands-learned·chat-ink 3파일 import 변경), gate-asymmetry 제거
   - ◦ web 설정/daemon 토글 — proactivity·episodic·skill학습·watch daemon on/off (PUT /settings/:key 기존, ~80 env 플래그는 env→runtime 브리지 필요)
   - ◦ web MCP 콘솔 확장 — add/remove 서버 + allowlist(`/api/mcp/security`) 편집 (API 기존, 웹만)
