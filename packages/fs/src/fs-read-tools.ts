@@ -37,6 +37,19 @@ export type DescribeImage = (input: {
 
 const DEFAULT_MAX_TEXT_CHARS = 200 * 1024;
 const DEFAULT_MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * The chars a SINGLE file_read may return for a model with `contextTokens` of
+ * context window. The 200K `DEFAULT_MAX_TEXT_CHARS` (~50K tokens) exceeds even a
+ * 32K-token window WHOLE — so on a small-context local model one max read would
+ * overflow the window and the runtime silently drops the system prompt /
+ * conversation. Cap a read to HALF the window (so it can never dominate the
+ * context), at ~4 chars/token, and let the model page the rest via `nextOffset`.
+ * Floored so a tiny misconfigured window still returns something useful.
+ */
+export function fileReadCharBudget(contextTokens: number): number {
+  return Math.max(4 * 1024, Math.floor(contextTokens / 2) * 4);
+}
 const RECENT_LIST = 10;
 const MAX_LIST_RESULTS = 1000;
 const GREP_MAX_FILES = 2000;

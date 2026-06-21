@@ -1471,9 +1471,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // name fragment, incl. PDF/Word/image), file_list (glob), file_grep
         // (content search) — read-risk, home-sandboxed, fail-closed on a denied
         // path. The home-wide sandbox supersedes the old 3-folder file_read.
-        const { createFsReadTools, createFsWriteTools, pathSafetyOptionsFromEnv } = await import("@muse/fs");
+        const { createFsReadTools, createFsWriteTools, fileReadCharBudget, pathSafetyOptionsFromEnv } = await import("@muse/fs");
         const { createWebDownloadTool } = await import("@muse/mcp");
-        const { isWebEgressAllowed } = await import("@muse/model");
+        const { DEFAULT_OLLAMA_NUM_CTX, isWebEgressAllowed } = await import("@muse/model");
         // Sandbox overrides: MUSE_FS_ROOTS narrows the allow-root (default home),
         // MUSE_FS_DENY adds deny prefixes on top of the credential defaults.
         const fsSandbox = pathSafetyOptionsFromEnv(process.env);
@@ -1489,6 +1489,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const fsFullReadPaths = new Set<string>();
         const fsReadTools = createFsReadTools({
           ...fsSandbox,
+          // Cap a single file_read to fit the local model's context — the 200K
+          // default exceeds a 32K-token window whole, so one max read would
+          // overflow it and silently drop the prompt/history. The model pages
+          // larger files via the returned nextOffset.
+          maxTextChars: fileReadCharBudget(DEFAULT_OLLAMA_NUM_CTX),
           onPathRead: (canonicalPath) => fsReadPaths.add(canonicalPath),
           onFullRead: (canonicalPath) => fsFullReadPaths.add(canonicalPath),
           // file_read reads an IMAGE file via the same local vision the screen-

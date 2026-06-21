@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 35 · 2026-06-21 · skill v2.0 · <commit-pending> (file_read caps to fit the model context — 200K overflow fix)
+meta: value-class=new-capability · pkg=@muse/fs+apps/cli · kind=context-fit/reliability · verdict=PASS · firesSinceDrill=7
+ratchet: testFiles 1072→1072 (+2 cases fileReadCharBudget value+enforcement, mutation-valid) · fabrication 0 · @muse/fs 격리 170 · @muse/cli 격리 2827 · pnpm check exit 0 · lint clean · Ollama DOWN
+- 무엇: agent가 file_read를 maxTextChars 없이 생성→200K 기본(~50K토큰)인데 numCtx=32768(DEFAULT_OLLAMA_NUM_CTX). 단일 max read가 전체 윈도 초과→런타임이 프롬프트/히스토리 silently truncate(adapter-ollama LIVE 문서: 8K 윈도가 프롬프트 통째 먹고 1토큰). FIX: 순수 `fileReadCharBudget(tokens)=max(4K, floor(tokens/2)*4)`(윈도 절반); agent가 `fileReadCharBudget(DEFAULT_OLLAMA_NUM_CTX)`=64K 전달. 큰 파일은 nextOffset 페이징.
+- 왜: Ollama down으로 measure-first 불가→numCtx 확인이 갭 실증(200K>32K토큰). principled helper-derivation으로 OUTCOME-grade(judgment 회피). 다양성: crates/runner 후 fs+cli/context-fit.
+- 리뷰지점: mutation-valid(/2 제거→value RED; over-budget 파일이 정확히 budget서 truncate). ④b judge PASS — **갭 REAL 확인(live-observed Ollama overflow, upstream trimming 없음)**, grounding 안전방향 보존(partial read↑, onFullRead 잘못 발화 0), grep/list 무영향, 200K default 타 caller 유지, conservative bound(DEFAULT 사용=user가 올리면 tighter일뿐 overflow 0).
+- 리스크: 낮음 — agent read cap만 축소(grounding/페이징/타 caller 불변). ④b PASS. ④b가 pre-existing char-cap nextOffset-clobber edge 지적→backlog ◦.
+lesson: "design-sensitive 값"처럼 보여도 *principled derivation*(numCtx의 절반)으로 만들면 arbitrary 아니고 helper로 OUTCOME-grade 가능. 갭 실증은 Ollama 없이도 *기존 코드의 live-observed 코멘트*(adapter-ollama)로 가능. measure-first 불가시 config-overflow도 정량 분석(200K vs 32K토큰)으로 실제 갭.
+
 ## fire 34 · 2026-06-21 · skill v2.0 · f349d50d (run_command timeout → actionable message; fire-23 spawn-error sibling)
 meta: value-class=new-capability · pkg=crates/runner · kind=reliability-nudge · verdict=PASS · firesSinceDrill=6
 ratchet: testFiles 1072→1072 (+2 cargo: helper + E2E timeout; TS 무변경) · fabrication 0 · crates/runner cargo 12 · @muse/tools 격리 289(무회귀) · pnpm check exit 0 · lint clean · Ollama DOWN(30c 보류)

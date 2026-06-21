@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { JsonObject } from "@muse/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { compileGrepPattern, createFileGrepTool, createFileListTool, createFileReadTool, isCatastrophicGrepPattern } from "./fs-read-tools.js";
+import { compileGrepPattern, createFileGrepTool, createFileListTool, createFileReadTool, fileReadCharBudget, isCatastrophicGrepPattern } from "./fs-read-tools.js";
 
 const ctx = { runId: "test-run" };
 
@@ -21,6 +21,25 @@ describe("file_read / file_list / file_grep", () => {
   });
 
   const opts = () => ({ baseDir: root, roots: [root] });
+
+  describe("fileReadCharBudget — a single read must fit the model context", () => {
+    it("caps a read to HALF a 32K-token window (~64K chars), well under the 200K default that would overflow it", () => {
+      expect(fileReadCharBudget(32768)).toBe(65536); // 16384 tokens × 4 chars
+      expect(fileReadCharBudget(32768)).toBeLessThan(200 * 1024); // < DEFAULT_MAX_TEXT_CHARS
+      // a larger window gets a larger budget; a tiny one is floored, never zero.
+      expect(fileReadCharBudget(131072)).toBe(262144);
+      expect(fileReadCharBudget(1024)).toBe(4 * 1024);
+    });
+
+    it("is ENFORCED — a file over the budget truncates at it (the model then pages)", async () => {
+      const budget = fileReadCharBudget(32768);
+      await writeFile(join(root, "huge.txt"), "x".repeat(budget + 4096));
+      const tool = createFileReadTool({ ...opts(), maxTextChars: budget });
+      const out = (await tool.execute({ path: join(root, "huge.txt") }, ctx)) as JsonObject;
+      expect(out["truncated"]).toBe(true);
+      expect(String(out["text"]).length).toBe(budget);
+    });
+  });
 
   describe("file_read", () => {
     it("reads a text file by path and carries a citeable source", async () => {
