@@ -123,7 +123,7 @@ ratchet: (model, adapter-wiring) 2/8 윈도우(fire 7,12) — 임계 미만; fir
 - 리스크: 낮음 — opt-in 기본-off → 정확성 회귀 0. 하드웨어/배치 노브지 생성 토큰 불변. num_gpu=0=CPU-only는 정직한 메모리/속도 tradeoff(OOM 회피용), 무료 속도 win 아님으로 표기.
   검증: model 387 + autoconfigure 624 pass(신규 4 OUTCOME — num_gpu=0 와이어 포함) · MUTATION-FIRST(num_gpu `>=0`→`>0` num_gpu=0 RED; ④ judge가 num_thread spread 제거 + autoconfigure parseInteger 미스파서까지 3 mutation 재현 RED) · pnpm check rc=0(model 387 + api 946 + cli 2887) · smoke:broad 52/0 · lint rc=0 · 독립 Opus ④ judge PASS(num_gpu=0 의미 웹검증·3 mutation 재현·ratchet/value-first 판정·결함 0; merge-sound).
 
-## fire 13 · 2026-06-21 · local-speed · <commit>
+## fire 13 · 2026-06-21 · local-speed · 35b8fb07
 meta: value-class=test(eval-harness) · pkg=scripts · kind=measurement-infra(C3 cascade proof) · verdict=PASS · firesSinceDrill=4
 ratchet: (scripts, measurement-infra) 1/8 윈도우(fire 1 이후 처음) · fabrication 0 · 패키지 소스 0줄(scripts+package.json 1줄)
 - 무엇: cascade C3 proof `eval:cascade` — 순수 코어 `scripts/lib/cascade-eval.mjs`(meanMs·escalationRate·scoreCascadeEval: latencyWin + gateCorrect[escalate iff low-confidence]) + node:test 8케이스(self-eval:test glob 자동편입) + 라이브 러너 `scripts/eval-cascade.mjs`(raw Ollama /api/chat logprobs, LOCAL-OLLAMA-ONLY skip, model-call 타임아웃→clean skip). package.json `eval:cascade`.
