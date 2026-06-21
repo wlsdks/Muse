@@ -5,6 +5,15 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 48 · 2026-06-21 · skill v2.0 · <commit> (measure+DECOMPOSE: dual-eval converges on EARLY-STOP as #1 blocker; 30c decomposed, not rammed; ⑤c delivers 46/47 to main)
+meta: value-class=refactor(work-list)+measure · pkg=docs/backlog+agent-core(diagnosis) · kind=decompose-design-sensitive · verdict=N/A · firesSinceDrill=2
+ratchet: testFiles unchanged · fabrication 0 · self-eval green · eval:computer-task PASS · eval:multifile-fix FAIL(early-stop) · eval:edit-run-verify FAIL(early-stop) · Ollama UP · ⑤c main-merge(fire 48=×3, delivers 46/47)
+- 측정: Ollama UP에서 두 어려운 eval 전수 측정 — multifile-fix FAIL `tools=[file_read]`, edit-run-verify FAIL `tools=[file_read]`. **둘 다 동일 EARLY-STOP**(읽고 편집/실행 없이 정지, 버그 미수정). single-file computer-task는 PASS. 결정론 tool-call 베인(40-47)은 소진; 남은 #1 블로커는 model-behavior early-stop으로 수렴 확정.
+- 결정(왜 안 ship): early-stop fix(fire-12 action-completion re-prompt, 30c)는 (a)detector 확장(기존 isUnbackedActionClaim은 answerClaimsAction 요구라 "주장없이 멈춤" 미포착) (b)chat-repl 중복제거 통합(이중 re-prompt 방지) (c)pass^k 검증 — 진성 >1 fire이고 코어 런루프(최고 blast)+오발 위험. fire-12가 "not auto-fodder" 명시, reflection-guard는 retry 표면에 보정된 verifier 요구. ×3 main-merge fire에 예산 일부 소진 상태에서 ram은 imprudent → DECOMPOSE-ON-DEFER로 정밀 분해(backlog ★ 48a/48b/48c), 강행 안 함.
+- 무엇 ship: backlog ★를 dual-eval 증거 + 3 sub-slice(48a 정밀 detector+적대 FP / 48b 통합-아키텍처결정 / 48c 배선+pass^k)로 정밀화. ⑤c로 fires 46/47 origin/main 전달(이전엔 loop 브랜치만). 코드 슬라이스 없음(fires 1/2/3/5 N/A measure/decompose 선례).
+- 리뷰지점: 결정론 안전 슬라이스 부재(두 eval 다 model-behavior로 실패)에서 N/A measure+decompose가 정직한 출구. 다음 careful fire(non-main-merge, pass^k 예산)가 48a부터.
+lesson: Ollama-up 측정이 결정적 — "추정된 deterministic 갭"이 아니라 라이브가 진짜 블로커(early-stop, 두 eval 수렴)를 확정. 위험한 코어-루프 retry는 ×3 main-merge fire에 강행 말고 분해; reflection-guard 오발-보정이 우선. EXHAUSTION 정직출구 = 분해+main전달, 억지 저가치 슬라이스 금지.
+
 ## fire 47 · 2026-06-21 · skill v2.0 · 46d24074 (measure-first: AgentRuntime not-EXPOSED gate suggests nearest active tool — node_run→run_command dead-end closed)
 meta: value-class=new-capability · pkg=@muse/agent-core+@muse/tools · kind=tool-recovery/not-exposed-suggestion · verdict=PASS · firesSinceDrill=1
 ratchet: testFiles +0 / +6 cases (4 nearestToolName unit + 2 AgentRuntime integration) · fabrication 0 · @muse/tools 96 · @muse/agent-core agent-runtime 133 · pnpm check apps/api flake(격리 888/888, env UNSET) · lint 0/0 · ★Ollama UP
