@@ -5,6 +5,15 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 57 · 2026-06-21 · skill v2.0 · <commit> (crates/runner: trim split multibyte char on truncated run_command output — clean UTF-8, no U+FFFD)
+meta: value-class=correctness(output-integrity) · pkg=crates/runner · kind=runner/utf8-truncation · verdict=PASS · firesSinceDrill=1
+ratchet: cargo tests +2(split-char trim, complete-tail intact) · fabrication 0 · crates/runner 14 cargo tests · lint 0/0 · ★eval e2e 박스포화로 미측정(reverify-fix 또 timeout)
+- 무엇: run_command 러너의 drainer가 출력을 BYTE 단위로 cap → 멀티바이트 UTF-8 문자 중간에서 잘리면 from_utf8_lossy가 U+FFFD(�)로 치환 → 모델이 verify 로그를 손상으로 읽음. `trim_partial_utf8_tail`로 잘린 마지막 부분 문자를 제거(truncated일 때만) → 잘린 출력도 깨끗한 valid UTF-8.
+- 왜: run_command 출력 무결성 = 멀티스텝 체인의 verify 단계(모델이 이 출력으로 다음 행동 결정). 정직: 박스 포화로 LLM eval(eval:reverify-fix) 또 타임아웃 → 결정론적 cargo-검증 슬라이스 선택(Ollama 불요). 다양성: crates/runner(Rust) = scripts(53/54/55)·agent-core(56) 우물과 완전 다른 (pkg,kind).
+- 리뷰지점: cargo 14 pass, mutation(trim no-op→split-char 테스트 RED) 확인. 독립 Opus ④b judge VERDICT PASS(종료성·non-inert·무회귀·value·diversity·fabrication0). judge 비차단 노트(interior-binary over-trim + O(n²)) 즉시 반영 — while→3회-bounded 루프(부분문자 ≤3바이트, 내부 invalid는 over-trim 안 함, O(n)).
+- 리스크: 정상(미truncated) 출력 무변경(if truncated 가드). interior-binary는 bounded로 ≤3 pop 후 lossy(기존 동작). modest scope(정확히 char 경계서 잘린 멀티바이트 출력만)이나 실제 correctness. fire 57은 ×3 → 55/56/57 main 전달.
+lesson: 박스 포화로 LLM eval이 막히면 — 결정론적 cargo/unit 슬라이스(fresh pkg)로 전환해 fire를 헛돌리지 않는다. judge 비차단 노트도 cheap+correct면 같은 fire에 반영(calibration).
+
 ## fire 56 · 2026-06-21 · skill v2.0 · fc77a088 (★JUDGE-DRILL PASS + real fix: re-verification nudge wired into the model loop; firesSinceDrill reset)
 meta: value-class=new-capability(reliability-mechanism)+judge-drill · pkg=@muse/agent-core · kind=model-loop/reverify-nudge · verdict=PASS · firesSinceDrill=0
 ratchet: testFiles +2(reverify-nudge unit + model-loop-reverify behavioral) · fabrication 0 · @muse/agent-core 2589 · apps/cli 2890(isolation) · lint 0/0 · mutation RED-confirmed · ④b judge PASS · Ollama UP(but eval saturated)

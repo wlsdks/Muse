@@ -183,8 +183,31 @@ fn spawn_drainer<R: Read + Send + 'static>(
                 }
             }
         }
+        // A byte-boundary cut can split a trailing multi-byte UTF-8 char, which
+        // `from_utf8_lossy` would then turn into a U+FFFD replacement char — the
+        // model reads that as corruption in a verify log. Drop the partial tail
+        // so truncated output stays clean valid UTF-8.
+        if truncated {
+            trim_partial_utf8_tail(&mut kept);
+        }
         (String::from_utf8_lossy(&kept).into_owned(), truncated)
     })
+}
+
+/// Drop a trailing partial multi-byte UTF-8 char (left by a byte-boundary cut)
+/// so the kept bytes are valid UTF-8. Bounded: a partial char is at most 3
+/// trailing bytes, so this pops at most 3 times.
+fn trim_partial_utf8_tail(bytes: &mut Vec<u8>) {
+    // A partial trailing char is at most 3 bytes, so try at most 3 pops. Bounding
+    // it means a buffer with INTERIOR invalid bytes (a binary blob) is never
+    // over-trimmed — only a genuine byte-boundary cut of the last char is fixed;
+    // anything else falls through to from_utf8_lossy unchanged.
+    for _ in 0..3 {
+        if std::str::from_utf8(bytes).is_ok() {
+            return;
+        }
+        bytes.pop();
+    }
 }
 
 /// Append `chunk` to `kept` up to `max_output_bytes`. Returns `true` if any
@@ -268,6 +291,23 @@ fn describe_timeout(timeout_ms: u128) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trims_a_split_multibyte_char_so_truncated_output_has_no_replacement_char() {
+        // "한" is 3 bytes (EA B0 9C). A byte cap landing after 2 of them leaves a
+        // partial char; without the trim, from_utf8_lossy yields U+FFFD.
+        let mut bytes = vec![b'o', b'k', 0xEA, 0xB0];
+        trim_partial_utf8_tail(&mut bytes);
+        assert_eq!(bytes, vec![b'o', b'k']);
+        assert!(!String::from_utf8_lossy(&bytes).contains('\u{FFFD}'));
+    }
+
+    #[test]
+    fn keeps_a_complete_multibyte_tail_intact() {
+        let mut bytes = "ab한".as_bytes().to_vec();
+        trim_partial_utf8_tail(&mut bytes);
+        assert_eq!(String::from_utf8(bytes).unwrap(), "ab한");
+    }
 
     #[test]
     fn rejects_blank_commands() {
