@@ -5,6 +5,15 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 54 · 2026-06-21 · skill v2.0 · <commit> (eval:two-edit-fix — multi-step COMPLETENESS battery (2 edits/2 files); 12B PASSes, bar raised)
+meta: value-class=new-capability(harder-eval/flywheel) · pkg=scripts/eval · kind=eval-fixture/completeness · verdict=PASS · firesSinceDrill=8
+ratchet: testFiles unchanged · fabrication 0 · eval:two-edit-fix PASS 1/1 (live) · discrimination verified(one-edit→FAIL/both→PASS) · lint 0/0 · main ff-merge(fire 54=×3, delivers 53/54) · Ollama UP
+- 무엇: 세 기존 eval 모두 단일-edit이라 PASS. 더 어려운 차원(완수성) 추가 — 2파일 2버그를 BOTH 고쳐야 테스트 통과(한 곳만 고치면 FAIL). early-stop/step-repetition(fires 48-51 실패클래스)을 직접 잡는 completeness 배터리. eval-multifile-fix 하니스 미러(temp-dir·4 도구·SHIPPED persistence·runTest 재실행·OUTCOME 채점 ok=testPasses&&noiseIntact).
+- 왜: backlog 방향(2) flywheel — eval 바 올리기. 다양성: scripts/eval(fire 53과 같은 pkg지만 다른 kind=fixture vs aggregator; agent-core 우물 과채굴 회피 지속).
+- 리뷰지점: 라이브 PASS 1/1(trace: run_command 양실패→read alpha/beta→edit BOTH(1→2,10→20)→re-read; alpha-edited·beta-edited·noise-intact 모두 true). **비-tautological 결정론 검증**: alpha만/beta만 고치면 test exit1(FAIL), 둘다면 exit0(PASS) — stop-after-one-edit 모델을 진짜 잡음. 독립 Opus ④b judge가 discrimination·OUTCOME-grade·false-pass 무·temp-cleanup·flywheel 가치 검증 → VERDICT PASS.
+- 리스크: 12B가 PASS(좋은 결과 — 2-edit 완수성 견고 확인, 수정 불요). pass^1이라 eval:multistep 애그리게이터엔 미편입(just-shipped 게이트 flake 방지; pass^k 확인 후 승급 후보). 순수 측정 인프라(제품/state 무변경). fire 54는 ×3 → 53/54 main 전달.
+lesson: 테마 성숙(3 eval PASS) 후 flywheel = 더 어려운 차원의 eval로 바 올리기. 12B가 cross-file 2-edit 완수성을 이미 갖춤(early-stop 수정 fires 47/49/51의 누적 효과). 다음 더 어려운 차원: wrong-first-fix 재이터레이션(naive 첫 수정이 불충분 → 재읽기+재수정) 또는 테마 repoint. ★fire 56=firesSinceDrill≥10 judge-drill 예정.
+
 ## fire 53 · 2026-06-21 · skill v2.0 · e483c624 (eval:multistep aggregator — lock the 3-eval FAIL→PASS gains as one regression gate; scripts/eval pivot)
 meta: value-class=new-capability(regression-lock) · pkg=scripts/eval · kind=eval-aggregator-gate · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles unchanged · fabrication 0 · eval:multistep ALL PASS 3/3 (live) · skip→exit0 · fail→exit1 verified · lint 0/0 · Ollama UP
