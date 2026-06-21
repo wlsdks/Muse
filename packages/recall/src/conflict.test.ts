@@ -17,6 +17,33 @@ describe("detectSourceConflict — evidence-vs-evidence contradiction (grounded�
     expect([c.a.ref, c.b.ref].sort()).toEqual(["wifi-new.md", "wifi-old.md"]);
   });
 
+  it("flags a comma-bearing ADDRESS conflict (London vs Paris) — value spans the comma for address-like labels", () => {
+    const conflicts = detectSourceConflict([
+      hit("a.md", "Address: 12 Baker St, London"),
+      hit("b.md", "Address: 12 Baker St, Paris")
+    ]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]!.field).toBe("address");
+    expect([conflicts[0]!.valueA, conflicts[0]!.valueB].sort()).toEqual(["12 Baker St, London", "12 Baker St, Paris"]);
+  });
+
+  it("flags a Korean comma-bearing 주소 conflict (the value spans the comma)", () => {
+    const conflicts = detectSourceConflict([
+      hit("a.md", "주소: 서울시 강남구, 역삼동"),
+      hit("b.md", "주소: 서울시 강남구, 청담동")
+    ]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]!.field).toBe("주소");
+  });
+
+  it("does NOT flag a benign comma-LIST field that shares a first element — comma-broadening is gated to addresses only", () => {
+    // The dominant false-positive class the gating prevents: a non-address list
+    // value (items/tags/attendees) truncates at the first comma, exactly as before.
+    expect(detectSourceConflict([hit("a.md", "items: milk, eggs"), hit("b.md", "items: milk, bread")])).toEqual([]);
+    expect(detectSourceConflict([hit("a.md", "ingredients: flour, sugar"), hit("b.md", "ingredients: flour, salt")])).toEqual([]);
+    expect(detectSourceConflict([hit("a.md", "attendees: Sam, Lee"), hit("b.md", "attendees: Sam, Kim")])).toEqual([]);
+  });
+
   it("flags a Korean (Hangul-labelled) field conflict between two sources (H3 cross-lingual)", () => {
     const conflicts = detectSourceConflict([hit("addr-old.md", "주소: 서울"), hit("addr-new.md", "주소: 부산")]);
     expect(conflicts).toHaveLength(1);
