@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 50 · 2026-06-21 · skill v2.0 · <commit> (★eval:multifile-fix FAIL→PASS validated; + command-as-name → execute-tool recovery for edit-run-verify)
+## fire 50 · 2026-06-21 · skill v2.0 · 7106cab3 (★eval:multifile-fix FAIL→PASS validated; + command-as-name → execute-tool recovery for edit-run-verify)
 meta: value-class=new-capability+measure · pkg=@muse/agent-core · kind=not-exposed-recovery(command-name) · verdict=PASS · firesSinceDrill=4
 ratchet: testFiles +0 / +2 cases (command-name positive+negative integration) · fabrication 0 · @muse/agent-core 2571 · agent-runtime 135 · pnpm check @muse/runtime-settings SIGABRT(격리 통과, 무관) · lint 0/0 · Ollama UP · ★eval:multifile-fix PASS (2/2 관측 this fire, 직전까지 STABLE FAIL)
 - ★측정 마일스톤: Ollama up 재측정 — **eval:multifile-fix가 PASS**(2/2 관측: file_read→file_read→file_edit(a+b→a*b), test-passes=true). 다수 fire STABLE FAIL이었음 → fires 47(not-exposed 제안)+49(repetition nudge)가 멀티스텝 신뢰성을 실제로 끌어올림(라이브 검증).
