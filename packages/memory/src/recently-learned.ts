@@ -32,7 +32,7 @@ function formatSource(entry: FactSupersession): string {
  * this stays fabrication-free.
  */
 export function projectRecentlyLearned(
-  memory: Pick<UserMemory, "facts" | "factHistory">,
+  memory: Pick<UserMemory, "facts" | "factHistory"> & { readonly preferences?: Readonly<Record<string, string>> },
   options?: {
     readonly limit?: number;
     /**
@@ -67,7 +67,7 @@ export function projectRecentlyLearned(
     }
     items.push({
       key: entry.key,
-      currentValue: memory.facts[entry.key],
+      currentValue: entry.scope === "preference" ? memory.preferences?.[entry.key] : memory.facts[entry.key],
       previousValue: entry.previousValue,
       replacedAt: entry.replacedAt,
       kind: entry.kind ?? "changed",

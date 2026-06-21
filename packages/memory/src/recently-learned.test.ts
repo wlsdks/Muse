@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { UserMemory } from "./index.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { FileUserMemoryStore } from "./memory-user-store-file.js";
+import { InMemoryUserMemoryStore } from "./memory-user-store.js";
 import { projectRecentlyLearned, renderRecentlyLearnedLines, summarizeRecentlyLearned, type RecentlyLearnedItem } from "./recently-learned.js";
 
 function mem(
@@ -91,6 +97,44 @@ describe("projectRecentlyLearned", () => {
     );
     expect(items[0]?.currentValue).toBeUndefined();
     expect(items[0]?.previousValue).toBe("cat");
+  });
+
+  it("resolves a preference-scoped learning's current value from the preferences store", () => {
+    const items = projectRecentlyLearned({
+      facts: {},
+      preferences: { reply_style: "detailed" },
+      factHistory: [
+        { key: "reply_style", previousValue: "brief", replacedAt: new Date("2026-06-21T00:00:00Z"), kind: "contradict", scope: "preference" }
+      ]
+    });
+    expect(items[0]).toMatchObject({ key: "reply_style", currentValue: "detailed", previousValue: "brief" });
+  });
+
+  it("surfaces a CHANGED preference end-to-end via the store (not just facts)", () => {
+    const store = new InMemoryUserMemoryStore();
+    store.upsertPreference("u", "reply_style", "brief");
+    const memory = store.upsertPreference("u", "reply_style", "detailed");
+    const items = projectRecentlyLearned(memory);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ key: "reply_style", currentValue: "detailed", previousValue: "brief" });
+  });
+
+  it("surfaces a changed preference after a File-store write→read round-trip (scope persists to disk)", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-rl-")), "user-memory.json");
+    const writer = new FileUserMemoryStore({ file });
+    await writer.upsertPreference("u", "reply_style", "brief");
+    await writer.upsertPreference("u", "reply_style", "detailed");
+    // A fresh instance forces a read from disk — where the "preference" scope must
+    // have survived serialization (the bug fire-7's ④b judge caught: without it, the
+    // entry resolves from facts on reload and silently disappears).
+    const reader = new FileUserMemoryStore({ file });
+    const memory = await reader.findByUserId("u");
+    if (!memory) {
+      throw new Error("expected the user memory to load from disk");
+    }
+    const items = projectRecentlyLearned(memory);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ key: "reply_style", currentValue: "detailed", previousValue: "brief" });
   });
 });
 
