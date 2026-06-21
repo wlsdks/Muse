@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 53 · 2026-06-21 · skill v2.0 · <commit> (eval:multistep aggregator — lock the 3-eval FAIL→PASS gains as one regression gate; scripts/eval pivot)
+## fire 53 · 2026-06-21 · skill v2.0 · e483c624 (eval:multistep aggregator — lock the 3-eval FAIL→PASS gains as one regression gate; scripts/eval pivot)
 meta: value-class=new-capability(regression-lock) · pkg=scripts/eval · kind=eval-aggregator-gate · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles unchanged · fabrication 0 · eval:multistep ALL PASS 3/3 (live) · skip→exit0 · fail→exit1 verified · lint 0/0 · Ollama UP
 - 무엇: fires 40-51이 세 멀티스텝 eval(computer-task/multifile-fix/edit-run-verify)을 FAIL→PASS로 뒤집음(fire 52 검증). 이 이득을 silent-regression으로부터 잠그려 `eval:multistep` 애그리게이터 추가 — eval:self-improving 패턴 그대로(Ollama-reachable skip→exit0, 3 배터리 spawnSync, status!==0면 FAIL, any-fail→exit1, MUSE_EVAL_REPEAT 패스스루로 pass^k). package.json 엔트리(빌드 union=fs+tools+autoconfigure).
