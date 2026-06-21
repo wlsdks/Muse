@@ -106,3 +106,15 @@ ratchet: 변경연관 테스트만 실행(발열정책) · muse-banner.test 3/3 
 - live: `node dist/index.js` 스플래시 = 마스코트(56×33) → 2칸 태그라인 → (rule 없음); preview PNG로 56열 화질 양호 확인.
 - 레퍼런스: starship/lazygit 좌정렬 단일컬럼 splash; sextant(U+1FB00) 2×3 서브픽셀 렌더. https://starship.rs/
 - ★발열 정책 전환(진안 2026-06-22): 이 fire부터 풀 스위트/`pnpm check`/smoke 매-fire 금지 → 변경연관 vitest 파일만. cron 92b2d826→e5696b6a로 가벼운 ④/④b 게이트 재등록. [[feedback_minimal_test_runs]]
+
+## fire 10 · 2026-06-22 · skill v2.1.0 · 28cbf359 · ★JUDGE-DRILL
+meta: value-class=onboarding · pkg=@muse/cli · kind=onboarding · verdict=PASS · firesSinceDrill=0 (reset)
+ratchet: 변경연관 테스트만(발열정책) · chat-ink-core+chat-ink-nomodel 2 green · lint 0 · fabrication 0
+
+- **무엇**: 새 유저가 모델 미설정으로 `muse` 실행 시 보던 `muse: no model configured yet.` 밋밋한 에러 → 정체성-리드 local-first 온보딩으로 교체. 순수 `formatNoModelMessage()`(chat-ink-core, MUSE_TAGLINE + local(free/private)·cloud(opt-in)·`muse setup wizard`) 추출 + runChatInk no-model 분기에 **배선**.
+- **왜**: 첫 유저의 진짜 첫 화면(zero-config)이 제품 정체성을 안 보여줬다. 모든 명령 실재(setup local/model/wizard), local-first 기본 framing.
+- **리뷰지점**: ★이 fire는 JUDGE-DRILL(firesSinceDrill=10/연속allPASS9≥8). 먼저 **inert(헬퍼+테스트만, 미배선)** 버전을 독립 ④b에 제출 → judge가 "dead code, live 경로 불변, 테스트 격리만"으로 **정확히 FAIL**(검증자 teeth 증명). 그 후 runChatInk에 배선 + **wired-path 통합 테스트**(vi.mock createMuseRuntimeAssembly→no-provider, runChatInk 구동, stderr 캡처) 추가. mutation-first 양면(카피 + 배선; 배선 되돌리면 통합테스트 RED). 재-judge PASS(6/6).
+- **리스크**: 낮음. diff 4파일. early-return(exitCode=1) 보존. 다양성: onboarding kind. chat-ink.ts 국소 편집(분기 1곳).
+- live: no-model 분기는 TTY 전용이라 셸 직접캡처 대신 vi.mock 통합테스트로 live 경로 grade.
+- lesson: "헬퍼 추가+테스트"만으론 inert일 수 있다 — 표시-변경은 반드시 **배선된 경로를 grade하는 테스트**(여기선 vi.mock으로 runChatInk 구동)까지 있어야 진짜. JUDGE-DRILL이 이걸 실증.
+- 레퍼런스: 60초-to-value 온보딩(첫 화면이 다음 행동 1개를 명확히). https://www.appcues.com/blog/best-user-onboarding-examples
