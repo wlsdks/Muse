@@ -673,3 +673,13 @@ ratchet: web 118/118 · api 942/942 · fabrication 0 · self-eval exit 0 · smok
 - **리뷰지점**: mutation-first — addToAllowlist dedup제거→RED·removeFromAllowlist no-op→RED·shaper allowedStdioCommands 제거→test RED(셋 다 judge 독립 재확인). 보안: 기존 auth-게이트 PUT만(신규 unauth 경로 0)·두 정책필드(stdio·cap) 보존 송신·서버명 escaped children·invalidate `["mcp-security"]`. 기존 서버목록+connect/disconnect 무손상. i18n en/ko 패리티.
 - **리스크**: 없음(apps/api 2 + apps/web 5 파일, web 118/118·api 942/942·smoke 52/0·lint clean, judge#1 보안-FAIL→fix→judge#2 PASS).
 - **lesson**: read-modify-write로 정책/설정 객체를 PUT할 때, 서버 save()가 full-row replace면 **모든 기존 필드를 명시적으로 되돌려 보내야** 한다(누락=디폴트 리셋=silent 회귀). 특히 보안 필드(allowedStdioCommands)는 GET 응답에 노출돼 있어야 보존 가능 — 노출 안 된 필드는 read-modify-write 구조적 불가. judge가 이 클래스(부분-PUT clobber)를 게이트-그린에서 잡음.
+
+## fire 73 · 2026-06-21 · skill v2.0.0 · CONSOLIDATION(no-ship: merge-resolve + decompose)
+meta: surface=infra · value-class=consolidation · pkg=git/docs · kind=merge-to-main+decompose · verdict=N/A(no-slice) · firesSinceDrill=4
+ratchet: self-eval exit 0 · pnpm check exit 0 · fabrication 0 · ★fires 70-72 origin/main 안착 + 설정-토글 DECOMPOSE
+
+- **무엇**: 코드 슬라이스 무출하 fire. (1) fire 72 ⑤c merge-to-main이 동시루프 race+saturation에 막혀 deferred됐던 것 해결 — **tight merge-push(1회 통과 check 후 재-check 없이 fetch-merge-push)**로 fires 70-72를 origin/main에 안착(attempt 1 성공). (2) 남은 최상위 ◦(설정/daemon 토글 write)를 Opus 1-step DECOMPOSE.
+- **왜(정직한 EXHAUSTION)**: easy read-surface 우물 고갈 — 4 콘솔영역(MCP·skills·자기강화·settings) 모두 read 표면+핵심 control 완료. 남은 ◦는 전부 아키텍처/멀티-fire: (a) 토글 write=env→runtime 브리지(모든 플래그가 assembly/startup에 env만 읽음, runtime store 미연결 → PUT만으론 inert/거짓표기), (b) 서버 config CRUD, (c) eval 스코어보드=dev-INFRA(개인콘솔 부적합, 정당 보류). 마지노선에서 마지널 슬라이스 강행 대신 DECOMPOSE-ON-DEFER대로 토글을 loop-sized S1-S4+로 쪼개 backlog 기록(첫 honest 슬라이스=S1 seam+S2 read-site 재배선+S3 PUT 한 플래그 end-to-end; S3 단독금지=정직성).
+- **리뷰지점**: 코드 변경 0(merge-resolve는 동시루프 work를 origin/main에 올림, decompose는 backlog 계획). merge-to-main 교훈 확립=고동시성에선 push-시도마다 풀-check 재실행=영원히 race 패배; **1회 통과 check + tight fetch-merge-push가 정답**(fire 70·73 둘 다 attempt 1 성공). 백그라운드 merge 태스크는 다음 fire 시작시 killed되니 **동기(foreground) 실행**해야 완료.
+- **리스크**: 없음(no-ship; main 안착은 게이트-그린 후, 브랜치 안전).
+- **lesson**: 마라톤 세션(14 슬라이스)에서 easy 우물 고갈 시 — 마지널/위험 슬라이스 강행보다 (a) 누적 머지부채 청산 (b) 큰 항목 DECOMPOSE가 정직하고 미래-fire 셋업. 다음 fire는 backlog S1(브리지 seam)부터.
