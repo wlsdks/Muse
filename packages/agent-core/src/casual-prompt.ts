@@ -183,12 +183,28 @@ const KO_ACTION_DONE_RE =
 // matched ACTION_PROMISE_RE (which anchors on "I'll/I will"), so it's already excluded.
 const ACTION_OFFER_RE = /(추가|등록|설정|예약|맞춰|잡아|넣어?|만들어?|생성|처리|완료)\s*(해|하|해\s*드릴|드릴)?\s*(까요|까|ㄹ까요|을까요|을까)\s*[?？]?/u;
 
+// A COMPUTER-CONTROL completion claim in the ANSWER — "I fixed the bug", "I've
+// edited the add function", "수정했습니다", "고쳤어요". The backstop's THIRD leg
+// (with classifyActionRequest on the query + actionToolRan on the tools): when a
+// code-fix request is answered with a done-claim but no actuator ran, it is a
+// false done. Anchored on a FIRST-PERSON PAST-TENSE mutation verb so a future
+// ("I will fix"), an offer ("shall I fix"), a capability ("I can fix"), advice
+// ("you should edit", "to fix this, change…"), and a plain description ("the
+// function returns…") do NOT match — their verbs are infinitive/future, never
+// "I <verb-past>". This only fires when the request was already an action
+// request (the callers AND-gate it), so it stays scoped to real code-fix turns.
+const CODE_DONE_RE =
+  /\bi(?:'ve|'d| have| had)?\s+(?:just\s+|already\s+|now\s+|successfully\s+)?(?:fixed|edited|updated|modified|changed|refactored|renamed|implemented|patched|corrected|rewrote|rewritten|written|replaced|created|added|removed|deleted|appended|inserted)\b|(?:수정|편집|변경|구현|리팩터|작성|교체|반영)(?:했|됐|되었|함)|고쳤|고침/iu;
+
 /** True when the answer CLAIMS it performed / will perform a tool action — EN or KO. NOT a mere offer ("…할까요?"). */
 export function answerClaimsAction(answer: string): boolean {
   if (ACTION_OFFER_RE.test(answer)) {
     return false;
   }
   if (ACTION_PROMISE_RE.test(answer)) {
+    return true;
+  }
+  if (CODE_DONE_RE.test(answer)) {
     return true;
   }
   return new RegExp(`(${KO_ACTION_NOUN})`, "u").test(answer) && KO_ACTION_DONE_RE.test(answer);

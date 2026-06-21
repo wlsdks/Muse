@@ -293,6 +293,35 @@ describe("answerClaimsAction — the answer CLAIMS a tool action was done, KO + 
     // a declarative PROMISE (…게요) is still a claim — the guard only excludes the question form
     expect(answerClaimsAction("내일 오후 3시에 회의 일정을 추가해 드릴게요.")).toBe(true);
   });
+
+  it("matches a COMPUTER-CONTROL code-fix completion claim (EN + KO) — the backstop's third leg", () => {
+    for (const a of [
+      "I fixed the bug in add.ts.",
+      "I've edited the add function to return a + b.",
+      "I updated README.md as requested.",
+      "Done — I changed the return value.",
+      "수정했습니다.",
+      "add.ts의 버그를 고쳤어요.",
+      "함수를 편집했어요."
+    ]) {
+      expect(answerClaimsAction(a), a).toBe(true);
+    }
+  });
+
+  it("does NOT treat a code-fix FUTURE / OFFER / ADVICE / DESCRIPTION as a completion claim", () => {
+    for (const a of [
+      "I will fix the bug in add.ts.",
+      "Shall I fix the bug?",
+      "I can fix the add function for you.",
+      "You should edit the add function to return a + b.",
+      "To fix this, change the return value in add.ts.",
+      "The add function returns the wrong value.",
+      "버그를 고치려면 add.ts를 수정하세요.",
+      "수정할까요?"
+    ]) {
+      expect(answerClaimsAction(a), a).toBe(false);
+    }
+  });
 });
 
 describe("classifyCorpusOverview — whole-corpus overview, not a specific recall", () => {

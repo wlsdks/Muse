@@ -5,6 +5,15 @@
 > Cron `18d30a58` (every 15m, session-only). Stop: `CronDelete 18d30a58`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 28 · 2026-06-21 · skill v2.0 · <commit-pending> (false-done backstop THIRD leg — answerClaimsAction code-fix claims; backstop now end-to-end)
+meta: value-class=new-capability · pkg=@muse/agent-core · kind=honesty/false-done · verdict=PASS · firesSinceDrill=9
+ratchet: testFiles 1071→1071 (+2 cases casual-prompt: code-claim positives + future/offer/advice negatives, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2537 · pnpm check exit 0 · lint clean
+- 무엇: 백스톱 3다리(query=classifyActionRequest[f27] && answer=answerClaimsAction && tools=!actionToolRan[f25]) 중 **answer 다리**가 code-fix 완료주장("I fixed the bug"/"수정했습니다") 미인식 → `&&` 단락으로 fires 25+27에도 백스톱이 안 걸렸음. FIX: `CODE_DONE_RE` 브랜치(1인칭 past-tense mutation 동사 EN `/iu` + KO 수정했/고쳤/편집했).
+- 왜: agentic-persistence(fire 17 "모델이 편집 없이 fix 주장") 폐루프의 마지막 다리. fires 25+27이 query+tools를 고쳤어도 answer 다리 없이는 백스톱 발화 0.
+- 리뷰지점: mutation-valid(브랜치 없으면 positives RED; **`/iu` 플래그 load-bearing** — "I fixed"가 `/u`선 소문자 `\bi`만 매칭돼 fail). ④b judge PASS — **full-loop 합성 검증**(code-fix req + "I fixed it" + 도구0 → 백스톱 FIRES; 실제 file_edit → not flagged). over-match 차단(future/offer/capability/advice/description 전부 false; broad past-tense는 3 호출처 AND-게이트로 scope; judge가 realistic false-pos 구성 실패, "I read/reviewed/analyzed"는 false).
+- 리스크: 낮음 — answerClaimsAction 브랜치만(classifyActionRequest/actionToolRan/wiring 불변, double-gated). ④b PASS.
+lesson: 다리 여럿이 `&&`로 합쳐진 가드는 *모든 다리*를 형제-감사해야 — fires 25(tools)+27(query) 고쳐도 28(answer) 없이는 전체 0 발화. full-loop를 합성-probe로 OUTCOME 검증(개별 다리 green≠전체 작동). fire 17 measure-first가 짚은 early-stop/false-done이 이제 CLI 경로서 결정론적으로 잡힌다.
+
 ## fire 27 · 2026-06-21 · skill v2.0 · 7e56df59 (false-done request-gate via STRUCTURAL signal — resolves fire-26 blocker; 3-fire merge)
 meta: value-class=new-capability · pkg=@muse/agent-core · kind=honesty/false-done · verdict=PASS(judge#4) · firesSinceDrill=8
 ratchet: testFiles 1071→1071 (+2 cases casual-prompt: file-positives + path-prefix/homonym negatives, mutation-valid) · fabrication 0 · @muse/agent-core 격리 2535 · pnpm check exit 0 · lint clean
