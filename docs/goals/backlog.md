@@ -2443,13 +2443,18 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   · **C2-core (execution primitive) — DONE fire 5** `runCascade({fast,heavy,run,confidenceOf,threshold})`
   (@muse/multi-agent cascade-run.ts): runs fast → escalates ONCE to heavy on low/unmeasurable confidence,
   bounded (MAST no-loop). Model-agnostic via injected run/confidenceOf (package idiom). REMAINING:
-  · **C2b (autoconfigure wiring)** — wire the REAL injected functions: `run(model)` = a tiered model
-  call requesting logprobs; `confidenceOf` = `summarizeTokenConfidence(result.logprobs).meanLogprob`
-  (@muse/agent-core, already computed at commands-ask.ts:2870). Call `runCascade` from the `muse ask
-  --tiered` fast path (single-query cascade) and/or buildTieredOrchestration's per-worker run. Needs
-  logprobs requested on the fast pass. >1 fire (touches the live ask/orchestration loop). Verify with C3.
-  · **C3 (live eval)** — use `bench:local` (fire 1) for the latency win + accuracy parity: cascade vs
-  always-heavy on a mixed easy/hard set; assert faster mean latency AND no grounding/answer regression.
+  · **C2b-plumbing (agent-run logprobs) — DONE fire 10** `AgentRunInput.logprobs`/`topLogprobs` now thread
+  through BOTH runtime seams (loopRequest + streamLoopRequest) to `ModelRequest.logprobs`, and round-trip
+  back via `AgentRunResult.response.logprobs`. So an AGENT run can now be confidence-scored
+  (`summarizeTokenConfidence`) — the prerequisite the agent path lacked (the direct ask path at
+  commands-ask.ts:2870 already had logprobs). REMAINING:
+  · **C2b-wiring — DONE fire 11** `createCascadeWorker` (apps/api) bridges runCascade(5) + agent-run
+  logprobs(10) + summarizeTokenConfidence: a FAST-classified worker runs the fast model with `logprobs:true`,
+  scores confidence, and escalates ONCE to heavy on low/unmeasurable confidence. Wired OPT-IN into
+  `buildTieredOrchestration` via `MUSE_TIERED_CASCADE` (default off → plan byte-identical). Cascade is now
+  LIVE in the orchestration path. REMAINING: also wire `muse ask --tiered` single-query path (commands-ask.ts).
+  · **C3 (live eval)** — use `bench:local` (fire 1) for the latency win + accuracy parity: MUSE_TIERED_CASCADE
+  on vs always-heavy on a mixed easy/hard set; assert faster mean latency AND no grounding/answer regression.
   Needs Ollama up.
 - ✓ **doctor: surface the Muse-side speed env — DONE local-speed fire 6** — `museSpeedEnvCheck` +
   `readMuseSpeedEnv` (apps/cli) report the Muse-PROCESS speed env (`MUSE_OLLAMA_NUM_BATCH` fire-2 lever,
@@ -2465,12 +2470,13 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
   (gemma3/qwen3/… per ollama/ollama#13337; gemma4 status unverified). Hard to encode (version-fragile
   allowlist) — deferred; would need to query Ollama's supported-arch list at runtime, not hardcode.
   (scouted local-speed fire 4)
-- ◦ **local-speed sibling adapter knobs (enumerated fire 2, deferred)** — beyond `num_batch`, Ollama
-  exposes `num_thread` (CPU threads) and `num_gpu` (layers offloaded to GPU) as per-request speed
-  levers. Deferred: both are hardware-specific and Ollama's auto-detection is usually right, so the
-  value is lower + needs per-box `bench:local` measurement to justify a non-default. Wire behind
-  `MUSE_OLLAMA_NUM_THREAD` / `MUSE_OLLAMA_NUM_GPU` (same opt-in/omit-by-default pattern as num_batch)
-  only if a measured box shows a win.
+- ✓ **local-speed sibling adapter knobs — DONE fire 12** `MUSE_OLLAMA_NUM_THREAD` (CPU threads) +
+  `MUSE_OLLAMA_NUM_GPU` (GPU layer offload) now wire opt-in to Ollama `num_thread`/`num_gpu` (same
+  omit-by-default pattern as num_batch — wire byte-identical when unset). KEY: `num_gpu=0` (CPU-only) is
+  a VALID opt-in, so the adapter validates `>= 0` and autoconfigure uses `parseNonNegativeInteger` (the
+  test caught that `parseInteger` rejects 0). num_thread keeps `> 0`. Completes the Ollama adapter
+  speed-knob family (num_ctx/num_batch/num_predict/keep_alive/num_thread/num_gpu). Per-box win still
+  needs `bench:local` (C3-style) measurement.
 - ✓→Done **injection-pattern cross-span tightening** — the EN role_override family + 2 KO
   role_override + 1 KO extraction regexes used unbounded `.*`/`/s`, so three unrelated words from
   DIFFERENT sentences combined into a false hit (live repro: "disregard the noise … finally …
