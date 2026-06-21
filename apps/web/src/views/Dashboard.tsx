@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { AsyncBlock, Badge, Card, Stat } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
+import { formatProbabilityPct } from "../lib/percent.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { LatencySummary, TokenCostDailyRow, ToolStatsResponse } from "../api/types.js";
@@ -11,20 +12,7 @@ function sum(rows: readonly TokenCostDailyRow[], pick: (r: TokenCostDailyRow) =>
 }
 
 export function formatAccuracyPct(accuracy: number | undefined): string {
-  if (accuracy === undefined || Number.isNaN(accuracy)) {
-    return "—";
-  }
-  const clamped = Math.min(1, Math.max(0, accuracy));
-  let pct = Math.round(clamped * 100);
-  // Never let a non-perfect value read "100%" nor a non-zero value read "0%":
-  // those extremes must mean exactly 1 / exactly 0, or the stat misinforms.
-  if (pct === 100 && clamped < 1) {
-    pct = 99;
-  }
-  if (pct === 0 && clamped > 0) {
-    pct = 1;
-  }
-  return `${pct}%`;
+  return formatProbabilityPct(accuracy);
 }
 
 export function DashboardView({ client }: { client: ApiClient }) {

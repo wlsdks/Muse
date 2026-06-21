@@ -1,4 +1,4 @@
-import { readWeaknesses, type WeaknessEntry } from "@muse/mcp";
+import { readPlaybook, readWeaknesses, type PlaybookEntry, type WeaknessEntry } from "@muse/mcp";
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
@@ -41,9 +41,57 @@ export function shapeWeaknesses(entries: readonly WeaknessEntry[]): WeaknessesRe
   };
 }
 
+export interface PlaybookStrategyView {
+  readonly id: string;
+  readonly text: string;
+  readonly tag: string | null;
+  readonly origin: string | null;
+  readonly reward: number;
+  readonly probation: boolean;
+  readonly timesObserved: number;
+  readonly source: string | null;
+  readonly createdAt: string;
+}
+
+export interface PlaybookStrategiesResponse {
+  readonly total: number;
+  readonly entries: readonly PlaybookStrategyView[];
+}
+
+/**
+ * Shape the raw playbook for the web self-improvement dashboard:
+ * highest-reward first, ties broken by most-recent reinforce/create.
+ * Pure (deterministic) so the ordering is unit-tested without a server.
+ * Absent optional fields normalize to typed zero-values (JSON-friendly).
+ */
+export function shapePlaybook(entries: readonly PlaybookEntry[]): PlaybookStrategiesResponse {
+  const sorted = [...entries].sort((a, b) => {
+    const ra = a.reward ?? 0;
+    const rb = b.reward ?? 0;
+    const recencyA = a.lastReinforcedAt ?? a.createdAt;
+    const recencyB = b.lastReinforcedAt ?? b.createdAt;
+    return (rb - ra) || recencyB.localeCompare(recencyA);
+  });
+  return {
+    total: entries.length,
+    entries: sorted.map((e) => ({
+      id: e.id,
+      text: e.text,
+      tag: e.tag ?? null,
+      origin: e.origin ?? null,
+      reward: e.reward ?? 0,
+      probation: e.probation ?? false,
+      timesObserved: e.timesObserved ?? 1,
+      source: e.source ?? null,
+      createdAt: e.createdAt
+    }))
+  };
+}
+
 export interface SelfImprovementRoutesGate {
   readonly authService: ServerOptions["authService"];
   readonly weaknessesFile: string;
+  readonly playbookFile: string;
 }
 
 export function registerSelfImprovementRoutes(server: FastifyInstance, gate: SelfImprovementRoutesGate): void {
@@ -58,5 +106,14 @@ export function registerSelfImprovementRoutes(server: FastifyInstance, gate: Sel
     }
     const entries = await readWeaknesses(gate.weaknessesFile);
     return shapeWeaknesses(entries);
+  });
+
+  // The learned-strategy playbook. Read-only; the CLI + agent runtime are the writers.
+  server.get("/api/self-improvement/playbook", async (request, reply) => {
+    if (!authed(request, reply)) {
+      return reply;
+    }
+    const entries = await readPlaybook(gate.playbookFile);
+    return shapePlaybook(entries);
   });
 }

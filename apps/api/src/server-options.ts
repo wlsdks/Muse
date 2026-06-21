@@ -145,6 +145,7 @@ export interface ServerOptions {
    */
   readonly objectivesFile?: string;
   readonly weaknessesFile?: string;
+  readonly playbookFile?: string;
   readonly briefingSidecarFile?: string;
   /**
    * Path to the reviewable autonomous-action log (default

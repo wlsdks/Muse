@@ -1,5 +1,9 @@
 import { useEffect } from "react";
 
+// The Vim-style leader prefix. A view's jump key can never be this letter
+// (a second press just re-arms the leader), so NAV keys are guarded against it.
+export const LEADER_KEY = "g";
+
 /**
  * Global keyboard shortcuts. `⌘K` / `Ctrl+K` toggles the command
  * palette; a Vim-style `g` leader followed by a letter jumps to a view
@@ -34,7 +38,7 @@ export function useShortcuts(opts: {
         return;
       }
       const now = Date.now();
-      if (e.key === "g") {
+      if (e.key === LEADER_KEY) {
         leaderUntil = now + 1000;
         return;
       }
