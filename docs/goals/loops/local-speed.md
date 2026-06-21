@@ -14,7 +14,7 @@ ratchet: testFiles 1075 (+1 scripts node:test) · fabrication 0 · no eval delta
   검증: bench-metrics.test 10/10 + MUTATION-FIRST 2종(tok/s 공식·회귀 방향 반전 → RED, revert → green) · pnpm check rc=0(api 864 + cli 2857) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(자체 mutation 재현, 결함 0).
   발견(backlog 기록): `scripts/reflection-guard.test.mjs`가 origin/main에서 pre-existing FAIL — `apps/cli/src/chat-repl.ts`의 false-done re-run 마커 `'const actNow'` 드리프트. 이 슬라이스와 무관(retry/reflection 표면 추가 없음) → 스코프 밖, backlog ◦.
 
-## fire 2 · 2026-06-21 · local-speed · <commit>
+## fire 2 · 2026-06-21 · local-speed · dc6b7472
 meta: value-class=new-capability · pkg=@muse/model+@muse/autoconfigure · kind=adapter-wiring · verdict=PASS · firesSinceDrill=2
 ratchet: pkg/kind DIFFERS from fire 1 (scripts/measurement-infra → model+autoconfigure/wiring) · fabrication 0 · default wire byte-identical
 - 무엇: Ollama `num_batch`(프롬프트 처리 배치 크기, Ollama 기본 512) opt-in 배선 — 큰 배치 = 프롬프트-eval 처리량↑(긴 프롬프트의 지배적 지연). `MUSE_OLLAMA_NUM_BATCH` env → autoconfigure → `OllamaProvider({numBatch})` → native `/api/chat` `options.num_batch`. 어댑터가 검증 단일권위(>0·finite·trunc, 아니면 undefined→omit). 미설정 시 와이어 today와 바이트 동일.
