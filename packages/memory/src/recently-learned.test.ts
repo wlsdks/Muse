@@ -35,8 +35,19 @@ describe("projectRecentlyLearned", () => {
       currentValue: "Busan",
       previousValue: "Seoul",
       kind: "contradict",
-      source: 'updated from "Seoul" on 2026-06-21'
+      source: 'changed from "Seoul" on 2026-06-21'
     });
+  });
+
+  it("labels the citation verb by how the value changed (refined / changed / updated)", () => {
+    const source = (kind?: "refine" | "contradict"): string | undefined =>
+      projectRecentlyLearned({
+        facts: { k: "new" },
+        factHistory: [{ key: "k", previousValue: "old", replacedAt: new Date("2026-06-21T00:00:00Z"), ...(kind ? { kind } : {}) }]
+      })[0]?.source;
+    expect(source("refine")).toBe('refined from "old" on 2026-06-21');
+    expect(source("contradict")).toBe('changed from "old" on 2026-06-21');
+    expect(source(undefined)).toBe('updated from "old" on 2026-06-21'); // legacy/absent → conservative
   });
 
   it("orders newest first by replacedAt", () => {

@@ -69,3 +69,12 @@ ratchet: testFiles +0 (recently-learned.test +4 cases) · @muse/memory 529 green
 - **리뷰지점**: scope absent=fact(back-compat, fact 직렬화 byte-unchanged). Kysely는 factHistory 자체를 안 함(pre-existing, 일관). `veto:`/`goal:` 접두 키는 raw로 렌더(polish 후속 backlog).
 - **리스크**: 없음(now). ④b judge가 **File-store가 디스크 직렬화에서 scope를 드롭하는 버그**를 잡음 → 3 round-trip 사이트(type+memoryToStored+storedToMemory) fix + 직렬화경계 넘는 round-trip 테스트(RED-on-removal teeth 확인) → 재judge PASS.
 - **lesson**: 지속(persistent) store를 만지는 슬라이스의 e2e 테스트는 InMemory가 아니라 **직렬화 경계를 건너야**(write→fresh-instance read). InMemory-only e2e는 직렬화 버그를 못 잡고 거짓 통과 — ④b adversarial judge가 정확히 이걸 적발(gating verifier 가치 실증).
+
+## fire 8 · 2026-06-21 · skill v2.1.0 · pending
+meta: value-class=micro-fix · pkg=@muse/memory · kind=citation-verb · verdict=PASS · firesSinceDrill=8 · firesSinceMainMerge=1
+ratchet: testFiles +0 (recently-learned.test +1 case) · @muse/memory 531 green · @muse/cli surfaces 50 green · lint clean · fabrication 0
+
+- **무엇**: `formatSource`가 **kind-aware 동사** — `contradict`→"changed from"(마음 바꿈), `refine`→"refined from"(구체화), legacy/absent→"updated from". fire 1부터 계산됐으나 미노출이던 `kind`를 인용에 surface.
+- **왜**: 사용자가 *어떻게* 이해가 진화했는지 봄 — 마음을 바꿨는지 vs 구체화했는지. 7 fire 동안 죽어있던 데이터(`kind`) 활성화.
+- **리뷰지점**: 동사는 `entry.kind`에서만 파생(no model, citation 불변). real-formatSource assertion 3개(projection + status :65/:83, 전부 contradict)만 ripple — 나머지 "updated from" 리터럴은 render/summarize/formatMemoryShow 테스트의 명시 source(formatSource 안 거침)라 의도적 sample.
+- **리스크**: 없음 — verb는 기록된 kind에서만, legacy=conservative "updated". memory 531 green, 독립 Opus ④b judge가 ripple-completeness(false-green 없음) + mutation 재확인 PASS.

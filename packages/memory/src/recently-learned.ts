@@ -21,7 +21,12 @@ export interface RecentlyLearnedItem {
 const DEFAULT_LIMIT = 5;
 
 function formatSource(entry: FactSupersession): string {
-  return `updated from ${JSON.stringify(entry.previousValue)} on ${entry.replacedAt.toISOString().slice(0, 10)}`;
+  // Surface HOW the understanding evolved (the kind has been recorded since the
+  // first projection but never shown): a `contradict` is a mind-change, a
+  // `refine` is an elaboration; a legacy/absent kind stays the conservative
+  // "updated". The verb is still derived purely from the recorded entry.
+  const verb = entry.kind === "refine" ? "refined" : entry.kind === "contradict" ? "changed" : "updated";
+  return `${verb} from ${JSON.stringify(entry.previousValue)} on ${entry.replacedAt.toISOString().slice(0, 10)}`;
 }
 
 /**
