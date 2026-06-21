@@ -201,7 +201,7 @@ export function MuseChatApp(props: {
   readonly readImage?: (relativePath: string) => Promise<{ readonly mimeType: string; readonly dataBase64: string } | undefined>;
   readonly saveText: (text: string) => Promise<string | undefined>;
   readonly copyToClipboard: (text: string) => Promise<boolean>;
-  readonly onCommit: (user: string, assistant: string) => void;
+  readonly onCommit: (user: string, assistant: string, untrusted?: boolean) => void;
   readonly autoLearn?: (user: string, assistant: string) => Promise<string | undefined>;
   readonly onReset: () => void;
   /** Called when an answer rested on untrusted-only sources — runChatInk uses it to
@@ -584,6 +584,10 @@ export function MuseChatApp(props: {
     // answer WITHOUT those cues, so conversationMatches can't replay a display-only
     // warning as trusted grounding evidence next turn (grounded≠true self-pollution).
     let persisted = accumulated;
+    // Per-turn untrusted-source verdict — persisted with the turn (onCommit) so a
+    // RESUMED session's episode capture sees it even though it ran in a prior
+    // process (episode-laundering defense, EP-1b / MemoryGraft).
+    let turnUntrusted = false;
     if (props.finalizeAnswer && !interruptRef.current && !accumulated.startsWith("⚠")) {
       const finalized = await props.finalizeAnswer({
         answer: accumulated,
@@ -599,6 +603,7 @@ export function MuseChatApp(props: {
           setStreaming(accumulated);
         }
         persisted = finalized.forHistory;
+        turnUntrusted = finalized.untrustedOnly;
         // Bridge the session's source-trust verdict out to runChatInk (the
         // end-of-session episode capture runs after this component unmounts): once
         // ANY answer rested on untrusted-only sources, the stored episode is marked
@@ -615,7 +620,7 @@ export function MuseChatApp(props: {
     setStreaming("");
     setBusy(false);
     if (!accumulated.startsWith("⚠") && accumulated !== "(interrupted)") lastAnswerRef.current = accumulated;
-    props.onCommit(message, persisted);
+    props.onCommit(message, persisted, turnUntrusted);
     // Background auto-memory: surface anything Muse learned so the user sees it.
     void props.autoLearn?.(message, persisted)
       .then((summary) => { if (summary) setTurns((prev) => [...prev, { role: "system", text: summary }]); })
@@ -1004,8 +1009,8 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     });
   };
 
-  const onCommit = (user: string, assistant: string): void => {
-    void appendLastChatTurn({ message: user, response: assistant }).catch(() => undefined);
+  const onCommit = (user: string, assistant: string, untrusted?: boolean): void => {
+    void appendLastChatTurn({ message: user, response: assistant, responseUntrusted: untrusted }).catch(() => undefined);
   };
 
   // Background auto-memory: after a turn, quietly learn durable facts the user

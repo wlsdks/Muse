@@ -81,4 +81,17 @@ describe("captureEndOfSessionEpisode — episode-provenance trust bit (episode-l
     expect(result.status).toBe("captured");
     expect(result.status === "captured" && result.episode.trusted).toBeUndefined();
   });
+
+  it("marks trusted:false from a PERSISTED per-turn flag even without the in-memory option (EP-1b: one-shot/resumed turns from a prior process)", async () => {
+    // The assistant turn carries untrustedOnly (as persisted to last-chat.jsonl by a
+    // one-shot `muse chat` or a prior Ink process) — NO untrustedSession option here.
+    const richUntrusted: SessionTurnLine[] = [
+      { content: "summarise the plan", role: "user" },
+      { content: "shipped the Q3 budget review Friday using bullet points and assigned owners", role: "assistant", untrustedOnly: true },
+      { content: "great", role: "user" }
+    ];
+    const result = await captureEndOfSessionEpisode(opts(richUntrusted, richSummary));
+    expect(result.status).toBe("captured");
+    expect(result.status === "captured" && result.episode.trusted).toBe(false);
+  });
 });

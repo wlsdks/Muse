@@ -334,3 +334,31 @@ rollback → real fix → PASS cycle, recorded for audit. firesSinceDrill reset 
 
 RISK: none net — the only shipped change is the helper extraction (byte-equivalent
 to the prior inline tag) + a behavioral test; the inert drill test was rolled back.
+
+## fire 11 · 2026-06-21 · poisoned-source · (see commit)
+
+meta: value-class=hardening(fail-open-close) · pkg=@muse/cli+@muse/agent-core · kind=trust-persistence · verdict=PASS · firesSinceDrill=1
+
+ratchet: testFiles +0 (extended cli + program tests) · fabrication 0 · eval:memory-poisoning PASS · eval:action-log-tamper PASS
+
+WHAT: EP-1b — per-turn trust PERSISTENCE, closing fire-9's fail-OPEN under-mark.
+Fire 9's in-memory bridge only covered the live Ink process; a one-shot `muse
+chat` turn (the desktop companion's only path) or a RESUMED session under-marked
+its episode. Now SessionTurnLine + LastChatLine carry `untrustedOnly?`;
+appendLastChatTurn persists it (only when true; redaction intact); both persist
+callers wire it (one-shot via runLocalChat→program.ts; Ink/resumed via onCommit);
+captureEndOfSessionEpisode ORs the in-memory option with `range.turns.some(assistant
+untrustedOnly)` → trusted:false even for prior-process turns.
+
+WHY: completes the episode-provenance defense reliably (fail-CLOSE across all
+turn sources, not just the live process). Additive (provenance bit + scrutiny-cue
+path only; never changes a grounded verdict).
+
+REVIEW POINT: multi-file (schema + 2 persist callers + capture aggregation); the
+back-compat is the subtle part (optional everywhere, legacy lines → trusted,
+clean turns byte-identical). EP-1a+EP-1b+EP-2 complete; only EP-3 (chat-surface
+recall cue parity) remains. The fire-9 ⑤c merge-to-main is STILL deferred (env
+timeout) — retries fire 12 (next ÷3; the timeout hasn't recurred since).
+
+RISK: low — additive, mutation-proven (capture-aggregation + round-trip), Opus ④
+PASS, back-compat green across all SessionTurnLine consumers.

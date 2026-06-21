@@ -217,6 +217,14 @@ export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOpt
   // string into the summary/topics even though input turns were
   // already redacted.
   const scrubbedTopics = summary.topics.map((topic) => redactSecretsInText(topic));
+  // The session's source-trust verdict: the live REPL's in-memory flag
+  // (options.untrustedSession) OR any PERSISTED assistant turn in range marked
+  // untrustedOnly — the latter covers turns from a PRIOR process (a one-shot
+  // `muse chat` or a resumed session) the live REPL never saw (EP-1b). Either way
+  // the episode is marked trusted:false so it can't later launder that content as
+  // trusted "your own history" grounding (MemoryGraft arXiv:2512.16962).
+  const sessionRestedOnUntrusted = options.untrustedSession === true
+    || range.turns.some((turn) => turn.role === "assistant" && turn.untrustedOnly === true);
   const episode: PersistedEpisode = {
     endedAt: now().toISOString(),
     id: `ep_${randomUUID()}`,
@@ -224,11 +232,8 @@ export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOpt
     summary: redactSecretsInText(summary.summary),
     ...(scrubbedTopics.length > 0 ? { topics: scrubbedTopics } : {}),
     ...(summary.importance !== undefined ? { importance: summary.importance } : {}),
-    // Carry the session's source-trust verdict (the REPL passes true when ANY turn
-    // this session rested on untrusted-only sources) so the episode can't later
-    // launder that content as trusted "your own history" grounding (MemoryGraft
-    // arXiv:2512.16962). Only stored when false; absent ⇒ trusted.
-    ...(options.untrustedSession === true ? { trusted: false } : {}),
+    // Only stored when false; absent ⇒ trusted.
+    ...(sessionRestedOnUntrusted ? { trusted: false } : {}),
     userId: ownerId
   };
 
