@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseOpenAIToolCalls, parseOpenAIUsage, parseToolArguments, readOpenAIContent } from "../src/provider-openai-parse.js";
+import { sanitizeToolCallName } from "../src/provider-shared.js";
 
 describe("readOpenAIContent", () => {
   it("returns a plain string content as-is", () => {
@@ -29,6 +30,35 @@ describe("parseToolArguments", () => {
     expect(parseToolArguments("not json")).toEqual({});
     expect(parseToolArguments("[1,2]")).toEqual({});
     expect(parseToolArguments(undefined)).toEqual({});
+  });
+});
+
+describe("parseToolArguments — surface-defect recovery (fire-15 Ollama-adapter sibling)", () => {
+  it("recovers args wrapped in a ```json markdown fence", () => {
+    expect(parseToolArguments('```json\n{"city":"Seoul"}\n```')).toEqual({ city: "Seoul" });
+  });
+
+  it("recovers args wrapped in a bare ``` fence", () => {
+    expect(parseToolArguments('```\n{"x":1}\n```')).toEqual({ x: 1 });
+  });
+
+  it("recovers args with leading preamble prose", () => {
+    expect(parseToolArguments('Here are the args: {"path":"a.ts"}')).toEqual({ path: "a.ts" });
+  });
+
+  it("recovers args with trailing prose", () => {
+    expect(parseToolArguments('{"x":1} done')).toEqual({ x: 1 });
+  });
+
+  it("recovers via the string-aware balanced-brace scan (brace inside a string value)", () => {
+    expect(parseToolArguments('prefix {"note":"a } b","n":2} suffix')).toEqual({ note: "a } b", n: 2 });
+  });
+
+  it("does NOT fabricate from a non-recoverable string or a non-object embed", () => {
+    expect(parseToolArguments("just words, no braces")).toEqual({});
+    expect(parseToolArguments('prefix [1,2,3] suffix')).toEqual({});
+    expect(parseToolArguments('"a scalar"')).toEqual({});
+    expect(parseToolArguments("   ")).toEqual({});
   });
 });
 
@@ -83,5 +113,39 @@ describe("parseOpenAIUsage", () => {
       outputTokens: 40,
       reasoningTokens: 12
     });
+  });
+});
+
+describe("parseOpenAIToolCalls — tool-name sanitization (fire-11 Ollama sibling on the compat path)", () => {
+  it("recovers a tool name corrupted by a trailing leaked chat-template marker", () => {
+    expect(parseOpenAIToolCalls([{ function: { name: "run_command<|channel|>", arguments: "{}" } }]))
+      .toEqual([{ arguments: {}, id: "tool_call_0", name: "run_command" }]);
+  });
+
+  it("leaves a clean tool name unchanged", () => {
+    expect(parseOpenAIToolCalls([{ function: { name: "file_read", arguments: '{"path":"a.ts"}' } }]))
+      .toEqual([{ arguments: { path: "a.ts" }, id: "tool_call_0", name: "file_read" }]);
+  });
+
+  it("strips a zero-width char leaked into the name", () => {
+    const zeroWidthSpace = String.fromCharCode(0x200b);
+    expect(parseOpenAIToolCalls([{ function: { name: `file${zeroWidthSpace}edit`, arguments: "{}" } }]))
+      .toEqual([{ arguments: {}, id: "tool_call_0", name: "fileedit" }]);
+  });
+});
+
+describe("sanitizeToolCallName", () => {
+  it("cuts at the first chat-template channel marker", () => {
+    expect(sanitizeToolCallName("run_command<|channel|>")).toBe("run_command");
+  });
+
+  it("leaves a clean identifier unchanged", () => {
+    expect(sanitizeToolCallName("file_grep")).toBe("file_grep");
+  });
+
+  it("returns 'unknown' for empty, undefined, or pure-marker input", () => {
+    expect(sanitizeToolCallName("")).toBe("unknown");
+    expect(sanitizeToolCallName(undefined)).toBe("unknown");
+    expect(sanitizeToolCallName("<|channel|>")).toBe("unknown");
   });
 });

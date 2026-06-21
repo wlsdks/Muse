@@ -528,3 +528,25 @@ ratchet: api tests 863/863 (+5) · testFiles +1 · fabrication 0 · self-eval ex
 - **왜**: 진안 "muse 자기강화 수준/평가를 웹에서 보고 싶다"의 1번째 슬라이스. 자기강화 데이터는 ~/.muse 로컬 파일이라 HTTP API가 0이었음 — 웹 뷰(다음 fire) 전에 데이터 레이어부터. 웹콘솔 로드맵 2번 항목의 API 절반.
 - **리뷰지점**: mutation-first — 순수 shaper 단위테스트(정렬 순서·total 무드롭·hint/pKnown null정규화·**pKnown=0 보존**). sort 뒤집으면 RED, `?? null`→ternary로 0이 null 되게 하면 RED(judge가 0-edge 커버리지 갭 지적→테스트 추가). 보안: GET-only(write 0)·auth 게이트(accountability와 byte-동일)·weaknessesFile 서버-resolve(경로주입 없음). 서버 파일접근 검증됨(accountability가 objectives/actions 파일 읽는 동일 패턴). 정직한 갭: 웹 뷰 아직 없음(다음 fire)·weaknesses만(playbook/eval 후속)·read-only.
 - **리스크**: 없음(신규 라우트+shaper, api build tsc clean·api 863/863·self-eval exit 0, 독립 Opus ④b judge가 store정합·배선·보안·이빨·0-edge 검증 후 PASS).
+
+## fire 59 · 2026-06-21 · skill v2.0.0 · deda3d6c
+meta: surface=web · value-class=new-capability · pkg=@muse/web · kind=self-improve-weaknesses-view · verdict=PASS · firesSinceDrill=8
+ratchet: web tests 83/83 (+20) · testFiles +3 · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 51/0 · 표면 균형 web26·desktop13·cli19·api1
+
+- **무엇**: fire 58의 API 토대(`GET /api/self-improvement/weaknesses`)를 소비하는 **웹 자기강화 대시보드 뷰** 신설(웹콘솔 로드맵 2번 항목 완성). `SelfImprovementView`가 whetstone 약점 원장(축 Badge·토픽·관측횟수·숙달도%·remediation hint·최근관측)을 read-only로 렌더. 순수 헬퍼 2종 + 공유 포매터 1종: `weaknessAxisLabel`(축→친근 라벨, G1-residual "doctor 친근 라벨 부재"를 웹에서 해소)·`summarizeWeaknesses`(distinct-axis 카운트) + `formatProbabilityPct`(extreme-safe %, fire 55 형제). `WeaknessView`/`WeaknessesResponse` 타입 + NAV 등록 + i18n(en/ko).
+- **왜**: 진안 "openclaw/hermes처럼 웹에서 자기강화 다 관리"의 데이터-레이어(fire 58) 다음 뷰-레이어. 미세수정 연속 후 EXPANSION 다양성 유지(value-class=new-capability, pkg=@muse/web, kind=새 뷰).
+- **형제-감사(중요)**: 뷰가 `pKnown`(0~1 확률)을 %로 그리는데, 이는 fire 55가 `formatAccuracyPct`에서 고친 극값-붕괴 오정보 클래스와 동일 — naive `Math.round(x*100)`이면 0.999→"100% 거짓완벽"·0.004→"0%". 그래서 `formatProbabilityPct`를 `lib/percent.ts`로 추출해 **Dashboard의 formatAccuracyPct가 위임**(중복 제거→두 표면이 못 갈라짐), 신규 뷰도 동일 포매터 사용. `Dashboard.accuracy.test.ts` 무변경 그린.
+- **리뷰지점**: mutation-first — percent.test(0.999→99%·0.004→1%·null→"—", cap 가드 삭제 시 RED 확인)·self-improvement.test(Set dedup·축 라벨 매핑, 삭제 시 RED)·NavKeys.test(leader-key 충돌·중복키 가드). 독립 Opus ④b judge가 **첫 라운드 FAIL**(NAV key="g"가 useShortcuts의 Vim leader 예약키와 충돌→`g g` 단축키 死·팔레트 힌트 "G G" 거짓) 적발→롤백 대신 cited 결함만 수정(maker≠judge 작동 증거). 보안: read-only GET·fire-58 auth 게이트 재사용(신규 노출 0)·약점 텍스트 escaped React children(dangerouslySetInnerHTML 없음). 정직한 갭: playbook 전략·eval 스코어보드 뷰는 후속(이번은 weaknesses만).
+- **수정**: NAV key "g"→"w"(whetstone)·`LEADER_KEY` export로 useShortcuts 단일출처화·`NavKeys.test.ts` 회귀가드 신설(어떤 NAV 키도 leader와 충돌 못 함, mutation으로 RED 확인). fresh 독립 Opus judge 재판정 PASS.
+- **리스크**: 없음(apps/web 격리 leaf·reference graph 밖, web build tsc+vite·web 83/83·pnpm check exit 0·smoke:broad 51/0·lint clean, 2개 독립 Opus judge[FAIL→fix→PASS]).
+- **lesson**: 웹 NAV 단축키를 추가할 땐 nav-key 충돌뿐 아니라 **예약 leader 키("g")**도 검사하라 — 빌더가 "g가 다른 nav와 안 겹침"만 확인하고 leader 예약을 놓쳐 死 단축키를 냄. 이제 `LEADER_KEY` 단일출처 + `NavKeys.test` 가드가 이 클래스를 기계적으로 막는다. 확률(0~1)을 %로 그리는 모든 새 표면은 `formatProbabilityPct`를 재사용(극값-붕괴 오정보 클래스, fire 55).
+
+## fire 60 · 2026-06-21 · skill v2.0.0 · e778da32
+meta: surface=api · value-class=new-capability · pkg=@muse/api · kind=self-improve-playbook-api · verdict=PASS · firesSinceDrill=9
+ratchet: api tests 880/880 (+8) · testFiles +0(기존 파일 확장) · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 51/0 · consecutive allPASS: fire 59 judge-catch로 리셋 → 다음 fire 61=firesSinceDrill 10 → ★JUDGE-DRILL 강제
+
+- **무엇**: 웹 자기강화 콘솔의 다음 데이터 레이어 — 학습된 전략 playbook(`~/.muse/playbook.json`)을 읽는 read-only `GET /api/self-improvement/playbook` 신설(fire 58 weaknesses 라우트 정확 미러). 순수 `shapePlaybook`(reward DESC 정렬, 동률 recency=`lastReinforcedAt ?? createdAt` DESC, tag/origin/source→null·reward→0·probation→false·timesObserved→1 정규화, total 무드롭) + `playbookFile` 게이트 + server.ts 배선(`resolvePlaybookFile`) + ServerOptions.playbookFile.
+- **왜**: 진안 "muse 자기강화 수준을 웹에서 보고 싶다"의 weaknesses(fire 58/59) 다음 — playbook 전략은 사용자 소유 ~/.muse 데이터(ACE arXiv:2510.04618 학습 도시에)라 가장 "자기강화"다운 표면. 데이터 레이어 먼저(웹 뷰는 다음 fire, fire 58→59 검증된 cadence). 다양성: fire 59=web 뷰였으니 이번은 (api, wiring) 다른 kind.
+- **리뷰지점**: mutation-first — shapePlaybook 단위테스트(reward DESC + recency 동률, absent reward=0, null정규화, probation/timesObserved/reward 디폴트). reward 정렬 뒤집으면 2 RED·probation 디폴트 false→true 바꾸면 RED(둘 다 빌더+독립 judge 확인). 보안: read-only GET·weaknesses와 **동일 auth 게이트**(requireAuthenticated)·write 0·`readPlaybook`는 키 불일치 시 fail-closed throw(정직한 500, empty로 안 삼킴·경로/스택 미노출). 정직한 갭: 웹 뷰 미배선(다음 fire)·learned/eval 스코어보드는 후속.
+- **리스크**: 없음(apps/api만 4파일, api build clean·api 880/880·pnpm check exit 0·smoke:broad 51/0·lint clean, 독립 Opus ④b judge가 shaper정확성·auth·다양성·mutation 검증 후 PASS).
+- **drill-노트**: fire 61은 firesSinceDrill=10 도달 → 다음 슬라이스는 강제 JUDGE-DRILL(고의 나쁜-슬라이스 주입→judge FAIL 확인→롤백→진짜 fix), 미루기 불가.

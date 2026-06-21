@@ -7,7 +7,7 @@
 import type { JsonObject } from "@muse/shared";
 
 import type { ModelToolCall, ModelUsage } from "./index.js";
-import { isJsonObject, isRecord, readFiniteNumber } from "./provider-shared.js";
+import { isJsonObject, isRecord, readFiniteNumber, recoverToolArgsJson, sanitizeToolCallName } from "./provider-shared.js";
 
 export function readOpenAIContent(value: unknown): string {
   if (typeof value === "string") {
@@ -37,7 +37,7 @@ export function parseOpenAIToolCalls(value: unknown): readonly ModelToolCall[] |
     return [{
       arguments: parseToolArguments(entry.function.arguments),
       id: typeof entry.id === "string" ? entry.id : `tool_call_${index}`,
-      name: entry.function.name
+      name: sanitizeToolCallName(entry.function.name)
     }];
   });
 }
@@ -55,7 +55,8 @@ export function parseToolArguments(value: unknown): JsonObject {
     const parsed = JSON.parse(value) as unknown;
     return isJsonObject(parsed) ? parsed : {};
   } catch {
-    return {};
+    const recovered = recoverToolArgsJson(value);
+    return recovered && isJsonObject(recovered) ? recovered : {};
   }
 }
 
