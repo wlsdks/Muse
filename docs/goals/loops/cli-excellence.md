@@ -129,3 +129,15 @@ ratchet: 변경연관 테스트만(발열정책) · commands-doctor doctorStatus
 - **리스크**: 낮음. diff 2파일(commands-doctor.ts + 테스트). 다양성: render kind(fire 4/9 render였으나 최근8 ≥6 동일아님). 여신 아트 무관.
 - live: `node dist/index.js doctor --local` → `⚠ ollama-perf…` `⚠ at-rest encryption…` `⚠ mcp.json…` + `Overall: WARN — 3 warning(s) (20 ok / 3 warn / 0 fail)`.
 - 레퍼런스: brew/flutter doctor 스캔 가능 마커 관행([!]/⚠). https://docs.flutter.dev/reference/flutter-doctor
+
+## fire 12 · 2026-06-22 · skill v2.1.0 · 03b3d3c2
+meta: value-class=progress · pkg=@muse/cli · kind=progress · verdict=PASS · firesSinceDrill=2
+ratchet: 변경연관 테스트만(발열정책) · commands-notes-rag 43/43(파일전체) · lint 0 · fabrication 0
+
+- **무엇**: `muse notes reindex`의 per-file onProgress 라인에 `[i/N]` 위치 prefix 추가(found.length 중 몇 번째). 캐시(skip) 파일은 무음 유지. embedded/failed 라인만 위치 표시.
+- **왜**: 긴 reindex가 위치 없이 `+path`만 흘러 "멈춘 듯" 보였다(③ 반응성). progress kind = fresh(최근 render 3회 회피). 실제 루프 index+found.length라 fabrication 0, presentation만(카운트/인덱스 불변).
+- **리뷰지점**: 테스트가 실제 onProgress 캡처 grade([1/2]/[2/2]), mutation-first RED(prefix 제거→fail). 라이브 3파일 reindex로 `[1/3][2/3][3/3]` 확인. ★maker≠judge가 또 값을 함: 첫 ④b가 **형제 회귀**(corrupt-PDF 테스트가 startsWith("✗") assert) 적발→FAIL→그 assertion을 `[i/N]` prefix 반영 regex로 수정→재판정 PASS(5/5). commands-read는 별도 prefix-less emitter라 무관(14/14).
+- **리스크**: 낮음. diff 2파일.
+- live: `node dist/index.js notes reindex --dir <3 notes>` → `[1/3] + …a.md` `[2/3] + …b.md` `[3/3] + …c.md` `Done. 3 embedded`.
+- lesson: 출력 형식을 바꾸면 **그 출력을 assert하는 모든 테스트를 grep**(startsWith/toContain)해 형제까지 같은 fire에 고쳐야 한다 — 좁은 `-t` 한 테스트만 돌리면 cross-file 형제 회귀를 놓친다(judge가 풀-파일 실행으로 잡음). 형제-감사 = src뿐 아니라 그 출력 assert 테스트까지.
+- 레퍼런스: 진행 표기 `[i/N]`(npm/pip/lazygit식 위치 카운터). https://github.com/jesseduffield/lazygit
