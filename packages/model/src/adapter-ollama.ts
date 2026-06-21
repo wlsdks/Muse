@@ -23,7 +23,7 @@ import {
   localModelCapabilities
 } from "./provider-wire.js";
 import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus } from "./provider-base.js";
-import { createLeadingThinkStripper, parseJson, stripLeadingThinkBlock } from "./provider-shared.js";
+import { createLeadingThinkStripper, parseJson, recoverToolArgsJson, sanitizeToolCallName, stripLeadingThinkBlock } from "./provider-shared.js";
 import type {
   ModelEvent,
   ModelInfo,
@@ -505,78 +505,6 @@ interface OllamaNativeChatResponse {
   readonly logprobs?: readonly { readonly token?: string; readonly logprob?: number }[];
 }
 
-/**
- * Attempts to locate a valid JSON object embedded in noise (e.g. model preamble,
- * markdown fences). Only LOCATES — never rewrites token contents.
- * Returns the parsed object or undefined if no recoverable object is found.
- */
-export function recoverToolArgsJson(raw: string): Record<string, unknown> | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) return undefined;
-
-  // Strip markdown code fence and try to parse the inner content.
-  const fenceMatch = /```(?:json)?\s*\n([\s\S]*?)\n\s*```/.exec(trimmed);
-  if (fenceMatch) {
-    try {
-      const parsed = JSON.parse(fenceMatch[1]!);
-      if (isPlainObject(parsed)) return parsed;
-    } catch { /* fall through */ }
-  }
-
-  // Locate outermost { ... } with a string-aware balanced-brace scan.
-  const firstBrace = trimmed.indexOf("{");
-  if (firstBrace === -1) return undefined;
-
-  let depth = 0;
-  let inString = false;
-  let lastClose = -1;
-  for (let i = firstBrace; i < trimmed.length; i++) {
-    const ch = trimmed[i]!;
-    if (inString) {
-      if (ch === "\\" ) { i++; continue; }
-      if (ch === "\"") inString = false;
-    } else {
-      if (ch === "\"") { inString = true; continue; }
-      if (ch === "{") { depth++; continue; }
-      if (ch === "}") {
-        depth--;
-        if (depth === 0) { lastClose = i; break; }
-      }
-    }
-  }
-
-  if (lastClose === -1) return undefined;
-
-  const candidate = trimmed.slice(firstBrace, lastClose + 1);
-  try {
-    const parsed = JSON.parse(candidate);
-    if (isPlainObject(parsed)) return parsed;
-  } catch { /* fall through */ }
-
-  return undefined;
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
 function safeParseToolArgs(raw: string): unknown {
   try { return JSON.parse(raw); } catch { return recoverToolArgsJson(raw) ?? {}; }
-}
-
-/**
- * A thinking-capable local model (gemma4) sometimes bleeds harmony/chat-template
- * channel markers (`<|channel|>`, `<|"|>`) into a tool-call NAME. A real tool name
- * is a clean identifier, so cut at the first such marker and strip control /
- * zero-width chars — this RECOVERS an otherwise-valid name corrupted by a trailing
- * leaked token (`run_command<|channel|>` → `run_command`, which then resolves in
- * the registry instead of failing as tool-not-found). A clean name is unchanged.
- */
-function sanitizeToolCallName(raw: string | undefined): string {
-  if (typeof raw !== "string" || raw.length === 0) {
-    return "unknown";
-  }
-  const cut = raw.split(/<\|/u)[0] ?? raw;
-  const cleaned = cut.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028\u2029\ufeff]/gu, "").trim();
-  return cleaned.length > 0 ? cleaned : "unknown";
 }
