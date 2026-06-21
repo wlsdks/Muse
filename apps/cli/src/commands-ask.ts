@@ -569,6 +569,27 @@ export function decompositionJsonFields(
   };
 }
 
+/**
+ * The human-facing stderr WARNING lines for a decomposed run (pure, so it's testable
+ * unlike the inline god-file prints). Surfaces the CORRECTNESS-relevant fan-in signals a
+ * `muse ask` user should verify: a cross-sub-task CONTRADICTION (workers disagree), and
+ * REDUNDANCY (two sub-answers near-identical → the synthesis may over-weight that point).
+ * Deliberately does NOT surface `reasoningActionGaps`: that lexical signal over-fires on
+ * legitimate paraphrase/decide downstreams (measured, see lead-worker.ts) — too noisy for a
+ * prominent human warning, so it stays in the `--json` payload where a consumer can weight it.
+ * Each line is a multi-line block; the caller appends the trailing newline.
+ */
+export function decompositionStderrNotes(decomposed: DecomposedAskResult): readonly string[] {
+  const notes: string[] = [];
+  if (decomposed.subtaskConflicts && decomposed.subtaskConflicts.length > 0) {
+    notes.push(`⚠️ sub-results disagree — verify before trusting:\n${decomposed.subtaskConflicts.map((c) => `  • ${c}`).join("\n")}`);
+  }
+  if (decomposed.subtaskRedundancies && decomposed.subtaskRedundancies.length > 0) {
+    notes.push(`ℹ sub-tasks produced near-identical results (the answer may over-weight a point):\n${decomposed.subtaskRedundancies.map((c) => `  • ${c}`).join("\n")}`);
+  }
+  return notes;
+}
+
 export function renderAskStreamError(params: {
   readonly json: boolean;
   readonly query: string;
@@ -2215,8 +2236,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               const incompleteNote = decomposed.synthesisIncomplete && decomposed.synthesisIncomplete.length > 0 ? " — ⚠ some sub-results may be missing; ask me to expand" : "";
               io.stderr(`(decomposed into ${decomposed.subtaskCount} sub-tasks${capNote}${incompleteNote})\n`);
             }
-            if (!options.json && decomposed.subtaskConflicts && decomposed.subtaskConflicts.length > 0) {
-              io.stderr(`⚠️ sub-results disagree — verify before trusting:\n${decomposed.subtaskConflicts.map((c) => `  • ${c}`).join("\n")}\n`);
+            if (!options.json) {
+              for (const note of decompositionStderrNotes(decomposed)) io.stderr(`${note}\n`);
             }
           } else {
             const result = await assembly.agentRuntime.run({

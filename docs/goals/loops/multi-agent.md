@@ -4,6 +4,37 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 15 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=wiring(exposure-completion) · pkg=@muse/cli · kind=human-stderr-surfacing · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles +0 (cases added to commands-ask.test.ts) · fabrication 0 · eval:orchestration PASS · DIVERSE-kind (human-stderr vs fire-14 json) · calibration-aware
+
+**What** — Completed the HUMAN exposure of the fan-in coordination signals (the symmetric twin of fire 14's
+`--json` fix). The `muse ask` stderr banner warned on CONTRADICTIONS (`subtaskConflicts`) but was blind to
+REDUNDANCY. Extracted a PURE, testable `decompositionStderrNotes(decomposed)` (the inline god-file prints aren't
+testable — same extraction pattern as fire-14's `decompositionJsonFields`) that builds the human warning lines:
+CONFLICT (preserved byte-identical) + REDUNDANCY (new — a near-identical pair means the synthesis may over-weight
+a point, correctness-adjacent). The call site replaced the inline print with a loop over the function.
+
+**Why / ★CALIBRATION** — Deliberately does NOT surface `reasoningActionGaps` to the human: that lexical signal
+was MEASURED (fire 10) to over-fire on legitimate paraphrase/decide downstreams (6/6 transforms), so a prominent
+⚠️ on most sequenced runs would erode trust. It stays `--json`-only (fire 14) where a consumer can weight it.
+Surface the PRECISE signal to the human; keep the NOISY one machine-only. `ℹ` (info) vs `⚠️` (warning) glyphs
+right-size severity.
+
+**Review points** — (1) MUTATION-FIRST: removing the redundancy push → the redundancy + conflict+redundancy
+tests RED (2 failed), restored. (2) BYTE-IDENTICAL conflict line (judge verified: fn returns `…:\n${map join}`,
+caller adds `\n` = old inline exactly; no double-newline, empty-conflicts → no note → no empty line). (3) Pure
+function → testable (god-file testability gain). (4) No collateral (sibling prints + decompositionJsonFields
+untouched).
+
+**Risk** — Pure additive surfacing; no model/egress, floor untouched. The exposure layer (engine→result→stderr→
+JSON→run-log) is now COMPLETE for the precise signals. Weakest point (judge): tests use `.includes()` not
+full-equality, so they don't lock the exact wording vs future drift (preservation is correct now). Theme: the
+exposure gap fires 14-15 closed was real; the core orchestration guards remain mature.
+
+review: gates green — cli build clean · decompositionStderrNotes 5 pass · lint 0 · `pnpm check` exit 0 (one
+@muse/model fuzz flake, passed on re-run) · eval:orchestration PASS · independent Opus ④ judge VERDICT PASS.
+
 ## fire 14 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · 25f5f6d1
 meta: value-class=wiring(gap-fix) · pkg=@muse/cli · kind=json-serialization · verdict=PASS · firesSinceDrill=2
 ratchet: testFiles +0 (cases added to commands-ask.test.ts) · fabrication 0 · eval:orchestration/decomposition PASS · DIVERSE (cli/json-serialization, not multi-agent package) · ★found a REAL gap the fire-11/13 exhaustion claim MISSED
