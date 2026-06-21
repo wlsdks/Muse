@@ -199,3 +199,25 @@ rubber-stamp. Then rolled the test back and shipped the REAL value-pinned versio
 
 mutation-first: flipping ArrowRight direction → 2 RED; restored → 6/6 GREEN.
 ④b independent Opus judge: DRILL=FAIL-as-expected, REAL=PASS.
+
+## fire 9 · 2026-06-22 · skill v2.1.0 · (pending commit)
+meta: value-class=menu-status-correctness · area=menu · kind=refactor · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles +1 (MenuStatusTests, 3 cases) · companion×refactor 1 · companion×feature 1 · settings×feature 1 · server×refactor 1 · web×ux 1 · web×i18n 1 · web×a11y 1 · tests×test 1 · menu×refactor 1 · fabrication 0
+browser-check: n/a (Swift-only; menu bar has no DOM)
+
+- **What**: extracted MuseController.statusTitle's logic into a pure
+  MuseDesktopCore.MenuStatus — shortModelName (last path segment), isLocalOnly
+  (MUSE_LOCAL_ONLY parse, default-on, only "false" disables), line (compose).
+- **Why**: the menu-bar status line (privacy posture · model · server) had its
+  model-shortening + env parse buried in AppKit, untestable. The privacy-posture
+  read especially deserves a pinned test (a drift to "only 'true' is on" would
+  wrongly show a cloud posture in the menu).
+- **Review point**: byte-identical output to the old inline code (same default
+  model, " · " separator, shortening, literal-"false"-only disable); Core stays
+  headless (labels resolved in AppKit). Independent Opus ④b judge confirmed exact
+  semantic equivalence + ran its own 2nd mutation (== "true").
+- **Risk**: none — behavior-preserving; reads env for display only, the real
+  local-only gate is untouched. No security surface.
+
+mutation-first: .last→.first turned 3 tests RED; restored → 3/3 GREEN.
+④b independent Opus judge: PASS.
