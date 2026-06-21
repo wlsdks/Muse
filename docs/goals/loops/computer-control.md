@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 47 · 2026-06-21 · skill v2.0 · <commit> (measure-first: AgentRuntime not-EXPOSED gate suggests nearest active tool — node_run→run_command dead-end closed)
+## fire 47 · 2026-06-21 · skill v2.0 · 46d24074 (measure-first: AgentRuntime not-EXPOSED gate suggests nearest active tool — node_run→run_command dead-end closed)
 meta: value-class=new-capability · pkg=@muse/agent-core+@muse/tools · kind=tool-recovery/not-exposed-suggestion · verdict=PASS · firesSinceDrill=1
 ratchet: testFiles +0 / +6 cases (4 nearestToolName unit + 2 AgentRuntime integration) · fabrication 0 · @muse/tools 96 · @muse/agent-core agent-runtime 133 · pnpm check apps/api flake(격리 888/888, env UNSET) · lint 0/0 · ★Ollama UP
 - 측정-우선(Ollama 드디어 UP): eval:computer-task PASS 1/1(file_grep→read→edit), 그러나 eval:multifile-fix FAIL — `tools=[file_read, node_run]`, 모델이 `node_run` 환각(실제=run_command). fire-9 nearestToolName은 @muse/tools EXECUTOR의 not-registered 경로에만 있는데, 환각 이름은 AgentRuntime.executeToolCall의 "not exposed" 게이트(activeTools 체크가 먼저)에 걸려 **제안 없는 맨-에러 → dead-end**.
