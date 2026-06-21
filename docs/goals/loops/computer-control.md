@@ -5,7 +5,7 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
-## fire 55 · 2026-06-21 · skill v2.0 · <commit> (eval:reverify-fix — RE-VERIFICATION probe surfaces a REAL blocker: 12B re-reads its edit but doesn't re-run)
+## fire 55 · 2026-06-21 · skill v2.0 · ee783e75 (eval:reverify-fix — RE-VERIFICATION probe surfaces a REAL blocker: 12B re-reads its edit but doesn't re-run)
 meta: value-class=new-capability(harder-eval/flywheel)+finding · pkg=scripts/eval · kind=eval-fixture/re-verification · verdict=PASS(probe valid; 12B FAILs it=finding) · firesSinceDrill=9
 ratchet: testFiles unchanged · fabrication 0 · eval:reverify-fix valid+discriminating(neither/only-reported→FAIL, both→PASS, 결정론 검증) · 12B FAIL 1/1(genuine gap) · lint 0/0 · Ollama UP
 - 무엇: 테스트가 FIRST 실패에서 exit(순차 assertion)이라 둘째 버그(beta)가 첫째(alpha) 고치고 RE-RUN하기 전엔 숨겨짐. 보고된 버그만 고치고 re-run 없이 done 선언하면 둘째 못 봄 → FAIL. two-edit-fix(둘 다 upfront 노출)와 다른 차원=RE-VERIFICATION(첫 에러를 전부로 믿지 말고 재실행 확인).
