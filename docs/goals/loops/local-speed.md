@@ -82,7 +82,7 @@ ratchet: (cli, doctor-discoverability) 2/8 (fire 6 num_batch, fire 8 num_predict
 - 리스크: 없음 — doctor advisory만, 모델/런타임/grounding 무관 → 정확성 회귀 0.
   검증: cli 2875 pass isolated(신규 2 OUTCOME) · MUTATION-FIRST(num_predict push 제거 → 1 RED; revert→green) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(env명 실재·env-flake 정직·value-first·ratchet OK·결함 0). ⚠️full pnpm check는 박스 메모리압박(동시루프)으로 OOM(SIGABRT)+무관 flake(@muse/model web-search-policy property-fuzz·@muse/cli document-reader PDF 5s 타임아웃) — 둘 다 isolated-green, 내 변경은 apps/cli string-only로 무관 → env flake로 판정(fire 3·6 동일 클래스).
 
-## fire 9 · 2026-06-21 · local-speed · <commit>
+## fire 9 · 2026-06-21 · local-speed · efc944ab
 meta: value-class=test(regression-guard) · pkg=@muse/model · kind=judge-drill+grounding-guard · verdict=PASS · firesSinceDrill=0
 ratchet: (model) 3,7,9 but kind=regression-guard distinct from 2,7 adapter-wiring · fabrication 0 · TEST-ONLY 소스 무변경
 - ★JUDGE-DRILL (연속 allPASS=8 트리거, 미루기 불가): 가짜 나쁜-슬라이스 → ④ judge FAIL 확인 → 롤백 → 진짜 fix.
