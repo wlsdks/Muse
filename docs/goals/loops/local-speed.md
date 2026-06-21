@@ -134,7 +134,7 @@ ratchet: (scripts, measurement-infra) 1/8 윈도우(fire 1 이후 처음) · fab
   검증: cascade-eval.test 8/8 · MUTATION-FIRST(gate `!==`→`===` 4 RED; revert→green) · LIVE 23.9% latency win 측정 · 러너 load시 clean skip(exit 0) 확인 · smoke:broad 52/0 · lint rc=0 · pnpm check는 web-search-policy property-fuzz "Test timed out 5000ms" load-flake만(isolated 1/3 green, 박스 load 35 = Ollama 35B resident+동시루프, 내 변경 scripts-only로 무관) · 독립 Opus ④ judge PASS(자체 mutation 재현, 0%-escalation 정직성·load-flake nuance·value-first 판정; defect 2건[fetch timeout·gateCorrect 자기일관성] 지적 → fetch timeout 수정+claim 정직화 완료).
   decompose: 라이브 escalate-arm 실증(hard prompt/낮은 threshold) → backlog ◦. ask --tiered single-query cascade도 잔존.
 
-## fire 14 · 2026-06-21 · local-speed · <commit>
+## fire 14 · 2026-06-21 · local-speed · 4a2c4587
 meta: value-class=new-capability · pkg=apps/api · kind=startup-latency(warmup) · verdict=PASS · firesSinceDrill=5
 ratchet: (apps/api) 2/8 윈도우(fire 11 cascade-wiring vs 14 startup-warmup = distinct kind) · fabrication 0 · default-off startup byte-identical
 - 무엇: opt-in 모델 워밍업 `MUSE_WARMUP_MODEL`(apps/api `warmUpModelIfConfigured`) — 서버 시작 시 작은 fire-and-forget generate(maxOutputTokens:1)로 모델을 Ollama에 미리 로드 → 첫 사용자 요청이 warm. server.ts 시작 훅(데몬들 옆)에 1줄 배선.
