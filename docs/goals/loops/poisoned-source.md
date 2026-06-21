@@ -541,3 +541,36 @@ NEXT FIRE (18): consecutive allPASS reaches 8 → JUDGE-DRILL required; fire 18 
 also ÷3 → retry the fires 13-17 main-merge.
 
 RISK: low — additive cue text, mutation-proven, Opus ④ PASS, fabrication untouched.
+
+## fire 18 · 2026-06-21 · poisoned-source · (see commit) · JUDGE-DRILL + final
+
+meta: value-class=new-capability · pkg=@muse/recall+@muse/cli · kind=conflict-cue-trust · verdict=PASS · firesSinceDrill=0 (drill performed)
+
+ratchet: testFiles +0 (extended build-note-context-block, +3 real cases) · fabrication 0 · JUDGE-DRILL passed · eval:memory-poisoning PASS · eval:action-log-tamper PASS
+
+JUDGE-DRILL (mandatory at consecutive allPASS≥8): planted a deliberately
+MUTATION-BLIND test for the ask-path trust-aware marker (asserted only
+block.toContain("⚠"), which the neutral marker also satisfies). The independent
+Opus judge RAN the mutation (`!== → ===`/always-neutral), saw the test stay GREEN
+while the behavior was broken, and correctly FAILED it — naming the exact
+inadequacy + prescribing the right assertions. Verifier proven not a rubber-stamp.
+Rolled the bad test back; shipped the REAL mutation-RED test.
+
+WHAT (real fix): trust-aware ask-path conflict marker — the fire-17 sibling.
+buildNoteContextBlock gains untrustedNoteSources; a conflict between an ingested
+(untrusted) note and the user's own now names the external one + "prefer THIS
+note" instead of the neutral marker. commands-ask hoists untrustedNoteSources once
+(reused by marker + grounding-evidence tagging). Trust-aware conflict cue now on
+BOTH surfaces (chat 17 + ask 18).
+
+REVIEW POINT: re-judged PASS after the drill (own/ext direction correct both ways,
+single readNoteProvenance, end-to-end wired). NOTE: full pnpm check flaked on
+box-saturation 5000ms timeouts (@muse/autoconfigure + program.test.ts TUI) — env;
+recall (418) + cli commands-ask + mutation RED + lint + evals green.
+
+WIND-DOWN: 진안 directed (2026-06-21) — finish, merge all fires to main, delete
+branch (local+remote), remove the /tmp worktree, CronDelete the loop cron
+cb79365d. This is the FINAL fire of the poisoned-source loop.
+
+RISK: low — additive marker wording, mutation-proven, Opus ④ PASS (re-judged),
+fabrication floor untouched.

@@ -1759,6 +1759,14 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // chunk without a comparable embedding (e.g. --file ad-hoc passages).
       scored = dedupNearDuplicateChunks(scored, cosine);
       const contextChunks = reorderForLongContext(scored);
+      // Externally-ingested (untrusted) note paths — hoisted here so BOTH the
+      // note-context block's conflict marker (below) AND the grounding-evidence
+      // tagging (further down) read the same set: a conflict pitting an ingested
+      // note against the user's own is rendered trust-aware (prefer your own),
+      // not a neutral "either could be current" (GROUNDED≠TRUE ask-path parity).
+      const untrustedNoteSources = untrustedNotePaths(
+        await readNoteProvenance(resolveNoteProvenanceFile(process.env as MuseEnvironment))
+      );
       // CRAG: grade the notes' retrieval confidence so a weak near-miss isn't
       // presented to the small model as something to cite as fact.
       const notesFraming = notesGroundingFraming(scored, query, preGapScored.length > 0 ? preGapScored : undefined);
@@ -1782,7 +1790,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           // copies the whole line, leaking the label into the answer ("…1380.
           // cite as: [from vpn.md]") — visible on the demo. The source is shown
           // relative to the notes dir (clean + locatable), not the absolute path.
-          : buildNoteContextBlock(contextChunks, noteContradictions, notesDir);
+          : buildNoteContextBlock(contextChunks, noteContradictions, notesDir, untrustedNoteSources);
 
       // Pull open tasks as a second grounding source. Real JARVIS
       // questions ("what should I focus on today?", "what's left
@@ -2522,14 +2530,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // note is always covered. This only ADDS evidence — it can prevent a
         // false "ungrounded", never cause a false "grounded": a drifted value
         // that appears in no cited note still scores uncovered → ungrounded.
-        // Notes ingested from an external URL (muse notes ingest --url) are
-        // third-party content — tag their grounding evidence trusted:false so an
-        // answer resting solely on a poisoned ingested note trips the untrusted-only
-        // cue instead of laundering it as a trusted "your own note" (the GROUNDED≠TRUE
-        // note-veracity gap). User-authored notes carry no entry → stay trusted.
-        const untrustedNoteSources = untrustedNotePaths(
-          await readNoteProvenance(resolveNoteProvenanceFile(process.env as MuseEnvironment))
-        );
+        // `untrustedNoteSources` is computed once near the note-context block above
+        // (ingested-note paths) and reused here to tag grounding evidence trusted:false
+        // so an answer resting solely on a poisoned ingested note trips the
+        // untrusted-only cue (GROUNDED≠TRUE). User-authored notes → no entry → trusted.
         const baseNoteMatches = scored.map((r) => {
           const source = relativizeNoteSource(r.file, notesDir);
           return { cosine: r.score, score: r.score, source, text: r.chunk.text, ...(untrustedNoteSources.has(source) ? { trusted: false } : {}) };

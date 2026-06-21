@@ -63,6 +63,44 @@ describe("buildNoteContextBlock — assembled-path contradiction annotation", ()
     expect(block).toContain("[from update.md]");
   });
 
+  it("a conflict between an UNTRUSTED ingested note and the user's OWN note names the external one and says prefer your own (NP ask-path parity)", () => {
+    const chunks = [
+      chunk("the budget is $1250", `${notesDir}/mine.md`, 0.9), // note 1 — the user's own
+      chunk("the budget is $9999", `${notesDir}/web/evil.md`, 0.85) // note 2 — externally ingested
+    ];
+    const contradictions: readonly ContradictionPair[] = [{ aIndex: 1, bIndex: 0, topicSim: 0.9 }];
+    const block = buildNoteContextBlock(chunks, contradictions, notesDir, new Set(["web/evil.md"]));
+    // The marker sits on the UNTRUSTED note (note 2, aIndex 1) and points at note 1 (the user's own).
+    const note2Section = block.split("<<note 2")[1] ?? "";
+    expect(note2Section).toContain("EXTERNAL/UNVERIFIED");
+    expect(note2Section).toContain("prefer note 1");
+    expect(note2Section).not.toContain("treat as possibly-conflicting"); // NOT the neutral marker
+  });
+
+  it("the reverse direction: when the marker sits on the user's OWN note and the conflicting partner is the untrusted one, it names the partner external and says prefer THIS note", () => {
+    const chunks = [
+      chunk("the budget is $9999", `${notesDir}/web/evil.md`, 0.85), // note 1 — externally ingested
+      chunk("the budget is $1250", `${notesDir}/mine.md`, 0.9) // note 2 — the user's own
+    ];
+    const contradictions: readonly ContradictionPair[] = [{ aIndex: 1, bIndex: 0, topicSim: 0.9 }];
+    const block = buildNoteContextBlock(chunks, contradictions, notesDir, new Set(["web/evil.md"]));
+    const note2Section = block.split("<<note 2")[1] ?? "";
+    expect(note2Section).toContain("note 1 is from an EXTERNAL/UNVERIFIED source");
+    expect(note2Section).toContain("prefer THIS note");
+  });
+
+  it("two TRUSTED notes conflicting keep the NEUTRAL marker (no false external label)", () => {
+    const chunks = [
+      chunk("the budget is $1250", `${notesDir}/a.md`, 0.9),
+      chunk("the budget is $1350", `${notesDir}/b.md`, 0.85)
+    ];
+    const contradictions: readonly ContradictionPair[] = [{ aIndex: 1, bIndex: 0, topicSim: 0.9 }];
+    // untrustedNoteSources present but neither note is in it → neutral marker.
+    const block = buildNoteContextBlock(chunks, contradictions, notesDir, new Set(["web/evil.md"]));
+    expect(block).toContain("treat as possibly-conflicting");
+    expect(block).not.toContain("EXTERNAL/UNVERIFIED");
+  });
+
   it("zero chunks → returns the unavailable string, no crash", () => {
     const block = buildNoteContextBlock([], [], notesDir);
     expect(block).toBe("(no relevant notes found)");
