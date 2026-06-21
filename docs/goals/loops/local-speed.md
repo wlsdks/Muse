@@ -62,7 +62,7 @@ ratchet: cli 2/6 (fire 4 correctness-hardening vs fire 6 capability, distinct ki
 - 리스크: 없음 — advisory diagnostic만, 모델/런타임/grounding/tool 무관 → 정확성 회귀 0. always-ok라 worst 등급 못 올림(기존 verdict 불변).
   검증: cli 2865 pass(신규 4 OUTCOME 케이스) · MUTATION-FIRST(힌트 always-empty → 3 RED; revert→green) · pnpm check rc=0(api 888 + cli 2865) · smoke:broad 51/0 · lint rc=0 · 독립 Opus ④ judge PASS(env명 실재 grep재확인, wired-and-live 확인, value-first 판정, 결함 0, merge 안전).
 
-## fire 7 · 2026-06-21 · local-speed · <commit>
+## fire 7 · 2026-06-21 · local-speed · 2dacfb99
 meta: value-class=new-capability · pkg=@muse/model+@muse/autoconfigure · kind=adapter-wiring · verdict=PASS · firesSinceDrill=7
 ratchet: (model+autoconfigure, adapter-wiring) 2/7 (fire 2 num_batch throughput vs fire 7 output cap = distinct lever) · fabrication 0 · default wire byte-identical
 - 무엇: opt-in 생성-길이 디폴트 캡 `MUSE_OLLAMA_NUM_PREDICT` — maxOutputTokens 없는 요청에만 적용되는 num_predict 천장. env → autoconfigure → `OllamaProvider({numPredict})` → native options. 우선순위: request.maxOutputTokens > this.numPredict(디폴트) > omit. 어댑터가 검증 단일권위(>0·finite·trunc, 아니면 omit). 미설정 = 오늘의 무제한(-1) 그대로.
