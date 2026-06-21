@@ -4,6 +4,38 @@ Theme: lead-worker orchestration / sub-agent handoff reliability (MAST coordinat
 guards · handoff schema validation · explicit termination). Worktree `/tmp/muse-multi-agent`,
 branch `loop/multi-agent`. Tier2 (push every fire; merge-to-main every 3rd fire).
 
+## fire 2 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · <pending-commit>
+meta: value-class=new-guard · pkg=@muse/multi-agent · kind=correctness-guard · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles +0 (case added to lead-worker.test.ts) · fabrication 0 · eval:orchestration/decomposition SKIP (Ollama down) · pkg/kind DIVERSE vs fire 1 (@muse/api/wiring → @muse/multi-agent/guard)
+
+**What** — `runLeadWorkerTask` (decomposed lead-worker path) now short-circuits BEFORE
+synthesis when `completed === 0` (every sub-task failed/ungrounded), returning an honest
+`finalAnswer: ""` and SKIPPING the synthesizer. Previously it handed only failed/ungrounded
+executions to `deps.synthesize` and returned that as the final answer — a confident answer
+fabricated from zero grounded evidence.
+
+**Why** — Fabrication=0 floor breach + MAST proceed-despite-failure. The single-agent path
+already returned `""` on failure (line 279) and the orchestrator fan-out already throws
+`No worker completed` — the decomposed lead-worker path was the inconsistent outlier that
+let a non-answer masquerade as a synthesized answer. Found via gap-scout of the orchestration
+code (no backlog item; the conflict/handoff guards were already mature).
+
+**Review points** — (1) MUTATION-FIRST: pre-fix the new test RED (`finalAnswer` = "CONFIDENT
+but ungrounded answer", synthesizeCalls=1); post-fix GREEN. Independent Opus ④ judge re-ran the
+mutation drill (disabled guard → exactly the one test failed → restored → 207 pass). (2) SIBLING
+AUDIT: all three all-failed paths now consistent (single-agent ""/fan-out throw/decomposed "").
+(3) `completed` hoisted once (removed the duplicate at the old site, identical value). (4) Early
+return is shape-correct vs LeadWorkerResult; dropped optionals (synthesisIncomplete/subtaskConflicts)
+are meaningless with zero completed.
+
+**Risk** — A genuinely all-ungrounded decomposition now returns "" rather than an "I'm not sure"
+prose answer — but that matches the established single-agent convention (callers already treat
+`finalAnswer === ""` as "no grounded answer"). No new contract burden. LLM evals SKIP (Ollama down);
+slice proven by the deterministic unit test.
+
+review: gates green — `pnpm --filter @muse/multi-agent build` clean · full pkg 207 pass · lint 0 ·
+`pnpm check` exit 0 · independent Opus ④ judge VERDICT PASS.
+
 ## fire 1 · 2026-06-21 · multi-agent · loop-creator v2.0.0 · b9e3ced9
 meta: value-class=wiring · pkg=@muse/api · kind=cross-package-wiring · verdict=PASS · firesSinceDrill=0
 ratchet: testFiles +1 (orchestrate-route-conflict-wiring) · fabrication 0 · eval:orchestration/decomposition SKIP (Ollama down on box)
