@@ -307,3 +307,24 @@ mutation-first: dropping the telegram empty-guard turned 2 tests RED; restored �
 8/8 GREEN. ④b independent Opus judge: PASS.
 sibling follow-up: CalendarCredentials.serverEnv() is the analogous untested
 inline mapping — backlogged for a future fire (same extract+test pattern).
+
+## fire 14 · 2026-06-22 · skill v2.1.0 · (pending commit)
+meta: value-class=connection-correctness · area=settings · kind=refactor · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles +1 (CalendarEnvTests, 8 cases) · settings×refactor 2 · companion×refactor 1 · companion×feature 2 · settings×feature 1 · server×refactor 1 · web×ux 1 · web×i18n 1 · web×a11y 1 · tests×test 1 · menu×refactor 1 · onboarding×refactor 1 · webview×refactor 1 · fabrication 0
+browser-check: n/a (Swift-only; Keychain/env mapping)
+
+- **What**: completes fire 13's sibling — extracted CalendarCredentials.serverEnv()
+  into pure MuseDesktopCore.CalendarEnv.build + 8 tests; app delegates. local
+  always implicit; macOS/CalDAV/Google add only when their required fields are all
+  present; MUSE_CALENDAR_PROVIDERS only when >1 provider; gcalCalendarId optional.
+- **Why**: same silent-failure risk as messaging — a partially-filled CalDAV/
+  Google config must not half-enable, and the provider list / var names must be
+  exact or the calendar connection fails quietly. Now pinned.
+- **Review point**: byte-equivalent to old inline (provider order local→macos→
+  caldav→gcal preserved, same trim CharacterSet, trim-once). Independent Opus ④b
+  ran 2 mutations (count>1→>0, gcal AND→OR) + threat-modeled (no half-enable, no
+  cross-wiring, macOS-only still emits PROVIDERS, no secret logged).
+- **Risk**: low — behavior-preserving; .trimmed still used by save() (7×).
+
+mutation-first: caldav AND→OR (partial wrongly ready) turned 1 test RED; restored
+→ 8/8 GREEN. ④b independent Opus judge: PASS.

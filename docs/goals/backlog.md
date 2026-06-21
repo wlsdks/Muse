@@ -2940,3 +2940,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✓ adaptive idle-bubble display duration (IdleChatter.displaySeconds + cancellable clear) — desktop-enhance fire 12
 - ✓ extract+test messenger serverEnv mapping (MessagingEnv.build) — desktop-enhance fire 13
 - ◦ extract+test CalendarCredentials.serverEnv() mapping into Core (analogous sibling to MessagingEnv) — desktop-enhance follow-up
+- ✓ extract+test CalendarCredentials.serverEnv() (CalendarEnv.build) — desktop-enhance fire 14 (completes fire-13 sibling)
