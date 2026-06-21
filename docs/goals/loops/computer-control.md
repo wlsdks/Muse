@@ -5,6 +5,14 @@
 > Cron `47491301` (every 20m, session-only; re-registered 2026-06-21 from ready/2-computer-control.md — prior `18d30a58` expired with its session). Stop: `CronDelete 47491301`. Convention: [README](README.md).
 > NOTE: fires 1-2 docs는 동시-루프 INDEX 충돌 cascade로 rebase 대신 origin/main 리셋 후 fire 3에서 통합 재기록(히스토리 보존; fire 1-2 해시 ee635ab0/8ea83aab는 orphaned but 기록용).
 
+## fire 43 · 2026-06-21 · skill v2.0 · <commit> (path-refusal names the allowed roots so the 12B can self-correct)
+meta: value-class=new-capability · pkg=@muse/fs · kind=refusal-self-correction-hint · verdict=PASS · firesSinceDrill=6
+ratchet: testFiles +0 files / +2 cases (outside_roots names roots+retry guidance; deny-list stays opaque) · fabrication 0 · @muse/fs fs-path-safety 39 pass · pnpm check exit 0 · lint 0/0 · Ollama DOWN (evals skip)
+- 무엇: fs 경로 샌드박스(`resolveSafePath`)의 `outside_roots` 거부 메시지가 "outside the allowed roots and was refused"로 **어떤 root가 허용인지 안 알려줌** → 12B가 나쁜 경로 고르면 self-correct할 단서 0 (맹목 retry). FIX: `outside_roots` 분기에만 `Allowed roots: <policy.roots>. Retry with a path under one of these.` 추가(roots>0 가드). deny-list(비밀경로) 메시지는 불변=opaque 유지. fs 도구는 refusalResult→{error,refused:true}로 이 메시지를 모델에 그대로 전달.
+- 왜: on-theme(@muse/fs 멀티스텝 파일 체인 self-correction). 다양성: @muse/fs지만 KIND가 새로움(refusal-self-correction-hint; 최근 fs는 nudge/context-fit/paging). 보안: 노출은 outside_roots 분기 한정(deny 체크 前 return) → deny-dir 위치 누설 0; roots는 유저 자기 home/workspace라 로컬모델엔 신규노출 0. arXiv:2510.17874(Repairing Tool Calls via Reflection).
+- 리뷰지점: mutation-first 확정(${allowed} 제거하면 정확히 새 positive 테스트 RED, opacity 테스트 GREEN 유지). 독립 Opus ④b judge가 scope 한정·deny 불변·info-disclosure 무·fabrication=0·downstream 파서 회귀 0·2-sided 테스트 검증 → VERDICT PASS.
+- 리스크: live OUTCOME 미검증(Ollama down) — "12B가 실제로 self-correct"는 미증명, 결정론 메시지-내용 경로만 증명. 메시지-only·mutation-verified 변경이라 허용. fire 43은 3의 배수 아님 → main 머지 없음.
+
 ## fire 42 · 2026-06-21 · skill v2.0 · 8f9066aa (stringified-JSON object/array tool-arg coercion — multi_edit edits-as-string)
 meta: value-class=new-capability · pkg=@muse/tools · kind=arg-coercion/structured-repair · verdict=PASS · firesSinceDrill=5
 ratchet: testFiles +0 files / +1 case (coerceToolArguments structured: positive·whitespace·already-structured·both type-mismatches·non-JSON·empty·bare-scalar) · fabrication 0 · @muse/tools 89 pass/1 skip · pnpm check exit 0 · lint 0/0 · Ollama DOWN (evals skip) · main ff-merge (fire 42 = ×3)
