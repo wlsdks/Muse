@@ -193,3 +193,33 @@ each harder benign probe surfaces a new reported/embedded/rhetorical imperative
 shape. PROBE-FIRST with a corpus spanning reported/adnominal/quotative/rhetorical/
 quoted forms BEFORE writing source; if FP shapes keep multiplying across rounds,
 the class is not regex-tractable — stop and de-scope, don't keep patching anchors.
+
+## fire 7 · 2026-06-21 · poisoned-source · (see commit)
+
+meta: value-class=new-capability(hardening) · pkg=@muse/memory · kind=write-gate-hardening · verdict=PASS · firesSinceDrill=7
+
+ratchet: testFiles +0 (extended auto-extract-provenance-gate test) · fabrication 0 · pkg=@muse/memory NEW (≠ recent cli/agent-core) · kind=write-gate-hardening NEW · eval:memory-poisoning PASS · eval:action-log-tamper PASS
+
+WHAT: the user-memory auto-extractor's provenance gate `dropModelAssertedValues`
+(drops a value whose distinctive tokens are all in the assistant reply, none in
+the user turn — so a tool/feed line the assistant surfaced isn't persisted as
+"what you told me") was applied to ONLY facts+preferences. vetoes+goals
+(ExtractedSlot[]) bypassed it → a poisoned tool/feed-sourced veto/goal could be
+distilled and persisted, driving proactivity/standing-objectives. FIX: shared
+`isModelAssertedValue` predicate (behavior-preserving for facts/prefs) +
+`dropModelAssertedSlots` (malformed-array-robust: passes bad elements through to
+the sanitizer, never throws) wired for vetoes+goals.
+
+WHY: closes a write-side poisoned-source vector — the gate protected 2 of 4 slot
+kinds (a sibling-audit miss). The scout candidate's facts/prefs hypothesis was
+REFUTED (already closed); the real gap was the veto/goal siblings.
+
+REVIEW POINT: behavior-preserving refactor verified (498 memory tests); both
+mutation arms RED (helper gate→keep-all; wiring remove-veto-line→end-to-end RED);
+judge sibling-audit confirmed vetoes+goals were the ONLY ungated
+model-from-assistant slot kinds (muse remember / muse user add / inferPreferences
+all user-sourced). Caught a crash-on-malformed-slot bug mid-build (the slot array
+is untrusted model output) → guard passes malformed elements through.
+
+RISK: low — only DROPS poisoned writes (never adds), user-stated directives
+survive (calibrated), malformed-robust, mutation-proven at helper + wiring, Opus ④ PASS.
