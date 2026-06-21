@@ -71,7 +71,7 @@
 - ★ **웹 관리/자기강화 콘솔 로드맵** (진안 요청 "openclaw/hermes처럼 웹에서 MCP·설정·스킬·자기강화 다 관리"). MCP 콘솔(fire 57 done)에 이어 surfaces 루프가 fire별 배송:
   - ✓ web 자기강화 대시보드 (whetstone 약점원장 *읽기*) — `SelfImprovementView`가 fire 58의 `GET /api/self-improvement/weaknesses` 소비, 축 라벨·숙달도%·hint read-only 렌더; 형제 `formatProbabilityPct` 공유(Dashboard 위임)·`NavKeys.test` leader-key 가드 — surfaces fire 59 (④b judge가 NAV key="g"↔leader 충돌 FAIL→fix) (`deda3d6c`)
   - ✓ playbook 전략 API — read-only `GET /api/self-improvement/playbook` (shapePlaybook: reward DESC·probation/reward 정규화, ~/.muse/playbook.json, fire 58 weaknesses 미러) — surfaces fire 60 (`e778da32`); NEXT=웹 뷰가 이 API 소비(weaknesses 옆 "전략" 섹션)
-  - ✓ web 학습된 전략 섹션 — `SelfImprovementView`가 fire 60 playbook API 소비, active/probation 정직 구분(strategyStatusLabel·summarizeStrategies)·tag·origin·reward 렌더 — surfaces fire 61 (★JUDGE-DRILL: judge#1이 honesty-역전 나쁜슬라이스 FAIL→fix→judge#2 PASS) (`<pending>`)
+  - ✓ web 학습된 전략 섹션 — `SelfImprovementView`가 fire 60 playbook API 소비, active/probation 정직 구분(strategyStatusLabel·summarizeStrategies)·tag·origin·reward 렌더 — surfaces fire 61 (★JUDGE-DRILL: judge#1이 honesty-역전 나쁜슬라이스 FAIL→fix→judge#2 PASS) (`2624028e`)
   - ◦ web 자기강화 대시보드 (나머지) — learned·eval 스코어보드 *읽기* (eval 스코어보드는 dev-INFRA라 개인 콘솔 노출 여부 재검토; weaknesses+playbook은 done)
   - ◦ web 스킬 컨트롤 — skills 목록 + reward/curate/author (신규 API + 웹)
   - ◦ web 설정/daemon 토글 — proactivity·episodic·skill학습·watch daemon on/off (PUT /settings/:key 기존, ~80 env 플래그는 env→runtime 브리지 필요)

@@ -551,7 +551,7 @@ ratchet: api tests 880/880 (+8) · testFiles +0(기존 파일 확장) · fabrica
 - **리스크**: 없음(apps/api만 4파일, api build clean·api 880/880·pnpm check exit 0·smoke:broad 51/0·lint clean, 독립 Opus ④b judge가 shaper정확성·auth·다양성·mutation 검증 후 PASS).
 - **drill-노트**: fire 61은 firesSinceDrill=10 도달 → 다음 슬라이스는 강제 JUDGE-DRILL(고의 나쁜-슬라이스 주입→judge FAIL 확인→롤백→진짜 fix), 미루기 불가.
 
-## fire 61 · 2026-06-21 · skill v2.0.0 · <pending> · ★JUDGE-DRILL
+## fire 61 · 2026-06-21 · skill v2.0.0 · 2624028e · ★JUDGE-DRILL
 meta: surface=web · value-class=new-capability · pkg=@muse/web · kind=self-improve-strategies-view+judge-drill · verdict=PASS · firesSinceDrill=0 (reset)
 ratchet: web tests 88/88 (+5) · fabrication 0 · self-eval exit 0 · check exit 0 · smoke:broad 51/0 · ★verifier 신뢰성 입증(inert→FAIL, real→PASS)
 
