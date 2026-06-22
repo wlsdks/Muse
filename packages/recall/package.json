@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@muse/agent-core": "workspace:*",
-    "@muse/mcp": "workspace:*",
     "@muse/mcp-shared": "workspace:*",
     "@muse/stores": "workspace:*"
   }

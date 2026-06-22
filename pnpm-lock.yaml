@@ -632,9 +632,6 @@ importers:
       '@muse/agent-core':
         specifier: workspace:*
         version: link:../agent-core
-      '@muse/mcp':
-        specifier: workspace:*
-        version: link:../mcp
       '@muse/mcp-shared':
         specifier: workspace:*
         version: link:../mcp-shared
