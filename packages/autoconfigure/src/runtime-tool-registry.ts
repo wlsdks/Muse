@@ -22,6 +22,7 @@ import { createOllamaEmbedder } from "./context-engineering-builders.js";
 import { readEpisodeKnowledgeEntries } from "./episodes-knowledge-source.js";
 import { parseBoolean } from "./env-parsers.js";
 import { readFeedKnowledgeEntries } from "./feeds-knowledge-source.js";
+import { buildHistoryRecords } from "./history-records-provider.js";
 import { createNotesKnowledgeSearchTool } from "./knowledge-corpus.js";
 import {
   resolveActionLogFile,
@@ -161,30 +162,26 @@ export function buildRuntimeToolRegistry(deps: RuntimeToolRegistryDeps): Dynamic
   })();
 
   // `history_search` — the agent-callable "find where we talked about X" over
-  // the user's OWN past chat episodes. Deterministic (CJK-aware lexical, no
+  // the user's OWN past: chat episodes, notes, AND remembered facts (every
+  // source the tool advertises). Deterministic (CJK-aware lexical, no
   // embeddings / no Ollama), so it is ON by default; opt out with
-  // MUSE_HISTORY_SEARCH_ENABLED=false. Fail-soft: a thrown episodes store
-  // degrades to the tool's no-match notice (never breaks the agent loop).
+  // MUSE_HISTORY_SEARCH_ENABLED=false. Per-source fail-soft: a thrown
+  // episodes/notes/memory reader drops only that source's records and degrades
+  // to the tool's no-match notice when none match (never breaks the agent loop).
   const historySearchTools: MuseTool[] = (() => {
     if (!parseBoolean(env.MUSE_HISTORY_SEARCH_ENABLED, true)) {
       return [];
     }
     const userId = resolveDefaultUserId(env);
+    const historyNotesProvider = notesRegistry?.primary();
     return [createHistorySearchTool({
-      records: async (): Promise<readonly HistoryRecord[]> => {
-        const episodes = await readEpisodes(episodesFile);
-        return episodes
-          .filter((episode) => episode.userId === userId)
-          .map((episode) => {
-            const endedMs = episode.endedAt ? Date.parse(episode.endedAt) : NaN;
-            return {
-              ref: episode.id,
-              source: "episodes" as const,
-              text: episode.summary,
-              ...(Number.isFinite(endedMs) ? { timestampMs: endedMs } : {})
-            };
-          });
-      }
+      records: (): Promise<readonly HistoryRecord[]> =>
+        buildHistoryRecords({
+          readEpisodes: () => readEpisodes(episodesFile),
+          ...(historyNotesProvider ? { notesProvider: historyNotesProvider } : {}),
+          userMemoryStore,
+          userId
+        })
     })];
   })();
 
