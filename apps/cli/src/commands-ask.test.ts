@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { consumeAskStream, decompositionJsonFields, decompositionStderrNotes, parseBoundedInt, renderAskStreamError, resolveAskTierModels, routeAskTierModel, type AskStreamEvent } from "./commands-ask.js";
+import { consumeAskStream, decompositionJsonFields, decompositionStderrNotes, renderAskStreamError, resolveAskTierModels, routeAskTierModel, type AskStreamEvent } from "./commands-ask.js";
+import { parseBoundedInt } from "./parse-bounded-int.js";
 
 describe("decompositionJsonFields — surface fan-out trust signals on `muse ask --json` (a machine consumer can't read a stderr banner)", () => {
   it("emits a `decomposition` object with conflicts / incompleteness / truncation when the answer was decomposed", () => {

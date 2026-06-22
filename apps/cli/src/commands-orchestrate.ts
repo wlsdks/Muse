@@ -11,7 +11,7 @@
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
-import { parseBoundedInt } from "./commands-ask.js";
+import { parseBoundedInt } from "./parse-bounded-int.js";
 import type { ProgramIO } from "./program.js";
 
 const ORCHESTRATE_MODES: readonly string[] = ["sequential", "parallel", "race"];

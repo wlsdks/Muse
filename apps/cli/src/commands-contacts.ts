@@ -11,8 +11,8 @@
 
 import { overdueContacts, type OverdueContact } from "@muse/agent-core";
 import { interactionsFromEvents, resolveContactsFile, resolveLocalCalendarFile, resolveNotesDir } from "@muse/autoconfigure";
-import { readLocalEvents } from "./commands-today.js";
-import { addContact, contactIdentifier, decryptContactsAtRest, encryptContactsAtRest, isContactsEncrypted, linkContacts, queryContacts, resolveContact, resolveUpcomingBirthdays, type Contact } from "@muse/mcp";
+import { readLocalEvents } from "./today-local-sources.js";
+import { addContact, contactIdentifier, decryptContactsAtRest, encryptContactsAtRest, isContactsEncrypted, linkContacts, queryContacts, resolveContact, resolveUpcomingBirthdays, type Contact } from "@muse/stores";
 
 import { relatedByCooccurrence } from "./contact-cooccurrence.js";
 import { findDuplicateContacts, formatDuplicateContacts } from "./contact-dupes.js";

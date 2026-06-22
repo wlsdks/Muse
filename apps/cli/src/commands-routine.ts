@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import type { Command } from "commander";
 
-import { parseBoundedInt } from "./commands-ask.js";
+import { parseBoundedInt } from "./parse-bounded-int.js";
 import type { ProgramIO } from "./program.js";
 
 interface RoutineOptions {
