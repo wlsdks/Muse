@@ -13,6 +13,13 @@ export type {
 } from "./orchestration-history.js";
 export { InMemoryOrchestrationHistoryStore } from "./orchestration-history.js";
 export type {
+  RegisterRunArgs,
+  SubAgentRunRecord,
+  SubAgentRunRegistryOptions,
+  SubAgentRunStatus
+} from "./subagent-run-registry.js";
+export { SubAgentRunRegistry } from "./subagent-run-registry.js";
+export type {
   ModelTier,
   PlanTieredRunArgs,
   TierModels,
