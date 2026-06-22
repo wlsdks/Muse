@@ -1,13 +1,12 @@
 /**
  * `GET /api/agent-notices/stream?userId=<id>` — SSE consumer for
- * Phase D agent-initiated notices.
+ * agent-initiated notices.
  *
  * Companion to the in-process `AgentInitiatedNoticeBroker` exposed
- * on the runtime assembly. Producers (the proactive-notice loop,
- * once it's wired in a follow-up commit) publish synthesised
- * one-line responses; this endpoint fans them out to whatever
- * client (CLI subscriber, web UI) is holding the SSE connection
- * open for the given `userId`.
+ * on the runtime assembly. Producers (the proactive-notice loop)
+ * publish synthesised one-line responses; this endpoint fans them
+ * out to whatever client (CLI subscriber, web UI) is holding the SSE
+ * connection open for the given `userId`.
  *
  * Lifecycle:
  *   1. Client GETs with `userId=<id>`.

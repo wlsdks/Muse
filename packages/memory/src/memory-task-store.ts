@@ -1,6 +1,5 @@
 /**
- * Task-memory persistence + quality validation primitives extracted
- * from packages/memory/src/index.ts.
+ * Task-memory persistence + quality validation primitives.
  *
  * Owns `InMemoryTaskMemoryStore` (in-process map keyed by `taskId`,
  * plus a session+user activeTask index, with `purgeExpired` /

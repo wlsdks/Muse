@@ -1,5 +1,5 @@
 /**
- * Active-context surface (Context Engineering Phase 1).
+ * Active-context surface.
  *
  * Pulls in "what the agent needs to know right now without a tool
  * call" — current time, user timezone, working-hours boolean, and
@@ -68,7 +68,7 @@ export interface ActiveContextSnapshot {
   readonly activeTask?: ActiveTaskHint;
   readonly currentFocus?: string;
   /**
-   * Today's calendar events (D1). Surfaced into `[Active Context]`
+   * Today's calendar events. Surfaced into `[Active Context]`
    * so the agent does not need to invoke `muse.calendar.upcoming`
    * just to know "is there a meeting in 30 minutes?". Provider
    * decides ordering — typically chronological by `startIso`.
@@ -78,8 +78,7 @@ export interface ActiveContextSnapshot {
    * pending reminders due within the next ~2 hours (or
    * already overdue but still un-fired). Surfaced so the agent can
    * say "you asked me to remind you about X at 3pm — it's 2:55"
-   * without first calling `muse.reminders.list`. JARVIS-class
-   * proactive nudge surface.
+   * without first calling `muse.reminders.list`.
    */
   readonly reminders?: readonly ReminderHint[];
   /**
@@ -276,10 +275,9 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     }
     // explicit urgency marker. The `due=... (3h ago)`
     // string carries the info but the agent has to PARSE "ago" to
-    // realise the task is past due. A JARVIS-class assistant
-    // signals overdue up-front: front-loaded `[OVERDUE]` /
-    // `[DUE SOON]` prefix so the urgency is the FIRST thing the
-    // model reads on this line.
+    // realise the task is past due. Signal overdue up-front:
+    // front-loaded `[OVERDUE]` / `[DUE SOON]` prefix so the urgency
+    // is the FIRST thing the model reads on this line.
     //   - past dueIso         → `[OVERDUE]`
     //   - within next 30 min  → `[DUE SOON]`
     //   - otherwise           → no marker (the relative time is
@@ -292,7 +290,7 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     lines.push(`current_focus: ${sanitizeInline(snapshot.currentFocus)}`);
   }
   if (snapshot.todaysEvents && snapshot.todaysEvents.length > 0) {
-    // JARVIS-class affordance: the user reads this block as a
+    // The user reads this block as a
     // timeline. Apply two defensive transforms before slicing so the
     // rendered output is deterministic and prompt-token-efficient
     // regardless of how the `CalendarEventsResolver` returned the
@@ -308,9 +306,8 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     const filteredEvents = filterAndSortTodayEvents(snapshot.todaysEvents, snapshot.nowIso);
     // promote the most-imminent event (happening now, or
     // starting within 30 minutes) to a `next_up:` line BEFORE the
-    // chronological list. JARVIS-class "heads up" affordance — the
-    // agent shouldn't have to scan the whole timeline to know
-    // "you have a meeting in 10 minutes". The event also still
+    // chronological list — the agent shouldn't have to scan the whole
+    // timeline to know "you have a meeting in 10 minutes". The event also still
     // appears in `today_events:` (redundancy is feature: the agent
     // can cross-reference end-time, location, etc).
     const imminent = findImminentEvent(filteredEvents, snapshot.nowIso);
@@ -479,9 +476,9 @@ const TASK_DUE_SOON_WINDOW_MS = 30 * 60 * 1_000;
  *   - `"DUE SOON"`  when `dueIso - nowIso <= 30 min`
  *   - `undefined`   otherwise (no prefix)
  *
- * JARVIS-class affordance: signal urgency in the first read
- * position of the line rather than buried in a `(3h ago)` suffix.
- * Falls open on unparseable timestamps (no marker).
+ * Signal urgency in the first read position of the line rather than
+ * buried in a `(3h ago)` suffix. Falls open on unparseable
+ * timestamps (no marker).
  */
 function computeTaskUrgency(dueIso: string | undefined, nowIso: string): "OVERDUE" | "DUE SOON" | undefined {
   if (!dueIso) {
@@ -502,7 +499,7 @@ function computeTaskUrgency(dueIso: string | undefined, nowIso: string): "OVERDU
 }
 
 /**
- * JARVIS-class "heads up" promotion. Returns the event
+ * "Heads up" promotion. Returns the event
  * the operator most needs to know about RIGHT NOW: a currently-
  * happening event if any, otherwise the next event starting within
  * `IMMINENT_EVENT_WINDOW_MS` (30 minutes). Returns undefined when

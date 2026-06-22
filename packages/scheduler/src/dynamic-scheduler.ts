@@ -1,25 +1,3 @@
-/**
- * Dynamic scheduler orchestration extracted from
- * packages/scheduler/src/index.ts.
- *
- * Owns the `DynamicScheduler` class — the user-facing CRUD + execution
- * surface for scheduled jobs (loadEnabledJobs, create, update, delete,
- * list, trigger, dryRun, destroy + the private register/cancel/run
- * flow with distributed-lock acquisition and execution recording) —
- * plus `createSchedulerTools()`, the 4 MuseTool entries that expose
- * the scheduler to an LLM (`scheduler_list_jobs` /
- * `scheduler_create_job` / `scheduler_trigger_job` /
- * `scheduler_dry_run_job`) and the small JSON-arg parsers they
- * consume.
- *
- * Stays in `index.ts`: ScheduledJobValidator, ScheduledJobDispatcher,
- * SchedulerMessaging, ScheduledJobExecutionRecorder, NodeCronScheduler,
- * the cron / template helpers, and the constants
- * (`defaultExecutionTimeoutMs` / `minLockTtlMs` /
- * `defaultLockTtlBufferMs` / `resolveJobTimeout` / `requireText`)
- * imported here.
- */
-
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 

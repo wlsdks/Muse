@@ -31,12 +31,11 @@ export interface DiscordProviderOptions {
   readonly afterFile?: string;
   /**
    * When set, `fetchInbound` reads from this persisted inbox file
-   * (Phase 2.c.4 — mirrors Telegram/LINE). The Phase 2.c.3 polling
-   * daemon writes here, so the read API and the daemon converge on
-   * the same store. When `source` is supplied alongside, results
-   * are filtered to that channel id; otherwise all entries are
-   * returned. Without `inboxFile`, fetchInbound stays in snapshot
-   * mode and `source` remains required.
+   * (mirrors Telegram/LINE). The polling daemon writes here, so the
+   * read API and the daemon converge on the same store. When `source`
+   * is supplied alongside, results are filtered to that channel id;
+   * otherwise all entries are returned. Without `inboxFile`,
+   * fetchInbound stays in snapshot mode and `source` remains required.
    */
   readonly inboxFile?: string;
   /** Per-request wall-clock timeout (ms). Default 30s. */
@@ -95,12 +94,12 @@ export class DiscordProvider implements MessagingProvider {
 
   /**
    * Read-side surface. When `inboxFile` is configured, returns the
-   * persisted entries the polling daemon wrote (Phase 2.c.3+4); a
-   * `source` option filters to that channel id, and unset returns
-   * all. When `inboxFile` isn't configured, falls through to a
-   * live snapshot via `fetchMessages` — preserves the pre-2.c.4
-   * one-shot path that the CLI/REST contract tests rely on, with
-   * `source` still required in that mode.
+   * persisted entries the polling daemon wrote; a `source` option
+   * filters to that channel id, and unset returns all. When
+   * `inboxFile` isn't configured, falls through to a live snapshot
+   * via `fetchMessages` — preserves the one-shot path that the
+   * CLI/REST contract tests rely on, with `source` still required in
+   * that mode.
    */
   async fetchInbound(options?: InboundFetchOptions): Promise<readonly InboundMessage[]> {
     if (this.inboxFile) {

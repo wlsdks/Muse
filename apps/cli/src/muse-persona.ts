@@ -22,7 +22,7 @@ interface JarvisPersonaMemory {
   readonly preferences: Readonly<Record<string, string>>;
   readonly recentTopics?: readonly string[];
   /**
-   * Episodic-memory step 4 — optional injected episodes. The caller
+   * Optional injected episodes. The caller
    * resolves them from `~/.muse/episodes.json` (per-user filter +
    * sort + cap happens upstream, not here). Passing them in keeps
    * `buildMusePersona` synchronous and pure: this file does no I/O.
@@ -177,12 +177,9 @@ export function buildMusePersona(
       // CONTESTED takes precedence (chat-path parity with ask's buildMemoryContextBlock):
       // a fact whose value FLIPPED across confirmations is volatile — Muse itself knows
       // it's unstable, so the model must "confirm it's current", not assert it. This
-      // replaces the value-blind `(previously X)` note (which can't tell a refinement
+      // REPLACES the value-blind `(previously X)` note (which can't tell a refinement
       // Seoul→Seoul-Gangnam from a contradiction Seoul→Busan — contestedFactKeys is
-      // refinement-aware, so it only fires on a genuine flip).
-      // CONTESTED (a genuinely flipped value) takes precedence and REPLACES the
-      // value-blind `(previously X)` note — contestedFactKeys is refinement-aware
-      // (fires only on a real flip), so the note would be redundant with the caution.
+      // refinement-aware, so it only fires on a genuine flip, making the note redundant).
       // PROVISIONAL (once-seen, not re-confirmed) facts get their own caution appended.
       if (options.contestedKeys?.has(key)) {
         lines.push(`  - ${key}: ${safe}${CONTESTED_FACT_MARK}`);

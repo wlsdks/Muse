@@ -48,11 +48,10 @@ import { clampPositive, readCredentialsSync, stringField } from "./provider-util
 import type { MuseEnvironment } from "./index.js";
 
 /**
- * Context Engineering Phase 1 — assemble a `DefaultActiveContextProvider`
- * that always carries current time + timezone, and (when user memory is
- * available) reads `working_hours` / `timezone` / `current_focus` from
- * `UserMemoryStore.preferences`. Returns `undefined` when
- * `MUSE_ACTIVE_CONTEXT_ENABLED=false`.
+ * Assemble a `DefaultActiveContextProvider` that always carries current time +
+ * timezone, and (when user memory is available) reads `working_hours` /
+ * `timezone` / `current_focus` from `UserMemoryStore.preferences`. Returns
+ * `undefined` when `MUSE_ACTIVE_CONTEXT_ENABLED=false`.
  */
 export function buildActiveContextProvider(
   env: MuseEnvironment,
@@ -142,7 +141,7 @@ export function buildActiveContextProvider(
 }
 
 /**
- * Context Engineering Phase 2 — build a `FileBackedInboxContextProvider`
+ * Build a `FileBackedInboxContextProvider`
  * over every messaging provider that has a registered token. Each
  * provider gets its own cursor file under `~/.muse/{id}-inbox-injection.json`
  * (overrideable via `MUSE_{ID}_INBOX_INJECTION_CURSOR_FILE`). Returns
@@ -200,7 +199,7 @@ export function buildInboxContextProvider(env: MuseEnvironment): InboxContextPro
 }
 
 /**
- * Context Engineering Phase 3 — build a `StoreBackedEpisodicRecallProvider`
+ * Build a `StoreBackedEpisodicRecallProvider`
  * over the persisted conversation-summary store. Returns `undefined`
  * when `MUSE_EPISODIC_RECALL_ENABLED=false` or when no store is
  * available. Jaccard token-overlap recall — no embeddings, no
@@ -253,7 +252,7 @@ export function buildEpisodicRecallProvider(
     topK,
     ...(embedEnabled ? { embed: createOllamaEmbedder(embedModel) } : {})
   });
-  // Weighted-promotion "observe" half (N5): record a recall hit for every
+  // Weighted-promotion "observe" half: record a recall hit for every
   // session this surfaces, so the dreaming pass can later promote the
   // most-recall-useful memories into the always-on persona. Fail-soft — a
   // hit-store write must never break recall.
@@ -284,7 +283,7 @@ export function withRecallHitRecording(
 }
 
 /**
- * Background-review engine wiring (slice 2). Decides the MEMORY-learning hooks.
+ * Background-review engine wiring. Decides the MEMORY-learning hooks.
  *
  * - Default (`MUSE_BACKGROUND_REVIEW_ENABLED` unset/false): the standalone
  *   per-turn auto-extract hook, exactly as before — zero behaviour change.
@@ -355,9 +354,8 @@ export function buildBackgroundReviewHooks(
 }
 
 /**
- * Context Engineering Phase 4 — opt-in `DefaultToolFilter` controlled
- * by `MUSE_TOOL_FILTER_ENABLED=true`. Default off so existing setups
- * see no behavioural change.
+ * Opt-in `DefaultToolFilter` controlled by `MUSE_TOOL_FILTER_ENABLED=true`.
+ * Default off so existing setups see no behavioural change.
  */
 export function buildToolFilter(env: MuseEnvironment): ToolFilter | undefined {
   if (env.MUSE_TOOL_FILTER_ENABLED?.trim().toLowerCase() !== "true") {
@@ -367,9 +365,9 @@ export function buildToolFilter(env: MuseEnvironment): ToolFilter | undefined {
 }
 
 /**
- * In-process telemetry aggregator (wiring the surface
- * iters 8 / 17 / 26 / 37 built but never instantiated in
- * production). Default ON; `MUSE_TELEMETRY_AGGREGATOR_ENABLED=false`
+ * In-process telemetry aggregator (wiring the surface that was
+ * built but never instantiated in production). Default ON;
+ * `MUSE_TELEMETRY_AGGREGATOR_ENABLED=false`
  * skips construction (returns undefined → AgentRuntime no-ops the
  * `recordTelemetry` call so per-run telemetry is free of overhead).
  *
@@ -390,7 +388,7 @@ export function buildTelemetryAggregator(env: MuseEnvironment): TelemetryAggrega
 }
 
 /**
- * Production wiring for P7's learn-from-correction: adapt the
+ * Production wiring for learn-from-correction: adapt the
  * durable `~/.muse/vetoes.json` store to the agent-runtime's
  * duck-typed `VetoAvoidanceProvider` so a recorded veto actually
  * surfaces `[Learned Avoidance]` into real agent runs. Conservative

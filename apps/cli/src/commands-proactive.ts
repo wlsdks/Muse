@@ -251,8 +251,8 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       }
 
       // When --speak is on, wrap the messaging registry so every
-      // successful send ALSO fires the TTS. Single source of truth
-      // for "what JARVIS said" — log file + speaker stay in sync.
+      // successful send ALSO fires the TTS — log file + speaker stay
+      // in sync.
       const effectiveMessagingRegistry = speakFn
         ? new Proxy(messagingRegistry, {
             get(target, prop, receiver) {
@@ -283,7 +283,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       const dailyCap = parseBoundedFlag(e.MUSE_PROACTIVE_DAILY_CAP, "MUSE_PROACTIVE_DAILY_CAP", 0, 1_000, 0);
       const proactiveInvestigator = createIndexedProactiveInvestigator();
 
-      // Pull the persona for the configured user so Phase D synthesis
+      // Pull the persona for the configured user so notice synthesis
       // addresses the user by name + honours language/style prefs
       // ("Stark님, Q3 메모가 5분 후 마감입니다" instead of the generic
       // "Send Q3 budget memo due in 5 min"). Best-effort — assembly
@@ -316,8 +316,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
               activeHourSet = new Set();
               for (const h of hours) {
                 // Active band: ±2 hours so even one-data-point users
-                // get a sensible window. JARVIS doesn't expect Tony
-                // to be precise to the minute.
+                // get a sensible window.
                 for (let off = -2; off <= 2; off += 1) {
                   activeHourSet.add((h + off + 24) % 24);
                 }
@@ -368,7 +367,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
         // Quiet-hours gate: if we know the user's routine and the
         // current hour isn't in the active band, skip this tick —
         // UNLESS any imminent task is flagged `urgent: true`, in
-        // which case JARVIS interrupts even at 3 AM.
+        // which case we interrupt even outside the active band.
         if (activeHourSet && !options.ignoreRoutine && !activeHourSet.has(startedAt.getHours())) {
           let urgentImminent = false;
           try {
@@ -395,7 +394,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
           const summary = await runDueProactiveNotices({
             ...(agentModel ? { agentModel } : {}),
             ...(modelProvider ? { modelProvider } : {}),
-            // Faithfulness-gate the synthesized Phase D notice — a confabulated push
+            // Faithfulness-gate the synthesized notice — a confabulated push
             // detail fails CLOSE to the verbatim store line (same judge as reflection).
             ...(modelProvider && agentModel ? { reverify: buildGroundingReverify(modelProvider, agentModel) } : {}),
             ...(personaPreamble ? { personaPreamble } : {}),
@@ -438,18 +437,12 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
       }
     });
 
-  // ── Two-way proactive — reply to the last notice ──────────────
-  //
-  // The classic JARVIS exchange:
-  //   JARVIS: "Sir, you have a meeting in 5 minutes."
-  //   Tony:   "Push it to 10."
-  //   JARVIS: <pushes the meeting>
-  //
-  // Muse implements this by looking up the most-recent delivered
-  // entry in ~/.muse/proactive-history.json and applying the
-  // requested action to the underlying task. Only tasks are
-  // supported today — calendar back-edits go through the calendar
-  // provider's update path, which differs per backend; deferred.
+  // Two-way proactive — reply to the last notice (e.g. "push it to 10"
+  // after a meeting reminder). Looks up the most-recent delivered entry
+  // in ~/.muse/proactive-history.json and applies the requested action
+  // to the underlying task. Only tasks are supported today — calendar
+  // back-edits go through the calendar provider's update path, which
+  // differs per backend; deferred.
   const lastDeliveredTask = async (): Promise<{
     readonly entry: Awaited<ReturnType<typeof readProactiveHistory>>[number];
     readonly tasksFile: string;

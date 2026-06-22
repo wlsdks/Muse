@@ -31,11 +31,11 @@ export interface PlaybookStrategy {
    * probation — recorded + visible but NEVER injected — until a real signal
    * graduates it. Breaks the self-confirmation loop: the agent must not start
    * applying a guess it made about the user without evidence. Absent/false =
-   * graduated (injected as normal). (PART A2 / B1 §5, ExpeL evidence-gated.)
+   * graduated (injected as normal). (ExpeL evidence-gated.)
    */
   readonly probation?: boolean;
   /**
-   * PROVENANCE (B1 §4): `"grounded"` (distilled from a real correction),
+   * PROVENANCE: `"grounded"` (distilled from a real correction),
    * `"reflected"` (synthesised, no direct correction), or `"manual"`. A
    * `reflected` strategy carries a tiny ranking penalty so a synthetic guess
    * never outranks an otherwise-equal grounded record — evidence beats
@@ -265,7 +265,7 @@ export const PLAYBOOK_RECENCY_HALF_LIFE_DAYS = 30;
 const REWARD_RANK_WEIGHT = 0.5;
 
 /**
- * Tie-break penalty for a `reflected` (synthetic) strategy, B1 §4. Far smaller
+ * Tie-break penalty for a `reflected` (synthetic) strategy. Far smaller
  * than one reward step (0.5) or one relevance point (1), so it ONLY decides a
  * dead heat: a synthetic reflection never outranks an otherwise-equal grounded
  * record, but a genuinely more-relevant/higher-reward strategy still wins.

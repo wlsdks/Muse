@@ -73,11 +73,6 @@ const DAY_PART_HOURS: Record<string, number> = {
   night: 21
 };
 
-// Standalone day-part phrase ("tonight", "this evening",
-// "afternoon") → that hour TODAY. "tonight" is the natural
-// synonym for the night slot. Bare/`this `-prefixed only — a
-// day-headed form like "tomorrow evening" is handled by the
-// dayPattern + parseTimeOfDay path, so the two never overlap.
 const FLAT_UNIT_MS: Record<string, number> = {
   second: 1000,
   minute: 60_000,

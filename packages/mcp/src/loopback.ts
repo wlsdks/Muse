@@ -87,9 +87,9 @@ export function createLoopbackMcpMuseTools(server: LoopbackMcpServer): readonly 
 export interface BuiltinLoopbackOptions {
   readonly now?: () => Date;
   readonly uuid?: () => string;
-  /** Forwarded to `createSearchMcpServer` so a self-hosted SearXNG instance becomes the preferred backend. */
+  /** Forwarded to `@muse/domain-tools`' `createSearchMcpServer` so a self-hosted SearXNG instance becomes the preferred backend. */
   readonly searxngUrl?: string;
-  /** Forwarded to `createSearchMcpServer` — comma-separated engine list passed through to SearXNG. */
+  /** Forwarded to `@muse/domain-tools`' `createSearchMcpServer` — comma-separated engine list passed through to SearXNG. */
   readonly searxngEngines?: string;
 }
 

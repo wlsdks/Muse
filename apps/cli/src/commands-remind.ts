@@ -6,7 +6,7 @@
  *   - `muse remind clear <id>`        — remove
  *
  * Reminders are surfaced in `muse today` once their dueAt has
- * passed. Active firing through messaging is a follow-up iter.
+ * passed.
  *
  * `<when>` accepts the same grammar as task `--due`: ISO-8601 or a
  * relative phrase ("tomorrow at 6pm", "in 3 hours", "next Monday").
@@ -609,12 +609,6 @@ function formatReminderHistory(payload: {
   return `Reminder history (${payload.entries.length.toString()} of ${payload.total.toString()}):\n${lines.join("\n")}\n`;
 }
 
-/**
- * Resolve a reminder id the user typed against the local store.
- * Accepts the full uuid or the 12-char prefix the list/add
- * renderers print (`rem_0810976`). Refuses to guess when the
- * prefix matches more than one row.
- */
 /**
  * Resolve a CLI reminder reference to a single id. An exact id wins; then a
  * unique id PREFIX; then — the capability this adds — the reminder TEXT, so

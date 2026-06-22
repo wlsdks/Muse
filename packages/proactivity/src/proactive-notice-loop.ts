@@ -1,5 +1,5 @@
 /**
- * Proactive surfacing Phase A + B — calendar imminence + task due-soon push.
+ * Proactive surfacing — calendar imminence + task due-soon push.
  *
  * Companion to `runDueReminders` for events and tasks the user
  * *didn't* set up a reminder for. Scans the calendar registry for
@@ -25,9 +25,9 @@ import { sendWithRetry } from "@muse/mcp-shared";
 import { isQuietHour, type QuietHourRange } from "./quiet-hours.js";
 
 /**
- * Structural shape of the Phase D broker (defined in
+ * Structural shape of the agent-initiated notice broker (defined in
  * `@muse/agent-core/AgentInitiatedNoticeBroker`). We avoid the
- * import to keep `@muse/mcp` from depending on `@muse/agent-core`
+ * import to keep `@muse/proactivity` from depending on `@muse/agent-core`
  * — the only call site here is the optional `publish` fan-out.
  */
 export interface AgentInitiatedNoticeBrokerLike {
@@ -73,20 +73,19 @@ interface ImminentItem {
   readonly startsAt: Date;
   readonly text: string;
   /**
-   * Short factual description fed to the agent-synthesis prompt
-   * when Phase D is active. The flat `text` already contains it,
-   * but `factSheet` strips emoji + redundant suffix so the LLM
-   * has a clean input.
+   * Short factual description fed to the agent-synthesis prompt.
+   * The flat `text` already contains it, but `factSheet` strips
+   * emoji + redundant suffix so the LLM has a clean input.
    */
   readonly factSheet: string;
 }
 
 /**
- * Phase D — track when the user was last seen on a Muse surface
+ * Track when the user was last seen on a Muse surface
  * (REST /api/chat, /api/chat/stream, or any future presence pub/sub
  * client). The proactive loop reads this to decide whether to
  * compose a one-shot agent-synthesized heads-up or fall back to
- * the flat Phase A/B notice string.
+ * the flat notice string.
  */
 export interface ProactiveActivitySource {
   /**
@@ -143,12 +142,12 @@ export function selectProactiveSink(
 
 /**
  * Structural duck-type of `@muse/agent-core`'s `AgentRuntime.run`.
- * Avoids a cross-package dep (@muse/mcp doesn't import agent-core
- * to dodge the circular path that auto-extract had to dodge too).
+ * Avoids a cross-package dep (@muse/proactivity doesn't import
+ * agent-core to dodge the circular path).
  * Consumers (apps/api) pass the real AgentRuntime — TS structural
  * typing makes that work without a runtime type tag.
  *
- * @deprecated Phase D synthesis is one-shot text generation; the
+ * @deprecated Notice synthesis is one-shot text generation; the
  * tool registry the AgentRuntime wires in causes small models
  * (≤ 3B params) to emit raw `tool_calls` JSON instead of prose.
  * Prefer `ProactiveModelProviderLike` (set `modelProvider` in
@@ -163,7 +162,7 @@ export interface ProactiveAgentRuntimeLike {
 
 /**
  * Structural duck-type of `@muse/model`'s `ModelProvider.generate`.
- * Phase D synthesis only needs raw text generation — no tools, no
+ * Notice synthesis only needs raw text generation — no tools, no
  * agent loop. Calling `generate({ tools: undefined })` keeps the
  * model from seeing the (otherwise distracting) `muse.tasks.*` /
  * `muse.calendar.*` registry and emitting tool-call JSON instead
@@ -224,10 +223,10 @@ export interface RunDueProactiveNoticesOptions {
   /** Injectable clock for tests. Default `() => new Date()`. */
   readonly now?: () => Date;
   /**
-   * Phase D — agent-initiated turn. When `agentModel` is set AND the
+   * Agent-initiated turn. When `agentModel` is set AND the
    * activity source reports recent activity (within
    * `activeSessionWindowMs`), the daemon emits a one-shot text
-   * generation with a synthesis prompt to compose a JARVIS-style
+   * generation with a synthesis prompt to compose a tailored
    * heads-up instead of the flat "⏰ {title} in {N} min" string.
    * On error / timeout / missing window, falls back to the flat text.
    *
@@ -241,7 +240,7 @@ export interface RunDueProactiveNoticesOptions {
   /**
    * Optional persona preamble — caller-built persona snapshot that
    * names the user, their language, reply preferences. Prepended to
-   * the Phase D system prompt so the synthesized notice addresses
+   * the synthesis system prompt so the synthesized notice addresses
    * the user by name and respects their preferences ("Stark님,
    * Q3 메모가 5분 후 마감입니다" instead of the generic
    * "Send Q3 budget memo due in 5 min"). Empty / undefined → no
@@ -249,7 +248,7 @@ export interface RunDueProactiveNoticesOptions {
    */
   readonly personaPreamble?: string;
   /**
-   * Faithfulness gate for the Phase D synthesized notice. A proactive notice is an
+   * Faithfulness gate for the synthesized notice. A proactive notice is an
    * UNASKED, push-delivered claim (often to a messaging channel) — higher-trust than
    * a Q&A answer because the user didn't prompt it, so a confabulated detail ("standup
    * moved to 3pm in Room B") is maximally damaging. When supplied, the synthesized
@@ -271,8 +270,8 @@ export interface RunDueProactiveNoticesOptions {
    */
   readonly historyFile?: string;
   /**
-   * Phase D broker. When set, every successfully synthesised /
-   * delivered notice is ALSO published here so live
+   * Agent-initiated notice broker. When set, every successfully
+   * synthesised / delivered notice is ALSO published here so live
    * `/api/agent-notices/stream` subscribers see it inline. The
    * `userId` lets the broker fan to the right subscriber bucket;
    * the messaging-sink delivery is unchanged either way.
@@ -422,7 +421,7 @@ export async function runDueProactiveNotices(
   let firedThisRun = 0;
   let nextFired: readonly ProactiveFiredEntry[] = fired;
 
-  // Trust instrumentation (Phase 2): learned avoidance + daily cap.
+  // Trust instrumentation: learned avoidance + daily cap.
   // Fail-open — a corrupt/unreadable ledger never gags the daemon.
   const trustLedger = options.trustLedgerFile
     ? await readTrustLedger(options.trustLedgerFile).catch(() => [])
@@ -434,7 +433,7 @@ export async function runDueProactiveNotices(
     && options.dailyCap > 0;
   const ledgerForCap: TrustLedgerEntry[] = [...trustLedger];
 
-  // Phase D — decide once whether the active-session window allows
+  // Decide once whether the active-session window allows
   // agent-synthesized notices for this tick. All three pieces must
   // be wired AND the activity tracker must report something within
   // the window. Re-checking per-item would let the window expire
@@ -521,7 +520,7 @@ export async function runDueProactiveNotices(
       firedThisRun += 1;
       nextFired = [...nextFired, candidate];
       seen.add(key);
-      // Trust ledger (Phase 2): record the delivered surface for the
+      // Trust ledger: record the delivered surface for the
       // precision scoreboard + count it against the daily cap. Fail-open.
       if (options.trustLedgerFile) {
         const surfacedAtMs = nowDate.getTime();
@@ -533,7 +532,7 @@ export async function runDueProactiveNotices(
           errors.push(`trust ledger write failed: ${message}`);
         }
       }
-      // Phase D broker fan-out: publish the same notice so live
+      // Broker fan-out: publish the same notice so live
       // chat-stream subscribers see it inline. Always alongside the
       // messaging-sink delivery — not a replacement. Fail-soft per
       // the broker contract (in-memory broker never throws).
@@ -591,7 +590,7 @@ export async function runDueProactiveNotices(
 }
 
 /**
- * Phase C marker — case-insensitive `[no-proactive]` anywhere in the
+ * Opt-out marker — case-insensitive `[no-proactive]` anywhere in the
  * event's user-visible text (title or notes). Provider-neutral so
  * the same opt-out works against every CalendarProvider without
  * needing per-backend extended-property plumbing.
@@ -655,7 +654,7 @@ function isActiveSessionWindow(now: Date, options: RunDueProactiveNoticesOptions
     return false;
   }
   // Same non-finite guard as leadMinutes: a NaN window makes
-  // `delta <= NaN` always false, silently disabling Phase D.
+  // `delta <= NaN` always false, silently disabling synthesis.
   const window = typeof options.activeSessionWindowMs === "number" && Number.isFinite(options.activeSessionWindowMs)
     ? options.activeSessionWindowMs
     : DEFAULT_ACTIVE_WINDOW_MS;
@@ -763,7 +762,7 @@ function looksLikeToolCallJson(text: string): boolean {
   if (!stripped.startsWith("{") && !stripped.startsWith("[")) return false;
   try {
     const parsed = JSON.parse(stripped) as unknown;
-    // Any JSON parse success on a Phase-D reply is a tool-call leak.
+    // Any JSON parse success on a synthesized reply is a tool-call leak.
     return parsed !== null && typeof parsed === "object";
   } catch {
     return false;

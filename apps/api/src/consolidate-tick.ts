@@ -39,38 +39,38 @@ export interface ConsolidateTickOptions {
    * to be idle ≥ `idleThresholdMs` — not just Muse's /api quiet — so the merge
    * never fires while the user is busy in another app. Fail-closed: an unknown
    * OS idle (undefined) blocks the run. Omitted ⇒ OS-idle gate skipped
-   * (back-compat). (PART A2 / B1 brake-first.)
+   * (back-compat).
    */
   readonly osIdleMs?: () => number | undefined;
   /**
    * Model-already-resident guard: when provided, the LLM merge runs ONLY if
    * the model is already loaded in Ollama — never cold-loading the multi-GB
    * model unattended. Fail-closed: resolve false on any error ⇒ defer.
-   * Omitted ⇒ guard skipped (back-compat). (PART A2 / B1 brake-first.)
+   * Omitted ⇒ guard skipped (back-compat).
    */
   readonly isModelResident?: () => boolean | Promise<boolean>;
   /**
    * AC-power state (true=AC, false=battery, undefined=unknown). When provided,
    * the LLM merge runs only on confirmed AC — battery/unknown ⇒ skip, so the
    * heavy background job never drains the battery. Omitted ⇒ gate skipped
-   * (back-compat). (PART A2 / B1 brake-first.)
+   * (back-compat).
    */
   readonly isOnAcPower?: () => boolean | undefined;
   /**
    * Foreground/background contention brake: true when a foreground call
    * (chat/ask) currently holds the Ollama lease. When provided and true, the
    * merge defers so the daemon never contends with a live foreground call for
-   * the local model. Omitted ⇒ skipped (back-compat). (PART A2 / B1 brake.)
+   * the local model. Omitted ⇒ skipped (back-compat).
    */
   readonly isForegroundBusy?: () => boolean | Promise<boolean>;
   /**
-   * Idle REM phase (B1 Slice 1): drain the learn-queue, distilling queued
+   * Idle REM phase: drain the learn-queue, distilling queued
    * corrections into learned strategies. Runs behind ALL the brakes above.
    * Returns the count distilled (for logging). Omitted ⇒ phase skipped.
    */
   readonly distillQueued?: () => Promise<number>;
   /**
-   * Idle RL phase (B1 Slice 2): decay positive-reward strategies the user has
+   * Idle RL phase: decay positive-reward strategies the user has
    * stopped reinforcing back toward neutral, so a stale thumbs-up can't steer
    * the agent forever. Cheap + local (no LLM), runs behind the same brakes as
    * the distill phase. Returns the count decayed (for logging). Omitted ⇒ skip.

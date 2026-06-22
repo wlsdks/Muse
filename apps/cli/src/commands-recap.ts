@@ -79,7 +79,7 @@ export interface EveningRecapInput {
    * note and Muse answers next time. "<topic> (asked N×)" lines.
    */
   readonly weaknesses: readonly string[];
-  /** Auto beliefs the extractor keeps flipping — nudge the user to confirm (H4). */
+  /** Auto beliefs the extractor keeps flipping — nudge the user to confirm. */
   readonly volatileBeliefs: readonly string[];
   /**
    * RECENTLY LEARNED — the cited "Learns you" recap: deterministic lines of what
@@ -173,7 +173,7 @@ export function composeEveningRecap(input: EveningRecapInput): string {
     }
   }
 
-  // Whetstone (H4): beliefs I keep re-learning with DIFFERENT values — I'm not sure
+  // Whetstone: beliefs I keep re-learning with DIFFERENT values — I'm not sure
   // which is right, so confirm and I'll hold it as durable truth.
   if (input.volatileBeliefs.length > 0) {
     lines.push("", `🔄 These keep changing — confirm the current value and I'll trust it (${input.volatileBeliefs.length.toString()}):`);
@@ -375,7 +375,7 @@ export async function gatherEveningRecap(
       weaknesses.push(`${safeRecapText(remediationHint(gap.axis, gap.topic))} (asked ${gap.count.toString()}×)`);
     }
   } catch { /* fail-soft — no ledger */ }
-  // Whetstone (H4): auto beliefs the extractor keeps flipping → nudge the user to
+  // Whetstone: auto beliefs the extractor keeps flipping → nudge the user to
   // confirm the current value (which re-states it as durable user-source).
   const volatileBeliefs: string[] = [];
   // First-time learnings (no supersession exists for a brand-new fact, so the

@@ -2,7 +2,7 @@
  * `muse tasks` command group.
  *
  * Wraps `/api/tasks/*` for remote mode and the shared
- * `@muse/mcp/personal-tasks-store` helpers for `--local` mode so the
+ * `@muse/stores` personal-tasks-store helpers for `--local` mode so the
  * CLI works without an API server. Both surfaces speak the same
  * on-disk format, so a `--local` write is visible to the API on the
  * next request and vice versa.
@@ -513,18 +513,6 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     });
 }
 
-/**
- * Resolve a task id that the user typed against the local store.
- * Accepts both the full uuid and the 12-char prefix the list/add
- * renderers print (e.g. `task_0810976`). When the input is shorter
- * than a full id and not unique, refuse to guess.
- */
-/**
- * Filter listed tasks to those whose title or notes contains `query`
- * (case-insensitive) — `muse tasks list --search`. Operates on the
- * serialized task records (title / notes are the searchable text), so
- * it works the same for the local file and the API payload.
- */
 /** Keep only tasks carrying `tag` (case-insensitive exact label match). */
 export function filterTasksByTag<T extends { readonly tags?: unknown }>(tasks: readonly T[], tag: string): T[] {
   const want = tag.trim().toLowerCase();
@@ -536,6 +524,12 @@ export function filterTasksByTag<T extends { readonly tags?: unknown }>(tasks: r
   );
 }
 
+/**
+ * Filter listed tasks to those whose title or notes contains `query`
+ * (case-insensitive) — `muse tasks list --search`. Operates on the
+ * serialized task records (title / notes are the searchable text), so
+ * it works the same for the local file and the API payload.
+ */
 export function filterTasksBySearch<T extends { readonly title?: unknown; readonly notes?: unknown }>(
   tasks: readonly T[],
   query: string
