@@ -310,9 +310,6 @@ export function createDefaultLoopbackMcpServers(options: BuiltinLoopbackOptions 
 
 
 
-// Avoid unused-import warning for the type alias.
-export type LoopbackToolRisk = ToolRisk;
-
 /**
  * `muse.calendar` provider-neutral calendar surface.
  *

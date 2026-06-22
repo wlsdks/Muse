@@ -125,7 +125,7 @@ function formatTokens(n: number): string {
 
 /** Render a completed assistant message with light markdown: fenced code
  * (green), headers (bold cyan), inline `code` (yellow) and **bold**. */
-export function renderMarkdown(text: string): React.ReactElement {
+function renderMarkdown(text: string): React.ReactElement {
   const blocks = parseMarkdownBlocks(text);
   return h(Box, { flexDirection: "column" },
     ...blocks.map((block, bi) => {
@@ -884,11 +884,11 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
   const memoryHolder: { current: Awaited<ReturnType<NonNullable<typeof memoryStore>["findByUserId"]>> | undefined } = {
     current: memoryStore ? await Promise.resolve(memoryStore.findByUserId(userId)) : undefined
   };
-  // Contested-fact caution on the CHAT persona (parity with ask's grounding block,
-  // fire 20/21 gate-asymmetry): a fact whose value FLIPPED across confirmations is
-  // volatile, so the persona must say "confirm it's current" instead of asserting a
-  // value Muse itself knows is unstable. Derived from the belief-provenance store,
-  // refreshed alongside memory. Best-effort (fail-soft to no caution, like ask).
+  // Contested-fact caution on the CHAT persona (parity with ask's grounding block):
+  // a fact whose value FLIPPED across confirmations is volatile, so the persona must
+  // say "confirm it's current" instead of asserting a value Muse itself knows is
+  // unstable. Derived from the belief-provenance store, refreshed alongside memory.
+  // Best-effort (fail-soft to no caution, like ask).
   const contestedHolder: { current: ReadonlySet<string> } = { current: new Set() };
   const refreshContestedKeys = async (): Promise<void> => {
     const keys = memoryHolder.current ? Object.keys(memoryHolder.current.facts) : [];

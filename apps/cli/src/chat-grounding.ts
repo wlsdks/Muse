@@ -422,7 +422,7 @@ export function defaultChatConflictEmbedder(
   return (text: string) => embed(text, embedModel);
 }
 
-export async function semanticConflictCueFromMatches(
+async function semanticConflictCueFromMatches(
   matches: readonly KnowledgeMatch[],
   embed: (text: string) => Promise<readonly number[]>
 ): Promise<string | undefined> {
@@ -841,7 +841,7 @@ const URL_RE = /\bhttps?:\/\/[^\s)\]}>"']+|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\
 // leading `www.`, and drop everything from the first path/query/fragment separator
 // or a trailing dot — so the SAME host written with a different scheme / www. /
 // trailing-slash / path compares equal (a supported URL re-rendered must NOT refuse).
-export function canonicalHost(urlOrHost: string): string {
+function canonicalHost(urlOrHost: string): string {
   let host = urlOrHost.trim().toLowerCase().replace(/^https?:\/\//u, "");
   host = host.split(/[/?#]/u)[0] ?? host;
   host = host.replace(/^www\./u, "").replace(/\.+$/u, "");
@@ -1088,7 +1088,7 @@ export function gateChatAnswer(
  * skipped; but a value the evidence does NOT contain is still abstained. The
  * tool's own output is in `matches`, so a value it actually returned is supported.
  */
-export function gateChatAnswerDeterministic(
+function gateChatAnswerDeterministic(
   question: string,
   answer: string,
   matches: readonly KnowledgeMatch[],
