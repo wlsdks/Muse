@@ -13,8 +13,7 @@
  *   - Misc guards: `isNodeError`.
  *
  * Everything here is provider-neutral and chat-REPL-independent;
- * the chat REPL itself stays in program.ts (next decomp phase
- * will lift it into chat-repl.ts).
+ * the chat REPL itself stays in program.ts.
  */
 
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -68,7 +67,7 @@ export interface AskRunLogParams {
   readonly response: string;
   readonly success: boolean;
   readonly toolsUsed: readonly string[];
-  /** Present on a FAILED run — the seam #6 needs so a thrown ask leaves a success:false trace. */
+  /** Present on a FAILED run, so a thrown ask leaves a success:false trace. */
   readonly errorMessage?: string;
   /**
    * Fan-out trust signals (decomposed runs only) — so a self-contradicting / incomplete /
@@ -96,7 +95,7 @@ export interface AskRunLogParams {
 
 /**
  * Build the cli.local `muse ask` run-log entry. Single source of truth for the
- * SUCCESS path (today's inline payload) AND the FAILURE path (#6: a thrown run
+ * SUCCESS path (today's inline payload) AND the FAILURE path (a thrown run
  * must still leave a `success:false` trace for error-analysis, not vanish). The
  * caller's catch passes `success:false` + `errorMessage`; everything else mirrors
  * the success entry so both rows are shaped identically for the analyzer.
@@ -125,8 +124,8 @@ export function buildAskRunLog(params: AskRunLogParams): RunLogInput {
  * session resume. Prefers `responseForHistory` — the CUE-FREE twin runLocalChat
  * supplies — over the displayed `response`, so the display-only source-check
  * warnings (untrusted-source / citation cues) are NOT replayed as trusted grounding
- * evidence on the next session's priorHistory (poisoned-source fire 5; parity with
- * the Ink chat's fire-4 fix). Falls back to `response` for any path without the twin,
+ * evidence on the next session's priorHistory (poisoned-source defense; parity with
+ * the Ink chat). Falls back to `response` for any path without the twin,
  * and `undefined` when there's no usable string (caller skips the write). Pure.
  */
 export function chatTurnPersistText(body: unknown): string | undefined {
@@ -155,7 +154,7 @@ export function defaultConfigPath(home?: string): string {
  * env fallback. Setting `export MUSE_PERSONA=work` in a shell-rc
  * lets the user skip `--persona` on every invocation while keeping
  * the in-session `/persona` switch and explicit `--persona` flag
- * operational. P1 from `docs/agent-capability-audit.md`.
+ * operational.
  */
 export function resolvePersona(personaOption: string | undefined): string | undefined {
   const explicit = personaOption?.trim();
@@ -622,8 +621,8 @@ export async function writeRunLog(workspaceDir: string, input: RunLogInput, now 
     apiUrl: input.apiUrl ?? process.env.MUSE_API_URL ?? "http://127.0.0.1:3030",
     // Outcome labels lifted to the TOP LEVEL so a trace is greppable for error-analysis
     // without descending into `response`. cli.remote responses carry these; cli.local
-    // responses do not yet (populating them in the local ask path is the next sub-slice),
-    // so they are null there for now — but the schema error-analysis will read is fixed here.
+    // responses do not yet, so they are null there for now — but the schema
+    // error-analysis reads is fixed here.
     grounded: readResponseGrounded(input.response) ?? null,
     message: input.message,
     model: input.model ?? null,

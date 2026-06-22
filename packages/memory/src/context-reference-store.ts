@@ -1,6 +1,5 @@
 /**
- * In-process content-by-reference store (Context Engineering 1.d,
- * 
+ * In-process content-by-reference store.
  *
  * The premise from Anthropic's effective-context-engineering audit:
  * keep lightweight identifiers in context and let the agent pull

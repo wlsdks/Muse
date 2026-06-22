@@ -3,24 +3,11 @@ import { chunkText, cosineSimilarity, defangMemoryInjection, lexicalOverlap, lex
 import { escapeSystemPromptMarkers } from "./prompt-escape.js";
 import type { ActionLogEntry, Contact } from "@muse/stores";
 
-/**
- * SB-1: rank past-session episode summaries against the query so `muse ask`
- * grounds on the user's own history, not just notes. Pure + cosine-based;
- * caller supplies the already-embedded query vector. Top-K, descending score.
- */
 const EPISODE_IMPORTANCE_WEIGHT = 0.15;
 const EPISODE_RECENCY_WEIGHT = 0.15;
 const EPISODE_RECENCY_HALF_LIFE_DAYS = 7;
 const MS_PER_DAY = 86_400_000;
 
-/**
- * Recency component of the Generative Agents retrieval score (arXiv
- * 2304.03442): an exponential decay over the episode's age, 1.0 for a
- * just-ended session and halving every `EPISODE_RECENCY_HALF_LIFE_DAYS`.
- * Returns 0 when there's no usable timestamp (backward-compatible: an
- * episode with no `endedAt` adds no recency bump). A future timestamp is
- * clamped to age 0 so a skewed clock can't inflate the score past 1.
- */
 /**
  * Cosine floor for the cross-lingual recall fallback. A KO query against an EN
  * entry scores lexical-0 (no shared tokens), so the true entry never grounds →
@@ -68,6 +55,14 @@ function hybridRelevanceScore(
   return cosine >= CROSS_LINGUAL_COSINE_FLOOR ? cosine : 0;
 }
 
+/**
+ * Recency component of the Generative Agents retrieval score (arXiv
+ * 2304.03442): an exponential decay over the episode's age, 1.0 for a
+ * just-ended session and halving every `EPISODE_RECENCY_HALF_LIFE_DAYS`.
+ * Returns 0 when there's no usable timestamp (backward-compatible: an
+ * episode with no `endedAt` adds no recency bump). A future timestamp is
+ * clamped to age 0 so a skewed clock can't inflate the score past 1.
+ */
 function episodeRecencyScore(endedAt: string | undefined, nowMs: number): number {
   if (!endedAt) {
     return 0;
@@ -80,6 +75,11 @@ function episodeRecencyScore(endedAt: string | undefined, nowMs: number): number
   return Math.pow(0.5, ageDays / EPISODE_RECENCY_HALF_LIFE_DAYS);
 }
 
+/**
+ * Rank past-session episode summaries against the query so `muse ask` grounds on
+ * the user's own history, not just notes. Pure + cosine-based; caller supplies
+ * the already-embedded query vector. Top-K, descending score.
+ */
 export function rankEpisodeHits(
   queryVec: readonly number[],
   episodes: ReadonlyArray<{ readonly id: string; readonly summary: string; readonly embedding: readonly number[]; readonly importance?: number; readonly endedAt?: string }>,
@@ -305,8 +305,8 @@ export function contactGroundingEvidence(contact: Contact): string {
 }
 
 /**
- * Relevance of a contact to the question, for `muse ask` grounding (B3
- * perception): how many query tokens match a token of the contact's name,
+ * Relevance of a contact to the question, for `muse ask` grounding: how many
+ * query tokens match a token of the contact's name,
  * aliases, handle, or email. 0 ⇒ NOT injected — so we ground only on the people
  * the question is actually about, never dump the whole address book at the
  * small local model.
@@ -481,7 +481,7 @@ export function selectPlaybookSection(
 
 /**
  * The single learned strategy that most shaped this answer — the top-ranked
- * injectable entry (S6 "I learned this about you"). Same ranking + exclusions as
+ * injectable entry ("I learned this about you"). Same ranking + exclusions as
  * `selectPlaybookSection` (avoided/probation never injected), so this is exactly
  * the strategy at the head of the `[Learned Strategies]` block. Undefined when
  * nothing injectable. The caller still gates the surfaced beat on real relevance

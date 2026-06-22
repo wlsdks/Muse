@@ -111,9 +111,9 @@ export function parseSkillFrontmatter(frontmatter: string): SkillFrontmatter {
       // `}`, lose the outer fields, and break `safeJsonObject`.
       // Counting braces (string-aware) gives a single deterministic
       // exit at the true close of the object — and also closes the
-      // pre-iter-32 bug where `inMetadata` had no exit at all and
-      // greedily consumed every trailing simple-string field below
-      // `metadata:` (description / emoji / homepage).
+      // bug where `inMetadata` had no exit at all and greedily
+      // consumed every trailing simple-string field below `metadata:`
+      // (description / emoji / homepage).
       if (isJsonBlockComplete(metadataJson, "{", "}")) {
         inMetadata = false;
       }

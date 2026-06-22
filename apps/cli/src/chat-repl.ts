@@ -945,25 +945,6 @@ export function parseAgentMode(value: string | undefined): AgentMode | undefined
   throw new Error(`--mode must be 'react' or 'plan_execute' (got '${value}')${hint}`);
 }
 
-/**
- * Resolve the N most-recent prior-session
- * episodes for the given userId and shape them for the persona
- * block. Caller invokes once per REPL boot; the result feeds
- * `buildMusePersona`'s new `episodes` field.
- *
- * `MUSE_EPISODIC_MEMORY_MAX_ENTRIES` (default 20) caps the block;
- * 0 / negative / non-numeric values fall back to the default rather
- * than producing nonsense like "render -3 entries".
- *
- * The default went 5 → 20 once we decided to skip vector RAG. At
- * personal scale (≤ a few hundred episodes over the assistant's
- * lifetime) the cheaper play is to surface enough episodes in the
- * persona block that the LLM can do paraphrase matching natively
- * (e.g. "Notion thing" → matches "Q3 budget memo" tagged "Notion").
- * 20 entries at ~80 tokens each ≈ 1.6 K tokens of persona — fits
- * comfortably alongside the rest of the prompt on modern context
- * windows.
- */
 function readChatResponseText(value: unknown): string {
   if (isRecord(value) && typeof value.response === "string") {
     return value.response;
@@ -976,12 +957,6 @@ function readChatResponseText(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/**
- * Resolve the REPL in-memory history cap from an env
- * string. Default 2000 entries (1000 user/assistant pairs). Bad /
- * non-positive values fall back to the default so a typoed env
- * doesn't accidentally disable bounding.
- */
 /**
  * Wire process-level SIGTERM + SIGINT to a single
  * graceful-exit callback. Returns a teardown function that

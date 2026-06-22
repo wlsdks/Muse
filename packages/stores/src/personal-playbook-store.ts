@@ -46,11 +46,11 @@ export interface PlaybookEntry {
    * PROBATION: written UNATTENDED (idle daemon distillation) ⇒ recorded +
    * visible but NEVER injected, until a real reinforce graduates it (cleared
    * when reward goes positive). Breaks the self-confirmation loop. Absent =
-   * graduated. (PART A2 / B1 §5.)
+   * graduated.
    */
   readonly probation?: boolean;
   /**
-   * PROVENANCE (B1 §4 — the "why" `muse learned` shows): how this strategy was
+   * PROVENANCE (the "why" `muse learned` shows): how this strategy was
    * formed. `"grounded"` = distilled from a REAL correction the user gave;
    * `"reflected"` = synthesised from a reflection (no direct correction — ranked
    * below grounded so synthetic guesses never outrank evidence); `"manual"` =
@@ -65,7 +65,7 @@ export interface PlaybookEntry {
   readonly source?: string;
   /**
    * ISO timestamp of the last POSITIVE reinforcement (the recency signal for
-   * disuse-decay, B1 §2): a trusted strategy you stop reinforcing fades back
+   * disuse-decay): a trusted strategy you stop reinforcing fades back
    * toward neutral over time so one stale thumbs-up can't steer the agent
    * forever. Stamped by `adjustPlaybookReward` on a positive delta only —
    * decay never refreshes it, so continued disuse keeps fading. Absent ⇒
@@ -187,8 +187,8 @@ function retentionUtility(entry: PlaybookEntry): number {
 }
 
 /**
- * Choose which entries survive when the bank overflows `cap` (B1 §3 —
- * reward-/recency-weighted eviction, replacing blind FIFO). Blind FIFO would
+ * Choose which entries survive when the bank overflows `cap`
+ * (reward-/recency-weighted eviction, replacing blind FIFO). Blind FIFO would
  * forget a strategy you reinforced ten times just because it is old, while
  * keeping a never-used newer one — exactly backwards. So eviction keeps the
  * `cap` HIGHEST-value entries, value = (PEVI retention utility, then recency):
@@ -274,10 +274,10 @@ export async function adjustPlaybookReward(
         ...(delta > 0
           ? { reinforcements: (e.reinforcements ?? 0) + 1 }
           : { decays: (e.decays ?? 0) + 1 }),
-        // Graduation (B1 §5): a probation strategy with net-positive reward has
+        // Graduation: a probation strategy with net-positive reward has
         // earned evidence — clear probation so it becomes injectable.
         ...(e.probation && updated > 0 ? { probation: false } : {}),
-        // Recency anchor for disuse-decay (B1 §2): a real (positive) reinforce
+        // Recency anchor for disuse-decay: a real (positive) reinforce
         // refreshes it; a decay/penalty must NOT, or disuse could never fade.
         ...(delta > 0 ? { lastReinforcedAt: new Date(nowMs).toISOString() } : {})
       };
@@ -322,7 +322,7 @@ export const PLAYBOOK_DECAY_STALE_DAYS = 30;
 const DAY_MS = 86_400_000;
 
 /**
- * Disuse-decay (B1 §2 — continuous RL over the bank): every positive-reward
+ * Disuse-decay (continuous RL over the bank): every positive-reward
  * strategy NOT reinforced within `staleAfterDays` loses `step` reward toward
  * NEUTRAL 0 (never below — disuse fades trust, it does not punish; a real
  * correction is what drives a strategy negative). So a one-off thumbs-up

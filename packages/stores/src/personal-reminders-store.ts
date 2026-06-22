@@ -8,10 +8,6 @@ import { atomicWriteFile } from "./atomic-file-store.js";
  *   - `muse today` (both API and CLI local) — surfaces overdue +
  *     upcoming entries
  *
- * Reminders are passive in this iter — there's no daemon firing
- * messenger pushes. The contract leaves `firedAt` open so a future
- * iter can flip status to "fired" once an active firing loop ships.
- *
  * Reuses `parseTaskDueAt` for the dueAt parser because reminders
  * accept the same ISO-or-relative-phrase grammar as task dueAt.
  */
@@ -46,7 +42,7 @@ export interface PersistedReminder {
    */
   readonly recurrence?: ReminderRecurrence;
   /**
-   * Phase C of docs/design/reminder-firing.md. Optional per-reminder
+   * Optional per-reminder
    * routing override — when set, the firing loop ignores its
    * `providerId`/`destination` defaults and delivers via this
    * platform / chat instead. Useful when the user mixes channels
@@ -186,8 +182,7 @@ const ONE_TIME_RECURRENCE_SENTINELS = new Set([
  * "add the event AND remind me" request used to lose the reminder when the model
  * passed "none"/"once"). A one-time SENTINEL resolves silently; a genuinely
  * unsupported cadence ("monthly") still creates the one-shot but returns a `note`
- * so the caller can surface that the cadence wasn't applied. Repair, don't reject
- * (tool-calling.md rule 7).
+ * so the caller can surface that the cadence wasn't applied. Repair, don't reject.
  */
 export function normalizeReminderRecurrence(raw: string | undefined): { recurrence?: ReminderRecurrence; note?: string } {
   const value = raw?.trim();
@@ -270,16 +265,6 @@ export function parseReminderVia(raw: unknown): ReminderVia | Error | undefined 
   return { destination: candidate.destination.trim(), providerId: candidate.providerId.trim() };
 }
 
-/**
- * Flip a reminder pending → fired. Phase A of active firing
- * (see `docs/design/reminder-firing.md`): the LLM can call
- * `muse.reminders.fire` after it's delivered the reminder
- * through messaging, closing the loop without a daemon.
- *
- * Returns the new array (immutable, status flipped, `firedAt`
- * set) on success or `undefined` when no reminder matches `id`,
- * letting the caller surface its own 404.
- */
 /**
  * The next due timestamp for a recurring reminder: advance `dueAt` by
  * the recurrence period (1 / 7 days) to the first instant strictly

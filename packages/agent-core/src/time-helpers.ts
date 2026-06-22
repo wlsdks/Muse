@@ -2,8 +2,8 @@
  * Non-tool time helpers reused by ActiveContextProvider so the
  * agent runtime can format current time + decide working-hours
  * without going through the `muse.time.now` tool. Mirrors the
- * Intl.DateTimeFormat-based approach used by
- * `packages/tools/src/muse-tools-time.ts:18-65`.
+ * Intl.DateTimeFormat-based approach used by the time tool in
+ * `@muse/tools`.
  */
 
 export interface FormattedTime {

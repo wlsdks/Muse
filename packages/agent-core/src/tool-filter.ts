@@ -1,5 +1,5 @@
 /**
- * Context-aware tool filter (Context Engineering Phase 4).
+ * Context-aware tool filter.
  *
  * Reduces the tool catalog advertised to the model on each request
  * based on (a) explicit scope hints in metadata, (b) the user's
@@ -30,15 +30,6 @@ export interface ToolFilter {
   filter(tools: readonly MuseTool[], context: ToolFilterContext): readonly MuseTool[];
 }
 
-/**
- * Default filter: keep tools when ANY of the following is true:
- *   - tool has no `domain` (legacy / always-on)
- *   - tool's `domain === "core"`
- *   - tool's `domain` appears in `scopeHints`
- *   - the user's message matches any of the tool's `keywords`
- *   - the user's message matches the tool's domain by simple
- *     keyword heuristic (e.g. mentions "slack" → messaging)
- */
 /**
  * Default ceiling on the advertised tool catalog. tool-calling.md #1 caps
  * the per-turn set at 5–7; 6 sits at the top of that band. A multi-domain
@@ -76,7 +67,7 @@ const FILE_PATH_DOMAIN_BONUS = 3;
  * dedicated reserve the 3-slot file cluster starves run_command, so the model
  * fixes the bug but can never RUN to verify (observed live: eval:edit-run-verify
  * FAILed with test-passes=true but model-ran-test=false). The execute-tool
- * sibling of the FILE_PATH file-cluster reserve (fire 4).
+ * sibling of the FILE_PATH file-cluster reserve.
  */
 const RUN_INTENT_RE = /\b(?:run|runs|running|execute|exec|test|tests|build|builds|compile|verify|lint|typecheck)\b|실행|테스트|빌드|컴파일|검증/iu;
 
@@ -389,8 +380,7 @@ export const DEFAULT_DOMAIN_KEYWORDS: Readonly<Record<string, readonly string[]>
  * `core` tools are always-on; non-core domains gate the tool behind
  * the prompt-keyword / scope-hint / recent-tool filter.
  *
- * Includes the registry-backed `<domain>-multi` variants
- *.
+ * Includes the registry-backed `<domain>-multi` variants.
  * The autoconfigure layer registers `muse.tasks-multi.*`,
  * `muse.calendar-multi.*`, and `muse.notes-multi.*` alongside the
  * single-provider tools; without these mappings they bypassed the

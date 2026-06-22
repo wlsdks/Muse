@@ -67,10 +67,10 @@ export const DEFAULT_AGENT_SPECS: readonly AgentSpecInput[] = [
     keywords: [],
     mode: "standard",
     name: "Critic",
-    // G5 redesign: a small local model won't reliably REWRITE a good draft, so
-    // instead of asking it to "sharpen" (which just echoed the draft), give it
-    // a DISTINCT generative job — surface what the first answer left out. This
-    // adds a genuinely different second perspective in the sequential pipeline.
+    // A small local model won't reliably REWRITE a good draft, so instead of
+    // asking it to "sharpen" (which just echoed the draft), give it a DISTINCT
+    // generative job — surface what the first answer left out. This adds a
+    // genuinely different second perspective in the sequential pipeline.
     systemPrompt:
       "A prior worker's direct answer is given to you in a system message beginning "
       + "\"Worker '...' completed:\". Do NOT repeat or restate it. Instead add what it MISSED: "

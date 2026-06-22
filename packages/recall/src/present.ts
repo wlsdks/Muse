@@ -7,7 +7,7 @@ import { formatDueLocal } from "@muse/mcp-shared";
 import { type PersistedReminder, type PersistedTask } from "@muse/stores";
 
 /**
- * SB-1/G2: the most-recent watched-feed headlines across ALL feeds, newest
+ * The most-recent watched-feed headlines across ALL feeds, newest
  * first, capped at `limit`. Feeds are time-ordered world-state (not embedded),
  * so we surface recent items directly — the second brain reaches your
  * subscribed knowledge ("what's new in X?"). Pure; unparseable dates sort last.
@@ -87,15 +87,6 @@ export function provenanceDate(noteRef: string): string | undefined {
 }
 
 /**
- * S1 "citation-as-voice" (felt-experience, PART B2): render each cited note as
- * a MEMORY, not a filename — "from your note of 2026-03-03 — '…verbatim
- * snippet…'" + the openable path. Pure deterministic code (verbatim chunk text
- * + date parsed from the filename, NO second model call, the gate untouched),
- * so the receipt reads like Muse recalling WHERE you said it. Takes the
- * post-gate answer (only real surviving citations) + the grounded chunks;
- * undefined when nothing was cited (a refusal renders no receipt). Testable.
- */
-/**
  * Verify a rendered snippet against the CURRENT on-disk file content (not the
  * retrieval-index copy it was drawn from). `provenanceSnippet` whitespace-flattens
  * and may append a `…` truncation marker, so compare the snippet core (sans `…`)
@@ -110,6 +101,15 @@ function snippetOnDisk(snippet: string, diskContent: string): boolean {
   return diskContent.replace(/\s+/gu, " ").includes(core);
 }
 
+/**
+ * Render each cited note as a MEMORY, not a filename — "from your note of
+ * 2026-03-03 — '…verbatim snippet…'" + the openable path. Pure deterministic
+ * code (verbatim chunk text + date parsed from the filename, NO second model
+ * call, the gate untouched), so the receipt reads like Muse recalling WHERE you
+ * said it. Takes the post-gate answer (only real surviving citations) + the
+ * grounded chunks; undefined when nothing was cited (a refusal renders no
+ * receipt). Testable.
+ */
 export function formatSourceReceipts(
   answer: string,
   notesDir: string,
@@ -134,7 +134,7 @@ export function formatSourceReceipts(
     const lead = date ? `from your note of ${date}` : `from ${note}`;
     const hit = hitFor(note);
     let snippet = hit ? relevantSnippet(hit.text, query) : undefined;
-    // L4 (shows-its-work): the snippet above is drawn from the retrieval-INDEX
+    // The snippet above is drawn from the retrieval-INDEX
     // copy (`hit.text`). When the caller supplies the file's CURRENT disk content,
     // confirm the quote is still really there — a note edited or deleted after
     // indexing would otherwise get a confident verbatim quote the file no longer
@@ -192,7 +192,7 @@ export function formatCoarseAge(ageMs: number): string {
  */
 /**
  * Read the CURRENT on-disk content of each cited NOTE so `formatSourceReceipts`
- * can verify its quote against the file (L4: render-time disk-verify, not the
+ * can verify its quote against the file (render-time disk-verify, not the
  * retrieval-index copy). A present note maps to its content, a gone/unreadable
  * one to `null` (the receipt then says "no longer on disk"). Ad-hoc sources
  * (`--url`/`--clipboard`/`--file` in `verifyTargets`) are skipped — they carry
@@ -412,8 +412,8 @@ export function optionalGroundingSections(
   // `present` is set by the caller from a match-COUNT (e.g. matchedContacts.length > 0)
   // while `body` is a separately-rendered string — decoupled, so a present:true block
   // can still carry an empty/whitespace body, which would emit a grounding HEADER with no
-  // citable content: wasted context (doctrine 4) AND a citable-looking header backing
-  // nothing (doctrine 2). Drop it — no source is lost (there is no content to lose).
+  // citable content: wasted context AND a citable-looking header backing
+  // nothing. Drop it — no source is lost (there is no content to lose).
   const present = all.filter((entry) => entry.spec.present && entry.spec.body.trim().length > 0);
   return edgePlaceByPriority(
     present.map((entry) => ({
@@ -485,7 +485,7 @@ export function groundedSourceSummary(counts: GroundedSourceCounts): string[] {
 
 /**
  * The "shows its work, FELT" receipt for the NON-note sources the answer cited
- * (S1 completion) — calendar / tasks / reminders / contacts / shell. Parses the
+ * — calendar / tasks / reminders / contacts / shell. Parses the
  * post-gate answer's `[event|task|reminder|contact|command: …]` markers (so only
  * real, surviving citations appear) and renders one grounded line each, grouped
  * by source. A source type with nothing configured this turn is skipped; a

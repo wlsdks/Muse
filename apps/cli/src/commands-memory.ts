@@ -151,11 +151,6 @@ export function buildFactTimeline(
   return out.sort((a, b) => a.key.localeCompare(b.key));
 }
 
-/**
- * Render `muse memory why <key>` from the newest-first provenance records the
- * store returned. Uses the latest (records[0]); a forgotten/untracked key
- * yields a friendly note. Pure for testability.
- */
 /** Render one sleep-consolidation pass as an honest, non-destructive readout. Pure. */
 export function formatConsolidationPlan(plan: ConsolidationPlan): string {
   if (plan.promote.length === 0 && plan.fade.length === 0) {
@@ -177,6 +172,11 @@ export function formatConsolidationPlan(plan: ConsolidationPlan): string {
   return `${lines.join("\n")}\n`;
 }
 
+/**
+ * Render `muse memory why <key>` from the newest-first provenance records the
+ * store returned. Uses the latest (records[0]); a forgotten/untracked key
+ * yields a friendly note. Pure for testability.
+ */
 export function formatBeliefWhy(
   records: ReadonlyArray<{ readonly kind: string; readonly key: string; readonly value: string; readonly learnedAt: string; readonly evidenceExcerpt?: string; readonly sessionId?: string; readonly source?: "auto" | "user"; readonly retraction?: boolean }>,
   key: string,
@@ -203,7 +203,7 @@ export function formatBeliefWhy(
   // recently, and never an injection-flagged value.)
   const durable = selectPromotableFacts([prov], { isInjection: isMemoryInjection, now: nowMs }).length > 0;
   // A belief whose value FLIPPED across confirmations is volatile (it's why an
-  // often-confirmed fact can still be provisional — H2).
+  // often-confirmed fact can still be provisional).
   const volatileNote = prov.distinctValueCount > 1 ? ` · value changed ${prov.distinctValueCount.toString()}× (volatile)` : "";
   const lines = [
     `${prov.kind} ${prov.key} = ${prov.value} — ${verb} ${prov.lastConfirmed}`,

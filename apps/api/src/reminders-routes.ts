@@ -1,10 +1,9 @@
 /**
  * `/api/reminders/*` routes — passive personal reminders.
  *
- * Reminders aren't actively fired in this iter (no daemon yet).
  * `muse today` and the CLI surface them when their dueAt has
- * passed; a future iter can flip status to "fired" and route
- * through the messaging registry.
+ * passed; the daemon flips status to "fired" and routes through
+ * the messaging registry.
  *
  * Endpoints:
  *   - GET    /api/reminders        list (status filter: pending|fired|all|due)

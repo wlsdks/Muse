@@ -117,8 +117,8 @@ export function classifyValueChange(oldValue: string, newValue: string): "same" 
  * chain ("Seoul" ⊂ "Seoul, Gangnam-gu" ⊂ …) collapses to one, a genuine flip ("Seoul"
  * vs "Busan") counts separately. The refinement-aware replacement for a raw
  * `new Set(values).size`, so a more-specific re-statement does not inflate
- * {@link FactProvenance.distinctValueCount} into a FALSE volatility signal (the fire-16
- * over-count). Conservative: only a STRICT token-subset collapses, so a narrowing or a
+ * {@link FactProvenance.distinctValueCount} into a FALSE volatility signal.
+ * Conservative: only a STRICT token-subset collapses, so a narrowing or a
  * flip stays distinct. Pure.
  */
 export function refinementAwareDistinctValueCount(values: readonly string[]): number {
@@ -135,20 +135,6 @@ export function refinementAwareDistinctValueCount(values: readonly string[]): nu
   return Math.max(1, count);
 }
 
-/**
- * Aggregate the append-only belief-provenance LOG into one record per key —
- * firstSeen (earliest learnedAt), lastConfirmed (latest), confirmCount, source
- * (`user` if any confirmation was user-stated — Hindsight: a user truth outranks an
- * auto-inference), and the value carried at the most-recent learnedAt. The data
- * already exists in the log; this DERIVES the per-fact signal a freshness/promotion
- * layer needs, with NO migration of the flat `facts` store. Pure.
- */
-/**
- * Keys whose NEWEST belief-provenance event is a RETRACTION (an explicit user
- * `forget`) — so the auto-extractor must NOT resurface them. A later non-retraction
- * event (a deliberate re-`set` / re-learn the user authored) is newer, so the key
- * drops out (the user reopened it). Pure over the append-only log.
- */
 /**
  * Append a RETRACTION marker for an explicit user `forget`, so the auto-extractor
  * won't resurface the dropped fact ({@link keysWithActiveRetraction}). The CLI
@@ -171,6 +157,12 @@ export async function recordRetraction(
   });
 }
 
+/**
+ * Keys whose NEWEST belief-provenance event is a RETRACTION (an explicit user
+ * `forget`) — so the auto-extractor must NOT resurface them. A later non-retraction
+ * event (a deliberate re-`set` / re-learn the user authored) is newer, so the key
+ * drops out (the user reopened it). Pure over the append-only log.
+ */
 export function keysWithActiveRetraction(entries: readonly BeliefProvenance[]): ReadonlySet<string> {
   const newestByKey = new Map<string, BeliefProvenance>();
   for (const e of entries) {
@@ -184,6 +176,14 @@ export function keysWithActiveRetraction(entries: readonly BeliefProvenance[]): 
   return out;
 }
 
+/**
+ * Aggregate the append-only belief-provenance LOG into one record per key —
+ * firstSeen (earliest learnedAt), lastConfirmed (latest), confirmCount, source
+ * (`user` if any confirmation was user-stated — Hindsight: a user truth outranks an
+ * auto-inference), and the value carried at the most-recent learnedAt. The data
+ * already exists in the log; this DERIVES the per-fact signal a freshness/promotion
+ * layer needs, with NO migration of the flat `facts` store. Pure.
+ */
 export function deriveFactProvenance(entries: readonly BeliefProvenance[]): readonly FactProvenance[] {
   const byKey = new Map<string, BeliefProvenance[]>();
   for (const e of entries) {
@@ -244,11 +244,11 @@ const DEFAULT_PROMOTE_MIN_CONFIRM = 3;
 const DEFAULT_PROMOTE_RECENT_DAYS = 90;
 
 /**
- * The durable-promotion gate (G4): which facts have EARNED durable trust. A
+ * The durable-promotion gate: which facts have EARNED durable trust. A
  * user-STATED fact is trusted immediately (the user typed it — Hindsight: a user
  * truth outranks an inference, and the latest is their current truth even if it
  * flipped); an AUTO-inferred fact must be re-confirmed `minConfirmCount` times AND
- * recently AND with a STABLE value (`distinctValueCount === 1`). H2: a high
+ * recently AND with a STABLE value (`distinctValueCount === 1`). A high
  * confirmCount with the value FLIPPING (`distinctValueCount > 1`) is the auto-
  * extractor giving conflicting values for the key — re-confirmation of a CHANGING
  * belief, the opposite of stable truth — so it stays provisional until the user
@@ -372,7 +372,7 @@ export interface VolatileBelief {
 }
 
 /**
- * The user-remediable end of H2 (closes the loop): the recently-active AUTO beliefs
+ * The user-remediable side of the volatility signal: the recently-active AUTO beliefs
  * whose value the extractor FLIPPED (`distinctValueCount >= minDistinctValues`) — the
  * recap nudges the user to confirm the current value, which re-states it as
  * user-source and promotes it to durable. A USER-stated belief is excluded (the user's

@@ -1,6 +1,6 @@
 /**
  * Importance score for a tool's output, used by the runtime's
- * per-tool-result character cap (D5 — Context Engineering follow-up).
+ * per-tool-result character cap.
  *
  * Default cap (`maxToolOutputChars`) is uniform across every tool.
  * That's a problem for a personal assistant where a calendar result
@@ -37,11 +37,10 @@ export function scoreToolOutputImportance(toolName: string): number {
   for (const [prefix, weight] of Object.entries(DOMAIN_WEIGHTS)) {
     if (
       lower.startsWith(`muse.${prefix}.`) ||
-      // Registry-backed multi-provider variants:
-      //   `muse.tasks-multi.*`, `muse.calendar-multi.*`, `muse.notes-multi.*`
-      // surface the same personal-data semantics as their single-
-      // provider siblings, so they get the same elevated weight
-      //.
+      // Registry-backed multi-provider variants (`muse.tasks-multi.*`,
+      // `muse.calendar-multi.*`, `muse.notes-multi.*`) surface the same
+      // personal-data semantics as their single-provider siblings, so
+      // they get the same elevated weight.
       lower.startsWith(`muse.${prefix}-multi.`) ||
       lower.includes(`.${prefix}.`) ||
       lower.startsWith(`${prefix}.`)

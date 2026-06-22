@@ -27,7 +27,7 @@ const DEFAULT_STRATEGY_SUPPORT_FLOOR = 0.5;
  * ReasoningBank arXiv:2509.25140): a distilled strategy must ABSTRACT the correction, not
  * restate it verbatim. High so only a near-identical restatement (overfit one-off that won't
  * generalise) drops; a concise grounded abstraction (cosine ∈ [floor, ceiling)) is kept.
- * Distinct from fire-17 inject-dedup (strategy-vs-OTHER-bank-strategies at inject time) —
+ * Distinct from inject-dedup (strategy-vs-OTHER-bank-strategies at inject time) —
  * this compares the strategy against its SOURCE correction at distill time.
  */
 export const DEFAULT_STRATEGY_VERBATIM_CEILING = 0.92;

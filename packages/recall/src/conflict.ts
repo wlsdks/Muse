@@ -86,12 +86,6 @@ function fieldsOf(snippet: string): Map<string, string> {
 }
 
 /**
- * Detect pairs of hits that give DIFFERENT values for the SAME labelled field.
- * Only cross-hit disagreements count (two values in one snippet are not a
- * conflict). For each conflicting field the FIRST differing pair (in input order)
- * is returned. Pure and deterministic.
- */
-/**
  * Compose the answer's grounding (ranked note chunks + past-session episodes)
  * into a source-conflict cue. The caller passes the SAME grounding that backed
  * the answer; a non-undefined return means two of those sources disagree on a
@@ -140,6 +134,12 @@ export function formatSourceConflictWarning(hits: readonly RecallHit[]): string 
   return `⚠️ Your sources disagree — verify before trusting:\n${lines.join("\n")}`;
 }
 
+/**
+ * Detect pairs of hits that give DIFFERENT values for the SAME labelled field.
+ * Only cross-hit disagreements count (two values in one snippet are not a
+ * conflict). For each conflicting field the FIRST differing pair (in input order)
+ * is returned. Pure and deterministic.
+ */
 export function detectSourceConflict(hits: readonly RecallHit[]): readonly SourceConflict[] {
   if (hits.length < 2) return [];
   const parsed = hits.map((hit) => ({ hit, fields: fieldsOf(hit.snippet) }));

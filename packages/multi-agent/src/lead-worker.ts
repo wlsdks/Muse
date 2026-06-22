@@ -12,15 +12,6 @@ export interface SynthesisVerdict {
 }
 
 /**
- * Objective-satisfaction verifier on the FAN-IN (maker != judge): does the
- * synthesized answer actually INCORPORATE each completed sub-task's result, or did it
- * silently drop one? A confident synthesis that omits a worker's output is the MAST
- * "done-by-self-report / unaware of termination" failure (agent-testing.md: a "done"
- * signal must be backed by a real verification step). Deterministic + conservative —
- * a COMPLETED, non-empty sub-task whose salient tokens are ENTIRELY absent from the
- * synthesis is flagged dropped; a paraphrase (any shared salient token) passes. Pure.
- */
-/**
  * Cross-subtask CONTRADICTION on the fan-in (the grounding edge applied to the
  * fan-OUT): when two COMPLETED workers assert disagreeing values on the SAME topic
  * (e.g. "deadline is Tuesday" vs "Wednesday"), the synthesis would silently
@@ -100,6 +91,15 @@ export async function detectFanInRedundancy(
   return pairs.map((p) => `"${nonEmpty[p.aIndex]!.workerId}" ≈ "${nonEmpty[p.bIndex]!.workerId}"`);
 }
 
+/**
+ * Objective-satisfaction verifier on the FAN-IN (maker != judge): does the
+ * synthesized answer actually INCORPORATE each completed sub-task's result, or did it
+ * silently drop one? A confident synthesis that omits a worker's output is the MAST
+ * "done-by-self-report / unaware of termination" failure (agent-testing.md: a "done"
+ * signal must be backed by a real verification step). Deterministic + conservative —
+ * a COMPLETED, non-empty sub-task whose salient tokens are ENTIRELY absent from the
+ * synthesis is flagged dropped; a paraphrase (any shared salient token) passes. Pure.
+ */
 export function verifySynthesisCoverage(finalAnswer: string, executions: readonly SubtaskExecution[]): SynthesisVerdict {
   const answerTokens = lexicalTokens(finalAnswer);
   const missing: string[] = [];
@@ -346,15 +346,6 @@ async function runOne(subtask: Subtask, deps: LeadWorkerDeps, priorContext?: rea
   return { output, ...(sources ? { sources } : {}), status: "completed", subtask };
 }
 
-/**
- * Lead-worker fan-out: a complex request is split into independent sub-tasks,
- * each run in its own clean context (sequential on a single GPU), then the lead
- * synthesizes one answer. A simple request bypasses the whole machinery and
- * runs as a single execution. Failures NEVER abort the run or silently vanish
- * (MAST "information withholding"): a failed/ungrounded sub-task is recorded
- * and surfaced to `synthesize`, which decides how to fold partial results.
- * Termination is bounded — at most {@link MAX_SUBTASKS} sub-tasks run.
- */
 function normalizeSubtaskText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/gu, " ");
 }
@@ -379,6 +370,15 @@ export function dedupeSubtasks(subtasks: readonly Subtask[]): Subtask[] {
   return out;
 }
 
+/**
+ * Lead-worker fan-out: a complex request is split into independent sub-tasks,
+ * each run in its own clean context (sequential on a single GPU), then the lead
+ * synthesizes one answer. A simple request bypasses the whole machinery and
+ * runs as a single execution. Failures NEVER abort the run or silently vanish
+ * (MAST "information withholding"): a failed/ungrounded sub-task is recorded
+ * and surfaced to `synthesize`, which decides how to fold partial results.
+ * Termination is bounded — at most {@link MAX_SUBTASKS} sub-tasks run.
+ */
 export async function runLeadWorkerTask(request: string, deps: LeadWorkerDeps): Promise<LeadWorkerResult> {
   const decision = shouldDecompose(request);
 

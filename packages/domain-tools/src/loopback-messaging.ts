@@ -24,7 +24,6 @@ const DENY_WITHOUT_CONFIRMATION: MessageApprovalGate = () => ({
 /**
  * `muse.messaging` loopback MCP server.
  *
- * Phase 3 of the messenger plan (see `docs/design/messaging.md`).
  * Once registered, the agent can call:
  *
  *   - `muse.messaging.providers` (read) — list providers the user
@@ -33,9 +32,8 @@ const DENY_WITHOUT_CONFIRMATION: MessageApprovalGate = () => ({
  *     through one of those providers, e.g. for "remind me on
  *     Telegram when the deploy finishes" or "send this brief to
  *     Slack".
- *   - `muse.messaging.inbox` (read) — Phase 2.a one-shot snapshot of
- *     recent inbound messages on a provider that supports it
- *     (Telegram landed first; Discord/Slack/LINE follow). The agent
+ *   - `muse.messaging.inbox` (read) — one-shot snapshot of
+ *     recent inbound messages on a provider that supports it. The agent
  *     can answer "did Stark message me this morning?" without a
  *     daemon — every call is a fresh `getUpdates`.
  *
@@ -203,7 +201,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
         description:
           "Fetch a one-shot snapshot of recent inbound messages from a provider that supports inbound. " +
           "All four shipped providers (telegram | discord | slack | line) now implement it; LINE reads " +
-          "from a webhook-persisted inbox file (Phase 2.b). `limit` is capped at 100 (default 20). Each " +
+          "from a webhook-persisted inbox file. `limit` is capped at 100 (default 20). Each " +
           "entry is { messageId, source, sender?, receivedAtIso, text }. " +
           "`source` is required for per-channel providers (discord channel id, slack channel id like " +
           "C0123ABCD); telegram and LINE ignore it. " +
@@ -248,7 +246,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
               type: "number"
             },
             providerId: {
-              description: "Provider id from `providers` (telegram or discord at this iter).",
+              description: "Provider id from `providers` (telegram | discord | slack | line).",
               type: "string"
             },
             source: {

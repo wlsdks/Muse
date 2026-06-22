@@ -1,9 +1,9 @@
 /**
  * `muse daemon` — run Muse's background daemons in one foreground
  * process the user can launch directly, instead of needing the full
- * `apps/api` server. Today it drives the proactive-notice tick;
+ * `apps/api` server. It drives the proactive-notice tick;
  * additional ticks (followup / objectives / ambient / web-watch)
- * attach to the same launcher in later slices.
+ * attach to the same launcher.
  *
  *   muse daemon          — run continuously, one tick per interval
  *   muse daemon --once   — run exactly one tick of each enabled
@@ -372,7 +372,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       }
       // --print echoes every delivered notice to stdout too, so a
       // user running `muse daemon` in the foreground watches it work
-      // inline — JARVIS speaking in the room, not only to the channel.
+      // inline.
       const messagingRegistry: MessagingProviderRegistry = options.print
         ? new Proxy(baseMessagingRegistry, {
             get(target, prop, receiver) {
@@ -866,8 +866,8 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
             io.stdout(`[${new Date(nowMs).toISOString()}] learned: +${recorded.toString()} strateg${recorded === 1 ? "y" : "ies"} from your corrections (see \`muse learned\`)\n`);
             // FELT self-learning: deliver the autonomous-learning event
             // to the user's CHANNEL — not just this console they don't watch —
-            // so a background daemon's learning is PERCEIVED, not silent (loop-v2
-            // "felt self-learning"). Quiet-hours-gated + fail-soft like every
+            // so a background daemon's learning is PERCEIVED, not silent.
+            // Quiet-hours-gated + fail-soft like every
             // notice. SAFE: the strategy stays PROBATION — this only SURFACES it,
             // never auto-applies it (the honesty-sensitive injection path is
             // untouched; nothing graduates without the user's own reinforce).

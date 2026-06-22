@@ -7,7 +7,7 @@
  * Ollama (a foreground call warmed it); otherwise defer. Ollama's `/api/ps`
  * lists the currently-resident models. FAIL-CLOSED: any fetch/parse error (or
  * Ollama down) ⇒ treat the model as NOT resident, so we never cold-load
- * unattended. (PART A2 / B1 brake-and-proof-first.)
+ * unattended.
  */
 
 /** The bit of Ollama's `/api/ps` payload we care about. */
