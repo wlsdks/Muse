@@ -70,6 +70,23 @@ test("dataset integrity: at least one absent (abstain) case exists", () => {
   assert.ok(RECALL_QUALITY_CASES.some((c) => c.expectedSource === null), "need a negative/abstain case");
 });
 
+test("dataset integrity: calibration-grade size — enough positives AND absents", () => {
+  const positives = RECALL_QUALITY_CASES.filter((c) => c.expectedSource !== null).length;
+  const absents = RECALL_QUALITY_CASES.filter((c) => c.expectedSource === null).length;
+  // a fabrication-critical bar can only be calibrated against a real distribution,
+  // not 7 points (fire 3 lesson): require breadth on both arms.
+  assert.ok(positives >= 16, `need >=16 positives for a calibration-grade distribution, have ${positives}`);
+  assert.ok(absents >= 8, `need >=8 absents to bound the fabrication floor, have ${absents}`);
+});
+
+test("dataset integrity: both correction pairs keep the stale distractor (teeth)", () => {
+  const sources = new Set(RECALL_MEMORY_CORPUS.map((m) => m.source));
+  for (const [current, stale] of [["fact:home_city", "fact:home_city_old"], ["fact:gym", "fact:gym_old"]]) {
+    assert.ok(sources.has(current), `${current} (current) must exist`);
+    assert.ok(sources.has(stale), `${stale} (stale distractor) must exist for the correction to have teeth`);
+  }
+});
+
 // --- fire 2: hit@1 (retrieval) split from the confidence gate ---
 
 test("hit@1: right entry top-1 passes regardless of confidence (the under-confidence case)", () => {

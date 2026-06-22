@@ -40,3 +40,14 @@ ratchet: testFiles +0 · fabrication 0 (untouched — refused to guess the floor
 - **리스크**: 3b(바 변경)는 반드시 absent abstain을 pass^k로 동시 검증. 큰 N(3a) 없이 상수 변경 금지.
 - lesson: fabrication-critical 임계값(confidence 바 등)은 작은 N(여기 7)으로 재보정하지 말 것 — 먼저 calibration-grade 데이터셋을 키우고(3a), 변경 시 negative(abstain) 케이스 전수가 pass^k로 유지되는지 동반 검증. 작은 측정이 "바가 틀렸다"는 입증엔 충분해도 "새 바가 안전하다"는 입증엔 불충분.
 - **다양성 메모**: fire 1·2는 (scripts, eval-new), fire 3은 (docs, decompose) — kind 전환 완료. fire 4(3a)는 scripts/eval로 복귀하나 3b는 반드시 agent-core/calibration로.
+
+## fire 4 · 2026-06-23 · skill v2.1.0 · loop/recall-spine
+
+meta: value-class=new-capability(dataset) · pkg=scripts(eval-harness) · kind=eval-new · verdict=PASS · firesSinceDrill=4
+ratchet: testFiles +0 (same files, +3 tests = 15) · fabrication 0 · eval:recall-quality 7→24 cases (live 43%→63%; hit@1 14/16)
+
+- **무엇**: 슬라이스 3a — golden set을 7→24 케이스로 확장(positive 16 KO+EN facts/prefs/goals + correction 2쌍, absent 8), corpus 8→22. calibration-grade 분포 확보(3b 안전 보정의 전제). scorer 무변경(fires 1-2에서 이미 judged). dataset-integrity 테스트 +3(size floor ≥16 pos/≥8 absent, 두 correction쌍 stale 유지).
+- **왜**: fire 3 lesson — fabrication-critical 바는 작은 N으로 못 고친다. 3b 전에 분포를 키워야 안전.
+- **리뷰 지점 (새 실패 모드)**: live 15/24(63%), hit@1 14/16, triad = confident-correct 7 · under-confidence 7 · **confident-wrong 2**. 7케이스에선 confident-wrong=0이었는데 24케이스가 **숨은 confident-wrong 2를 노출** — Muse가 틀린 기억(stale `_old`)을 자신만만하게 회상(abstain보다 나쁨). → 보정은 단순 "바 낮추기"가 아니라 precision/recall 양면. **fire 3의 안전 판단 확증**: 7케이스로 바 낮췄으면 confident-wrong 늘려 거짓말 출하. 3b는 under-confidence(7)를 줄이되 confident-wrong(2)를 안 늘리는 보정이어야(아마 margin 기반 + correction recency).
+- **리스크**: confident-wrong 2건은 correction 케이스(stale가 current 압도) 의심 — 3b/충돌회상(슬라이스 3) 둘 다와 연결. eval:recall-quality는 standalone(CI 게이트 아님)이라 63%가 다른 게이트를 깨지 않음.
+- 검증: `node --test` 15/15 GREEN + MUTATION(size guard) RED · live 15/24 + 진단 · production 무수정(데이터/테스트만) · 독립 Opus ④b judge PASS(8 absent 전부 unanswerable·16 positive resolve·correction teeth·confident-wrong 진짜 측정 확인).

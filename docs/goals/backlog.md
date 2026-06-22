@@ -3,7 +3,7 @@
 - ✓ recall-quality golden-set eval (personal-memory recall, KO facts/prefs/goal + temporal-correction) — recall-spine fire 1
 - ✓ recall-quality diagnostic: split retrieval hit@1 from confidence gate — recall-spine fire 2 (finding: 43% is 100% under-confidence, retrieval hit@1=5/5)
 - ★ recall confidence-bar is STALE for the v2-moe embedder (recall-spine fire 3 finding, DECOMPOSED): measured top-cosine positives 0.34–0.56 vs absents 0.20–0.28; the hardcoded `DEFAULT_CONFIDENT_AT=0.55` in `packages/agent-core/src/recall-confidence.ts` was calibrated for nomic-embed-text (~0.61 for a clear match) but the default embedder is now nomic-embed-text-v2-moe (lower cosine scale) → gate over-abstains on facts it holds. Fabrication-CRITICAL constant; must NOT be guessed on 7 cases. Loop-sized safe slices:
-  - ◦ (3a) grow eval-recall-quality to ~20–30 personal-memory cases (more positives + more absents, KO+EN) → a calibration-grade distribution. (scripts, eval — deterministic teeth)
+  - ✓ (3a) grow eval-recall-quality to 24 cases (16 pos + 8 absent, KO+EN) — recall-spine fire 4 (calibration-grade; live 15/24, surfaced confident-wrong=2 hidden in the 7-case set)
   - ◦ (3b) embedder-aware default confidence bar: `DEFAULT_CONFIDENT_AT` keyed by embed-model family, the v2-moe value calibrated from 3a's distribution, with a pass^k assertion that EVERY absent case still abstains (fabrication floor). (agent-core, calibration)
   - ◦ (3c) wire `muse doctor --calibration` to emit MUSE_GROUNDING_MIN_COSINE for the memory-recall path from 3a's larger set (conformal, KnowNo arXiv:2307.01928 — already referenced in resolveRecallConfidentAt). (cli, wiring)
 

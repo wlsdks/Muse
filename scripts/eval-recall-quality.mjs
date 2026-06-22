@@ -30,15 +30,34 @@ import { runEvalSuite } from "./eval-harness.mjs";
  * entry — a faithful recall must surface the current one, not the stale one.
  */
 export const RECALL_MEMORY_CORPUS = [
+  // KO facts
   { source: "fact:home_city", text: "지금 내가 사는 도시는 부산이다." },
   { source: "fact:home_city_old", text: "예전에는 서울에 살았었다. 지금은 아니다." },
   { source: "fact:dietary", text: "나는 유당불내증이라 우유를 못 마신다." },
-  { source: "pref:coffee", text: "커피는 아메리카노보다 라떼를 더 좋아한다." },
-  { source: "goal:running", text: "올해 목표는 10km 마라톤을 완주하는 것이다." },
   { source: "fact:car", text: "내 차는 2019년식 회색 아반떼다." },
+  { source: "fact:job", text: "나는 백엔드 개발자로 일한다." },
+  { source: "fact:apt_floor", text: "우리 집은 아파트 12층이다." },
+  { source: "fact:allergy", text: "나는 땅콩 알레르기가 있다." },
+  // KO preferences
+  { source: "pref:coffee", text: "커피는 아메리카노보다 라떼를 더 좋아한다." },
+  { source: "pref:music", text: "잔잔한 재즈를 즐겨 듣는다." },
+  { source: "pref:season", text: "사계절 중 가을을 제일 좋아한다." },
+  // KO goals
+  { source: "goal:running", text: "올해 목표는 10km 마라톤을 완주하는 것이다." },
+  { source: "goal:reading", text: "한 달에 책 두 권 읽기가 목표다." },
+  // EN facts / prefs / goal
+  { source: "fact:dentist", text: "My dentist is Dr. Cho at Smile Clinic." },
+  { source: "fact:laptop", text: "My work laptop is a 14-inch MacBook Pro." },
+  { source: "pref:tea", text: "I prefer green tea over black tea." },
+  { source: "goal:spanish", text: "My goal this year is to reach B1 in Spanish." },
+  // EN correction pair (current vs stale)
+  { source: "fact:gym", text: "I now go to the gym near my office every morning." },
+  { source: "fact:gym_old", text: "I used to work out at a home gym, but not anymore." },
   // distractors — unrelated personal facts that must not be recalled as answers
   { source: "d:standup", text: "팀 스탠드업은 매일 아침 9시 30분." },
-  { source: "d:budget", text: "한 달 장보기 예산은 60만 원이다." }
+  { source: "d:budget", text: "한 달 장보기 예산은 60만 원이다." },
+  { source: "d:weekend", text: "주말마다 등산을 간다. 다음 목표는 설악산." },
+  { source: "d:commute", text: "I commute by subway, line 2." }
 ];
 
 /**
@@ -48,13 +67,36 @@ export const RECALL_MEMORY_CORPUS = [
  * "confident"), never to dress a weak match up as a recalled fact.
  */
 export const RECALL_QUALITY_CASES = [
-  { note: "direct fact", query: "내가 어떤 차 탄다고 했지?", expectedSource: "fact:car" },
-  { note: "dietary fact", query: "내가 못 마시는 거 뭐였지?", expectedSource: "fact:dietary" },
-  { note: "preference", query: "나 커피 뭐 좋아한다고 했어?", expectedSource: "pref:coffee" },
-  { note: "goal", query: "내 올해 목표가 뭐였지?", expectedSource: "goal:running" },
-  { note: "correction — current value wins", query: "나 지금 어디 산다고 했지?", expectedSource: "fact:home_city" },
-  { note: "absent — must abstain", query: "내 혈액형이 뭐라고 했지?", expectedSource: null },
-  { note: "absent — must abstain", query: "내가 키우는 반려동물 이름 뭐였지?", expectedSource: null }
+  // positives — KO facts
+  { note: "fact: car", query: "내가 어떤 차 탄다고 했지?", expectedSource: "fact:car" },
+  { note: "fact: dietary", query: "내가 못 마시는 거 뭐였지?", expectedSource: "fact:dietary" },
+  { note: "fact: job", query: "내 직업이 뭐라고 했더라?", expectedSource: "fact:job" },
+  { note: "fact: apt floor", query: "우리 집 몇 층이라고 했지?", expectedSource: "fact:apt_floor" },
+  { note: "fact: allergy", query: "나 무슨 알레르기 있다고 했어?", expectedSource: "fact:allergy" },
+  // positives — KO preferences
+  { note: "pref: coffee", query: "나 커피 뭐 좋아한다고 했어?", expectedSource: "pref:coffee" },
+  { note: "pref: music", query: "내가 무슨 음악 즐겨 듣는다고 했지?", expectedSource: "pref:music" },
+  { note: "pref: season", query: "내가 제일 좋아하는 계절이 뭐였지?", expectedSource: "pref:season" },
+  // positives — KO goals
+  { note: "goal: running", query: "내 올해 운동 목표가 뭐였지?", expectedSource: "goal:running" },
+  { note: "goal: reading", query: "내가 한 달에 책 몇 권 읽기로 했더라?", expectedSource: "goal:reading" },
+  // positives — KO correction (current value wins)
+  { note: "correction — current city wins", query: "나 지금 어디 산다고 했지?", expectedSource: "fact:home_city" },
+  // positives — EN
+  { note: "fact: dentist (EN)", query: "who is my dentist?", expectedSource: "fact:dentist" },
+  { note: "fact: laptop (EN)", query: "what laptop do I use for work?", expectedSource: "fact:laptop" },
+  { note: "pref: tea (EN)", query: "what tea do I prefer?", expectedSource: "pref:tea" },
+  { note: "goal: spanish (EN)", query: "what's my language goal this year?", expectedSource: "goal:spanish" },
+  { note: "correction — current gym wins (EN)", query: "where do I work out now?", expectedSource: "fact:gym" },
+  // absents — must abstain (never fabricate)
+  { note: "absent: blood type", query: "내 혈액형이 뭐라고 했지?", expectedSource: null },
+  { note: "absent: pet name", query: "내가 키우는 반려동물 이름 뭐였지?", expectedSource: null },
+  { note: "absent: siblings", query: "나 형제자매 몇 명이라고 했지?", expectedSource: null },
+  { note: "absent: birthday", query: "내 생일이 언제라고 했더라?", expectedSource: null },
+  { note: "absent: company name", query: "내가 다니는 회사 이름이 뭐였지?", expectedSource: null },
+  { note: "absent: shoe size (EN)", query: "what's my shoe size?", expectedSource: null },
+  { note: "absent: favorite movie (EN)", query: "what's my favorite movie?", expectedSource: null },
+  { note: "absent: middle name (EN)", query: "what's my middle name?", expectedSource: null }
 ];
 
 /**
