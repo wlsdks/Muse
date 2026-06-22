@@ -82,6 +82,44 @@ export function scoreRecallQualityCase(observed, testCase) {
   return { ok, detail: ok ? `recalled ${top}` : `recalled WRONG entry ${top}, expected ${testCase.expectedSource}` };
 }
 
+/**
+ * hit@1 (RETRIEVAL correctness, independent of the confidence gate): did the
+ * RIGHT entry rank top-1, regardless of whether the gate then chose to present
+ * it? Only meaningful for positive cases (the ranker always returns a top match,
+ * so an absent case has no "right entry" to hit). Separating this from
+ * `scoreRecallQualityCase` (which requires `confident`) is what tells a retrieval
+ * miss apart from pure under-confidence — the diagnostic the 43% baseline needs.
+ * @param {{topSource?:string|null}} observed
+ * @param {{expectedSource:string|null}} testCase
+ * @returns {{ok:boolean, applicable:boolean, detail:string}}
+ */
+export function scoreRecallHit1(observed, testCase) {
+  if (testCase.expectedSource === null) {
+    return { ok: false, applicable: false, detail: "n/a — absent case has no expected entry" };
+  }
+  const ok = (observed?.topSource ?? null) === testCase.expectedSource;
+  return { ok, applicable: true, detail: ok ? `top-1 = ${testCase.expectedSource}` : `top-1 = ${observed?.topSource ?? null}` };
+}
+
+/**
+ * Classify a POSITIVE case's outcome into the triad that pinpoints the fix:
+ * - "confident-correct": the gate confidently recalled the right entry (good).
+ * - "under-confidence":  the right entry IS top-1 but the gate abstained — the
+ *                        cosine bar is too high for short memory entries
+ *                        (recalibration territory, NOT a retrieval failure).
+ * - "wrong-entry":       a different entry ranked top-1 (a real retrieval miss).
+ * - "confident-wrong":   the gate confidently recalled the WRONG entry (worst).
+ * Returns null for absent cases (not part of the retrieval triad).
+ * @param {{confidence:string, topSource?:string|null}} observed
+ * @param {{expectedSource:string|null}} testCase
+ */
+export function classifyRecallOutcome(observed, testCase) {
+  if (testCase.expectedSource === null) return null;
+  const rightTop = (observed?.topSource ?? null) === testCase.expectedSource;
+  if (observed?.confidence === "confident") return rightTop ? "confident-correct" : "confident-wrong";
+  return rightTop ? "under-confidence" : "wrong-entry";
+}
+
 const OLLAMA_BASE = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
 
 async function reachable() {
@@ -136,6 +174,28 @@ async function main() {
     repeat,
     threshold: 0.85
   });
+
+  // DIAGNOSTIC (not a gate): split RETRIEVAL hit@1 from the CONFIDENCE gate so a
+  // recall miss is attributable. A positive that abstained with the right entry
+  // top-1 is under-confidence (recalibrate); a wrong top-1 is a retrieval miss.
+  const positives = RECALL_QUALITY_CASES.filter((c) => c.expectedSource !== null);
+  const tally = { "confident-correct": 0, "under-confidence": 0, "wrong-entry": 0, "confident-wrong": 0 };
+  let hit1 = 0;
+  for (const testCase of positives) {
+    const observed = await solve(testCase);
+    if (scoreRecallHit1(observed, testCase).ok) hit1 += 1;
+    const outcome = classifyRecallOutcome(observed, testCase);
+    if (outcome) tally[outcome] += 1;
+  }
+  console.log(`\n--- diagnostic (positives only, n=${positives.length}) ---`);
+  console.log(`  retrieval hit@1 = ${hit1}/${positives.length}   (right entry ranked top-1, ignoring the confidence gate)`);
+  console.log(`  outcome triad   : confident-correct ${tally["confident-correct"]} · under-confidence ${tally["under-confidence"]} · wrong-entry ${tally["wrong-entry"]} · confident-wrong ${tally["confident-wrong"]}`);
+  console.log(
+    tally["under-confidence"] >= tally["wrong-entry"]
+      ? `  → dominant gap is UNDER-CONFIDENCE: retrieval finds the entry; the cosine bar is too high for short memory entries (recalibration territory, fabrication-floor-sensitive).`
+      : `  → dominant gap is RETRIEVAL: the wrong entry ranks top-1 (ranker/embedding territory, not the gate).`
+  );
+
   process.exit(gate ? 0 : 1);
 }
 

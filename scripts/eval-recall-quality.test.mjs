@@ -6,8 +6,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  classifyRecallOutcome,
   RECALL_MEMORY_CORPUS,
   RECALL_QUALITY_CASES,
+  scoreRecallHit1,
   scoreRecallQualityCase
 } from "./eval-recall-quality.mjs";
 
@@ -66,4 +68,34 @@ test("dataset integrity: the correction pair keeps BOTH the current and stale en
 
 test("dataset integrity: at least one absent (abstain) case exists", () => {
   assert.ok(RECALL_QUALITY_CASES.some((c) => c.expectedSource === null), "need a negative/abstain case");
+});
+
+// --- fire 2: hit@1 (retrieval) split from the confidence gate ---
+
+test("hit@1: right entry top-1 passes regardless of confidence (the under-confidence case)", () => {
+  // ambiguous + right top-1 = retrieval HIT even though the gate would abstain
+  const r = scoreRecallHit1({ confidence: "ambiguous", topSource: "fact:car" }, POSITIVE);
+  assert.equal(r.ok, true);
+  assert.equal(r.applicable, true);
+});
+
+test("hit@1: wrong entry top-1 fails (a real retrieval miss)", () => {
+  const r = scoreRecallHit1({ confidence: "confident", topSource: "fact:home_city" }, POSITIVE);
+  assert.equal(r.ok, false);
+});
+
+test("hit@1: absent case is not applicable (never counted)", () => {
+  const r = scoreRecallHit1({ confidence: "none", topSource: "d:budget" }, ABSENT);
+  assert.equal(r.applicable, false);
+});
+
+test("classifyRecallOutcome: the four positive outcomes are distinguished", () => {
+  assert.equal(classifyRecallOutcome({ confidence: "confident", topSource: "fact:car" }, POSITIVE), "confident-correct");
+  assert.equal(classifyRecallOutcome({ confidence: "ambiguous", topSource: "fact:car" }, POSITIVE), "under-confidence");
+  assert.equal(classifyRecallOutcome({ confidence: "none", topSource: "d:budget" }, POSITIVE), "wrong-entry");
+  assert.equal(classifyRecallOutcome({ confidence: "confident", topSource: "d:budget" }, POSITIVE), "confident-wrong");
+});
+
+test("classifyRecallOutcome: absent case returns null (outside the retrieval triad)", () => {
+  assert.equal(classifyRecallOutcome({ confidence: "none", topSource: "d:budget" }, ABSENT), null);
 });
