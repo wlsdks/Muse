@@ -1,5 +1,35 @@
 # Muse dev backlog — the living ledger
 
+## ★ capability-parity — hermes/openclaw 대비 순수 에이전트 역량 갭 (2026-06-23 gap-scout, 코드레벨 비교)
+
+Theme: Muse를 hermes/openclaw 급 peer로. grounding/local 해자는 floor로 유지하고, 둘 다 가졌는데 Muse가 얇거나 없는 **순수 에이전트 역량 4개**를 결정론-우선으로 메운다. (소스: /Users/jinan/ai/hermes-agent, /Users/jinan/ai/openclaw 코드레벨 인벤토리.)
+
+### Gap 1 — 에이전트가 호출 가능한 자기 과거 검색 (가장 큰 갭; 둘 다 있고 Muse만 없음)
+hermes `session_search_tool.py`(FTS5 trigram, CJK), openclaw `memory-search.ts`(FTS5 + 하이브리드 BM25+vector+MMR). Muse는 episodic recall이 내부용일 뿐 "전에 X 얘기한 대화/메모 찾아줘"를 에이전트가 호출할 도구가 없음.
+- ✓ S1 (fire 1): 결정론 CJK-aware lexical history-search 코어(`searchHistory` in @muse/recall, BM25). DONE.
+- ◦ S2: 그 코어를 에이전트-호출 도구(`history_search` verb_noun, tool-calling.md ≤5-7 준수, "use when/not when" 설명)로 노출 + eval:tools 골든 케이스 추가.
+- ◦ S3: 하이브리드(lexical RRF + 기존 cosine recall) 랭킹으로 격상 — embed 있으면 fusion, 없으면 lexical fallback (cross-lingual recall 패턴 재사용).
+
+### Gap 2 — skill curator 라이프사이클 (현재 quarantine만 있음)
+hermes `curator.py`(usage 추적·stale/archive 자동전이·consolidation·백업), openclaw `workshop/service.ts`(proposal→scan→apply/quarantine/rollback). Muse는 `AuthoredSkillStore` risk-scan + quarantine만 있고 라이프사이클 없음.
+- ◦ S1: skill usage 사이드카(use_count·last_activity·view_count) 결정론 store + vitest. MUTATION-FIRST.
+- ◦ S2: stale→archive 자동전이 정책(순수 함수: 임계 days, pinned 면제) + 결정론 테스트. archive=삭제 아님(복구 가능).
+- ◦ S3: 중복 authored-skill consolidation(겹침 탐지→umbrella 병합 제안, draft-first, 자동 활성 금지).
+
+### Gap 3 — scheduled multi-phase dreaming + inert 역량 배선
+openclaw 3-phase dreaming(Light/Deep/REM, temporal decay, health 회복). Muse는 조각만 있고 세션-끝 훅 only + 핵심 inert.
+- ◦ S1 (가장 빠른 ROI, 2줄급): ACT-R `recallActivation`을 `StoreBackedEpisodicRecallProvider.resolve()`에 배선(`useActrRanking:true` 전달) — 이미 테스트된 함수가 episodic 랭킹에 안 쓰임. OUTCOME 검증(랭킹 변화) + eval:multihop.
+- ◦ S2: multi-hop recall default-ON 평가 후 플립(이미 40%→80% 측정됨, MUSE_RECALL_SECOND_HOP) — eval:multihop pass^k 확인 후.
+- ◦ S3: 결정론 consolidation을 스케줄 daemon arm으로(세션-끝 only → 주기적), promotion/decay 게이트 재사용. health-기반 회복 트리거(openclaw 패턴) 차용.
+- ◦ S4: background-review default-ON 검토(MUSE_BACKGROUND_REVIEW_ENABLED) — fail-soft·write-gated면 플립, pass^k.
+
+### Gap 4 — sub-agent 오케스트레이션 내구성 (Ollama 필요 슬라이스는 박스 quiet할 때)
+openclaw `subagent-registry.ts`(persistent run registry·async announce non-polling·orphan recovery). Muse lead-worker+council은 in-memory, registry/announce/recovery 없음.
+- ◦ S1 (결정론): persistent sub-agent run registry store(run id·parent·child·status·timeout·liveness) + vitest. MUTATION-FIRST.
+- ◦ S2 (결정론): orphan recovery 순수 정책(parentless/stalled run 탐지→정리/재평가) + 테스트.
+- ◦ S3: typed Zod 핸드오프 스키마를 worker→synthesizer seam에 강제(현재 non-empty만 검증) — MAST 캐스케이드 방어. eval:orchestration.
+- ◦ S4 (Ollama): async announce(non-polling) 완료 경로 — 박스 quiet할 때 eval:decomposition.
+
 - ✓ capability-parity Gap1-S1 — capability-parity fire 1: deterministic CJK-aware lexical history-search core (`searchHistory` in @muse/recall, BM25 over Muse's own primitives, snippet centered on match, recency tiebreak) — the agent-callable "find where we talked about X" gap vs hermes/openclaw. 8 mutation-verified vitest; also fixed a pre-existing byte-hygiene baseline regression (raw NUL byte at knowledge-ranking.ts:202 → \x00 escape). Opus ④b judge PASS. (detail: docs/goals/loops/capability-parity.md fire 1)
 - ✓ file_list truncated-flag accuracy — computer-control fire 59: file_list reported truncated=true when a dir had EXACTLY `limit` matches (it broke + flagged at `>= limit`), so the model chased a non-existent next page. Fixed by collecting one past the limit (sentinel) to distinguish complete (==limit→false) from cut (>limit→true). @muse/fs 182 vitest pass; mutation-verified; Opus ④b judge PASS (traced 0/<L/==L/==L+1/>>L). Shipped under box load~35 via narrow per-pkg vitest (full pnpm check still load-blocked). (detail: docs/goals/loops/computer-control.md fire 59)
 - ✓ run_command in-band truncation marker — computer-control fire 58: a truncated stdout/stderr stream now carries a self-labelled `[muse: output truncated…]` marker so the local 12B SEES (in the text) that output is partial, instead of reading a cut log as the whole thing. Per-stream (Rust runner), guarded by `truncated`, bool field preserved. cargo 15 pass (real-bash integration test); mutation-verified; Opus ④b judge PASS (traced TS consumer — no break). Shipped under box load~40 as a cargo-only-verifiable slice. (detail: docs/goals/loops/computer-control.md fire 58)
