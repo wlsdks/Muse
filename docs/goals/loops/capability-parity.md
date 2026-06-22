@@ -83,3 +83,35 @@ buildWebSearchScenario + buildUnitConvertScenario import the web/url servers as
 @muse/domain-tools and are NOT re-exported by @muse/mcp → both undefined → both
 scenarios silently SKIP. Fire 2's new scenario imports correctly from
 domain-tools; the two older ones are logged as a backlog ◦ to patch.
+
+## fire 3 · 2026-06-23 · skill v2.0.0 · 189040717
+meta: value-class=capability-durability · pkg=@muse/multi-agent · kind=store · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles 1113→1114 · fabrication 0 · eval:orchestration PASS (no regression)
+
+- 무엇: Gap4-S1 — `SubAgentRunRegistry` (@muse/multi-agent), a deterministic
+  in-memory store tracking the LIVE lifecycle of spawned sub-agent runs: run id,
+  parent→child linkage, status (running/completed/failed/timed-out), per-run
+  timeoutMs, heartbeat liveness, and stall detection (detectStalled pure read +
+  markStalledAsTimedOut observable transition). 21 OUTCOME-state vitest.
+- 왜: openclaw `subagent-registry.ts` has a persistent run registry with
+  orphan/stall recovery; Muse's lead-worker/council was in-memory with NO run
+  registry, so a stalled or orphaned child run was invisible. Muse's existing
+  OrchestrationHistory only records FINISHED runs for audit (mandatory
+  finishedAt, no running/timed-out status, no parent-child, no heartbeat) — it
+  cannot detect a live stall. This registry is the missing live-lifecycle layer
+  Gap4-S2 (orphan recovery policy) builds on. Diversity: fires 1+2 were BOTH
+  @muse/recall; this moves to a NEW (pkg=@muse/multi-agent, kind=store).
+- 리뷰지점: pure deterministic store — no model call, no network, no fabricated
+  content, injected clock for all time reads; fabrication=0 / grounding floor
+  untouched. OUTCOME-graded not declaration: tests assert real state transitions,
+  stall-detection results at the exact boundary, frozen-record immutability, and
+  orphan-by-construction rejection (unknown parent throws). MUTATION-FIRST: stall
+  `>`→`>=` boundary and heartbeat-revives-terminal both confirmed RED then GREEN.
+  Clean reimplementation (9 plain fields vs openclaw's ~40-field framework
+  record); openclaw already attributed in THIRD_PARTY_NOTICES.md.
+- 리스크: the registry is built + exported but not yet WIRED into the live
+  orchestrator (MultiAgentOrchestrator still uses in-memory state) — this fire
+  ships the durable store + its policy primitives (detectStalled/recovery hook);
+  wiring it into the orchestrator run loop and the orphan-recovery policy are the
+  explicit Gap4-S2/S4 follow-ups, not a defect. No new internal deps (the store
+  is dependency-free); index.ts edit is additive re-exports only.
