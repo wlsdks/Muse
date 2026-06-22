@@ -17,9 +17,6 @@
       "path": "../agent-core"
     },
     {
-      "path": "../mcp"
-    },
-    {
       "path": "../mcp-shared"
     },
     {
