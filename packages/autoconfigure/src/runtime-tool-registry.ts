@@ -11,7 +11,8 @@
 import { createCachingEmbedder } from "@muse/agent-core";
 import type { CalendarProviderRegistry } from "@muse/calendar";
 import { withChromeDevToolsRisk, withOfficialMcpRisk, type McpManager } from "@muse/mcp";
-import { addContact, queryContacts, readActionLog, readFollowups, readObjectives, readReminders, readTasks, removeContact, resolveUpcomingBirthdays } from "@muse/stores";
+import { createHistorySearchTool, type HistoryRecord } from "@muse/recall";
+import { addContact, queryContacts, readActionLog, readEpisodes, readFollowups, readObjectives, readReminders, readTasks, removeContact, resolveUpcomingBirthdays } from "@muse/stores";
 import { collectDatedNotes, createContactsAddTool, createContactsFindTool, createContactsRemoveTool, createEmailReadMessageTool, createEmailReadTool, createEmailSearchTool, createFeedsSearchTool, createHomeEntitiesTool, createHomeStateTool, createObjectivesListTool, createOnThisDayTool, createRecentActionsTool, createRememberFactTool, createUpcomingBirthdaysTool, createWeatherTool, createWorldTimeTool, GmailEmailProvider, type NotesProviderRegistry, type TasksProviderRegistry } from "@muse/domain-tools";
 import type { UserMemoryStore } from "@muse/memory";
 import { createSchedulerTools, DynamicScheduler } from "@muse/scheduler";
@@ -159,6 +160,34 @@ export function buildRuntimeToolRegistry(deps: RuntimeToolRegistryDeps): Dynamic
     })];
   })();
 
+  // `history_search` — the agent-callable "find where we talked about X" over
+  // the user's OWN past chat episodes. Deterministic (CJK-aware lexical, no
+  // embeddings / no Ollama), so it is ON by default; opt out with
+  // MUSE_HISTORY_SEARCH_ENABLED=false. Fail-soft: a thrown episodes store
+  // degrades to the tool's no-match notice (never breaks the agent loop).
+  const historySearchTools: MuseTool[] = (() => {
+    if (!parseBoolean(env.MUSE_HISTORY_SEARCH_ENABLED, true)) {
+      return [];
+    }
+    const userId = resolveDefaultUserId(env);
+    return [createHistorySearchTool({
+      records: async (): Promise<readonly HistoryRecord[]> => {
+        const episodes = await readEpisodes(episodesFile);
+        return episodes
+          .filter((episode) => episode.userId === userId)
+          .map((episode) => {
+            const endedMs = episode.endedAt ? Date.parse(episode.endedAt) : NaN;
+            return {
+              ref: episode.id,
+              source: "episodes" as const,
+              text: episode.summary,
+              ...(Number.isFinite(endedMs) ? { timestampMs: endedMs } : {})
+            };
+          });
+      }
+    })];
+  })();
+
   // Smart-home READ tools (home_state / home_entities) — perception, no
   // approval gate (unlike the gated home_action write). Opt-in via the
   // Home Assistant base URL + long-lived token.
@@ -212,6 +241,7 @@ export function buildRuntimeToolRegistry(deps: RuntimeToolRegistryDeps): Dynamic
     () => runnerTools,
     () => skillTools,
     () => knowledgeSearchTools,
+    () => historySearchTools,
     () => homeReadTools,
     () => emailReadTools,
     () => [createWeatherTool(env.MUSE_WEATHER_LOCATION?.trim() ? { defaultLocation: env.MUSE_WEATHER_LOCATION.trim() } : {})],

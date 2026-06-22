@@ -40,3 +40,46 @@ my worktree branched from the committed HEAD legitimately lacked it. Per
 concurrent-loop hygiene I did not entangle with that uncommitted work — the
 write-back ✓ line went to the top of my worktree's backlog (append-only, low
 conflict risk) and the full detail lives here.
+
+## fire 2 · 2026-06-23 · skill v2.0.0 · __SHA__
+meta: value-class=new-capability · pkg=@muse/recall (+@muse/autoconfigure wiring) · kind=tool-exposure · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles 1111→1113 (+2: history-search-tool unit + history-search wiring) · toolCases 342→349 (+7 eval:tools golden) · fabrication 0 (retrieval tool quotes stored text, no-overlap → explicit no-match) · pnpm check exit 0 · lint exit 0 · eval:tools history-search 7/7 STABLE 3/3 live (gemma4:12b)
+
+- 무엇: `createHistorySearchTool` in @muse/recall — wraps fire-1's deterministic
+  `searchHistory` core as the agent-callable `history_search` tool (verb_noun,
+  read-risk, required `query` + optional `topK` with KO+EN example-bearing
+  descriptions, a "use when / do NOT use" line disambiguating it from
+  knowledge_search and the recent-activity feed). Wired into the production
+  runtime tool registry (buildRuntimeToolRegistry), default-ON
+  (MUSE_HISTORY_SEARCH_ENABLED) because it is pure/CJK-lexical — no Ollama cost
+  unlike the embedding knowledge_search — feeding the user's episodes via
+  readEpisodes, fail-soft to a no-match notice. The competitor-parity move: both
+  hermes (session_search_tool FTS5) and openclaw (memory-search) have an
+  agent-callable "find where we talked about X"; Muse's episodic recall was
+  internal-only until now.
+- 왜: highest-value continuation of the largest gap (Gap1) into something the
+  AGENT actually uses, and diversity-correct (fire 1 = lexical-search-core in
+  @muse/recall; fire 2 = tool-exposure + cross-package wiring). The runner-up
+  Gap3-S1 was found STALE — episodic-recall.ts already calls
+  approximateActivationBoost when recallStats is present; there is no
+  useActrRanking flag, so it would have been a declaration-only no-op (the exact
+  trap the ④b judge guards against).
+- 리뷰지점: history_search is a RETRIEVAL tool — a hit is a quote of stored
+  episode text labelled [source:ref], and a zero-token-overlap query returns an
+  explicit "Nothing was found — do not invent a past discussion" rather than a
+  fabricated memory. So the fabrication=0 / grounding floor is untouched; the
+  grounding gate still adjudicates any answer the agent builds on a hit. OUTCOME
+  was proven (not declaration): the wiring test goes through createMuseRuntimeAssembly,
+  asserts the tool is in toolRegistry.list() AND executes it to return the right
+  labelled hit / excludes the non-match; the eval proves the local 12B SELECTS it.
+- 리스크: production records feed only `episodes` this fire (not notes/memory) —
+  matches Gap1-S2's episodic scope; the hybrid cosine-fusion + broader sources
+  are the explicit S3 follow-up, not a defect. New internal deps (recall→tools,
+  autoconfigure→recall) are acyclic and verified by pnpm check exit 0.
+
+note: sibling-audit found a pre-existing eval-tool-selection.mjs bug —
+buildWebSearchScenario + buildUnitConvertScenario import the web/url servers as
+`mcp.createSearchMcpServer` / `mcp.createWebReadMcpServer`, which live in
+@muse/domain-tools and are NOT re-exported by @muse/mcp → both undefined → both
+scenarios silently SKIP. Fire 2's new scenario imports correctly from
+domain-tools; the two older ones are logged as a backlog ◦ to patch.
