@@ -77,7 +77,6 @@ import { crossLingualUnsupportedFraction, rescueActionsCrossLingual, rescueMemor
 
 export { resolveAskTierModels, routeAskTierModel } from "./ask-tier-models.js";
 import { parseBoundedInt } from "./parse-bounded-int.js";
-export { parseBoundedInt } from "./parse-bounded-int.js";
 import type { Command } from "commander";
 
 import { cosine, isNotesIndexStale, loadNoteLinkGraph, NOTE_FILE_RE, reindexNotes } from "./commands-notes-rag.js";

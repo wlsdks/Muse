@@ -14,7 +14,7 @@ import { extractEmailAddress, GmailEmailProvider, summarizeInbox, type EmailMess
 import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
-import { parseBoundedInt } from "./commands-ask.js";
+import { parseBoundedInt } from "./parse-bounded-int.js";
 import type { ProgramIO } from "./program.js";
 
 interface InboxOptions {

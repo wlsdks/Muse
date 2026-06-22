@@ -26,7 +26,7 @@ import {
 } from "@muse/voice";
 import type { Command } from "commander";
 
-import { parseBoundedInt } from "./commands-ask.js";
+import { parseBoundedInt } from "./parse-bounded-int.js";
 import type { ProgramIO } from "./program.js";
 import { parseAudioFormat, synthesizeAndPlay } from "./voice-playback.js";
 

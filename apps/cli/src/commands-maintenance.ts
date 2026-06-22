@@ -26,7 +26,7 @@ import { createGzip } from "node:zlib";
 
 import type { Command } from "commander";
 
-import { parseBoundedInt } from "./commands-ask.js";
+import { parseBoundedInt } from "./parse-bounded-int.js";
 import { activityPath } from "./commands-routine.js";
 import type { ProgramIO } from "./program.js";
 

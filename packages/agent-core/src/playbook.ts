@@ -1,3 +1,4 @@
+import { cosineSimilarity } from "./episodic-ranking.js";
 import { appendSystemSection, metadataString } from "./runtime-helpers.js";
 import type { AgentRunContext, AgentRunInput, Awaitable } from "./types.js";
 
@@ -528,26 +529,6 @@ export function isStaleStrategy(strategy: PlaybookStrategy, nowMs?: number): boo
  */
 const EMBED_RANK_WEIGHT = 5;
 
-function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
-  const n = Math.min(a.length, b.length);
-  if (n === 0) {
-    return 0;
-  }
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < n; i += 1) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
-  }
-  if (na === 0 || nb === 0) {
-    return 0;
-  }
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
 
 /**
  * MemRL (arXiv:2601.03192): λ=0.5 is the paper's empirical optimum for the

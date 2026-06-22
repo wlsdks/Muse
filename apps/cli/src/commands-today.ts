@@ -38,6 +38,7 @@ import { filterLiveEpisodeEntries, filterLiveNoteIndexFiles, rankRecallCandidate
 import { embed } from "./embed.js";
 import { defaultEpisodeIndexFile, loadEpisodeIndex } from "./episode-index.js";
 import { formatLocalDate, formatLocalDateTime as shortDateTimeBrief } from "./human-formatters.js";
+import { isApiUnreachable } from "./program-helpers.js";
 export { formatHeadlines, formatWeatherLine, resolveTodayFeedHeadlines, resolveTodayWeatherLine } from "./commands-today-feeds.js";
 import { resolveTodayFeedHeadlines, resolveTodayWeatherLine } from "./commands-today-feeds.js";
 import { formatEpisodeRevisitLine, formatStaleTasksSection, selectEpisodeToRevisit, selectStaleTasks } from "./today-stale-revisit.js";
@@ -519,18 +520,6 @@ export function apiWasExplicitlyConfigured(apiUrlFlag: string | undefined, apiUr
   return ((apiUrlFlag ?? apiUrlEnv) ?? "").trim().length > 0;
 }
 
-/**
- * Detect the friendly "API not reachable" / "API host unresolved"
- * error shape `program.ts` raises when the daemon is down.
- * Triggers the local-mode fallback in the morning briefing.
- */
-function isApiUnreachable(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  const msg = error.message;
-  return msg.includes("Muse API not reachable") || msg.includes("Muse API host unresolved");
-}
 
 async function collectNoteMtimes(notesDir: string): Promise<readonly NoteMtime[]> {
   const root = resolvePath(notesDir);
