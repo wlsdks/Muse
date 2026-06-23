@@ -76,6 +76,52 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * whose `arguments` string carries a recoverable surface defect does not have
  * ALL its tool args silently dropped.
  */
+/**
+ * Replace UNPAIRED UTF-16 surrogate code units with U+FFFD. A byte-level
+ * local model (e.g. some quantised reasoning models) can emit a lone high
+ * or low surrogate; it survives JSON.parse but corrupts the downstream
+ * UTF-8 encoding (a fetch body / a provider re-send) or is rejected by the
+ * next provider. Pairing-aware: a real emoji (a valid high+low pair) is
+ * left untouched. Byte-identical when the text has no surrogate at all.
+ */
+export function sanitizeLoneSurrogates(text: string): string {
+  if (!/[\uD800-\uDFFF]/.test(text)) return text;
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += text[i]! + text[i + 1]!;
+        i++;
+        continue;
+      }
+      out += "\uFFFD";
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      out += "\uFFFD";
+      continue;
+    }
+    out += text[i];
+  }
+  return out;
+}
+
+/** Walk a parsed JSON value, scrubbing lone surrogates from every string key + value. */
+function sanitizeSurrogatesDeep(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeLoneSurrogates(value);
+  if (Array.isArray(value)) return value.map(sanitizeSurrogatesDeep);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[sanitizeLoneSurrogates(k)] = sanitizeSurrogatesDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function recoverToolArgsJson(raw: string): Record<string, unknown> | undefined {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
@@ -84,7 +130,7 @@ export function recoverToolArgsJson(raw: string): Record<string, unknown> | unde
   if (fenceMatch) {
     try {
       const parsed = JSON.parse(fenceMatch[1]!);
-      if (isPlainObject(parsed)) return parsed;
+      if (isPlainObject(parsed)) return sanitizeSurrogatesDeep(parsed) as Record<string, unknown>;
     } catch { /* fall through */ }
   }
 
@@ -114,7 +160,7 @@ export function recoverToolArgsJson(raw: string): Record<string, unknown> | unde
   const candidate = trimmed.slice(firstBrace, lastClose + 1);
   try {
     const parsed = JSON.parse(candidate);
-    if (isPlainObject(parsed)) return parsed;
+    if (isPlainObject(parsed)) return sanitizeSurrogatesDeep(parsed) as Record<string, unknown>;
   } catch { /* fall through */ }
 
   return undefined;

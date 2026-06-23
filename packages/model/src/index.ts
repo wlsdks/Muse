@@ -253,7 +253,7 @@ export interface DiagnosticModelProviderOptions {
 }
 
 export { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus } from "./provider-base.js";
-export { createLeadingThinkStripper, recoverToolArgsJson, sanitizeToolCallName, stripLeadingThinkBlock } from "./provider-shared.js";
+export { createLeadingThinkStripper, recoverToolArgsJson, sanitizeLoneSurrogates, sanitizeToolCallName, stripLeadingThinkBlock } from "./provider-shared.js";
 export { DiagnosticModelProvider } from "./adapter-diagnostic.js";
 export { OpenAIProvider, OpenRouterProvider } from "./adapter-openai.js";
 export { DEFAULT_OLLAMA_NUM_CTX, OllamaProvider, sanitizeOllamaToolSchema } from "./adapter-ollama.js";
