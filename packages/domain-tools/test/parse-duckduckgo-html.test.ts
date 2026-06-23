@@ -44,6 +44,35 @@ describe("parseDuckDuckGoHtml", () => {
     expect(rows.map((r) => r.url)).toEqual(["https://1.test", "https://2.test"]);
   });
 
+  it("dedupes a repeated URL (first occurrence wins) so dupes don't fill result slots", () => {
+    const html =
+      block("https://a.test/x", "first", "s1") +
+      block("https://a.test/x", "dup", "s2") +
+      block("https://b.test/y", "second", "s3");
+    const rows = parseDuckDuckGoHtml(html, 10);
+    expect(rows.map((r) => r.url)).toEqual(["https://a.test/x", "https://b.test/y"]);
+    expect(rows[0]?.title).toBe("first"); // first occurrence kept
+  });
+
+  it("treats trailing-slash / host-case / fragment as the same URL, but keeps distinct query strings", () => {
+    const dupes =
+      block("https://Site.test/p/", "A", "s") +
+      block("https://site.test/p", "B", "s") +
+      block("https://site.test/p#frag", "C", "s");
+    expect(parseDuckDuckGoHtml(dupes, 10)).toHaveLength(1); // all canonicalize to the same key
+    const distinct = block("https://q.test/s?id=1", "one", "s") + block("https://q.test/s?id=2", "two", "s");
+    expect(parseDuckDuckGoHtml(distinct, 10)).toHaveLength(2); // different query → not merged
+  });
+
+  it("fills the max cap with DISTINCT results even when duplicates appear first", () => {
+    const html =
+      block("https://1.test", "one", "s") +
+      block("https://1.test", "one-dup", "s") +
+      block("https://2.test", "two", "s") +
+      block("https://3.test", "three", "s");
+    expect(parseDuckDuckGoHtml(html, 2).map((r) => r.url)).toEqual(["https://1.test", "https://2.test"]);
+  });
+
   it("does NOT double-decode the uddg target — a literal %20 in the real URL survives intact", () => {
     // DDG percent-encodes the whole target, so a literal `%20` arrives as `%2520`.
     // URLSearchParams.get() already decodes once → `%20`; a second decode would

@@ -127,11 +127,12 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
               ...(timeRange ? { timeRange } : {})
             });
             if (searxResults !== undefined && searxResults.length > 0) {
+              const deduped = dedupeSearchResults(searxResults);
               return {
                 backend: "searxng",
                 query,
-                results: searxResults as unknown as JsonValue,
-                total: searxResults.length
+                results: deduped as unknown as JsonValue,
+                total: deduped.length
               };
             }
             // searxResults undefined → transport/parse failure; [] → zero hits.
@@ -339,7 +340,11 @@ export function parseDuckDuckGoHtml(html: string, max: number): readonly SearchR
   const out: SearchResult[] = [];
   const blockRe = /<a\s+rel="nofollow"\s+class="result__a"\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a\s+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gu;
   let match: RegExpExecArray | null;
-  while ((match = blockRe.exec(html)) !== null && out.length < max) {
+  // Collect ALL matches first, then dedupe, THEN cap — so the `max`
+  // slots hold `max` DISTINCT results. DDG HTML routinely repeats the
+  // same URL, and capping before dedupe would waste the small model's
+  // context budget on duplicates.
+  while ((match = blockRe.exec(html)) !== null) {
     const href = sanitizeSearchField(decodeDuckDuckGoRedirect(match[1] ?? ""));
     const title = sanitizeSearchField(stripTags(match[2] ?? ""));
     const snippet = capSnippet(stripTags(match[3] ?? ""));
@@ -347,7 +352,38 @@ export function parseDuckDuckGoHtml(html: string, max: number): readonly SearchR
       out.push({ snippet, title, url: href });
     }
   }
+  return dedupeSearchResults(out).slice(0, max);
+}
+
+/**
+ * Drop duplicate results by canonical URL (first occurrence wins), so a
+ * backend that returns the same page twice doesn't fill result slots
+ * with repeats. The key lowercases the host, strips the fragment and a
+ * trailing slash, and keeps path + query so genuinely-distinct pages
+ * (`?id=1` vs `?id=2`) are NOT merged. Pure.
+ */
+function dedupeSearchResults(results: readonly SearchResult[]): readonly SearchResult[] {
+  const seen = new Set<string>();
+  const out: SearchResult[] = [];
+  for (const result of results) {
+    const key = canonicalUrlKey(result.url);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(result);
+  }
   return out;
+}
+
+function canonicalUrlKey(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname}${u.search}`.replace(/\/$/u, "");
+  } catch {
+    return url.trim().replace(/\/$/u, "");
+  }
 }
 
 function stripTags(value: string): string {
