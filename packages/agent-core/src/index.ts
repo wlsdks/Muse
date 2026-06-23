@@ -466,6 +466,11 @@ export {
 export { CONFLICT_IDENTITY_KEYS, detectConflictingWritesInBatch } from "./tool-batch-conflict.js";
 
 export { groundToolArguments, type ToolArgumentGrounding } from "./tool-argument-grounding.js";
+export {
+  applyToolCallMiddleware,
+  type ToolCallMiddleware,
+  type ToolCallMiddlewareDecision
+} from "./tool-call-middleware.js";
 
 export { describeImage, extractStructuredFromImage, validateExtraction, type VisionDescribeInput, type VisionDescribeResult, type VisionExtractInput, type VisionExtractResult } from "./vision-extract.js";
 

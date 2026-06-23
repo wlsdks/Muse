@@ -51,6 +51,7 @@ import {
 import { GeneralShellPhaseGate } from "./general-shell-phase.js";
 import { detectConflictingWritesInBatch } from "./tool-batch-conflict.js";
 import { ToolCallDeduplicator } from "./tool-call-deduplicator.js";
+import { applyToolCallMiddleware, type ToolCallMiddleware } from "./tool-call-middleware.js";
 import { ToolFailureStreakTracker } from "./tool-failure-streak.js";
 import { ToolLoopProgressTracker } from "./tool-loop-progress.js";
 import { REVERIFY_NUDGE, ReverifyNudgeTracker, hasRunVerifyIntent, toolsIncludeExecute } from "./reverify-nudge.js";
@@ -94,6 +95,12 @@ export interface ModelLoopRunner {
    * truncations of the same payload share storage.
    */
   readonly contextReferenceStore?: ContextReferenceStore;
+  /**
+   * Optional deterministic pre-call gate. Each middleware may VETO a
+   * tool call before it executes (e.g. a restricted sub-agent's tool
+   * allowlist). Empty/undefined → tool execution is unchanged.
+   */
+  readonly toolCallMiddleware?: readonly ToolCallMiddleware[];
   generateWithTracing(
     context: AgentRunContext,
     provider: ModelProvider,
@@ -215,17 +222,22 @@ async function* runToolBatch(
     const crossedDeadlineMidBatch = !batchStartedPastDeadline
       && deadlineMs !== undefined && now() > deadlineMs;
     const conflicting = conflictingIds.has(toolCall.id);
-    const canRun = remaining > 0 && !crossedDeadlineMidBatch && !conflicting;
+    // Deterministic pre-call policy gate: a middleware may veto this call
+    // before it runs. Empty chain → null → unchanged execution.
+    const middlewareBlock = applyToolCallMiddleware(toolCall, runner.toolCallMiddleware ?? []);
+    const canRun = remaining > 0 && !crossedDeadlineMidBatch && !conflicting && !middlewareBlock;
     const duplicate = canRun ? deduplicator.check(toolCall) : undefined;
     const executed = duplicate?.duplicate
       ? { result: duplicate.result, toolCall }
-      : conflicting
-        ? blockedToolResult(toolCall, "Error: conflicting write withheld — ambiguous duplicate action in this batch")
-        : canRun
-          ? await runner.executeToolCall(context, toolCall, activeTools ?? [])
-          : blockedToolResult(toolCall, crossedDeadlineMidBatch && remaining > 0
-              ? "Error: run wall-clock deadline reached"
-              : "Error: max tool call limit reached");
+      : middlewareBlock
+        ? blockedToolResult(toolCall, `Error: ${middlewareBlock}`)
+        : conflicting
+          ? blockedToolResult(toolCall, "Error: conflicting write withheld — ambiguous duplicate action in this batch")
+          : canRun
+            ? await runner.executeToolCall(context, toolCall, activeTools ?? [])
+            : blockedToolResult(toolCall, crossedDeadlineMidBatch && remaining > 0
+                ? "Error: run wall-clock deadline reached"
+                : "Error: max tool call limit reached");
 
     const grounding = groundingSourceFromExecuted(executed);
     yield { runId: context.runId, toolCall, type: "tool-result", ...(grounding ? { grounding } : {}) };

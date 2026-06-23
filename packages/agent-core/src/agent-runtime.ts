@@ -55,6 +55,7 @@ import type { ActiveContextProvider, ActiveContextSnapshot } from "./active-cont
 import { applyAttachmentContext as applyAttachmentContextFn } from "./attachment-context.js";
 import { joinUserMessages } from "./internals.js";
 import { groundToolArguments } from "./tool-argument-grounding.js";
+import type { ToolCallMiddleware } from "./tool-call-middleware.js";
 import {
   applyActiveContext as applyActiveContextFn,
   applyAgentSpec as applyAgentSpecFn,
@@ -188,6 +189,7 @@ export class AgentRuntime {
   private readonly systemPromptTokenBudget?: number;
   private readonly maxRunWallclockMs: number;
   private readonly maxToolOutputChars: number;
+  private readonly toolCallMiddleware?: readonly ToolCallMiddleware[];
   private readonly contextReferenceStore?: ContextReferenceStore;
   private readonly circuitBreaker?: CircuitBreaker;
   private readonly fallbackStrategy?: FallbackStrategy;
@@ -251,6 +253,7 @@ export class AgentRuntime {
       : undefined;
     this.maxRunWallclockMs = clampRunLimit(options.maxRunWallclockMs, 300_000);
     this.maxToolOutputChars = Math.max(0, options.maxToolOutputChars ?? 0);
+    this.toolCallMiddleware = options.toolCallMiddleware;
     if (options.contextReferenceStore) {
       this.contextReferenceStore = options.contextReferenceStore;
     }
@@ -795,6 +798,7 @@ export class AgentRuntime {
       maxRunWallclockMs: this.maxRunWallclockMs,
       maxToolCalls: this.maxToolCalls,
       maxToolOutputChars: this.maxToolOutputChars,
+      ...(this.toolCallMiddleware ? { toolCallMiddleware: this.toolCallMiddleware } : {}),
       ...(this.planCacheProvider ? { planCacheProvider: this.planCacheProvider } : {}),
       ...(this.contextReferenceStore ? { contextReferenceStore: this.contextReferenceStore } : {}),
       metrics: this.metrics,

@@ -19,6 +19,8 @@ import type {
 } from "@muse/model";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import type { ExemplarRetriever, PromptLayerRegistry } from "@muse/prompts";
+
+import type { ToolCallMiddleware } from "./tool-call-middleware.js";
 import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
 import type {
   AgentRunHistoryStore,
@@ -94,6 +96,13 @@ export interface AgentRuntimeOptions {
    * traces / metrics stays intact. 0 or undefined = no cap.
    */
   readonly maxToolOutputChars?: number;
+  /**
+   * Optional deterministic pre-call gate: each middleware may veto a
+   * tool call before it executes (e.g. a restricted sub-agent's tool
+   * allowlist, an environment that forbids a destructive tool). Empty
+   * or undefined → tool execution is unchanged.
+   */
+  readonly toolCallMiddleware?: readonly ToolCallMiddleware[];
   /**
    * Optional ContextReferenceStore for just-in-time retrieval
    * (Context Engineering step 1.d). When provided AND a tool result
