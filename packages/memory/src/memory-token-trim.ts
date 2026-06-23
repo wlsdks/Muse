@@ -600,7 +600,7 @@ function buildCompactionSummaryText(
   // After stripping, parse the previous facts and merge with freshly-extracted
   // ones — emit exactly ONE [Key details] block (duplication-proof).
   const strippedPrevious = previousSummary
-    ? stripPersonaSnapshot(stripKeyDetailsBlock(previousSummary))
+    ? stripResumeDirective(stripPersonaSnapshot(stripKeyDetailsBlock(previousSummary)))
     : undefined;
 
   const previousFacts = previousSummary ? parseKeyDetailsBlock(previousSummary) : [];
@@ -632,7 +632,25 @@ function buildCompactionSummaryText(
     lines.push(keyDetailsBlock);
   }
 
+  // Anti-resume cue: after compaction a small local model can re-attempt
+  // work that the dropped turns already completed. State plainly that this
+  // is a summary of EARLIER turns and the agent should continue from the
+  // latest message. Appended once (stripped from a carried-forward summary
+  // above so it can't accumulate across rounds).
+
+  lines.push(COMPACTION_RESUME_DIRECTIVE);
+
   return lines.join("\n");
+}
+
+export const COMPACTION_RESUME_DIRECTIVE =
+  "(Summary of EARLIER turns — that work is already done; continue from the latest message and do not redo it.)";
+
+function stripResumeDirective(summary: string): string {
+  return summary
+    .split("\n")
+    .filter((line) => line !== COMPACTION_RESUME_DIRECTIVE)
+    .join("\n");
 }
 
 function stripPersonaSnapshot(summary: string): string {

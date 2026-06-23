@@ -482,6 +482,7 @@ export {
 // Token estimator + conversation trimming primitives live in
 // packages/memory/src/memory-token-trim.ts.
 export {
+  COMPACTION_RESUME_DIRECTIVE,
   computeApproximateTokens,
   createApproximateTokenEstimator,
   estimateConversationTokens,

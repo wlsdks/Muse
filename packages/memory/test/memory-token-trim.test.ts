@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  COMPACTION_RESUME_DIRECTIVE,
   estimateConversationTokens,
   trimConversationMessages,
   type ConversationMessage,
@@ -147,6 +148,41 @@ describe("trimConversationMessages — structural integrity + summary", () => {
     const r = trimConversationMessages(many, base({ insertSummary: true, maxContextWindowTokens: 40 }));
     expect(r.summaryInserted).toBe(true);
     expect(r.messages.some((x) => typeof x.content === "string" && x.content.includes("[Conversation summary"))).toBe(true);
+  });
+
+  it("includes the anti-resume directive in the inserted summary, and not when no summary is inserted", () => {
+    const many: ConversationMessage[] = [m("system", "s")];
+    for (let i = 0; i < 8; i += 1) {
+      many.push(m("user", "u".repeat(8)));
+      many.push(m("assistant", "a".repeat(8)));
+    }
+    many.push(m("user", "final"));
+    const compacted = trimConversationMessages(many, base({ insertSummary: true, maxContextWindowTokens: 40 }));
+    expect(compacted.messages.some((x) => x.content.includes(COMPACTION_RESUME_DIRECTIVE))).toBe(true);
+    // a conversation that fits → no summary → no directive
+    const small = trimConversationMessages([m("system", "s"), m("user", "hi")], base({ insertSummary: true, maxContextWindowTokens: 10_000 }));
+    expect(small.messages.some((x) => x.content.includes(COMPACTION_RESUME_DIRECTIVE))).toBe(false);
+  });
+
+  it("does not duplicate the anti-resume directive across successive compaction rounds", () => {
+    const round1: ConversationMessage[] = [m("system", "s")];
+    for (let i = 0; i < 8; i += 1) {
+      round1.push(m("user", "u".repeat(8)));
+      round1.push(m("assistant", "a".repeat(8)));
+    }
+    round1.push(m("user", "final one"));
+    const r1 = trimConversationMessages(round1, base({ insertSummary: true, maxContextWindowTokens: 40 }));
+    // feed the (summary-bearing) result back through another compaction round
+    const round2 = [...r1.messages];
+    for (let i = 0; i < 8; i += 1) {
+      round2.push(m("user", "v".repeat(8)));
+      round2.push(m("assistant", "b".repeat(8)));
+    }
+    round2.push(m("user", "final two"));
+    const r2 = trimConversationMessages(round2, base({ insertSummary: true, maxContextWindowTokens: 40 }));
+    const summary = r2.messages.find((x) => x.content.includes(COMPACTION_RESUME_DIRECTIVE));
+    expect(summary).toBeDefined();
+    expect(summary!.content.split(COMPACTION_RESUME_DIRECTIVE).length - 1).toBe(1); // exactly once
   });
 
   it("suppresses the summary when insertSummary is false even though many messages were dropped", () => {
