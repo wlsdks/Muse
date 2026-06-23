@@ -29,6 +29,7 @@ import {
   applyToolOutputImportance,
   maskStaleToolObservations,
   scoreToolOutputImportance,
+  summarizeToolResult,
   trimToolOutput,
   type ContextReferenceStore
 } from "@muse/memory";
@@ -611,9 +612,16 @@ export function capToolOutput(
   const ref = refStore && safe.length > effectiveMaxChars
     ? putToolOutputRef(refStore, safe, toolName)
     : undefined;
-  const hint = ref
+  const baseHint = ref
     ? `tool ${toolName} returned a larger result; ref=${ref}, expand via muse.context.fetch({ ref })`
     : `tool ${toolName} returned a larger result`;
+  // Fold a deterministic, code-derived 1-line summary into the elision
+  // marker so a truncated tool result still SHOWS what it did
+  // ("terminal: exit 0 · 120 lines"). Base hint stays first so its
+  // wording (and any ref= token) survives even a pathologically small
+  // cap that slices the marker tail. Absent a summary → byte-identical.
+  const summary = summarizeToolResult(toolName, safe);
+  const hint = summary ? `${baseHint} · ${summary}` : baseHint;
   return trimToolOutput(safe, {
     hint,
     maxChars: effectiveMaxChars,

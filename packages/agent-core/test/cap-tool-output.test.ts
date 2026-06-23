@@ -19,6 +19,21 @@ describe("capToolOutput", () => {
     expect(trimmed).not.toContain("ref=");
   });
 
+  it("folds a deterministic semantic summary into the truncation marker (shows-its-work)", () => {
+    const body = Array.from({ length: 400 }, (_, i) => `line ${i}`).join("\n");
+    const output = `${body}\nexit code: 0`;
+    const trimmed = capToolOutput(output, "muse.terminal.run", 400);
+    // base hint preserved + semantic summary appended
+    expect(trimmed).toContain("tool muse.terminal.run returned a larger result");
+    expect(trimmed).toContain("terminal: exit 0");
+    expect(trimmed.length).toBeLessThanOrEqual(400);
+  });
+
+  it("leaves output that fits the cap byte-identical (no summary marker)", () => {
+    const output = "exit code: 0";
+    expect(capToolOutput(output, "muse.terminal.run", 5_000)).toBe(output);
+  });
+
   it("stashes oversized output in the ref store and surfaces ref=<id> in the marker", () => {
     const store = new InMemoryContextReferenceStore();
     const output = "abcdef".repeat(2_000);

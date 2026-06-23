@@ -277,6 +277,14 @@ export {
   scoreToolOutputImportance
 } from "./tool-output-importance.js";
 
+// Deterministic 1-line semantic summary of a tool result, folded
+// into the truncation marker so a compacted tool result still shows
+// what it did (shows-its-work). Pure, code-derived, no LLM.
+export {
+  summarizeToolResult,
+  type ToolResultSummaryOptions
+} from "./tool-output-summary.js";
+
 
 export interface KyselyTaskMemoryStoreOptions {
   readonly now?: () => Date;
