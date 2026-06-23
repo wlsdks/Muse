@@ -285,6 +285,7 @@ export {
 // Context Engineering D5: tool-output importance scoring.
 export {
   applyToolOutputImportance,
+  scaleToolOutputBudget,
   scoreToolOutputImportance
 } from "./tool-output-importance.js";
 

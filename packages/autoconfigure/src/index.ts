@@ -32,6 +32,7 @@ import {
   extractJsonObject,
   InMemoryContextReferenceStore,
   pickAutoExtractSystemPrompt,
+  scaleToolOutputBudget,
   type ConversationSummaryStore,
   type ExtractionPayload,
   type TaskMemoryMaintenance,
@@ -598,13 +599,14 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const vetoAvoidanceProvider = buildVetoAvoidanceProvider(env);
   const playbookProvider = buildPlaybookProvider(env);
   const planCacheProvider = buildPlanCacheProvider(env);
+  const contextWindowOptions = buildContextWindowOptions(env);
   const agentRuntime = modelProvider && defaultModel
     ? createAgentRuntime({
       agentSpecResolver,
       cacheMetrics,
       circuitBreaker: circuitBreakerRegistry.get("model.generate"),
       contextReferenceStore,
-      contextWindow: buildContextWindowOptions(env),
+      contextWindow: contextWindowOptions,
       historyStore,
       hooks: runtimeHooks,
       hookTraceStore,
@@ -614,7 +616,13 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       // typical tool replies, small enough that a single huge
       // result can't blow the working budget. Tunable via
       // MUSE_MAX_TOOL_OUTPUT_CHARS; 0 disables the cap.
-      maxToolOutputChars: parseInteger(env.MUSE_MAX_TOOL_OUTPUT_CHARS, 8_000),
+      // Scaled down to the configured context window so a fixed 8k cap
+      // can't swallow a small local model's window whole (no-op on a
+      // large window; never raised above the configured value).
+      maxToolOutputChars: scaleToolOutputBudget(
+        contextWindowOptions.maxContextWindowTokens,
+        parseInteger(env.MUSE_MAX_TOOL_OUTPUT_CHARS, 8_000)
+      ),
       // Opt-in system-prompt token cap: sections evict lowest-priority-first
       // when the combined muse-sectioned footprint exceeds it (0/unset = off).
       ...(parseInteger(env.MUSE_PROMPT_TOKEN_BUDGET, 0) > 0

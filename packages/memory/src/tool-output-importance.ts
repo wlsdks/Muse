@@ -64,3 +64,37 @@ export function applyToolOutputImportance(baseMaxChars: number, score: number): 
   const bounded = Math.max(0.4, Math.min(2.0, score));
   return Math.max(64, Math.trunc(baseMaxChars * bounded));
 }
+
+const TOOL_OUTPUT_CHARS_PER_TOKEN = 4;
+// A single tool result should not eat more than this fraction of the
+// whole context window — otherwise one big read dominates a small
+// local model's window.
+const TOOL_OUTPUT_WINDOW_FRACTION = 0.1;
+const TOOL_OUTPUT_MIN_CAP = 1_000;
+
+/**
+ * Bind the per-tool-output character cap to the model's context
+ * window: a fixed 8k cap is fine on a 128k window but can swallow a
+ * small local model's window whole. Shrinks the configured cap when
+ * the window is small; NEVER raises it above the configured ceiling,
+ * and never below a small floor (a uselessly tiny cap helps no one).
+ *
+ * `configuredCap <= 0` is the caller's "cap disabled" convention and
+ * passes through untouched; an unknown/invalid window is a no-op
+ * (returns the configured cap) so behavior is unchanged when the
+ * window isn't known.
+ */
+export function scaleToolOutputBudget(maxContextWindowTokens: number | undefined, configuredCap: number): number {
+  if (configuredCap <= 0) return configuredCap;
+  if (
+    maxContextWindowTokens === undefined ||
+    !Number.isFinite(maxContextWindowTokens) ||
+    maxContextWindowTokens <= 0
+  ) {
+    return configuredCap;
+  }
+  const windowCap = Math.floor(maxContextWindowTokens * TOOL_OUTPUT_CHARS_PER_TOKEN * TOOL_OUTPUT_WINDOW_FRACTION);
+  const scaled = Math.min(configuredCap, windowCap);
+  // Floor, but never above the configured ceiling.
+  return Math.max(Math.min(configuredCap, TOOL_OUTPUT_MIN_CAP), scaled);
+}
