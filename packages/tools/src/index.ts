@@ -181,6 +181,7 @@ export {
 } from "./runner.js";
 
 export { classifyDangerousCommand, type DangerousCommandVerdict } from "./dangerous-command.js";
+export { classifyRunnerFailure, type RunnerFailureKind, type RunnerFailureSignal } from "./runner-failure.js";
 
 export { ToolExecutor, nearestToolName, toolErrorHint } from "./executor.js";
 

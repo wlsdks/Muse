@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { JsonObject } from "@muse/shared";
 
 import { classifyDangerousCommand } from "./dangerous-command.js";
+import { classifyRunnerFailure, type RunnerFailureKind } from "./runner-failure.js";
 import { ToolRegistryError, type MuseTool } from "./index.js";
 
 /**
@@ -35,6 +36,8 @@ export interface RunnerCommandResponse {
   readonly timedOut: boolean;
   readonly truncated: boolean;
   readonly error: string | null;
+  /** TX-11: deterministic failure category, present only on a failed result. */
+  readonly failureKind?: RunnerFailureKind;
 }
 
 export interface RustRunnerToolOptions {
@@ -90,11 +93,13 @@ export function createRustRunnerTool(options: RustRunnerToolOptions = {}): MuseT
       // OR with the runner's own flag; never flip a genuine `true` back to false.
       const capTruncated = stdout.length < response.stdout.length || stderr.length < response.stderr.length;
 
+      const failureKind = classifyRunnerFailure({ status: response.status, stderr, timedOut: response.timedOut, error: response.error });
       return {
         ...response,
         stderr,
         stdout,
-        truncated: response.truncated || capTruncated
+        truncated: response.truncated || capTruncated,
+        ...(failureKind ? { failureKind } : {})
       };
     }
   };
