@@ -489,6 +489,9 @@ export {
   trimConversationMessages
 } from "./memory-token-trim.js";
 
+export { summarizeDroppedContext } from "./context-aux-summary.js";
+export type { DroppedContextSummarizer, SummarizeDroppedOptions } from "./context-aux-summary.js";
+
 // Tool-output trimming primitive (Context Engineering
 // step 1.b). Used by agent-core/model-loop to cap individual tool
 // results before they land as messages.
