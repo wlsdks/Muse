@@ -12,6 +12,7 @@
  */
 
 import {
+  getBackgroundProcess,
   mutateBackgroundProcesses,
   registerBackgroundProcess,
   updateBackgroundProcess,
@@ -75,6 +76,37 @@ export async function spawnBackgroundProcess(
   });
 
   return record;
+}
+
+export type StopBackgroundResult = "stopped" | "not_found" | "already_done";
+
+/**
+ * Stop a tracked background process: signal its PID via the injected `kill`
+ * (wire `(pid) => process.kill(pid)`) and mark the record `killed`. A kill
+ * that throws (the process already died) is swallowed — the record is still
+ * moved out of `running` so the registry reflects reality. Returns what
+ * happened. `kill` injected so it's deterministic + unit-tested.
+ */
+export async function stopBackgroundProcess(
+  storeFile: string,
+  id: string,
+  kill: (pid: number) => void,
+  now: () => Date
+): Promise<StopBackgroundResult> {
+  const record = await getBackgroundProcess(storeFile, id);
+  if (!record) {
+    return "not_found";
+  }
+  if (record.status !== "running") {
+    return "already_done";
+  }
+  try {
+    kill(record.pid);
+  } catch {
+    /* already dead */
+  }
+  await updateBackgroundProcess(storeFile, id, { status: "killed", endedAt: now().toISOString() });
+  return "stopped";
 }
 
 /**

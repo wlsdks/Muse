@@ -69,4 +69,12 @@ describe("muse bg (read-only command)", () => {
     await h.program.parseAsync(["bg", "logs", "nope"], { from: "user" });
     expect(h.err.join("")).toContain("No background process with id 'nope'");
   });
+
+  it("bg stop <id> errors for an unknown id (no process signalled)", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-bgcmd-")), "p.json");
+    writeFileSync(file, JSON.stringify({ processes: [] }), "utf8");
+    const h = harness(file);
+    await h.program.parseAsync(["bg", "stop", "nope"], { from: "user" });
+    expect(h.err.join("")).toContain("No background process with id 'nope'");
+  });
 });

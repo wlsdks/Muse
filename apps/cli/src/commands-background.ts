@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import type { Command } from "commander";
 
-import { readBackgroundProcesses, type BackgroundProcessRecord } from "@muse/stores";
+import { readBackgroundProcesses, stopBackgroundProcess, type BackgroundProcessRecord } from "@muse/stores";
 
 import type { ProgramIO } from "./program.js";
 
@@ -66,5 +66,18 @@ export function registerBackgroundCommand(program: Command, io: ProgramIO): void
         return;
       }
       io.stdout(body.endsWith("\n") ? body : `${body}\n`);
+    });
+
+  bg.command("stop <id>")
+    .description("Stop a running background process by id (sends SIGTERM)")
+    .action(async (id: string) => {
+      const result = await stopBackgroundProcess(backgroundStoreFile(), id, (pid) => process.kill(pid), () => new Date());
+      if (result === "not_found") {
+        io.stderr(`No background process with id '${id}'.\n`);
+      } else if (result === "already_done") {
+        io.stdout(`'${id}' is not running.\n`);
+      } else {
+        io.stdout(`Stopped '${id}'.\n`);
+      }
     });
 }
