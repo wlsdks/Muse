@@ -69,6 +69,29 @@ describe("classifyError", () => {
   });
 });
 
+describe("classifyError nested provider-error unwrapping", () => {
+  it("classifies an OpenRouter-style metadata.raw (JSON string) by the real upstream error", () => {
+    const err = { message: "Provider returned error", metadata: { raw: '{"error":{"message":"rate limit exceeded, try again"}}' } };
+    const c = classifyError(err);
+    expect(c.reason).toBe("rate_limit");
+    expect(c.message).toContain("rate limit exceeded");
+  });
+
+  it("classifies an OpenAI-style { error: { message } } nesting", () => {
+    const c = classifyError({ error: { message: "maximum context length exceeded" } });
+    expect(c.reason).toBe("context_overflow");
+  });
+
+  it("handles a non-JSON metadata.raw string", () => {
+    expect(classifyError({ metadata: { raw: "upstream server is busy / overloaded" } }).reason).toBe("overloaded");
+  });
+
+  it("is byte-identical for a plain top-level error (no nesting)", () => {
+    expect(classifyError(new Error("boom")).message).toBe("boom");
+    expect(classifyError({ message: "just this" }).message).toBe("just this");
+  });
+});
+
 describe("classifyError retry-after extraction", () => {
   it("reads a numeric retryAfter (seconds) and retry_after and retryAfterMs", () => {
     expect(classifyError({ status: 429, retryAfter: 30 }).retryAfterMs).toBe(30_000);

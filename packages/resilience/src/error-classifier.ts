@@ -194,14 +194,47 @@ function extractStatus(error: unknown): number | null {
   return null;
 }
 
-function extractMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  if (typeof error === "object" && error !== null) {
-    const m = (error as { message?: unknown }).message;
+function directMessage(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null) {
+    const m = (value as { message?: unknown }).message;
     if (typeof m === "string") return m;
   }
-  return String(error ?? "");
+  return "";
+}
+
+/**
+ * Build the text the reason-patterns match against, unwrapping the common
+ * provider NESTINGS so the REAL upstream error is visible: OpenAI-style
+ * `{ error: { message } }` and OpenRouter-style `{ metadata: { raw } }`
+ * (raw is the upstream error JSON as a string). Without this the
+ * classifier only sees the opaque wrapper and mis-classifies a wrapped
+ * rate-limit / context-overflow as `unknown`. Byte-identical for a
+ * top-level-only error (no nesting → just its own message).
+ */
+function extractMessage(error: unknown): string {
+  const parts: string[] = [directMessage(error)];
+  if (typeof error === "object" && error !== null) {
+    const e = error as Record<string, unknown>;
+    parts.push(directMessage(e.error));
+    const meta = e.metadata;
+    if (typeof meta === "object" && meta !== null) {
+      const raw = (meta as Record<string, unknown>).raw;
+      if (typeof raw === "string") {
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          parts.push(directMessage((parsed as { error?: unknown }).error) || directMessage(parsed) || raw);
+        } catch {
+          parts.push(raw);
+        }
+      } else {
+        parts.push(directMessage((raw as { error?: unknown } | null)?.error) || directMessage(raw));
+      }
+    }
+  }
+  const combined = [...new Set(parts.filter((p) => p.length > 0))].join(" | ");
+  return combined || String(error ?? "");
 }
 
 function errorName(error: unknown): string {
