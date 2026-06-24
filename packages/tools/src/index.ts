@@ -180,6 +180,8 @@ export {
   type RustRunnerToolOptions
 } from "./runner.js";
 
+export { classifyDangerousCommand, type DangerousCommandVerdict } from "./dangerous-command.js";
+
 export { ToolExecutor, nearestToolName, toolErrorHint } from "./executor.js";
 
 export {

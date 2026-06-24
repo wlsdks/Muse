@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 
 import type { JsonObject } from "@muse/shared";
 
+import { classifyDangerousCommand } from "./dangerous-command.js";
 import { ToolRegistryError, type MuseTool } from "./index.js";
 
 /**
@@ -233,6 +234,16 @@ export function parseRunnerCommandRequest(value: JsonObject): RunnerCommandReque
     const parts = command.split(/\s+/u);
     command = parts[0]!;
     args = parts.slice(1);
+  }
+
+  // Fail-close on an irreversible catastrophic command (root/home recursive
+  // delete, fork bomb, raw-device write, mkfs) — refused in CODE, not left to
+  // the approval gate which an auto-approve mode could bypass. Classified on
+  // the reconstructed full line so a `rm`/`-rf /` split across command+args is
+  // still caught.
+  const danger = classifyDangerousCommand([command, ...(args ?? [])].join(" "));
+  if (danger.dangerous) {
+    throw new ToolRegistryError(`run_command refused: ${danger.reason} — irreversible, blocked in code`);
   }
 
   return {
