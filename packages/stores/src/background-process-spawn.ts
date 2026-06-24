@@ -12,6 +12,7 @@
  */
 
 import {
+  mutateBackgroundProcesses,
   registerBackgroundProcess,
   updateBackgroundProcess,
   type BackgroundProcessRecord
@@ -74,4 +75,30 @@ export async function spawnBackgroundProcess(
   });
 
   return record;
+}
+
+/**
+ * Crash-recovery reconciliation (X-3 "recovery by PID"). After a restart the
+ * registry can hold records still marked `running` whose process actually
+ * died while Muse was down. For each such record whose PID is no longer
+ * alive (injected `isAlive`), mark it `exited` with an end timestamp.
+ * Records with a live PID, or already in a terminal state, are untouched.
+ * Returns the ids reconciled. Run once at startup.
+ */
+export async function reconcileBackgroundProcesses(
+  storeFile: string,
+  isAlive: (pid: number) => boolean,
+  now: () => Date
+): Promise<readonly string[]> {
+  const reconciled: string[] = [];
+  await mutateBackgroundProcesses(storeFile, (current) =>
+    current.map((process) => {
+      if (process.status === "running" && !isAlive(process.pid)) {
+        reconciled.push(process.id);
+        return { ...process, status: "exited" as const, endedAt: now().toISOString() };
+      }
+      return process;
+    })
+  );
+  return reconciled;
 }
