@@ -54,5 +54,6 @@ export * from "./web-action-tool.js";
 export * from "./web-download-tool.js";
 export * from "./web-readable.js";
 export * from "./web-url-guard.js";
+export * from "./image-source.js";
 export * from "./world-time.js";
 export * from "./loopback-defaults.js";
