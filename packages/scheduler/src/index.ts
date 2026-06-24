@@ -237,3 +237,4 @@ export {
 } from "./scheduler-locks.js";
 
 export { DynamicScheduler, createSchedulerTools } from "./dynamic-scheduler.js";
+export { ActiveRunTracker, type DrainOutcome } from "./active-run-tracker.js";

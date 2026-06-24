@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
+import { ActiveRunTracker } from "./active-run-tracker.js";
 import { NoOpDistributedSchedulerLock } from "./scheduler-locks.js";
 import {
   ScheduledJobExecutionRecorder,
@@ -36,6 +37,7 @@ export class DynamicScheduler {
   private readonly now: () => Date;
   private readonly lockTtlBufferMs: number;
   private readonly handles = new Map<string, ScheduledTaskHandle>();
+  private readonly activeRuns = new ActiveRunTracker();
 
   constructor(options: DynamicSchedulerOptions) {
     this.store = options.store;
@@ -138,6 +140,21 @@ export class DynamicScheduler {
     this.handles.clear();
   }
 
+  /** Number of scheduled runs currently executing (CRON-9). */
+  activeRunCount(): number {
+    return this.activeRuns.size;
+  }
+
+  /**
+   * Graceful shutdown (CRON-9): stop future firings, then wait for in-flight
+   * runs to finish — up to `timeoutMs` so a hung run can't block forever.
+   * Prefer this over `destroy()` when the runs' work should complete.
+   */
+  async shutdown(timeoutMs = 30_000): Promise<"drained" | "timeout"> {
+    this.destroy();
+    return this.activeRuns.drain(timeoutMs);
+  }
+
   private registerJob(job: ScheduledJob): void {
     if (!this.cronScheduler) {
       return;
@@ -146,7 +163,7 @@ export class DynamicScheduler {
     this.cancelJob(job.id);
 
     const handle = this.cronScheduler.schedule(job, () => {
-      void this.runScheduledJob(job, false);
+      void this.activeRuns.track(this.runScheduledJob(job, false));
     });
 
     if (handle) {
