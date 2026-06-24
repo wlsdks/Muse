@@ -185,6 +185,24 @@ describe("trimConversationMessages — structural integrity + summary", () => {
     expect(summary!.content.split(COMPACTION_RESUME_DIRECTIVE).length - 1).toBe(1); // exactly once
   });
 
+  it("exposes the compacted-away messages in `dropped` (for CMP-2 aux summary)", () => {
+    const many: ConversationMessage[] = [m("system", "s")];
+    for (let i = 0; i < 8; i += 1) {
+      many.push(m("user", "u".repeat(8)));
+      many.push(m("assistant", "a".repeat(8)));
+    }
+    many.push(m("user", "final"));
+    const r = trimConversationMessages(many, base({ insertSummary: true, maxContextWindowTokens: 40 }));
+    expect(r.dropped.length).toBeGreaterThan(0);
+    expect(r.dropped.every((d) => many.includes(d))).toBe(true);
+    expect(r.dropped.some((d) => r.messages.includes(d))).toBe(false);
+  });
+
+  it("returns an empty `dropped` when the conversation fits (no compaction)", () => {
+    const r = trimConversationMessages([m("system", "s"), m("user", "hi")], base({ maxContextWindowTokens: 10_000 }));
+    expect(r.dropped).toEqual([]);
+  });
+
   it("suppresses the summary when insertSummary is false even though many messages were dropped", () => {
     const many: ConversationMessage[] = [m("system", "s")];
     for (let i = 0; i < 8; i += 1) {

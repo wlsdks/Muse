@@ -94,6 +94,15 @@ export interface ConversationTrimResult {
    * forced one (`hard_limit`) and a no-op (`none`).
    */
   readonly triggeredBy: "none" | "working_budget" | "hard_limit";
+  /**
+   * The messages COMPACTED AWAY this pass (present in the input, absent
+   * from `messages`). Empty when nothing was dropped. Enables an
+   * auxiliary-model summary of the dropped window (CMP-2,
+   * `summarizeDroppedContext`) without re-deriving the diff at the call
+   * site. Reference-identity diff: a message kept-but-repaired (e.g. a
+   * pruned tool-call) may appear here — harmless for summarization.
+   */
+  readonly dropped: readonly ConversationMessage[];
 }
 
 type Awaitable<T> = T | Promise<T>;

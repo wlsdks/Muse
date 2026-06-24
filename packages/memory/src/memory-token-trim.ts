@@ -95,8 +95,10 @@ export function trimConversationMessages(
         ? [messages[lastUserIndex] as ConversationMessage]
         : messages;
 
+    const keptSet = new Set<ConversationMessage>(kept);
     return {
       budgetTokens: hardBudgetTokens,
+      dropped: messages.filter((message) => !keptSet.has(message)),
       estimatedTokens: estimateConversationTokens(kept, { estimator, messageStructureOverhead }),
       messages: kept,
       removedCount: inputMessages.length - kept.length,
@@ -182,8 +184,11 @@ export function trimConversationMessages(
       ? "working_budget"
       : "none";
 
+  const retainedSet = new Set<ConversationMessage>(messages);
+  const dropped = originalSnapshot.filter((message) => !retainedSet.has(message));
   return {
     budgetTokens: hardBudgetTokens,
+    dropped,
     estimatedTokens: totalTokens,
     messages,
     removedCount,
