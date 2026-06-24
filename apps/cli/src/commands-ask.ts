@@ -40,7 +40,7 @@ import { fetchReadableUrl, type MessageApprovalGate } from "@muse/domain-tools";
 import { redactSecretsInText } from "@muse/shared";
 import { allUserMemoryFacts, buildDiskContents, buildActionContextBlock, buildCalendarContextBlock, buildContactContextBlock, buildEpisodeContextBlock, buildFeedContextBlock, buildGitContextBlock, buildMemoryContextBlock, buildNoteContextBlock, buildShellContextBlock, buildReminderContextBlock, buildTaskContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
 export { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
-import { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, sufficiencyAdvisory, urlGroundingSource } from "@muse/recall";
+import { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, stripGroundingFences, sufficiencyAdvisory, urlGroundingSource } from "@muse/recall";
 export { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, sufficiencyAdvisory, urlGroundingSource };
 import { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource } from "@muse/recall";
 export { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource };
@@ -2050,7 +2050,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               // Ollama default (gemma4 ships 1.0).
               temperature: resolveAnswerTemperature(process.env as MuseEnvironment)
             }) as AsyncIterable<AskStreamEvent>,
-            (text) => { if (!options.json) io.stdout(streamCiteFilter.push(text)); },
+            (text) => { if (!options.json) io.stdout(stripGroundingFences(streamCiteFilter.push(text))); },
             () => signal.aborted
           );
           if (!options.json) io.stdout(streamCiteFilter.flush());
@@ -2140,6 +2140,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         sessions: episodeHits.map((e) => e.summary),
         tasks: openTasks.map((t) => t.title)
       };
+      // Scrub any grounding-block fence tags (<<memory N>>, <<end>>, …) the
+      // model echoed from its prompt context before the citation gate — the
+      // recall scaffolding must never surface in the persisted/displayed answer.
+      collectedAnswer = stripGroundingFences(collectedAnswer);
       const citationGate = enforceAnswerCitations(collectedAnswer, citationAllowed);
       collectedAnswer = citationGate.text;
       const refusalAnswer = answerIsRefusal(collectedAnswer);

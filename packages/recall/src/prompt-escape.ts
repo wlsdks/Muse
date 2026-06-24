@@ -53,6 +53,24 @@ export function escapeSystemPromptMarkers(text: string): string {
   return out;
 }
 
+const GROUNDING_FENCE_RE = new RegExp(`<<(?:${MARKER_KEYWORDS})\\b[^\\n>]*>>|<<end>>`, "giu");
+
+/**
+ * Remove grounding-block FENCE tags (`<<memory N — label>>`, `<<note …>>`,
+ * …, `<<end>>`) that a small local model can ECHO from its prompt context
+ * into its visible answer. Deterministic OUTPUT hygiene — the internal
+ * recall scaffolding is not part of an answer, and a leaked `<<end>>` reads
+ * as corruption to the user (the streaming citation gate already scrubs the
+ * paired `[from …]`/`[memory: …]` receipts, but not these `<<…>>`
+ * boundaries). The grammar is precise — the keyword must follow `<<` with
+ * no space — so legitimate answer text is untouched: a bit-shift `1 << 2`,
+ * a C++ `cout << note`, a literal `<<TODO>>`. Pure + idempotent;
+ * byte-identical when the text carries no fence tag.
+ */
+export function stripGroundingFences(text: string): string {
+  return text.replace(GROUNDING_FENCE_RE, "");
+}
+
 /**
  * Sanitize a LABEL (a memory key / contact id) that is interpolated into
  * a grounding-block fence HEADER (`<<memory N — <label>>>`, `[memory:
