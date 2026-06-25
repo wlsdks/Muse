@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { isPathSafetyError, PathSafetyError, pathSafetyOptionsFromEnv, resolvePolicy, resolveSafePath } from "./fs-path-safety.js";
+import { isPathSafetyError, isSensitivePath, PathSafetyError, pathSafetyOptionsFromEnv, resolvePolicy, resolveSafePath } from "./fs-path-safety.js";
 
 describe("path sandbox", () => {
   let root: string;
@@ -186,5 +186,22 @@ describe("pathSafetyOptionsFromEnv", () => {
 
   it("returns no overrides when neither is set", () => {
     expect(pathSafetyOptionsFromEnv({})).toEqual({});
+  });
+});
+
+describe("isSensitivePath", () => {
+  it("flags credential / key paths by denied segment, segment pattern, or basename", () => {
+    expect(isSensitivePath("/home/u/.ssh/id_rsa")).toBe(true); // denied segment + key basename
+    expect(isSensitivePath("/Users/u/.aws/credentials")).toBe(true);
+    expect(isSensitivePath("project/secrets/prod.png")).toBe(true); // segment pattern
+    expect(isSensitivePath("/x/.env")).toBe(true);
+    expect(isSensitivePath("C:\\Users\\u\\.ssh\\key.png")).toBe(true); // backslash segments
+    expect(isSensitivePath("/x/server.pem")).toBe(true); // basename pattern
+  });
+
+  it("allows ordinary image paths", () => {
+    expect(isSensitivePath("/home/u/Pictures/receipt.jpg")).toBe(false);
+    expect(isSensitivePath("./flyer.png")).toBe(false);
+    expect(isSensitivePath("/tmp/screenshot 2026.png")).toBe(false);
   });
 });

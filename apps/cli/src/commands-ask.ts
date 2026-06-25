@@ -36,7 +36,10 @@ import { readNoteProvenance, untrustedNotePaths } from "./note-provenance.js";
 import type { MuseTool } from "@muse/tools";
 import type { CalendarEvent } from "@muse/calendar";
 import { acquireOllamaLease, readActionLog, readContacts, readEpisodes, readReflections, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, selectReflectionsForRecall, type ActionLogEntry, type Contact, type PersistedReminder, type PersistedTask } from "@muse/stores";
-import { fetchReadableUrl, type MessageApprovalGate } from "@muse/domain-tools";
+import { fetchReadableUrl, resolveImageAttachmentCandidates, type MessageApprovalGate } from "@muse/domain-tools";
+import { isSensitivePath } from "@muse/fs";
+
+import { loadAutoImageAttachments } from "./auto-image.js";
 import { redactSecretsInText } from "@muse/shared";
 import { allUserMemoryFacts, buildDiskContents, buildActionContextBlock, buildCalendarContextBlock, buildContactContextBlock, buildEpisodeContextBlock, buildFeedContextBlock, buildGitContextBlock, buildMemoryContextBlock, buildNoteContextBlock, buildShellContextBlock, buildReminderContextBlock, buildTaskContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
 export { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, rankEpisodeHits, recentFeedHeadlines, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
@@ -202,11 +205,23 @@ export async function loadImageAttachment(filePath: string): Promise<LoadedImage
   return { attachment: { dataBase64: bytes.toString("base64"), mimeType: sniffedMime }, ok: true };
 }
 
+/** `--auto-image` composition: image paths found in `query` that are path-safe
+ *  (not credential/key material), exist, and load as valid image bytes. The
+ *  real-deps wiring of {@link loadAutoImageAttachments}; exported for direct
+ *  coverage so the gate+load chain is tested without the full ask command. */
+export function collectAutoImageAttachments(query: string): Promise<readonly { readonly mimeType: string; readonly dataBase64: string }[]> {
+  return loadAutoImageAttachments(query, {
+    resolve: (text) => resolveImageAttachmentCandidates(text, { isPathSafe: (p) => !isSensitivePath(p), fileExists: existsSync }),
+    loadImage: loadImageAttachment
+  });
+}
+
 interface AskOptions {
   readonly user?: string;
   readonly persona?: string;
   readonly model?: string;
   readonly image?: string;
+  readonly autoImage?: boolean;
   readonly extract?: string;
   readonly toCalendar?: boolean;
   readonly auto?: boolean;
@@ -591,6 +606,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       "Attach a local image (PNG/JPEG/GIF/WebP/HEIC) for the model to SEE — runs locally on the multimodal default (gemma4). e.g. `muse ask --image receipt.jpg '이 영수증 정리해줘'`."
     )
     .option(
+      "--auto-image",
+      "Auto-attach local image paths mentioned in your message (path-safe + existing files only) so the model SEES them — no explicit --image needed. e.g. `muse ask --auto-image '~/Pictures/receipt.jpg 정리해줘'`."
+    )
+    .option(
       "--extract <fields>",
       "With --image: extract structured data for the comma-separated fields and print JSON (grounded — an unreadable field is omitted, never invented). e.g. `muse ask --image receipt.jpg --extract 'merchant,total,date'`."
     )
@@ -643,6 +662,17 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           return;
         }
         imageAttachments = [loaded.attachment];
+      }
+
+      // --auto-image: attach image paths mentioned in the message itself, so a
+      // user can drop a path inline without --image. Gated (path-safe + existing
+      // + valid image bytes); a path that fails any check is silently skipped so
+      // auto-detection never errors the ask. Augments any explicit --image.
+      if (options.autoImage) {
+        const auto = await collectAutoImageAttachments(query);
+        if (auto.length > 0) {
+          imageAttachments = [...imageAttachments, ...auto];
+        }
       }
 
       // Deterministic non-RAG short-circuits (social / arithmetic / date /

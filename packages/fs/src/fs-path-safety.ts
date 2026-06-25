@@ -216,6 +216,28 @@ export function isPathSafetyError(error: unknown): error is PathSafetyError {
   return error instanceof PathSafetyError;
 }
 
+/**
+ * True when `path` touches credential / key material — a denied segment
+ * (.ssh/.aws/secrets/…), a secret-ish segment pattern, or a secret basename.
+ * The deny half of {@link resolveSafePath} as a PURE string predicate, for a
+ * caller that must gate an ARBITRARY user-referenced path with no sandbox root
+ * to resolve against (e.g. auto-attaching an image path found in a message).
+ * Best-effort — pair with `resolveSafePath` when a sandbox boundary applies.
+ */
+export function isSensitivePath(path: string): boolean {
+  const segments = path.split(/[/\\]+/u).filter((segment) => segment.length > 0);
+  for (const segment of segments) {
+    if (DEFAULT_DENY_SEGMENTS.has(segment.toLowerCase())) {
+      return true;
+    }
+    if (DEFAULT_DENY_SEGMENT_PATTERNS.some((pattern) => pattern.test(segment))) {
+      return true;
+    }
+  }
+  const leaf = segments[segments.length - 1] ?? "";
+  return DEFAULT_DENY_BASENAME_PATTERNS.some((pattern) => pattern.test(leaf));
+}
+
 function splitPathList(value: string | undefined): readonly string[] {
   if (!value) {
     return [];
