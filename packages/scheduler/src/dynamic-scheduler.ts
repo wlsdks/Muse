@@ -38,6 +38,10 @@ export class DynamicScheduler {
   private readonly lockTtlBufferMs: number;
   private readonly handles = new Map<string, ScheduledTaskHandle>();
   private readonly activeRuns = new ActiveRunTracker();
+  // In-process re-entrancy guard (CRON-3): the default lock is a no-op, so a
+  // job whose run outlasts its cron interval would pile up overlapping runs on
+  // each tick. Tracks job ids with an automatic run in flight.
+  private readonly runningJobIds = new Set<string>();
   private readonly isPaused?: () => Promise<boolean>;
 
   constructor(options: DynamicSchedulerOptions) {
@@ -181,6 +185,26 @@ export class DynamicScheduler {
   }
 
   private async runScheduledJob(job: ScheduledJob, dryRun: boolean, automatic = false): Promise<string> {
+    // CRON-3 re-entrancy guard: skip an automatic fire while the same job's
+    // prior run is still in flight (the default no-op lock can't). The has/add
+    // pair is synchronous — no await between them — so two ticks can't both
+    // pass. A manual trigger is exempt (explicit intent), as are dry runs.
+    if (!automatic) {
+      return this.executeScheduledJob(job, dryRun, automatic);
+    }
+    if (this.runningJobIds.has(job.id)) {
+      await this.store.updateExecutionResult(job.id, "skipped", "skipped: previous run still in progress");
+      return "skipped: previous run still in progress";
+    }
+    this.runningJobIds.add(job.id);
+    try {
+      return await this.executeScheduledJob(job, dryRun, automatic);
+    } finally {
+      this.runningJobIds.delete(job.id);
+    }
+  }
+
+  private async executeScheduledJob(job: ScheduledJob, dryRun: boolean, automatic = false): Promise<string> {
     // User pause kill-switch: skip AUTONOMOUS (cron-fired) runs while paused;
     // a manual `trigger` still runs — explicit intent wins.
     if (automatic && this.isPaused && (await this.isPaused())) {

@@ -717,6 +717,58 @@ describe("DynamicScheduler pause kill-switch (CRON)", () => {
   });
 });
 
+describe("DynamicScheduler re-entrancy guard (CRON-3)", () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  function gatedScheduler() {
+    const store = new InMemoryScheduledJobStore({ idFactory: () => "job-1" });
+    const executions = new InMemoryScheduledJobExecutionStore({ idFactory: () => "exec-1" });
+    let runs = 0;
+    let release: (() => void) | undefined;
+    let fire: (() => void) | undefined;
+    const cronScheduler: CronScheduler = {
+      schedule: (_job, cb) => { fire = cb; return { cancel: () => undefined }; }
+    };
+    const service = new DynamicScheduler({
+      cronScheduler,
+      dispatcher: new ScheduledJobDispatcher({
+        agentExecutor: { execute: async () => { runs += 1; await new Promise<void>((r) => { release = r; }); return "done"; } },
+        mcpInvoker: createUnusedMcpInvoker()
+      }),
+      executionStore: executions,
+      store
+    });
+    return { service, get runs() { return runs; }, release: () => release?.(), fire: () => fire?.() };
+  }
+
+  it("skips an automatic fire while the same job's prior run is in flight", async () => {
+    const h = gatedScheduler();
+    await h.service.create({ agentPrompt: "Run", cronExpression: "0 * * * * *", jobType: "agent", name: "J" });
+    h.fire();
+    await tick();
+    h.fire(); // re-entrant: prior run still blocked in the executor
+    await tick();
+    expect(h.runs).toBe(1); // the second fire did NOT invoke the executor
+    h.release();
+    await tick();
+    expect(h.runs).toBe(1);
+  });
+
+  it("allows a new automatic fire once the prior run has finished (guard releases)", async () => {
+    const h = gatedScheduler();
+    await h.service.create({ agentPrompt: "Run", cronExpression: "0 * * * * *", jobType: "agent", name: "J" });
+    h.fire();
+    await tick();
+    h.release(); // run 1 completes -> job id leaves the in-flight set
+    await tick();
+    h.fire();
+    await tick();
+    expect(h.runs).toBe(2);
+    h.release();
+    await tick();
+  });
+});
+
 function createAgentJob(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
   return {
     agentPrompt: "Run",
