@@ -18,6 +18,7 @@ import {
   createNodeBackgroundSpawner,
   pruneTerminalBackgroundProcesses,
   readBackgroundProcesses,
+  reconcileBackgroundProcesses,
   spawnBackgroundProcess,
   stopBackgroundProcess,
   type BackgroundProcessRecord
@@ -62,6 +63,16 @@ export function formatBackgroundProcessList(records: readonly BackgroundProcessR
   return lines.join("\n");
 }
 
+/** True when a process with `pid` exists. `kill(pid, 0)` sends no signal — it only probes existence. */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Last `n` lines of `text` (a single trailing newline is ignored). Returns all when n<=0 or non-finite. */
 export function tailLines(text: string, n: number): string {
   if (!Number.isFinite(n) || n <= 0) {
@@ -78,6 +89,10 @@ export function registerBackgroundCommand(program: Command, io: ProgramIO): void
     .description("List tracked background processes (running + recently finished)")
     .option("--json", "Emit the registry as JSON (for scripts / jq)")
     .action(async (options: { readonly json?: boolean }) => {
+      // Crash-recovery: a 'running' record whose PID is gone (the process
+      // died while Muse was off, so its exit handler never ran) is corrected
+      // to exited before display, so the list reflects reality.
+      await reconcileBackgroundProcesses(backgroundStoreFile(), isProcessAlive, () => new Date()).catch(() => undefined);
       const records = await readBackgroundProcesses(backgroundStoreFile());
       if (options.json) {
         io.stdout(`${JSON.stringify({ processes: records }, null, 2)}\n`);

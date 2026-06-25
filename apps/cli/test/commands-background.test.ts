@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { type BackgroundProcessRecord } from "@muse/stores";
 
-import { formatBackgroundProcessList, formatUptime, registerBackgroundCommand, tailLines } from "../src/commands-background.js";
+import { formatBackgroundProcessList, formatUptime, isProcessAlive, registerBackgroundCommand, tailLines } from "../src/commands-background.js";
 
 const rec = (over: Partial<BackgroundProcessRecord>): BackgroundProcessRecord => ({
   id: "p", pid: 4242, command: "npm run dev", startedAt: "2026-06-24T00:00:00.000Z", status: "running", ...over
@@ -31,6 +31,13 @@ describe("formatBackgroundProcessList", () => {
       new Date("2026-06-24T02:30:00.000Z")
     );
     expect(out).toContain("pid 4242, up 2h");
+  });
+});
+
+describe("isProcessAlive", () => {
+  it("is true for the current process and false for a non-existent PID", () => {
+    expect(isProcessAlive(process.pid)).toBe(true);
+    expect(isProcessAlive(2_147_483_646)).toBe(false);
   });
 });
 
@@ -79,10 +86,24 @@ function harness(storeFile: string) {
 describe("muse bg (read-only command)", () => {
   it("bg list prints the registry", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "muse-bgcmd-")), "p.json");
-    writeFileSync(file, JSON.stringify({ processes: [rec({ id: "x" })] }), "utf8");
+    // use a live PID so the list's crash-reconcile keeps it 'running'
+    writeFileSync(file, JSON.stringify({ processes: [rec({ id: "x", pid: process.pid })] }), "utf8");
     const h = harness(file);
     await h.program.parseAsync(["bg", "list"], { from: "user" });
     expect(h.out.join("")).toContain("x  [running]  npm run dev");
+  });
+
+  it("bg list reconciles a dead-PID running record to exited, keeps a live one", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-bgcmd-")), "p.json");
+    writeFileSync(file, JSON.stringify({ processes: [
+      rec({ id: "dead", pid: 2_147_483_646, status: "running" }),
+      rec({ id: "live", pid: process.pid, status: "running" })
+    ] }), "utf8");
+    const h = harness(file);
+    await h.program.parseAsync(["bg", "list", "--json"], { from: "user" });
+    const byId = Object.fromEntries((JSON.parse(h.out.join("")) as { processes: { id: string; status: string }[] }).processes.map((p) => [p.id, p.status]));
+    expect(byId.dead).toBe("exited"); // PID gone -> reconciled
+    expect(byId.live).toBe("running"); // our own PID is alive
   });
 
   it("bg list --json emits the registry as parseable JSON", async () => {
