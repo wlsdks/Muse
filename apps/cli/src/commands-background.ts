@@ -128,6 +128,32 @@ export function registerBackgroundCommand(program: Command, io: ProgramIO): void
       io.stdout(`Pruned ${removed.length.toString()} finished background process(es).\n`);
     });
 
+  bg.command("restart <id>")
+    .description("Re-run a previously-started background process by id (same command + cwd)")
+    .action(async (id: string) => {
+      const prior = (await readBackgroundProcesses(backgroundStoreFile())).find((entry) => entry.id === id);
+      if (!prior) {
+        io.stderr(`No background process with id '${id}'.\n`);
+        return;
+      }
+      try {
+        const record = await spawnBackgroundProcess(prior.command, prior.cwd ? { cwd: prior.cwd } : {}, {
+          storeFile: backgroundStoreFile(),
+          spawner: createNodeBackgroundSpawner(),
+          logFileFor: (newId) => join(homedir(), ".muse", "bg-logs", `${newId}.log`),
+          now: () => new Date(),
+          newId: () => `bg-${randomUUID().slice(0, 8)}`,
+          classifyDanger: (cmd) => {
+            const verdict = classifyDangerousCommand(cmd);
+            return verdict.dangerous ? verdict.reason : undefined;
+          }
+        });
+        io.stdout(`Restarted '${prior.id}' as '${record.id}' (pid ${record.pid.toString()}).\n`);
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+      }
+    });
+
   bg.command("stop <id>")
     .description("Stop a running background process by id (sends SIGTERM)")
     .action(async (id: string) => {

@@ -113,6 +113,23 @@ describe("muse bg (read-only command)", () => {
     expect(existsSync(logFile)).toBe(false);
   });
 
+  it("bg restart errors for an unknown id (nothing spawned)", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-bgcmd-")), "p.json");
+    writeFileSync(file, JSON.stringify({ processes: [] }), "utf8");
+    const h = harness(file);
+    await h.program.parseAsync(["bg", "restart", "nope"], { from: "user" });
+    expect(h.err.join("")).toContain("No background process with id 'nope'");
+  });
+
+  it("bg restart re-runs a recorded command as a new process", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-bgcmd-")), "p.json");
+    writeFileSync(file, JSON.stringify({ processes: [{ id: "old", pid: 1, command: `"${process.execPath}" -e "process.exit(0)"`, startedAt: "2026-06-24T00:00:00.000Z", status: "exited", exitCode: 0 }] }), "utf8");
+    const h = harness(file);
+    await h.program.parseAsync(["bg", "restart", "old"], { from: "user" });
+    expect(h.out.join("")).toMatch(/Restarted 'old' as 'bg-/);
+    expect(JSON.parse(readFileSync(file, "utf8")).processes.some((p: { id: string }) => p.id.startsWith("bg-"))).toBe(true);
+  });
+
   it("bg run REFUSES a catastrophic command and starts nothing", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "muse-bgcmd-")), "p.json");
     writeFileSync(file, JSON.stringify({ processes: [] }), "utf8");
