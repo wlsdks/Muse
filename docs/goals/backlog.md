@@ -1,5 +1,8 @@
 # Muse dev backlog — the living ledger
 
+- ✓ work-status dashboard (`pnpm status` → docs/status.html) — renders a glanceable HTML from the MD records (recent commits color-coded · backlog ★/◦/⏳/✓ counts+lists · self-eval scoreboard gates) so a human sees "what got done / what's next / is it healthy" without reading code/git/3k-line backlog. Pure parsers unit-tested 9/9, HTML-injection escaped, gitignored artifact.
+- ◦ guard-writeback recognizes only `*.test.ts(x)` / `verify-*` / `eval-*` / backlog as compounding artifacts — a script-only feat with a `scripts/*.test.mjs` regression lock (the self-eval:test convention) is wrongly blocked. Widen the pattern to include `scripts/*.test.mjs`.
+
 - ✓ stale-demotion WIRED into the ask related-footer (buildAskConnections, @muse/recall hit.ts) — recall-spine fire 9: a superseded note no longer outranks the current one in '💡 Related in your brain'. No import cycle (conflict→hit type-only), footer-only scope, 35/35 recall tests, ④b PASS. NEXT: demote in the ANSWER recall path (KnowledgeMatch in commands-ask.ts) — bigger, cli, main-repo verify.
 
 - ✓ recall-conflict staleness demotion (detectStaleMarker + demoteStaleHits, @muse/recall conflict.ts) — recall-spine fire 8: high-precision past/superseded markers (예전에/지금은 아니/used to/no longer) demote a stale entry below its current counterpart so a correction recalls the CURRENT value top-1 (addresses confident-wrong). Pure, lossless (demote not drop), 32/32 conflict tests, ④b PASS + precision-tightened. UNWIRED — production wiring into the recall path is the follow-up.

@@ -69,6 +69,9 @@ Thumbs.db
 # self-eval fitness log — local trend, rebuildable; not committed (avoids parallel-loop churn)
 docs/self-eval-scoreboard.json
 
+# generated work-status dashboard (rebuild with `pnpm status`) — local artifact, not committed
+docs/status.html
+
 # bench:local baseline — machine-specific timing, like the scoreboard; never committed
 docs/benchmarks/bench-local-baseline.json
 
