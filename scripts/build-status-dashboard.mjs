@@ -74,9 +74,28 @@ export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/gu, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/**
+ * Parse `--watch [seconds]` into a regenerate interval in ms, or undefined for a
+ * one-shot. Bare `--watch` ⇒ 5s; an explicit positive integer overrides; a
+ * garbage value falls back to 5s (never 0/NaN, which would busy-loop). Pure.
+ */
+export function parseWatchIntervalMs(args) {
+  const i = args.indexOf("--watch");
+  if (i === -1) return undefined;
+  const raw = args[i + 1];
+  const secs = raw !== undefined && /^\d+$/u.test(raw) ? Number.parseInt(raw, 10) : 0;
+  return (secs > 0 ? secs : 5) * 1000;
+}
+
 /** Render the whole dashboard as one self-contained HTML string. Pure. */
-export function renderDashboardHtml({ project, branch, generatedAt, inSync, gates, scoreboardAt, commits, backlog }) {
+export function renderDashboardHtml({ project, branch, generatedAt, inSync, gates, scoreboardAt, commits, backlog, refreshSeconds }) {
   const e = escapeHtml;
+  // In --watch mode the page reloads itself so an OPEN tab tracks the regenerated
+  // file live (works over file:// too); omitted for a one-shot so a parked tab
+  // doesn't reload against a frozen file.
+  const refreshMeta = typeof refreshSeconds === "number" && refreshSeconds > 0
+    ? `<meta http-equiv="refresh" content="${Math.round(refreshSeconds)}">`
+    : "";
   const gateChip = (g) => {
     const cls = g.status === "pass" ? "ok" : g.status === "fail" ? "bad" : "warn";
     const val = g.value !== undefined ? `<b>${g.value}</b>` : (g.status === "pass" ? "✓" : g.status);
@@ -91,7 +110,7 @@ export function renderDashboardHtml({ project, branch, generatedAt, inSync, gate
     return `<div class="card ${kind}"><h3>${title} <em>${list.length}</em></h3><ul class="items">${shown}${more}</ul></div>`;
   };
   const c = backlog.counts;
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${refreshMeta}
 <title>${e(project)} — 작업 상황판</title><style>
 :root{--bg:#0d1117;--card:#161b22;--bd:#30363d;--fg:#e6edf3;--mut:#8b949e;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--blue:#58a6ff}
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg)}
@@ -145,7 +164,7 @@ function safeRead(path) {
   try { return readFileSync(join(ROOT, path), "utf8"); } catch { return ""; }
 }
 
-function main() {
+function buildOnce(refreshSeconds) {
   const backlogMd = safeRead("docs/goals/backlog.md");
   let scoreboard = [];
   try { scoreboard = JSON.parse(safeRead("docs/self-eval-scoreboard.json") || "[]"); } catch { /* keep empty */ }
@@ -167,15 +186,31 @@ function main() {
     gates,
     scoreboardAt: scoreboardAt ? new Date(scoreboardAt).toLocaleString("ko-KR") : undefined,
     commits: parseCommits(commitsRaw),
-    backlog: parseBacklog(backlogMd)
+    backlog: parseBacklog(backlogMd),
+    ...(refreshSeconds ? { refreshSeconds } : {})
   });
 
   const out = join(ROOT, "docs/status.html");
   writeFileSync(out, html, "utf8");
-  process.stdout.write(`작업 상황판 생성됨 → ${out}\n브라우저에서 열기: open ${out}\n`);
+  return out;
+}
+
+function main() {
+  const intervalMs = parseWatchIntervalMs(process.argv);
+  const refreshSeconds = intervalMs ? Math.round(intervalMs / 1000) : undefined;
+  const out = buildOnce(refreshSeconds);
+  if (intervalMs) {
+    process.stdout.write(`작업 상황판 watch 모드 (${refreshSeconds}s마다 갱신) → ${out}\n열어두면 자동 새로고침됩니다. 종료: Ctrl+C\n`);
+  } else {
+    process.stdout.write(`작업 상황판 생성됨 → ${out}\n브라우저에서 열기: open ${out}\n`);
+  }
   if (process.argv.includes("--open")) {
     const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
     try { execSync(`${opener} "${out}"`); } catch { /* opening is best-effort */ }
+  }
+  if (intervalMs) {
+    // Regenerate on an interval; the page's meta-refresh reloads the open tab.
+    setInterval(() => { try { buildOnce(refreshSeconds); } catch { /* transient git/fs error — keep watching */ } }, intervalMs);
   }
 }
 

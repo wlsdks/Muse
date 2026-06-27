@@ -7,7 +7,8 @@ import {
   parseCommits,
   latestScoreboard,
   escapeHtml,
-  renderDashboardHtml
+  renderDashboardHtml,
+  parseWatchIntervalMs
 } from "./build-status-dashboard.mjs";
 
 test("parseBacklog counts each marker and lists the actionable (non-done) items", () => {
@@ -73,6 +74,24 @@ test("latestScoreboard tolerates an empty/garbage scoreboard", () => {
 
 test("escapeHtml neutralizes injection from a backlog/commit string", () => {
   assert.equal(escapeHtml('<img src=x onerror="alert(1)">'), "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+});
+
+test("parseWatchIntervalMs: absent → undefined, bare → 5s, explicit → that, garbage → 5s", () => {
+  assert.equal(parseWatchIntervalMs(["node", "x.mjs"]), undefined);
+  assert.equal(parseWatchIntervalMs(["--watch"]), 5000);
+  assert.equal(parseWatchIntervalMs(["--watch", "10"]), 10000);
+  assert.equal(parseWatchIntervalMs(["--watch", "abc"]), 5000); // never 0/NaN (would busy-loop)
+  assert.equal(parseWatchIntervalMs(["--watch", "0"]), 5000);
+});
+
+test("renderDashboardHtml injects a meta-refresh ONLY when refreshSeconds is set (watch mode)", () => {
+  const base = {
+    project: "Muse", branch: "main", generatedAt: "now", inSync: true, gates: [], scoreboardAt: undefined,
+    commits: [], backlog: { counts: { done: 0, ready: 0, next: 0, blocked: 0 }, items: { next: [], ready: [], blocked: [] } }
+  };
+  assert.ok(!renderDashboardHtml(base).includes("http-equiv=\"refresh\""), "one-shot has no auto-reload");
+  const watched = renderDashboardHtml({ ...base, refreshSeconds: 7 });
+  assert.ok(watched.includes('<meta http-equiv="refresh" content="7">'), "watch mode injects the meta-refresh");
 });
 
 test("renderDashboardHtml produces a self-contained doc and escapes data", () => {
