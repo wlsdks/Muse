@@ -1,5 +1,41 @@
 # Muse dev backlog — the living ledger
 
+### Langchain/langgraph-parity assessment (2026-06-28) — shipped 5, the rest are honest limits
+
+A capability audit vs langchain/langgraph: Muse provides every core agent primitive
+(chains/ReAct, tools, memory, lead-worker orchestration, HITL approval, durable
+run-state, streaming) hand-rolled, AND adds differentiators they lack (the deterministic
+grounding+citation gate, local-first fail-close egress, correction-decay learning,
+baked-in evals, security-as-code). SHIPPED this session (each: tests+mutation+independent
+evaluator+lint, commits below):
+
+- ✓ **B4** eval:recall-quality honestly relabelled (it measures the cosine gate, not the
+  lexical production memory path) + production `selectMemoryFacts` regression-locked.
+- ✓ **B2** the proactive north-star LIVE battery now drives the PRODUCTION investigator
+  (`createIndexedProactiveInvestigator`), not a generic test-helper (4/4 live).
+- ✓ **B6** faithfulness pre-push tripwire 177s→96s (~46%) via a fabrication-SAFE subset
+  (all drift+refuse kept → faithfulness metric identical; only answerable sampled).
+- ✓ **B1** chat misgroundings now labelled in the run-log (`chatTraceOutcome`) → they
+  become error-analysis FUEL instead of vanishing as grounded:null (ask had it, chat didn't).
+- ✓ **A1** default-on cross-source corroboration signal ("✓ corroborated by N sources")
+  on the ask+chat wedge — the realistic local-first hedge against GROUNDED≠TRUE.
+
+NOT open work (inherent limits / deferred — do NOT re-scout as buildable):
+- ⛔ **B3** multi-agent on a single GPU is a *phantom* (no true parallelism) — a hardware
+  limit; the value is context-isolation+decomposition, already built. Not code-fixable.
+- ⛔ **B5** local-12B one-shot tool-calling has load-amplified flakiness (eval:tools ~99%,
+  KO followup.cancel / time_diff) — a model-capacity limit the deterministic harness
+  mitigates but can't erase. Not code-fixable on a fixed model.
+- ⏳ **A2** reranker (Qwen3-Reranker-0.6B candidate, KO-MTEB-strong) — a real stretch but
+  needs a model pull + an A/B eval proving the delta; human-gated (model choice).
+- ⏳ **A3** generic graph DSL + automatic full-state durability/time-travel (langgraph-style)
+  — low priority for a single-user local agent (no arbitrary multi-agent topologies).
+- ⏳ **A4** async-announce non-polling sub-agent completion — deferred, low value on one GPU.
+
+The one remaining FRONTIER (open, hard, high-value): full **source VERACITY** (GROUNDED≠TRUE)
+— impossible to fully solve under local-first (no external oracle); A1 corroboration is the
+realistic partial hedge. Deeper veracity needs a human/product call, not an autonomous slice.
+
 - ✓ work-status dashboard (`pnpm status` → docs/status.html) — glanceable HTML from the MD records (recent commits color-coded · backlog ★/◦/⏳/✓ counts+lists · self-eval gates) so a human sees "what got done / what's next / is it healthy" without reading code/git/3k-line backlog. `--watch [s]` regenerates on an interval + injects a meta-refresh so an open tab auto-updates (one-shot omits it). Pure parsers + watch helpers unit-tested 11/11, mutation-verified, HTML-injection escaped, gitignored artifact.
 - ✓ risk-review (dashboard session) fixes: (a) **guard-writeback** now recognizes `scripts/*.test.mjs` as a compounding artifact (was `*.test.ts(x)` only → script-only feats wrongly blocked); decision logic extracted to `stagesCompoundingArtifact()` + 7 node:test. (b) **precheck:grounding** faithfulness-rate was SKIP-on-every-push (real cost ≈177s > 150s cap → a fabrication-critical gate silently never ran); raised per-battery timeout 150s→240s and made the pre-push a pass^1 tripwire (the authoritative pass^k stays in `eval:self-improving`). (c) **reflection-guard.test.mjs** stale path fixed (`proactive-notice-loop.ts` moved mcp→proactivity in ef93ce394) — script tests 87/87 green again.
 
