@@ -111,3 +111,25 @@ export const GROUNDING_EVAL_CORPUS: GroundingEvalCorpus = {
     { kind: "refuse", query: "이번 주 미용실 예약 시간이 언제야?", note: "예약 기록 없음" }
   ]
 };
+
+/**
+ * The fabrication-critical SUBSET for the pre-push tripwire (`precheck:grounding`).
+ * The faithfulness rate IS `caught / guardable` over the `drift` (unfaithful) cases
+ * and the must-abstain signal IS the `refuse` cases — so ALL drift + ALL refuse are
+ * kept and the faithfulness/abstain (fabrication) metrics are IDENTICAL to the full
+ * corpus. Only the `answerable` cases — which drive the false-refusal QUALITY rate,
+ * not fabrication, and carry the bulk of the slow live reverify calls — are sampled
+ * down to `answerableSample`. The full 24-answerable false-refusal rate stays in
+ * `eval:self-improving` / `muse doctor --grounding`; this trades a coarser quality
+ * denominator (never a weaker fabrication gate) for a ~55%-faster push.
+ */
+export function faithfulnessTripwireSubset(
+  corpus: GroundingEvalCorpus,
+  answerableSample = 6
+): GroundingEvalCorpus {
+  const byKind = (k: "answerable" | "refuse" | "drift") => corpus.cases.filter((c) => c.kind === k);
+  return {
+    notes: corpus.notes,
+    cases: [...byKind("answerable").slice(0, Math.max(1, answerableSample)), ...byKind("refuse"), ...byKind("drift")]
+  };
+}

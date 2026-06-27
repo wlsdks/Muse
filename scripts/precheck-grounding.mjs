@@ -80,6 +80,11 @@ console.log(
 function runOnce(file) {
   const run = spawnSync("node", [file], {
     cwd: rootDir,
+    // precheck IS the pre-push tripwire: the faithfulness battery runs the
+    // fabrication-critical SUBSET (all drift+refuse, sampled answerable) so the
+    // push stays fast without weakening the fabrication metric. Full corpus
+    // runs in eval:self-improving / muse doctor --grounding.
+    env: { ...process.env, MUSE_FAITHFULNESS_TRIPWIRE: "1" },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: PER_BATTERY_TIMEOUT_MS
