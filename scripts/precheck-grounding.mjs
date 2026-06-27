@@ -1,7 +1,7 @@
 /**
  * precheck:grounding — the pre-push tripwire for the fabrication=0 invariant.
  *
- *   pnpm precheck:grounding            # MUSE_EVAL_REPEAT=2 (pass^k)
+ *   pnpm precheck:grounding            # pass^1 tripwire (MUSE_EVAL_REPEAT raises it)
  *
  * Muse's identity is "it can't lie to you", and CLAUDE.md calls fabrication=0 a
  * release gate — yet the only git hook is the immutable-core commit-msg guard, so
@@ -30,8 +30,17 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const baseUrl = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
-const REPEAT = Math.max(1, Number(process.env.MUSE_EVAL_REPEAT ?? 2));
-const PER_BATTERY_TIMEOUT_MS = Math.max(10_000, Number(process.env.MUSE_PRECHECK_TIMEOUT_MS ?? 150_000));
+// Pre-push is a fast TRIPWIRE: pass^1 (single run) by default. The authoritative
+// pass^k gate for these same batteries is `pnpm eval:self-improving` (CI/manual) —
+// so the tripwire's job is to catch a GROSS regression before code leaves the
+// machine, not to re-pay the statistical pass^k on every push. Raise via
+// MUSE_EVAL_REPEAT for a stricter local push.
+const REPEAT = Math.max(1, Number(process.env.MUSE_EVAL_REPEAT ?? 1));
+// 240s/run so the heaviest battery (faithfulness-rate ≈ 177s — 36 live LLM
+// reverify calls on gemma4:12b) COMPLETES instead of always SKIP-on-timeout; the
+// old 150s cap was below its real cost, silently skipping a fabrication-critical
+// gate every push. Still SKIPs (not fails) on a genuine stall.
+const PER_BATTERY_TIMEOUT_MS = Math.max(10_000, Number(process.env.MUSE_PRECHECK_TIMEOUT_MS ?? 240_000));
 
 // The tightest fabrication-critical set: the scored faithfulness/false-refusal
 // rates, the recall citation gate, and the MaTTS re-verification gate. These are
