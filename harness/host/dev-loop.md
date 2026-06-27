@@ -84,8 +84,10 @@ updated: 2026-06-08
 ## 3. THE LOOP — 매일 한 번의 fire
 
 각 fire = 검증된 슬라이스 하나. 비용 낮은 단계부터, fail-closed.
-`improve-muse` 스킬은 0–2단계를 실행해 후보를 랭킹·추천하고 거기서 멈춘다(진안
-또는 standing 자율 지시가 pick); 3–7단계는 pick 이후의 실행 계약이다.
+`improve-muse` 스킬은 0–7단계를 **end-to-end로 자율 실행**한다(2026-06-27 재구성):
+스스로 #1 항목을 pick → BUILD → VERIFY → COMMIT + **PUSH**까지 한 번에. 무한 루프의
+단일 진입점이며 "할 게 없다"를 출력하지 않는다. 이 문서는 그 실행 계약(0–7)의 상세이고,
+스킬 `SKILL.md`가 권한 경계(standing push, 큰 슬라이스, ⏳ 사람-포크 skip)를 소유한다.
 
 0. **PRE-FLIGHT** — Ollama 가동 확인(`curl -s localhost:11434/api/tags`); `git fetch`로
    동시 auto-push 루프와 reconcile; 만진 의존 패키지 rebuild(stale dist가 버그로 위장하는 세금 제거).
@@ -109,7 +111,9 @@ updated: 2026-06-08
    (b) 진안의 반복 교정을 `.claude/rules/*.md` 한 줄로(after-correction); (c) 고른+버린 방향+출처를
    [`backlog.md`](../../docs/goals/backlog.md)에, 영속 사실을 MEMORY.md에; (d) before→after를 self-eval 스코어보드에.
    set이 늘면 stale 한 줄 prune.
-7. **COMMIT** — Conventional Commit 하나(커밋만; push는 진안 명시 승인 시에만) + 짧은 한국어 보고
+7. **COMMIT + PUSH** — Conventional Commit 하나 + `git push`(현재 브랜치). `improve-muse`
+   스킬은 standing push 권한을 가진다(2026-06-27 진안) — 단 **VERIFY green일 때만** push,
+   red면 push 금지. 비-FF면 `git pull --rebase` 후 재시도(force 금지). + 짧은 한국어 보고
    (무엇/왜+URL/before→after/잔여 리스크). 다음 fire의 ORIENT는 더 두꺼운 rule·golden suite·backlog를
    읽으니 *엄밀히 더 싸다*.
 
