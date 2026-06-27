@@ -30,6 +30,14 @@ export interface MultiAgentRouteOptions {
   readonly modelProvider?: ModelProvider;
   readonly embed?: (text: string) => Promise<readonly number[]>;
   readonly runRegistry?: SubAgentRunRegistry;
+  /**
+   * Per-worker wall-clock deadline (ms) for an orchestration run. Threaded into
+   * the orchestrator so a hung sub-agent is terminated and recorded `timed-out`
+   * through the LIVE server, not just in constructor tests. Opt-in: omitted ⇒ no
+   * deadline (legacy behavior). It is a HARD cap (not a no-progress timeout), so
+   * it needs no heartbeat to be correct.
+   */
+  readonly workerTimeoutMs?: number;
 }
 
 interface ApiError {
@@ -313,7 +321,15 @@ async function prepareOrchestration(
   } else {
     workers = selected.map((spec) => createSpecWorker(spec, options.agentRuntime!));
   }
-  const orchestrator = new MultiAgentOrchestrator({ historyStore, messageBus, runRegistry, workers });
+  const orchestrator = new MultiAgentOrchestrator({
+    historyStore,
+    messageBus,
+    runRegistry,
+    workers,
+    ...(options.workerTimeoutMs !== undefined && options.workerTimeoutMs > 0
+      ? { workerTimeoutMs: options.workerTimeoutMs }
+      : {})
+  });
 
   const summarizer = parsed.summarize === true
     ? createWorkerSummarizer(options.modelProvider, input.model)
@@ -490,6 +506,21 @@ function readOrchestrationSignals(raw: unknown): OrchestrationSignals {
 
 function sseData(value: string): string {
   return value.split(/\r?\n/u).map((line) => (line.length > 0 ? line : " ")).join("\ndata: ");
+}
+
+/**
+ * The per-worker deadline (ms) from `MUSE_MULTI_AGENT_WORKER_TIMEOUT_MS`, or
+ * undefined when unset/invalid (⇒ no deadline). Strict positive-integer parse so
+ * a typo (`30x`, `0`, negative) disables it rather than silently capping at a
+ * wrong value — the same fail-safe stance as the orchestrations `?limit` parse.
+ */
+export function resolveWorkerTimeoutMs(env: NodeJS.ProcessEnv): number | undefined {
+  const raw = env.MUSE_MULTI_AGENT_WORKER_TIMEOUT_MS?.trim();
+  if (!raw || !/^\d+$/u.test(raw)) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export function resolveOrchestrateTierModels(defaultModel: string, env: NodeJS.ProcessEnv): TierModels {

@@ -106,6 +106,26 @@ describe("MultiAgentOrchestrator wires SubAgentRunRegistry end-to-end", () => {
     expect(registry.activeCount()).toBe(0);
   });
 
+  it("refreshes the PARENT run's heartbeat as each worker settles (A3/A5: a progressing run is not a stalled one)", async () => {
+    // A clock that advances one second per read — every register/heartbeat sees a
+    // strictly later time, so a heartbeat after a worker settles MUST push the
+    // parent's lastHeartbeatAt past its startedAt.
+    let tick = 0;
+    const now = (): Date => new Date(1_700_000_000_000 + tick++ * 1000);
+    const registry = new SubAgentRunRegistry({ now });
+    const orchestrator = new MultiAgentOrchestrator({
+      clock: () => new Date(1_700_000_000_000),
+      idFactory: () => "run-hb",
+      runRegistry: registry,
+      workers: [okWorker("alpha"), okWorker("beta")]
+    });
+
+    await orchestrator.run(taskInput, { mode: "sequential" });
+
+    const parent = registry.get("run-hb")!;
+    expect(parent.lastHeartbeatAt.getTime()).toBeGreaterThan(parent.startedAt.getTime());
+  });
+
   it("no registry provided ⇒ a normal run is unaffected (backward-compatible)", async () => {
     const orchestrator = new MultiAgentOrchestrator({
       workers: [okWorker("a"), okWorker("b")]

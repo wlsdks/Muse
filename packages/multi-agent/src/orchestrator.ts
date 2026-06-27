@@ -338,6 +338,13 @@ export class MultiAgentOrchestrator {
         this.runRegistry.fail(childRunId, message);
       }
       throw error;
+    } finally {
+      // A settled worker is real progress on the parent orchestration. Refresh
+      // the PARENT run's heartbeat so its `lastHeartbeatAt` tracks liveness, not
+      // just its start time — this is what keeps a per-run stall detector honest
+      // (it measures idle-since-last-progress, so a long run that keeps finishing
+      // workers is never mistaken for a hung one). No-op once the parent settles.
+      this.runRegistry.heartbeat(parentRunId);
     }
   }
 

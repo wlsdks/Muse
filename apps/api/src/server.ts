@@ -26,7 +26,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { registerStaticWeb } from "./static-web.js";
 import { registerAdminRoutes } from "./admin-routes.js";
 import { registerMcpRoutes } from "./mcp-routes.js";
-import { registerMultiAgentRoutes } from "./multi-agent-routes.js";
+import { registerMultiAgentRoutes, resolveWorkerTimeoutMs } from "./multi-agent-routes.js";
 import { registerCompatibilityRoutes } from "./compat-routes.js";
 import { registerNotesRoutes } from "./notes-routes.js";
 import { registerMessagingRoutes } from "./messaging-routes.js";
@@ -200,7 +200,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     agentSpecRegistry,
     defaultModel: options.defaultModel,
     modelProvider: options.modelProvider,
-    embed: createGateEmbedder(process.env)
+    embed: createGateEmbedder(process.env),
+    ...(resolveWorkerTimeoutMs(process.env) !== undefined
+      ? { workerTimeoutMs: resolveWorkerTimeoutMs(process.env) }
+      : {})
   });
   registerCompatibilityRoutes(server, {
     admin: options.admin,
