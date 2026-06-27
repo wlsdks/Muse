@@ -446,4 +446,12 @@ export {
   type TokenCostTopExpensiveEntry
 } from "./observability-token-cost.js";
 
+export {
+  aggregateTokenUsage,
+  JsonlTokenUsageSink,
+  readLocalTokenUsage,
+  type TokenUsageGroup,
+  type TokenUsageSummary
+} from "./observability-token-usage-local.js";
+
 

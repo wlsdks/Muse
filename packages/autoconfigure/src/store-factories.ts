@@ -38,6 +38,7 @@ import {
   InMemoryTokenCostQuery,
   InMemoryTokenUsageSink,
   InMemoryTraceEventSink,
+  JsonlTokenUsageSink,
   KyselyLatencyQuery,
   KyselyTokenCostQuery,
   KyselyTokenUsageSink,
@@ -90,7 +91,7 @@ export function createTracer(db: Kysely<MuseDatabase> | undefined): MuseTracer {
   return db ? new PersistedMuseTracer(new KyselyTraceEventSink(db)) : new InMemoryMuseTracer();
 }
 
-export function createTracingPipeline(db: Kysely<MuseDatabase> | undefined): {
+export function createTracingPipeline(db: Kysely<MuseDatabase> | undefined, localUsageFile?: string): {
   readonly tracer: MuseTracer;
   readonly latencyQuery: LatencyQuery;
   readonly tokenUsageSink: TokenUsageSink;
@@ -108,7 +109,10 @@ export function createTracingPipeline(db: Kysely<MuseDatabase> | undefined): {
   }
 
   const traceSink: QueryableTraceEventSink = new InMemoryTraceEventSink();
-  const tokenSink = new InMemoryTokenUsageSink();
+  // Local-first (no DB): persist usage to a JSONL file so `muse cost` survives
+  // the process; the JSONL sink also mirrors in-memory so the in-process query
+  // still works. Falls back to InMemory when no path is given (e.g. tests).
+  const tokenSink = localUsageFile ? new JsonlTokenUsageSink(localUsageFile) : new InMemoryTokenUsageSink();
   return {
     latencyQuery: new InMemoryLatencyQuery(traceSink),
     tokenCostQuery: new InMemoryTokenCostQuery(tokenSink),

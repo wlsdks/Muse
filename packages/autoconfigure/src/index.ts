@@ -133,7 +133,8 @@ import {
   resolveProactiveHistoryFile,
   resolveReminderHistoryFile,
   resolveRemindersFile,
-  resolveTasksFile
+  resolveTasksFile,
+  resolveTokenUsageFile
 } from "./personal-providers.js";
 
 export {
@@ -175,6 +176,7 @@ export {
   resolveSlackAfterFile,
   resolveSlackInboxFile,
   resolveTasksFile,
+  resolveTokenUsageFile,
   resolveTelegramInboxFile,
   resolveTelegramOffsetFile,
   resolveVetoesFile,
@@ -420,7 +422,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     maxEvents: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_MAX_EVENTS, 50_000),
     retentionMs: parseInteger(env.MUSE_FOLLOWUP_SUGGESTION_RETENTION_MS, 72 * 60 * 60 * 1000)
   });
-  const tracingPipeline = createTracingPipeline(db);
+  const tracingPipeline = createTracingPipeline(db, resolveTokenUsageFile(env));
   const { tracer, latencyQuery, tokenCostQuery, traceSink } = tracingPipeline;
   const tokenUsageSink: TokenUsageSink = createBudgetTrackingTokenUsageSink(
     budgetTracker,

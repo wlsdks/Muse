@@ -38,6 +38,12 @@ export function resolveNotesDir(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_NOTES_DIR", "notes");
 }
 
+/** Local-first token-usage ledger (JSONL) — where the no-DB product persists
+ *  per-call usage so `muse cost` works without the API server. */
+export function resolveTokenUsageFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_TOKEN_USAGE_FILE", "token-usage.jsonl");
+}
+
 export function resolveNotesIndexFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_NOTES_INDEX_FILE", "notes-index.json");
 }
