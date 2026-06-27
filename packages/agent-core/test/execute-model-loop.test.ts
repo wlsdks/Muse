@@ -22,10 +22,12 @@ const runner = (opts: {
   turns: ModelResponse[];
   maxToolCalls?: number;
   ran?: string[];
+  checkpointStore?: unknown;
 }): ModelLoopRunner => {
   let turn = 0;
   return {
     maxToolCalls: opts.maxToolCalls ?? 5,
+    ...(opts.checkpointStore ? { checkpointStore: opts.checkpointStore } : {}),
     generateWithTracing: async () => opts.turns[Math.min(turn++, opts.turns.length - 1)]!,
     executeToolCall: async (_ctx, toolCall): Promise<ExecutedToolResult> => {
       opts.ran?.push(toolCall.name);
@@ -57,6 +59,33 @@ describe("executeModelLoop", () => {
     // The assistant tool-call turn and the tool result both land in the transcript.
     expect(result.intermediateMessages.map((m) => m.role)).toEqual(["assistant", "tool"]);
     expect(result.toolResults[0]?.result.output).toBe("ran echo");
+  });
+
+  it("checkpoints AFTER a tool step (mid-run resume) — the saved state replays the tool result so it isn't re-run", async () => {
+    const saved: { readonly step: number; readonly state: { encodedMessages: string[] } }[] = [];
+    const checkpointStore = {
+      save: async (c: { step: number; state: { encodedMessages: string[] } }) => { saved.push(c); return c; },
+      findByRunId: async () => [], findLatestByRunId: async () => undefined, deleteByRunId: async () => undefined
+    };
+    await executeModelLoop(
+      runner({ checkpointStore, turns: [resp("calling", [call("t1", "echo")]), resp("final answer")] }),
+      context(), provider, request(),
+    );
+    const act = saved.find((c) => c.step > 0); // a per-step "act" checkpoint (step 0 = start is separate)
+    expect(act).toBeDefined();
+    // The replayed messages include the tool-role result → a resumed run sees it and
+    // does NOT re-execute the (already-completed, possibly side-effecting) tool.
+    expect(act!.state.encodedMessages.join("|")).toContain("|tool|");
+  });
+
+  it("does NOT checkpoint when the model requests no tools (nothing mid-loop to resume)", async () => {
+    const saved: unknown[] = [];
+    const checkpointStore = {
+      save: async (c: unknown) => { saved.push(c); return c; },
+      findByRunId: async () => [], findLatestByRunId: async () => undefined, deleteByRunId: async () => undefined
+    };
+    await executeModelLoop(runner({ checkpointStore, turns: [resp("done")] }), context(), provider, request());
+    expect(saved).toHaveLength(0);
   });
 
   it("nudges the model when it REPEATS an identical tool call (MAST step-repetition guard), not on the first", async () => {

@@ -36,8 +36,10 @@ import {
 } from "@muse/memory";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import { renderToolResults } from "@muse/prompts";
+import type { CheckpointStore } from "@muse/runtime-state";
 
 import { neutralizeInjectionSpans } from "./injection.js";
+import { recordCheckpoint } from "./lifecycle.js";
 import { applyCitationSanitisation, recordTokenUsageEvent } from "./model-invocation.js";
 import type { PlanCacheProvider } from "./plan-cache.js";
 import { appendSystemSection, recordUsageSpanAttributes } from "./runtime-helpers.js";
@@ -76,6 +78,14 @@ export interface ModelLoopRunner {
   readonly tracer: MuseTracer;
   readonly metrics: AgentMetrics;
   readonly tokenUsageSink?: TokenUsageSink;
+  /**
+   * When set, a checkpoint of the messages-so-far (incl. completed tool results)
+   * is saved AFTER EACH tool step so a crashed/interrupted run can resume mid-loop
+   * — already-done tools aren't re-run because their results are in the replayed
+   * messages (resumeRunInputFromCheckpoint). Best-effort: recordCheckpoint swallows
+   * its own errors, so a checkpoint write never breaks the loop.
+   */
+  readonly checkpointStore?: CheckpointStore;
   /**
    * Per-tool-result character cap. When set and an individual tool
    * output exceeds the cap, the message-bound copy is truncated
@@ -393,6 +403,11 @@ export async function executeModelLoop(
     }
     messages = step.value.messages;
     toolCallCount = step.value.toolCallCount;
+    // Per-step checkpoint: the messages now include this batch's tool results, so a
+    // crash before the next model call can resume from here without re-running tools.
+    if (toolCallCount > 0) {
+      await recordCheckpoint({ checkpointStore: runner.checkpointStore, context, messages, phase: "act", step: toolCallCount });
+    }
   }
 }
 
@@ -493,6 +508,11 @@ export async function* executeStreamingModelLoop(
     );
     messages = batchResult.messages;
     toolCallCount = batchResult.toolCallCount;
+    // Per-step checkpoint (streaming parity): resume mid-loop after a crash without
+    // re-running already-completed tools (their results are in the replayed messages).
+    if (toolCallCount > 0) {
+      await recordCheckpoint({ checkpointStore: runner.checkpointStore, context, messages, phase: "act", step: toolCallCount });
+    }
   }
 }
 

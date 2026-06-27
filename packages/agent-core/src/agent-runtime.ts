@@ -829,6 +829,7 @@ export class AgentRuntime {
       ...(this.contextReferenceStore ? { contextReferenceStore: this.contextReferenceStore } : {}),
       metrics: this.metrics,
       tokenUsageSink: this.tokenUsageSink,
+      ...(this.checkpointStore ? { checkpointStore: this.checkpointStore } : {}),
       tracer: this.tracer
     };
   }
