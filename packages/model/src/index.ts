@@ -84,6 +84,15 @@ export interface ModelUsage {
   readonly cachedInputTokens?: number;
 }
 
+/**
+ * Metadata flag key the runtime's model-loop sets on its provider requests so a
+ * usage-recording provider decorator (autoconfigure) skips them — the loop already
+ * records its own calls via `recordTokenUsageEvent`, so this prevents double-counting
+ * a tool-using turn. Shared here (the lowest common package) to keep the two sides
+ * from drifting.
+ */
+export const USAGE_RECORDED_BY_RUNTIME_FLAG = "usageRecordedByRuntime";
+
 export interface ModelRequest {
   readonly model: string;
   readonly messages: readonly ModelMessage[];

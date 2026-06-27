@@ -5,7 +5,33 @@
 
 import type { Command } from "commander";
 
+import { aggregateTokenUsage, readLocalTokenUsage, resolveTokenUsageFile, type TokenUsageSummary } from "@muse/autoconfigure";
+
 import type { ProgramIO } from "./program.js";
+
+/** Render a local token-usage summary as a compact text report. Pure + exported
+ *  for direct testing (the aggregation already has unit coverage upstream). */
+export function formatTokenUsageSummary(summary: TokenUsageSummary): string {
+  if (summary.calls === 0) {
+    return "No local token usage recorded yet.\nRun `muse ask` / `muse chat` and usage lands in ~/.muse/token-usage.jsonl (local-first, no server).";
+  }
+  const n = (v: number) => v.toLocaleString("en-US");
+  const lines: string[] = [
+    `Token usage — ${n(summary.calls)} model call(s), ${n(summary.totalTokens)} tokens` +
+      ` (${n(summary.promptTokens)} prompt + ${n(summary.completionTokens)} completion` +
+      `${summary.reasoningTokens > 0 ? ` + ${n(summary.reasoningTokens)} reasoning` : ""})` +
+      `${summary.estimatedCostUsd > 0 ? ` ≈ $${summary.estimatedCostUsd.toFixed(4)}` : " · $0 (local)"}`
+  ];
+  if (summary.byModel.length > 0) {
+    lines.push("", "By model:");
+    for (const m of summary.byModel.slice(0, 10)) lines.push(`  ${m.key} — ${n(m.totalTokens)} tokens, ${n(m.calls)} call(s)`);
+  }
+  if (summary.byDay.length > 0) {
+    lines.push("", "By day:");
+    for (const d of summary.byDay.slice(0, 14)) lines.push(`  ${d.key} — ${n(d.totalTokens)} tokens, ${n(d.calls)} call(s)`);
+  }
+  return lines.join("\n");
+}
 
 export interface CostCommandHelpers {
   readonly apiRequest: (
@@ -44,6 +70,19 @@ export function registerCostCommands(program: Command, io: ProgramIO, helpers: C
       const qs = params.toString();
       const path = qs.length > 0 ? `/api/admin/token-cost/top-expensive?${qs}` : "/api/admin/token-cost/top-expensive";
       helpers.writeOutput(io, await helpers.apiRequest(io, command, path));
+    });
+
+  cost
+    .command("local")
+    .description("Local-first token usage from ~/.muse/token-usage.jsonl — totals + per-model/day, NO server needed")
+    .option("--json", "Emit the raw aggregate as JSON")
+    .action(async (options: { readonly json?: boolean }) => {
+      const summary = aggregateTokenUsage(await readLocalTokenUsage(resolveTokenUsageFile(process.env)));
+      if (options.json) {
+        helpers.writeOutput(io, summary);
+        return;
+      }
+      io.stdout(`${formatTokenUsageSummary(summary)}\n`);
     });
 
   cost

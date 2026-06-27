@@ -1,8 +1,28 @@
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { registerCostCommands, type CostCommandHelpers } from "./commands-cost.js";
+import { formatTokenUsageSummary, registerCostCommands, type CostCommandHelpers } from "./commands-cost.js";
 import type { ProgramIO } from "./program.js";
+
+describe("formatTokenUsageSummary — local-first cost report", () => {
+  const empty = { byDay: [], byModel: [], byRun: [], calls: 0, completionTokens: 0, estimatedCostUsd: 0, promptTokens: 0, reasoningTokens: 0, totalTokens: 0 };
+  it("guides the user when nothing is recorded yet", () => {
+    expect(formatTokenUsageSummary(empty)).toContain("No local token usage recorded yet");
+    expect(formatTokenUsageSummary(empty)).toContain("token-usage.jsonl");
+  });
+  it("summarizes totals + per-model/day for recorded usage ($0 for local)", () => {
+    const out = formatTokenUsageSummary({
+      ...empty, calls: 2, totalTokens: 5624, promptTokens: 5603, completionTokens: 21,
+      byModel: [{ key: "gemma4:12b", calls: 2, totalTokens: 5624, promptTokens: 5603, completionTokens: 21, estimatedCostUsd: 0 }],
+      byDay: [{ key: "2026-06-28", calls: 2, totalTokens: 5624, promptTokens: 5603, completionTokens: 21, estimatedCostUsd: 0 }]
+    });
+    expect(out).toContain("2 model call(s)");
+    expect(out).toContain("5,624 tokens");
+    expect(out).toContain("$0 (local)");
+    expect(out).toContain("gemma4:12b — 5,624 tokens");
+    expect(out).toContain("2026-06-28");
+  });
+});
 
 // CLI command-parser + action-wiring smoke (backlog P5). `muse cost` builds the
 // /api/admin/token-cost/* request path from options/args — the bug-prone part is

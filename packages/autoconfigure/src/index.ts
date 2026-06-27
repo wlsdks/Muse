@@ -202,6 +202,7 @@ import {
   createTracingPipeline,
   createUserMemoryStore
 } from "./store-factories.js";
+import { createUsageRecordingProvider } from "./usage-recording-provider.js";
 import { buildRuntimeToolRegistry } from "./runtime-tool-registry.js";
 import {
   createBudgetedLlmDetector,
@@ -432,7 +433,11 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
     failureThreshold: parseInteger(env.MUSE_CIRCUIT_BREAKER_FAILURE_THRESHOLD, 5),
     resetTimeoutMs: parseInteger(env.MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS, 30_000)
   });
-  const modelProvider = createModelProvider(env);
+  // Wrap every model call so the LOCAL answer path (which calls provider directly,
+  // bypassing the runtime's recordTokenUsageEvent) still records token usage. The
+  // runtime flags its own requests so this decorator skips them (no double-count).
+  const baseModelProvider = createModelProvider(env);
+  const modelProvider = baseModelProvider ? createUsageRecordingProvider(baseModelProvider, tokenUsageSink) : baseModelProvider;
   const conversationSummaryStore = createConversationSummaryStore(db, env);
   const taskMemoryStore = createTaskMemoryStore(db, env);
   const userMemoryStore = createUserMemoryStore(db, env);
@@ -800,6 +805,8 @@ export { readFeedKnowledgeEntries } from "./feeds-knowledge-source.js";
 export { resolveDefaultUserId } from "./user-id.js";
 
 export { resolveFeedsFile } from "./personal-providers.js";
+export { aggregateTokenUsage, readLocalTokenUsage, type TokenUsageGroup, type TokenUsageSummary } from "@muse/observability";
+export { createUsageRecordingProvider } from "./usage-recording-provider.js";
 
 export { describeOfficialMcpPosture, type OfficialMcpPresetPosture } from "./official-mcp-posture.js";
 

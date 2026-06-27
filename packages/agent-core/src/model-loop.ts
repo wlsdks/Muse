@@ -15,6 +15,7 @@
  * while the loop control flow lives in its own module.
  */
 
+import { USAGE_RECORDED_BY_RUNTIME_FLAG } from "@muse/model";
 import type {
   ModelEvent,
   ModelMessage,
@@ -511,8 +512,12 @@ async function* streamModelTurn(
   let streamedOutput = "";
   let response: ModelResponse | undefined;
 
+  // The loop records its own usage via recordTokenUsageEvent below; flag the
+  // request so a usage-recording provider decorator skips it (no double-count).
+  const flaggedRequest: ModelRequest = { ...request, metadata: { ...request.metadata, [USAGE_RECORDED_BY_RUNTIME_FLAG]: true } };
+
   try {
-    for await (const event of provider.stream(request)) {
+    for await (const event of provider.stream(flaggedRequest)) {
       if (event.type === "text-delta") {
         streamedOutput += event.text;
         if (options.forwardTextDeltas) {

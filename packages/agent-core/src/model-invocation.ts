@@ -19,7 +19,7 @@
 import { estimateCostUsd } from "@muse/cache";
 import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
 import { retry, scaleRequestTimeout, withTimeout } from "@muse/resilience";
-import { decideWebSearchPolicy, parseModelName, type ModelProvider, type ModelRequest, type ModelResponse, type WebSearchSettings } from "@muse/model";
+import { decideWebSearchPolicy, parseModelName, USAGE_RECORDED_BY_RUNTIME_FLAG, type ModelProvider, type ModelRequest, type ModelResponse, type WebSearchSettings } from "@muse/model";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import type { JsonObject } from "@muse/shared";
 import { isRetryableProviderError, recordUsageSpanAttributes } from "./runtime-helpers.js";
@@ -87,7 +87,15 @@ export interface InvokeModelArgs {
  * → retry → fallback → circuit-breaker → tracing in that order so the outer
  * layers see the inner failures.
  */
-export async function invokeModel(args: InvokeModelArgs): Promise<ModelResponse> {
+export async function invokeModel(rawArgs: InvokeModelArgs): Promise<ModelResponse> {
+  // This function records the call's usage via recordTokenUsageEvent below, so
+  // flag the request: a usage-recording provider decorator skips a flagged
+  // request, preventing a double-count on the non-streaming + plan-execute paths
+  // (the streaming streamModelTurn flags its own request the same way).
+  const args: InvokeModelArgs = {
+    ...rawArgs,
+    request: { ...rawArgs.request, metadata: { ...rawArgs.request.metadata, [USAGE_RECORDED_BY_RUNTIME_FLAG]: true } }
+  };
   const span = args.tracer.startSpan("muse.model.generate", {
     "model.id": args.request.model,
     "provider.id": args.provider.id,

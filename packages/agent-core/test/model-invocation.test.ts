@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DefaultCircuitBreaker, type FallbackStrategy, type RetryOptions } from "@muse/resilience";
-import { ModelProviderError, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
+import { ModelProviderError, USAGE_RECORDED_BY_RUNTIME_FLAG, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer, InMemoryTokenUsageSink } from "@muse/observability";
 import { applyCitationSanitisation, buildModelRequestWithWebSearch, invokeModel, recordTokenUsageEvent } from "../src/model-invocation.js";
 
@@ -50,6 +50,20 @@ describe("invokeModel", () => {
       totalTokens: 10
     });
     expect(events[0]).not.toHaveProperty("tenantId");
+  });
+
+  it("flags its request with USAGE_RECORDED_BY_RUNTIME so a usage-recording provider decorator does NOT double-count", async () => {
+    let seen: ModelRequest | undefined;
+    await invokeModel({
+      metrics: new InMemoryAgentMetrics(),
+      provider: provider(async (req) => { seen = req; return { id: "r", model: "test/model", output: "ok", usage: { inputTokens: 1, outputTokens: 1 } }; }),
+      request: baseRequest(),
+      runId: "run-flag",
+      tokenUsageSink: new InMemoryTokenUsageSink(),
+      tracer: new InMemoryMuseTracer()
+    });
+    // The runtime records this call itself; the flag tells the decorator to skip it.
+    expect(seen?.metadata?.[USAGE_RECORDED_BY_RUNTIME_FLAG]).toBe(true);
   });
 
   it("falls back when the primary provider throws and a fallback strategy is configured", async () => {
