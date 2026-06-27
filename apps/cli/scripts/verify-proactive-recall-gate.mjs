@@ -7,9 +7,13 @@
  * otherwise. This is the property that earns proactivity: it must prove it can
  * keep quiet.
  *
- * Drives the real `createConfidenceGatedInvestigator` (the proactive loop's
- * `investigate` seam) against a tiny personal corpus with REAL local embeddings
- * — NOT the smoke:live API server (which stalls on this PC):
+ * Drives the ACTUAL PRODUCTION seam — `createIndexedProactiveInvestigator`
+ * (apps/cli, the index-backed investigator the daemon + `muse proactive` use,
+ * incl. its embedder-aware confidence bar, graph/untrusted tagging, anti-nag
+ * suppressor) — against a tiny personal corpus written to a temp notes index,
+ * with REAL local embeddings (NOT the smoke:live API server, which stalls on
+ * this PC, and NOT the generic agent-core `createConfidenceGatedInvestigator`
+ * test-helper this battery used to exercise):
  *   - trigger topic IN corpus     → a cited finding ("📎 Related … [source]").
  *   - trigger topic OFF-topic     → undefined (SILENCE), never a stray guess.
  *
@@ -18,8 +22,12 @@
  * Exit 0 if every case passes; skip (exit 0) if Ollama / the embed model is
  * unreachable. LOCAL OLLAMA ONLY.
  */
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { createOllamaEmbedder } from "@muse/autoconfigure";
-import { createConfidenceGatedInvestigator } from "@muse/agent-core";
+import { createIndexedProactiveInvestigator } from "../dist/proactive-notes-recall.js";
 
 const embedModel = process.argv[2] ?? "nomic-embed-text";
 const baseUrl = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "");
@@ -53,7 +61,17 @@ const corpus = [
   { source: "trip-jeju.md", text: "Jeju trip packing: rain jacket, the hiking boots, and the camera battery charger. Hotel check-in is 3pm." }
 ];
 
-const investigate = createConfidenceGatedInvestigator({ chunks: corpus, embed, topK: 3 });
+// Write the corpus to a temp notes index (pre-embedded), exactly the on-disk
+// shape the production investigator reads — so we exercise the real index path.
+const dir = await mkdtemp(path.join(os.tmpdir(), "muse-proactive-gate-"));
+const indexFile = path.join(dir, "notes-index.json");
+await writeFile(indexFile, JSON.stringify({
+  files: [{ chunks: await Promise.all(corpus.map(async (c) => ({ embedding: await embed(c.text), file: c.source, text: c.text }))) }],
+  model: embedModel,
+  version: 1
+}), "utf8");
+
+const investigate = createIndexedProactiveInvestigator({ embedModel, embedText: (text) => embed(text), indexFile, topK: 3 });
 
 const cases = [
   { name: "trigger IN corpus → cited finding surfaces", kind: "surface", item: { title: "Q3 budget review", kind: "calendar", factSheet: "" }, needles: ["📎 Related", "meeting-q3.md"], notSources: ["dentist.md", "trip-jeju.md"] },
@@ -82,5 +100,6 @@ for (const c of cases) {
   if (!ok) failures += 1;
 }
 
+await rm(dir, { force: true, recursive: true }).catch(() => undefined);
 console.log(failures === 0 ? `\nALL PASS (${cases.length}) on ${embedModel}` : `\n${failures}/${cases.length} FAILED on ${embedModel}`);
 process.exit(failures === 0 ? 0 : 1);
