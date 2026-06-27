@@ -231,6 +231,7 @@ export {
   type RetrievalConfidence,
   DEFAULT_CONFIDENT_AT,
   resolveRecallConfidentAt,
+  isCalibratedEmbedder,
   type VerifyGroundingOptions,
   assessContextSufficiency,
   type SufficiencyVerdict

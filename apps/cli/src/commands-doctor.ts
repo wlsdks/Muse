@@ -19,8 +19,8 @@ import { backgroundProcessCheck, episodeIndexHealth, localOnlyCheck, messagingCo
 import { backgroundStoreFile } from "./commands-background.js";
 import { findOllamaModelTag, isOllamaTagsEntry, type OllamaTagsEntry } from "./commands-doctor-ollama.js";
 import { readNotesIndexEmbedModel } from "./commands-doctor-checks.js";
-import { embedModelCheck, formatBytes } from "./commands-doctor-checks.js";
-export { embedModelCheck } from "./commands-doctor-checks.js";
+import { embedModelCheck, formatBytes, recallCalibrationCheck } from "./commands-doctor-checks.js";
+export { embedModelCheck, recallCalibrationCheck } from "./commands-doctor-checks.js";
 export { parseNotesIndexEmbedModel } from "./commands-doctor-checks.js";
 export { findOllamaModelTag } from "./commands-doctor-ollama.js";
 export type { OllamaTagsEntry } from "./commands-doctor-ollama.js";
@@ -435,6 +435,7 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     const match = findOllamaModelTag(ollamaModels, embedModel);
     const verdict = embedModelCheck(embedModel, indexedModel !== undefined, match?.size);
     checks.push({ name: "ollama embed model", ...verdict });
+    checks.push({ name: "recall calibration", ...recallCalibrationCheck(embedModel, env) });
   }
 
   // Notes index health — independent of Ollama: is the second brain actually

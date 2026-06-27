@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CONFIDENT_AT,
   classifyRetrievalConfidence,
+  isCalibratedEmbedder,
   resolveRecallConfidentAt,
   verifyGrounding,
   type KnowledgeMatch
@@ -110,5 +111,12 @@ describe("resolveRecallConfidentAt — embedder-aware calibrated bar (conformal,
       { source: "other", text: "unrelated", score: 0.2, cosine: 0.2 }
     ];
     expect(classifyRetrievalConfidence(absent, { confidentAt: resolveRecallConfidentAt({}, "nomic-embed-text-v2-moe") })).toBe("ambiguous");
+  });
+
+  it("isCalibratedEmbedder: true for a known embedder (with prefix/tag), false for an unknown (fallback)", () => {
+    expect(isCalibratedEmbedder("nomic-embed-text-v2-moe")).toBe(true);
+    expect(isCalibratedEmbedder("nomic-embed-text")).toBe(true);
+    expect(isCalibratedEmbedder("ollama/nomic-embed-text-v2-moe:latest")).toBe(true);
+    expect(isCalibratedEmbedder("some-future-embedder")).toBe(false);
   });
 });

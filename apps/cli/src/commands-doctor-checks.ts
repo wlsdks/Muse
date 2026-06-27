@@ -1,3 +1,4 @@
+import { isCalibratedEmbedder, resolveRecallConfidentAt } from "@muse/agent-core";
 import { evaluateLocalOnlyPosture, evaluateWebEgressStatus, LOCAL_FIRST_DEFAULT_MODEL, parseBoolean, resolveDefaultModel } from "@muse/autoconfigure";
 import type { DevFixableWeakness } from "@muse/stores";
 import { promises as fs } from "node:fs";
@@ -321,6 +322,32 @@ export function embedModelCheck(
     detail: hasIndex
       ? `${embedModel} NOT pulled — \`ollama pull ${embedModel}\` (notes RAG will degrade on next search)`
       : `${embedModel} NOT pulled — \`ollama pull ${embedModel}\` (notes RAG / \`muse ask\` unavailable until then)`,
+    status: "warn"
+  };
+}
+
+/**
+ * Surface the recall confidence floor's calibration posture — the bar a recall
+ * hit must clear to be cited as authoritative (the "I'm not sure" wedge). The bar
+ * is EMBEDDER-SPECIFIC; the shipped default v2-moe is calibrated to 0.45, but an
+ * unrecognised embedder falls back to the conservative 0.55 and may over-abstain.
+ * Makes the grounding floor's calibration legible ("shows its work") rather than
+ * an invisible constant. Pure.
+ */
+export function recallCalibrationCheck(
+  embedModel: string,
+  env: NodeJS.ProcessEnv = process.env
+): { readonly detail: string; readonly status: "ok" | "warn" } {
+  const bar = resolveRecallConfidentAt(env, embedModel).toFixed(2);
+  const override = Number(env.MUSE_GROUNDING_MIN_COSINE);
+  if (Number.isFinite(override) && override > 0 && override <= 1) {
+    return { detail: `recall confidence bar ${bar} — set via MUSE_GROUNDING_MIN_COSINE (conformal override from \`muse doctor --calibration\`)`, status: "ok" };
+  }
+  if (isCalibratedEmbedder(embedModel)) {
+    return { detail: `recall confidence bar ${bar} — calibrated for ${embedModel}`, status: "ok" };
+  }
+  return {
+    detail: `recall confidence bar ${bar} — conservative fallback (embedder '${embedModel}' has no calibrated bar, so recall may over-abstain). Tune it with \`muse doctor --calibration\`.`,
     status: "warn"
   };
 }

@@ -1,6 +1,35 @@
 import { describe, expect, it } from "vitest";
 
-import { episodeIndexHealth, messagingConfigCheck, notesIndexHealth } from "./commands-doctor-checks.js";
+import { episodeIndexHealth, messagingConfigCheck, notesIndexHealth, recallCalibrationCheck } from "./commands-doctor-checks.js";
+
+describe("recallCalibrationCheck — surfaces the recall confidence floor's calibration posture", () => {
+  it("ok + the calibrated bar for the v2-moe default embedder", () => {
+    const r = recallCalibrationCheck("nomic-embed-text-v2-moe", {});
+    expect(r.status).toBe("ok");
+    expect(r.detail).toContain("0.45");
+    expect(r.detail).toContain("calibrated for nomic-embed-text-v2-moe");
+  });
+
+  it("ok + the 0.55 bar for the legacy nomic-embed-text", () => {
+    const r = recallCalibrationCheck("nomic-embed-text", {});
+    expect(r.status).toBe("ok");
+    expect(r.detail).toContain("0.55");
+  });
+
+  it("WARNS for an unknown embedder on the conservative fallback (may over-abstain)", () => {
+    const r = recallCalibrationCheck("some-future-embedder", {});
+    expect(r.status).toBe("warn");
+    expect(r.detail).toContain("conservative fallback");
+    expect(r.detail).toContain("0.55");
+  });
+
+  it("reports an explicit MUSE_GROUNDING_MIN_COSINE override (beats the embedder bar)", () => {
+    const r = recallCalibrationCheck("nomic-embed-text-v2-moe", { MUSE_GROUNDING_MIN_COSINE: "0.62" });
+    expect(r.status).toBe("ok");
+    expect(r.detail).toContain("0.62");
+    expect(r.detail).toContain("MUSE_GROUNDING_MIN_COSINE");
+  });
+});
 
 describe("messagingConfigCheck", () => {
   it("reports none configured (opt-in) and the wired providers", () => {

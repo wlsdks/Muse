@@ -37,6 +37,16 @@ function normalizeEmbedModelKey(embedModel: string): string {
 }
 
 /**
+ * True when `embedModel` has its OWN calibrated recall bar (vs. falling back to
+ * the conservative `DEFAULT_CONFIDENT_AT`). Lets a diagnostic distinguish a
+ * properly-calibrated embedder from one running on the fail-safe default (which
+ * may over-abstain). Same normalization as `resolveRecallConfidentAt`.
+ */
+export function isCalibratedEmbedder(embedModel: string): boolean {
+  return RECALL_CONFIDENT_BAR_BY_EMBEDDER[normalizeEmbedModelKey(embedModel)] !== undefined;
+}
+
+/**
  * Resolve the recall confidence bar. Precedence:
  *  1. `MUSE_GROUNDING_MIN_COSINE` — an explicit conformal-calibrated override
  *     (`muse doctor --calibration` emits it; KnowNo / conformal, arXiv:2307.01928).

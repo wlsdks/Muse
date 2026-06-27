@@ -64,6 +64,7 @@ export {
 } from "./knowledge-ranking.js";
 export {
   resolveRecallConfidentAt,
+  isCalibratedEmbedder,
   type RetrievalConfidence
 } from "./recall-confidence.js";
 export {
