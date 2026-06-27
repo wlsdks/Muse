@@ -482,6 +482,7 @@ export {
   resumeRunInputFromCheckpoint
 } from "./checkpoint.js";
 export type { AgentCheckpointState } from "./checkpoint.js";
+export { applyReranking, rerankTopK, type RerankProvider } from "./reranking.js";
 
 export { GuardBlockedError, ModelRoutingError, OutputGuardBlockedError } from "./errors.js";
 
