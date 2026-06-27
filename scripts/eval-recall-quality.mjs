@@ -7,8 +7,18 @@
  * never fabricate), and a CORRECTED fact where the CURRENT value must win over
  * the stale one (the identity's "FORGETS the moment you correct it", measured).
  *
- * Drives the PRODUCTION retrieval + confidence gate (rankKnowledgeChunks →
+ * Drives the COSINE retrieval + confidence gate (rankKnowledgeChunks →
  * classifyRetrievalConfidence) on REAL local embeddings — NOT a fake registry.
+ *
+ * SCOPE (honest about what this measures): this exercises the cosine-confidence
+ * gate that the NOTES / CHAT grounding surfaces use (the v2-moe-calibrated bar),
+ * applied to a personal-memory-STYLE corpus. It is NOT the exact path `muse ask`
+ * uses to recall remembered FACTS — that path is lexical: `selectMemoryFacts`
+ * (@muse/recall, token-overlap + a cross-lingual cosine RESCUE only when lexical
+ * is 0), covered deterministically in `packages/recall/test/select.test.ts`. So
+ * read this number as "the cosine recall gate's quality on personal-style data",
+ * not "production remembered-fact recall" (which is lexical and separately tested).
+ *
  * The deterministic SCORER (`scoreRecallQualityCase`) is the teeth and is unit-
  * tested zero-dep in eval-recall-quality.test.mjs, so the gate has teeth even on
  * a box where Ollama is down (a skip is NOT a pass).

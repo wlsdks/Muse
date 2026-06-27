@@ -40,6 +40,30 @@ describe("buildMemoryContextBlock — CONTESTED (volatile-value) caution at poin
 
 const NOW = Date.parse("2026-06-13T00:00:00Z");
 
+describe("selectMemoryFacts — the PRODUCTION remembered-fact recall path (`muse ask`, lexical)", () => {
+  // This is the actual path `muse ask` uses to recall remembered facts (lexical
+  // token overlap), distinct from the cosine eval:recall-quality gate. Locked here
+  // so the integrity claim ("production memory recall IS lexical + abstains") has teeth.
+  const memFacts = {
+    facts: { allergy_penicillin: "yes", home_city: "Busan", car: "2019 grey Avante" },
+    preferences: { favorite_color: "blue" }
+  };
+
+  it("surfaces the on-topic fact for a same-language lexical query", () => {
+    const out = selectMemoryFacts(memFacts, new Set(["home", "city"]));
+    expect(out.map((f) => f.key)).toContain("home_city");
+    expect(out[0]!.key).toBe("home_city");
+  });
+
+  it("ABSTAINS (returns empty) when the query shares no token — the production no-fabrication floor", () => {
+    expect(selectMemoryFacts(memFacts, new Set(["submarine", "telescope"]))).toEqual([]);
+  });
+
+  it("returns empty for an empty query-token set (no eager recall)", () => {
+    expect(selectMemoryFacts(memFacts, new Set())).toEqual([]);
+  });
+});
+
 describe("cross-lingual recall fallback (KO query ↔ EN entry)", () => {
   const memory = { facts: { manager: "Dana Kim", project: "Apollo launch" }, preferences: {} };
   const koQuery = new Set(["매니저"]); // no lexical overlap with the EN facts
