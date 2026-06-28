@@ -24,7 +24,7 @@ import { readFile } from "node:fs/promises";
 import { isMemoryInjection } from "@muse/agent-core";
 import { beliefValueTimeline, classifyFactFreshness, consolidationPlan, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, FileUserMemoryStore, keysWithActiveRetraction, normalizeMemoryKey, projectRecentlyLearned, readBeliefProvenance, recordRetraction, renderRecentlyLearnedLines, selectPromotableFacts, selectPromotableMemories, selectRecentlyForgotten, type BeliefProvenance, type ConsolidationPlan } from "@muse/memory";
 import { resolveFadedMemoriesFile, resolveRecallHitsFile } from "@muse/autoconfigure";
-import { readRecallHits, writeFadedMemoryKeys, type RecallHitRecord } from "@muse/stores";
+import { decryptFileAtRest, encryptFileAtRest, readRecallHits, writeFadedMemoryKeys, type RecallHitRecord } from "@muse/stores";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
@@ -581,11 +581,15 @@ export function registerMemoryCommands(program: Command, io: ProgramIO, helpers:
       const store = new FileUserMemoryStore();
       try {
         const { alreadyEncrypted, backupPath } = await store.encryptAtRest();
+        // Encrypt the belief-PROVENANCE (where each fact came from) alongside the facts
+        // — they're one subsystem; protecting the values but leaking their sources/history
+        // would be half a guarantee. Best-effort (a fresh setup may have no provenance yet).
+        await encryptFileAtRest(defaultBeliefProvenanceFile()).catch(() => undefined);
         if (alreadyEncrypted) {
           io.stdout("Your user-memory is already encrypted at rest.\n");
           return;
         }
-        io.stdout("🔒 Encrypted your user-memory at rest (AES-256-GCM).\n");
+        io.stdout("🔒 Encrypted your user-memory + its belief-provenance at rest (AES-256-GCM).\n");
         io.stdout(`   A plaintext backup is at: ${backupPath ?? "(none)"}\n`);
         io.stdout("   The key comes from MUSE_MEMORY_KEY (or a per-host fallback). Keep MUSE_MEMORY_KEY safe — without it AND the backup, the data is unrecoverable.\n");
       } catch (cause) {
@@ -601,7 +605,8 @@ export function registerMemoryCommands(program: Command, io: ProgramIO, helpers:
       const store = new FileUserMemoryStore();
       try {
         const { alreadyPlaintext } = await store.decryptAtRest();
-        io.stdout(alreadyPlaintext ? "Your user-memory is already plaintext.\n" : "🔓 Rewrote your user-memory as plaintext.\n");
+        await decryptFileAtRest(defaultBeliefProvenanceFile()).catch(() => undefined); // keep provenance in lock-step with the facts
+        io.stdout(alreadyPlaintext ? "Your user-memory is already plaintext.\n" : "🔓 Rewrote your user-memory + its belief-provenance as plaintext.\n");
       } catch (cause) {
         io.stderr(`muse memory decrypt: ${cause instanceof Error ? cause.message : String(cause)}\n`);
         process.exitCode = 1;

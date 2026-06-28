@@ -15,6 +15,8 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { decryptMemoryEnvelope, encryptMemoryEnvelope, isEncryptedMemoryEnvelope } from "./memory-encryption.js";
+
 /** Newest entries kept; bounds the file so a chatty extractor can't grow it without limit. */
 export const MAX_BELIEF_PROVENANCE_ENTRIES = 1_000;
 
@@ -535,7 +537,16 @@ async function quarantineCorruptStore(file: string): Promise<void> {
   }
 }
 
-export async function readBeliefProvenance(file: string): Promise<readonly BeliefProvenance[]> {
+/** Format-only check (no decrypt): is the belief-provenance store encrypted at rest? */
+export async function isBeliefProvenanceEncrypted(file: string): Promise<boolean> {
+  try {
+    return isEncryptedMemoryEnvelope(JSON.parse(await fs.readFile(file, "utf8")));
+  } catch {
+    return false;
+  }
+}
+
+export async function readBeliefProvenance(file: string, env: NodeJS.ProcessEnv = process.env): Promise<readonly BeliefProvenance[]> {
   let raw: string;
   try {
     raw = await fs.readFile(file, "utf8");
@@ -549,6 +560,17 @@ export async function readBeliefProvenance(file: string): Promise<readonly Belie
     await quarantineCorruptStore(file);
     return [];
   }
+  // Decrypt if encrypted at rest. decryptMemoryEnvelope THROWS on a wrong key — fail
+  // CLOSED (the read fails loudly, never silently returns []/plaintext). Only a
+  // decrypted-but-not-JSON inner degrades to empty (a corrupt store, not a key mismatch).
+  if (isEncryptedMemoryEnvelope(parsed)) {
+    const plaintext = decryptMemoryEnvelope(parsed, env);
+    try {
+      parsed = JSON.parse(plaintext);
+    } catch {
+      return [];
+    }
+  }
   if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { entries?: unknown }).entries)) {
     await quarantineCorruptStore(file);
     return [];
@@ -558,8 +580,14 @@ export async function readBeliefProvenance(file: string): Promise<readonly Belie
   );
 }
 
-export async function writeBeliefProvenance(file: string, entries: readonly BeliefProvenance[]): Promise<void> {
-  const payload = `${JSON.stringify({ entries }, null, 2)}\n`;
+export async function writeBeliefProvenance(file: string, entries: readonly BeliefProvenance[], env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  // Format-preserving: once encrypted, stays encrypted (so a record-after-encrypt
+  // doesn't silently revert the user's facts-provenance to plaintext); plaintext stays
+  // plaintext until the user encrypts. Same proven per-store pattern as user-memory.
+  const serialized = JSON.stringify({ entries }, null, 2);
+  const payload = await isBeliefProvenanceEncrypted(file)
+    ? `${JSON.stringify(encryptMemoryEnvelope(serialized, env), null, 2)}\n`
+    : `${serialized}\n`;
   const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
   await fs.mkdir(dirname(file), { recursive: true });
   const handle = await fs.open(tmp, "w", 0o600);
@@ -585,7 +613,7 @@ function compareNewestFirst(a: BeliefProvenance, b: BeliefProvenance): number {
 }
 
 export class FileBeliefProvenanceStore implements BeliefProvenanceStore {
-  constructor(private readonly file: string = defaultBeliefProvenanceFile()) {}
+  constructor(private readonly file: string = defaultBeliefProvenanceFile(), private readonly env: NodeJS.ProcessEnv = process.env) {}
 
   async record(entry: BeliefProvenance): Promise<void> {
     await this.recordMany([entry]);
@@ -593,13 +621,13 @@ export class FileBeliefProvenanceStore implements BeliefProvenanceStore {
 
   async recordMany(entries: readonly BeliefProvenance[]): Promise<void> {
     if (entries.length === 0) return;
-    const existing = await readBeliefProvenance(this.file);
+    const existing = await readBeliefProvenance(this.file, this.env);
     const next = [...existing, ...entries].slice(-MAX_BELIEF_PROVENANCE_ENTRIES);
-    await writeBeliefProvenance(this.file, next);
+    await writeBeliefProvenance(this.file, next, this.env);
   }
 
   async query(userId: string, key?: string): Promise<readonly BeliefProvenance[]> {
-    const all = await readBeliefProvenance(this.file);
+    const all = await readBeliefProvenance(this.file, this.env);
     const scoped = all.filter((e) => e.userId === userId && (key === undefined || e.key === key));
     return [...scoped].sort(compareNewestFirst);
   }
