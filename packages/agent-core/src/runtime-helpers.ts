@@ -139,6 +139,14 @@ export function isRetryableProviderError(error: unknown): boolean {
   if (error instanceof ModelProviderError) {
     return error.retryable;
   }
+  // A PROGRAMMING error (TypeError / ReferenceError / SyntaxError / RangeError) is a
+  // bug in our own code, NEVER a transient provider condition — retrying it just
+  // burns every attempt + its backoff latency before failing identically. Other
+  // unknown errors MAY be transient (CLAUDE.md: "unknown errors MAY retry"), so they
+  // keep retrying; only the definitely-non-transient programming faults fail fast.
+  if (error instanceof TypeError || error instanceof ReferenceError || error instanceof SyntaxError || error instanceof RangeError) {
+    return false;
+  }
   return true;
 }
 
