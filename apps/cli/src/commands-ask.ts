@@ -100,6 +100,7 @@ import type { ProgramIO } from "./program.js";
 import { withSigintAbort } from "./sigint-abort.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 import { listNoteFiles, notesCorpusFileCount, resolveAskMaxTools, selectGraphConnections } from "./ask-corpus-helpers.js";
+import { userHasOtherPersonalData } from "./ask-user-data-presence.js";
 import { DEFAULT_EMBED_MODEL, resolveIndexModel } from "./embed-model-default.js";
 
 
@@ -283,46 +284,6 @@ export const NOTES_ONLY_TOOL_ALLOWLIST = ["muse.notes", "muse.notes-multi", "mus
  * deterministically keeps recall read-only for memory.
  */
 const RECALL_FORBIDDEN_TOOL_NAMES = ["remember_fact"] as const;
-
-/**
- * Whether the user has ANY personal data Muse can ground on besides notes —
- * remembered facts/preferences, contacts, open tasks, or reminders. Used to
- * suppress the empty-notes on-ramp for a user who has clearly set Muse up with
- * other data. Each store read is best-effort (a missing/unreadable store counts
- * as empty), short-circuiting on the first hit.
- */
-/** Whether the persistent user-memory file holds any fact/preference for `userId`. */
-async function userMemoryHasFacts(userId: string, env: Record<string, string | undefined>): Promise<boolean> {
-  try {
-    const file = env.MUSE_USER_MEMORY_FILE?.trim() || join(homedir(), ".muse", "user-memory.json");
-    const raw = JSON.parse(await readFile(file, "utf8")) as { users?: Record<string, { facts?: Record<string, string>; preferences?: Record<string, string> }> };
-    const persona = raw.users?.[userId];
-    return Boolean(persona && (Object.keys(persona.facts ?? {}).length > 0 || Object.keys(persona.preferences ?? {}).length > 0));
-  } catch {
-    return false;
-  }
-}
-
-async function userHasOtherPersonalData(
-  userId: string,
-  env: Record<string, string | undefined>
-): Promise<boolean> {
-  if (await userMemoryHasFacts(userId, env)) return true;
-  try {
-    if ((await readContacts(resolveContactsFile(env as MuseEnvironment))).length > 0) return true;
-  } catch { /* skip */ }
-  try {
-    if ((await readTasks(resolveTasksFile(env as MuseEnvironment))).length > 0) return true;
-  } catch { /* skip */ }
-  try {
-    if ((await readReminders(resolveRemindersFile(env as MuseEnvironment))).length > 0) return true;
-  } catch { /* skip */ }
-  try {
-    // A continuous-companion user with past sessions (but no notes) isn't "empty".
-    if ((await readEpisodes(resolveEpisodesFile(env as MuseEnvironment))).some((e) => e.userId === userId)) return true;
-  } catch { /* skip */ }
-  return false;
-}
 
 /** S2 warm honesty (B2): the deterministic, on-brand close on an honest refusal. */
 const WARM_REFUSAL_CLOSE =
