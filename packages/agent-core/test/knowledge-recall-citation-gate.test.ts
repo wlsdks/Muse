@@ -156,10 +156,38 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.stripped).toEqual(["renew passport"]);
   });
 
-  it("strips a citation against an ABSENT source list (undefined → treated as empty, so all are fabricated)", () => {
+  it("DROPS a claim grounded only on a certainly-fabricated OVERLAP citation (reminder against an absent list — the un-groundable claim is removed, not laundered into an un-cited assertion)", () => {
     const out = enforceAnswerCitations("X [reminder: anything].", {});
     expect(out.stripped).toEqual(["anything"]);
-    expect(out.text).toBe("X.");
+    expect(out.text).toBe(""); // the whole fabricated claim is dropped, not left as an un-cited "X."
+  });
+
+  describe("hybrid drop — a certainly-fabricated OVERLAP claim is DROPPED; an EXACT (notes/feeds) false-strip-risk one only loses its marker", () => {
+    it("drops the sentence whose only citation is a fabricated task, keeps the conversational neighbour", () => {
+      const out = enforceAnswerCitations("The deadline is March 3 [task: ghost task]. I can help with that.", { tasks: [] });
+      expect(out.text).toBe("I can help with that.");
+      expect(out.stripped).toEqual(["ghost task"]);
+    });
+    it("does NOT drop a fabricated NOTES citation — only strips the marker (a real note mis-cited by path must not delete a true claim)", () => {
+      const out = enforceAnswerCitations("The deadline is March 3 [from ghost.md]. Bye.", { notes: ["real.md"] });
+      expect(out.text).toBe("The deadline is March 3. Bye."); // claim survives un-cited (conservative)
+      expect(out.stripped).toEqual(["ghost.md"]);
+    });
+    it("keeps a validly-cited sentence and drops a separate fabricated-overlap sentence", () => {
+      const out = enforceAnswerCitations("Rent is $2000 [from rent.md]. Meeting tomorrow [event: fake mtg].", { events: [], notes: ["rent.md"] });
+      expect(out.text).toBe("Rent is $2000 [from rent.md].");
+      expect(out.stripped).toEqual(["fake mtg"]);
+    });
+    it("keeps a sentence that has ANY valid citation, stripping only its fabricated marker (a valid source rescues the sentence)", () => {
+      const out = enforceAnswerCitations("Done [task: real one] and [task: fake].", { tasks: ["real one"] });
+      expect(out.text).toBe("Done [task: real one] and.");
+      expect(out.stripped).toEqual(["fake"]);
+    });
+    it("a `.` inside a citation path is not a sentence boundary (no mis-split)", () => {
+      const out = enforceAnswerCitations("See [from notes/2026-05-12.md] for details.", { notes: ["notes/2026-05-12.md"] });
+      expect(out.text).toBe("See [from notes/2026-05-12.md] for details.");
+      expect(out.stripped).toEqual([]);
+    });
   });
 
   it("cleans up the whitespace a stripped citation leaves (no ' .' or double space in the user-facing answer)", () => {

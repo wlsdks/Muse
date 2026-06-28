@@ -450,39 +450,108 @@ export function normalizeSlotCitations(
  * content-token overlap so a paraphrased-but-real citation survives — including
  * `[session: …]`, matched against the retrieved past-session summaries.
  */
+/**
+ * The citation classes the gate validates. `certainOnStrip` marks the classes
+ * resolved by lexical OVERLAP (free-text titles): a non-resolving overlap citation
+ * shares ZERO content token with anything the user has = a CERTAIN invention, so the
+ * whole claim it grounds is dropped. The EXACT classes (notes/feeds — matched by
+ * path/name) carry a false-strip risk (a real note cited with a formatting mismatch),
+ * so a non-resolving one only loses its marker (+ a downstream "unverified" warning),
+ * never the claim — dropping there could delete a TRUE but mis-cited fact.
+ */
+const CITATION_CLASSES: readonly {
+  readonly re: RegExp;
+  readonly key: keyof AllowedCitations;
+  readonly resolves: (value: string, allowed: readonly string[]) => boolean;
+  readonly certainOnStrip: boolean;
+}[] = [
+  { certainOnStrip: false, key: "notes", re: CITATION_RE, resolves: resolvesExact },
+  { certainOnStrip: false, key: "feeds", re: /\[feed:\s*([^\]]+?)\s*\]/giu, resolves: resolvesExact },
+  { certainOnStrip: true, key: "tasks", re: /\[task:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "events", re: /\[event:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "reminders", re: /\[reminder:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "sessions", re: /\[session:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "contacts", re: /\[contact:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "commands", re: /\[command:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "commits", re: /\[commit:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "memories", re: /\[memory:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { certainOnStrip: true, key: "actions", re: /\[action:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap }
+];
+
+/**
+ * Split `text` into sentences LOSSLESSLY (`split.join("") === text`): a boundary is
+ * `.`/`!`/`?`/newline at bracket depth 0 (a `.` inside a `[from a.md]` citation is
+ * NOT a boundary), extended over consecutive terminators + trailing inline whitespace
+ * so the delimiter stays with its sentence and a rejoin is byte-exact.
+ */
+function splitCitationSentences(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === "[") { depth++; continue; }
+    if (ch === "]") { if (depth > 0) depth--; continue; }
+    if (depth === 0 && (ch === "." || ch === "!" || ch === "?" || ch === "\n")) {
+      let j = i + 1;
+      while (j < text.length && (text[j] === "." || text[j] === "!" || text[j] === "?")) j++;
+      while (j < text.length && (text[j] === " " || text[j] === "\t" || text[j] === "\n")) j++;
+      out.push(text.slice(start, j));
+      start = j;
+      i = j - 1;
+    }
+  }
+  if (start < text.length) out.push(text.slice(start));
+  return out;
+}
+
 export function enforceAnswerCitations(answer: string, allowed: AllowedCitations): CitationEnforcement {
-  let text = answer;
   const stripped: string[] = [];
-  const strip = (re: RegExp, resolves: (value: string) => boolean): void => {
-    text = text.replace(re, (match: string, raw: string) => {
-      const value = raw.trim();
-      if (resolves(value)) {
-        return match;
+  const kept: string[] = [];
+  for (const sentence of splitCitationSentences(answer)) {
+    let hasValid = false;
+    let hasCertainFabrication = false;
+    for (const c of CITATION_CLASSES) {
+      for (const m of sentence.matchAll(c.re)) {
+        if (c.resolves(m[1]!.trim(), allowed[c.key] ?? [])) hasValid = true;
+        else if (c.certainOnStrip) hasCertainFabrication = true;
       }
-      stripped.push(value);
-      return "";
-    });
-  };
-  strip(CITATION_RE, (value) => resolvesExact(value, allowed.notes ?? []));
-  strip(/\[feed:\s*([^\]]+?)\s*\]/giu, (value) => resolvesExact(value, allowed.feeds ?? []));
-  strip(/\[task:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.tasks ?? []));
-  strip(/\[event:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.events ?? []));
-  strip(/\[reminder:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.reminders ?? []));
-  strip(/\[session:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.sessions ?? []));
-  strip(/\[contact:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.contacts ?? []));
-  strip(/\[command:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.commands ?? []));
-  strip(/\[commit:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.commits ?? []));
-  strip(/\[memory:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.memories ?? []));
-  strip(/\[action:\s*([^\]]+?)\s*\]/giu, (value) => resolvesByOverlap(value, allowed.actions ?? []));
-  // Only tidy whitespace when a citation marker was actually removed (the cleanup
-  // exists to close the seam a stripped `[...]` leaves). Running it on a CLEAN
+    }
+    // DROP a sentence grounded ONLY on a certainly-fabricated overlap citation (no
+    // surviving valid source of any class) — an un-groundable claim removed by code,
+    // not laundered into an un-cited assertion. A sentence with ANY valid citation, or
+    // whose only bad citation is an EXACT class (notes/feeds, false-strip risk), is
+    // kept and merely loses the bad marker below.
+    if (hasCertainFabrication && !hasValid) {
+      for (const c of CITATION_CLASSES) {
+        for (const m of sentence.matchAll(c.re)) {
+          if (!c.resolves(m[1]!.trim(), allowed[c.key] ?? [])) stripped.push(m[1]!.trim());
+        }
+      }
+      continue;
+    }
+    let s = sentence;
+    for (const c of CITATION_CLASSES) {
+      s = s.replace(c.re, (match: string, raw: string) => {
+        const value = raw.trim();
+        if (c.resolves(value, allowed[c.key] ?? [])) return match;
+        stripped.push(value);
+        return "";
+      });
+    }
+    kept.push(s);
+  }
+  let text = kept.join("");
+  // Only tidy whitespace when a citation was actually removed (the cleanup exists to
+  // close the seam a stripped `[...]` / dropped sentence leaves). Running it on a CLEAN
   // answer collapses multi-space runs and mangles code-block indentation / aligned
   // columns — so leave an un-stripped answer byte-for-byte verbatim.
   if (stripped.length > 0) {
     text = text
       .replace(/[ \t]{2,}/gu, " ")
       .replace(/[ \t]+([.,;!?])/gu, "$1")
-      .replace(/[ \t]+\n/gu, "\n");
+      .replace(/[ \t]+\n/gu, "\n")
+      .replace(/[ \t]+$/u, ""); // a DROPPED trailing sentence leaves the prior one's trailing space
   }
   return { stripped, text };
 }
