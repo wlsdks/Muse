@@ -102,14 +102,24 @@ binary LLM-judge — see [`agent-testing.md`](agent-testing.md) (the method).
 
 ## Run only the narrowest test that proves THIS change (Jinan, 2026-06-22)
 
-Running hundreds/thousands of tests "to be safe" is noise — it proves
-nothing about the specific change and only saturates the machine. Run
-the tests **directly related to the code you touched** and nothing more:
+Running hundreds/thousands of tests "to be safe" is noise — Muse has
+**~12,800 test cases across 1,194 files** (verified 2026-06-26; more than
+the openclaw TS repo proportionally — the count is healthy, running ALL of
+it per edit is the waste). A full package suite per edit proves nothing
+about the specific change and only saturates the machine. Run the tests
+**vitest decides are RELATED to the files you changed** and nothing more:
 
 ```bash
-pnpm --filter @muse/<pkg> test -- <file>        # one file
+pnpm test:changed                 # ★ DEFAULT per-edit gate: git-changed files → vitest related (the tests whose module graph touches them), per affected package
+pnpm test:changed --uncommitted   # tighter inner loop: uncommitted changes only
+pnpm --filter @muse/<pkg> test -- <file>        # one explicit file
 pnpm --filter @muse/<pkg> test -- -t "<name>"   # one test by name
 ```
+
+`pnpm test:changed` (scripts/test-changed.mjs) is the operationalized form
+of this rule — it uses vitest's `related` (Vite module-graph dependency
+tracking) so editing a leaf file runs a handful of tests, editing a central
+one runs more, and a clean tree runs nothing. Reach for it FIRST.
 
 - Don't run a whole package suite, the whole repo, or `pnpm check` (full
   workspace build+test) for a small change. `pnpm check` is a pre-merge /

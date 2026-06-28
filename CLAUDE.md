@@ -27,7 +27,9 @@ adding the rule there — this file should shrink, not grow.
 ```bash
 # while developing — fast feedback per change:
 pnpm --filter @muse/<name> build       # one package
-pnpm --filter @muse/<name> test        # one package
+pnpm test:changed                      # ONLY the tests related to your git-changed files (vitest related) — the DEFAULT per-edit gate, NOT a whole package suite
+pnpm test:changed --uncommitted        # tighter: uncommitted changes only (mid-edit inner loop)
+pnpm --filter @muse/<name> test        # one whole package (heavier — use only when a change is broad)
 pnpm test -- -t "<test name>"          # single test by name
 
 # before commit:
