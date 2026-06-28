@@ -1,6 +1,8 @@
 import type { AgentRunResult } from "@muse/agent-core";
 export { createWorkerResult, parseHandoffPart, parseWorkerResult, validateWorkerHandoff } from "./worker-result.js";
-export { lastFailureReason, nextReadyTask, recordTaskRun, retryTask, taskDepsMet, transitionTask, type AgentTask, type TaskRun, type TaskStatus } from "./task-board.js";
+export { addTask, lastFailureReason, nextReadyTask, recordTaskRun, retryTask, taskDepsMet, tasksFromSubtasks, transitionTask, type AgentTask, type TaskRun, type TaskStatus } from "./task-board.js";
+export { defaultBoardFile, FileAgentTaskBoard, readBoard, writeBoard } from "./board-store.js";
+export { dispatchNextTask, resolveReview, type DispatchResult, type TaskExecutionResult, type TaskExecutor } from "./dispatch-board.js";
 export type { HandoffPart, ParsedHandoffPart, ParsedWorkerResult, WorkerHandoff } from "./worker-result.js";
 import type { AgentWorker } from "./workers.js";
 

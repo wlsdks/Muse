@@ -99,6 +99,40 @@ export function retryTask(tasks: readonly AgentTask[], id: string, nowIso: strin
   );
 }
 
+/** Append a new task to the board (immutable). The caller supplies a unique id + clock. */
+export function addTask(
+  tasks: readonly AgentTask[],
+  spec: { readonly id: string; readonly title: string; readonly description?: string; readonly dependsOn?: readonly string[] },
+  nowIso: string
+): AgentTask[] {
+  return [
+    ...tasks,
+    {
+      createdAt: nowIso,
+      dependsOn: spec.dependsOn ?? [],
+      id: spec.id,
+      runs: [],
+      status: "todo",
+      title: spec.title,
+      updatedAt: nowIso,
+      ...(spec.description !== undefined ? { description: spec.description } : {})
+    }
+  ];
+}
+
+/**
+ * Turn a lead agent's DECOMPOSITION into board tasks (S5 — board-as-handoff): each
+ * subtask becomes a `todo` card, and `dependsOn` edges make the board the fan-in gate
+ * — a downstream subtask is not runnable until its upstream subtasks are `done`, so the
+ * dependency DAG (not an in-memory promise) coordinates the workers. Pure.
+ */
+export function tasksFromSubtasks(
+  subtasks: readonly { readonly id: string; readonly title: string; readonly dependsOn?: readonly string[] }[],
+  nowIso: string
+): AgentTask[] {
+  return subtasks.reduce<AgentTask[]>((board, s) => addTask(board, s, nowIso), []);
+}
+
 /** The reason of a task's most recent FAILED run — the context a retry replays. */
 export function lastFailureReason(task: AgentTask): string | undefined {
   for (let i = task.runs.length - 1; i >= 0; i--) {

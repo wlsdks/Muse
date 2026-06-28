@@ -56,6 +56,7 @@ import { registerAgentsCommands } from "./commands-agents.js";
 import { registerDaemonCommands } from "./commands-daemon.js";
 import { registerIngestCommand } from "./chat-export-ingest.js";
 import { registerOnboardCommand } from "./commands-onboard.js";
+import { registerBoardCommand } from "./commands-board.js";
 import { registerProactiveCommands } from "./commands-proactive.js";
 import { registerReflectionsCommand } from "./commands-reflections.js";
 import { registerLearnedCommand } from "./commands-learned.js";
@@ -504,6 +505,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerProactiveCommands(program, io);
   registerSwarmCommands(program, io);
   registerReflectionsCommand(program, io);
+  registerBoardCommand(program, io);
   registerLearnedCommand(program, io);
   registerProposeCommands(program, io);
   registerDaemonCommands(program, io);
