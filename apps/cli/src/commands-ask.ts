@@ -29,15 +29,14 @@ import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, decideRecallCl
 import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
 import { answerPromisesAction, assertiveUnsupportedFraction, classifyActionRequest, classifyCorpusOverview, isMemoryInjection, isUnbackedActionClaim, reportSentenceGroundedness, requestsToolAction, stripCitationMarkers, worstUnsupportedSentence } from "@muse/agent-core";
 import { contestedFactKeys, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys, staleFactKeys } from "@muse/memory";
-import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveAnswerTemperature, resolveContactsFile, resolveNoteProvenanceFile, resolveNotesDir, resolveNotesIndexFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveAnswerTemperature, resolveContactsFile, resolveNoteProvenanceFile, resolveNotesDir, resolveNotesIndexFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { readNoteProvenance, untrustedNotePaths } from "./note-provenance.js";
 import type { MuseTool } from "@muse/tools";
-import type { CalendarEvent } from "@muse/calendar";
-import { acquireOllamaLease, readContacts, readReminders, readTasks, releaseOllamaLease, resolveOllamaLeaseFile, type Contact, type PersistedReminder, type PersistedTask } from "@muse/stores";
+import { acquireOllamaLease, releaseOllamaLease, resolveOllamaLeaseFile } from "@muse/stores";
 import { fetchReadableUrl, type MessageApprovalGate } from "@muse/domain-tools";
 
 import { createRunId } from "@muse/shared";
-import { allUserMemoryFacts, buildDiskContents, buildCalendarContextBlock, buildContactContextBlock, buildMemoryContextBlock, buildNoteContextBlock, buildReminderContextBlock, buildTaskContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
+import { allUserMemoryFacts, buildDiskContents, buildMemoryContextBlock, buildNoteContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
 export { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
 import { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, stripGroundingFences, sufficiencyAdvisory, urlGroundingSource } from "@muse/recall";
 export { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, sufficiencyAdvisory, urlGroundingSource };
@@ -97,6 +96,7 @@ import { CITATION_INSTRUCTION_LINES, REASONING_PRINCIPLE_LINES } from "./ask-pro
 import { buildSessionFeedReflectionGrounding } from "./ask-session-grounding.js";
 import { retrieveAndRankNotes } from "./ask-note-retrieval.js";
 import { buildActivityGrounding } from "./ask-activity-grounding.js";
+import { buildPersonalStoreGrounding } from "./ask-personal-store-grounding.js";
 import { DEFAULT_EMBED_MODEL, resolveIndexModel } from "./embed-model-default.js";
 
 
@@ -1130,106 +1130,18 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           // relative to the notes dir (clean + locatable), not the absolute path.
           : buildNoteContextBlock(contextChunks, noteContradictions, notesDir, untrustedNoteSources);
 
-      // Pull open tasks as a second grounding source. Real JARVIS
-      // questions ("what should I focus on today?", "what's left
-      // for the wedding?") hit tasks, not notes — and we have a
-      // task store already. Sort by due date so the most imminent
-      // are first; cap the dump to keep the prompt tight.
-      let openTasks: readonly PersistedTask[] = [];
-      if (options.tasks !== false) {
-        try {
-          const tasksFile = resolveTasksFile(process.env as Record<string, string | undefined>);
-          const all = await readTasks(tasksFile);
-          openTasks = all
-            .filter((t) => t.status === "open")
-            .sort((a, b) => {
-              const ad = a.dueAt ? new Date(a.dueAt).getTime() : Number.POSITIVE_INFINITY;
-              const bd = b.dueAt ? new Date(b.dueAt).getTime() : Number.POSITIVE_INFINITY;
-              return ad - bd;
-            })
-            .slice(0, 20);
-        } catch {
-          // tasks file missing or unreadable — silently skip, notes
-          // grounding still works
-        }
-      }
-      const taskBlock = buildTaskContextBlock(openTasks);
-
-      // Pull upcoming calendar events as a third grounding source.
-      // "What's on my schedule this week?", "any meetings tomorrow?",
-      // "when am I free?" — questions the LLM can only answer if it
-      // sees the events. Iterate over all registered providers
-      // (local + gcal + caldav + macos) so users with mixed setups
-      // get one merged view.
-      let upcomingEvents: readonly CalendarEvent[] = [];
-      if (options.calendar !== false) {
-        const days = parseBoundedInt(options.calendarDays, "--calendar-days", 1, 30, 7);
-        const from = new Date();
-        const to = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
-        try {
-          const registry = buildCalendarRegistry(process.env as Record<string, string | undefined>);
-          const providers = registry.list();
-          const collected: CalendarEvent[] = [];
-          for (const provider of providers) {
-            try {
-              const events = await provider.listEvents({ from, to });
-              collected.push(...events);
-            } catch {
-              // single provider failed (auth lapsed, network) —
-              // keep going with whatever we got
-            }
-          }
-          upcomingEvents = collected
-            .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-            .slice(0, 20);
-        } catch {
-          // registry assembly failed — skip calendar grounding
-        }
-      }
-      const calendarBlock = buildCalendarContextBlock(upcomingEvents);
-
-      // Pull pending reminders as a fourth grounding source.
-      // Reminders are fire-once notifications ("ping me in 2 hours"),
-      // distinct from tasks (general TODOs) and events (timed
-      // meetings). "What reminders did I set?" / "anything I asked
-      // you to remind me of?" lands here.
-      let pendingReminders: readonly PersistedReminder[] = [];
-      if (options.reminders !== false) {
-        try {
-          const file = resolveRemindersFile(process.env as Record<string, string | undefined>);
-          const all = await readReminders(file);
-          pendingReminders = all
-            .filter((r) => r.status === "pending")
-            .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
-            .slice(0, 20);
-        } catch {
-          // file missing — silently skip
-        }
-      }
-      const reminderBlock = buildReminderContextBlock(pendingReminders);
-
-      // Pull MATCHING contacts as a fifth grounding source (B3 perception).
-      // "What's Sarah's email?", "how do I reach the plumber?" — questions the
-      // local model can only answer from the user's own address book. Match on
-      // query-token overlap against name/aliases/email/handle so we inject only
-      // the relevant people (never the whole book), then cite each as
-      // [contact: name] under the same code-not-model citation gate.
-      let matchedContacts: readonly Contact[] = [];
-      if (options.contacts !== false) {
-        try {
-          const queryTokensForContacts = lexicalTokens(query);
-          const all = await readContacts(resolveContactsFile(process.env as Record<string, string | undefined>));
-          matchedContacts = all
-            .map((c) => ({ c, score: contactMatchScore(c, queryTokensForContacts) }))
-            .filter((x) => x.score > 0)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 5)
-            .map((x) => x.c);
-        } catch {
-          // contacts file missing or unreadable — silently skip
-        }
-      }
-      const contactBlock = buildContactContextBlock(matchedContacts);
+      // Personal-store grounding — open tasks / upcoming calendar / pending
+      // reminders / matching contacts. Each gated by its flag (default-on),
+      // fail-soft. See ask-personal-store-grounding.ts.
+      const { calendarBlock, contactBlock, matchedContacts, openTasks, pendingReminders, reminderBlock, taskBlock, upcomingEvents } =
+        await buildPersonalStoreGrounding({
+          calendar: options.calendar !== false,
+          calendarDays: options.calendarDays,
+          contacts: options.contacts !== false,
+          query,
+          reminders: options.reminders !== false,
+          tasks: options.tasks !== false
+        });
 
       // User-memory grounding (B3): facts the user told Muse to remember
       // ("I'm allergic to penicillin") are injected into the PERSONA so the model
