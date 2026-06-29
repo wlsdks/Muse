@@ -23,3 +23,14 @@ describe("parseParallelPlan — the deterministic contract on the model's reply"
     expect(none).toEqual([]);
   });
 });
+
+import { parallelDecomposePrompt } from "../src/parallel-decompose.js";
+
+describe("parallelDecomposePrompt", () => {
+  it("embeds the goal and instructs the model to answer NONE for a non-parallel goal", () => {
+    const p = parallelDecomposePrompt("compare X and Y");
+    expect(p).toContain("compare X and Y");
+    expect(p).toMatch(/INDEPENDENT/u);
+    expect(p).toMatch(/NONE/u);
+  });
+});

@@ -38,3 +38,12 @@ describe("FileAgentTaskBoard — durable persistence (S2)", () => {
     expect(await readBoard(file)).toEqual([]);
   });
 });
+
+import { defaultBoardFile } from "../src/board-store.js";
+
+describe("defaultBoardFile", () => {
+  it("honors MUSE_BOARD_FILE; else falls back to a ~/.muse path", () => {
+    expect(defaultBoardFile({ MUSE_BOARD_FILE: "/tmp/x/board.json" } as NodeJS.ProcessEnv)).toBe("/tmp/x/board.json");
+    expect(defaultBoardFile({} as NodeJS.ProcessEnv)).toMatch(/\.muse[/\\]agent-board\.json$/u);
+  });
+});

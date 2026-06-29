@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addTask, expandTaskIntoSubtasks, lastFailureReason, nextReadyTask, reclaimStaleTasks, recordTaskRun, retryTask, staleInProgressTasks, taskDepsMet, transitionTask, type AgentTask } from "../src/task-board.js";
+import { addTask, expandTaskIntoSubtasks, lastFailureReason, latestOutput, nextReadyTask, reclaimStaleTasks, recordTaskRun, retryTask, staleInProgressTasks, taskDepsMet, transitionTask, type AgentTask } from "../src/task-board.js";
 
 const task = (over: Partial<AgentTask> & { id: string }): AgentTask => ({
   createdAt: "2026-06-28T00:00:00Z",
@@ -141,5 +141,23 @@ describe("zombie recovery — staleInProgressTasks / reclaimStaleTasks (liveness
   it("no stale tasks → board returned unchanged", () => {
     const board = [at("2026-06-29T11:55:00Z")];
     expect(reclaimStaleTasks(board, NOW, STALE)).toEqual(board);
+  });
+});
+
+describe("latestOutput — the answer a synthesis container reads", () => {
+  it("prefers task.result", () => {
+    expect(latestOutput(task({ id: "a" })) === undefined).toBe(true);
+    expect(latestOutput({ ...task({ id: "a" }), result: "final" })).toBe("final");
+  });
+  it("else returns the LAST completed run's output, skipping failed runs", () => {
+    const t = { ...task({ id: "a" }), runs: [
+      { at: "t1", output: "first", status: "completed" as const },
+      { at: "t2", reason: "boom", status: "failed" as const },
+      { at: "t3", output: "latest", status: "completed" as const }
+    ] };
+    expect(latestOutput(t)).toBe("latest");
+  });
+  it("undefined when no completed run has output", () => {
+    expect(latestOutput({ ...task({ id: "a" }), runs: [{ at: "t1", reason: "x", status: "failed" }] })).toBeUndefined();
   });
 });
