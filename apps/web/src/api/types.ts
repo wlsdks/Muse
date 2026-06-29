@@ -34,6 +34,19 @@ export interface TasksResponse {
   readonly total: number;
 }
 
+export interface BoardTaskRow {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly dependsOn: readonly string[];
+  readonly blockedReason?: string;
+  readonly decomposed?: boolean;
+  readonly synthesize?: boolean;
+}
+export interface BoardResponse {
+  readonly tasks: readonly BoardTaskRow[];
+}
+
 export interface ReminderRow {
   readonly id: string;
   readonly text: string;

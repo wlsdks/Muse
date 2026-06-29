@@ -31,6 +31,7 @@ import { registerCompatibilityRoutes } from "./compat-routes.js";
 import { registerNotesRoutes } from "./notes-routes.js";
 import { registerMessagingRoutes } from "./messaging-routes.js";
 import { lineWebhookPlugin } from "./messaging-webhooks-routes.js";
+import { registerBoardRoutes } from "./board-routes.js";
 import { registerHistoryRoutes } from "./history-routes.js";
 import { registerProactiveRoutes } from "./proactive-routes.js";
 import { registerRemindersRoutes } from "./reminders-routes.js";
@@ -310,6 +311,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     ...(options.remindersFile ? { remindersFile: options.remindersFile } : {}),
     ...(options.followupsFile ? { followupsFile: options.followupsFile } : {})
   });
+  registerBoardRoutes(server);
   registerHistoryRoutes(server, {
     authService,
     ...(options.reminderHistoryFile ? { reminderHistoryFile: options.reminderHistoryFile } : {}),
