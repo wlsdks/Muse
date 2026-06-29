@@ -112,6 +112,9 @@ function makeAgentExecutor(io: ProgramIO): TaskExecutor {
   return async (task, ctx) => {
     const assembly = createMuseRuntimeAssembly();
     if (!assembly.agentRuntime || !assembly.defaultModel) return { reason: "no local agent runtime configured (set MUSE_MODEL)", status: "failed" };
+    // Progress feedback BEFORE the (potentially slow, local-model) agent call, so a `board run`
+    // never looks hung during the wait — the user sees which task is in flight.
+    io.stderr(`▸ running: ${task.title}…\n`);
     try {
       const result = await assembly.agentRuntime.run({
         messages: [{ content: boardTaskPrompt(task.title, ctx), role: "user" }],
