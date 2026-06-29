@@ -41,7 +41,7 @@ import {
   type DroppedContextSummarizer
 } from "@muse/memory";
 import type { GuardBlockRateMonitor } from "@muse/policy";
-import { createRunId } from "@muse/shared";
+import { createRunId, type JsonObject } from "@muse/shared";
 import {
   ToolExecutor,
   ToolRegistry,
@@ -58,6 +58,7 @@ import type { ActiveContextProvider, ActiveContextSnapshot } from "./active-cont
 import { applyAttachmentContext as applyAttachmentContextFn } from "./attachment-context.js";
 import { joinUserMessages } from "./internals.js";
 import { groundToolArguments } from "./tool-argument-grounding.js";
+import { executeToolPlan, type ToolPlan, type ToolPlanExecutor, type ToolPlanResult } from "./tool-plan.js";
 import type { ToolCallMiddleware } from "./tool-call-middleware.js";
 import {
   applyActiveContext as applyActiveContextFn,
@@ -172,6 +173,25 @@ function clampRunLimit(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.trunc(value))
     : fallback;
+}
+
+/**
+ * Thrown by {@link AgentRuntime.executeToolPlanGated}'s executor when a plan step's gated tool call
+ * does NOT complete (approval denied, validation/grounding rejected, or the handler failed).
+ * `executeToolPlan` propagates it and aborts the plan, so no downstream step runs — a denied or
+ * failed step leaves no partial side effect (the #1 PTC invariant, outbound-safety.md).
+ */
+export class ToolPlanStepBlockedError extends Error {
+  readonly tool: string;
+  readonly status: ToolExecutionResult["status"];
+  readonly output: string;
+  constructor(tool: string, status: ToolExecutionResult["status"], output: string) {
+    super(`tool plan step '${tool}' did not complete (${status}): ${output}`);
+    this.name = "ToolPlanStepBlockedError";
+    this.tool = tool;
+    this.status = status;
+    this.output = output;
+  }
 }
 
 export class AgentRuntime {
@@ -726,6 +746,36 @@ export class AgentRuntime {
         model
       }
     };
+  }
+
+  /**
+   * Execute a parsed PTC {@link ToolPlan} where EVERY step runs through the SAME gated single-tool
+   * path as a native tool call ({@link executeToolCall}: beforeTool hook → approval gate → arg
+   * coercion/required/enum validation → arg grounding → executor → afterTool hook). It does not
+   * bypass or re-implement a single gate — it binds the plan interpreter's pluggable executor seam
+   * ({@link executeToolPlan}) to that method. A step whose gated call does not COMPLETE (denied,
+   * invalid, or failed) throws {@link ToolPlanStepBlockedError}, which aborts the plan before any
+   * later step runs, so a blocked step leaves no partial downstream effect. A 1-step plan is
+   * therefore gate-equivalent to a single native tool call. Phase 2 scope is gated EXECUTION only;
+   * grounding/citation of the plan's projected result is Phase 3.
+   */
+  async executeToolPlanGated(plan: ToolPlan, context: AgentRunContext): Promise<ToolPlanResult> {
+    const activeTools = this.modelTools(context);
+    let stepIndex = 0;
+    const executor: ToolPlanExecutor = async (tool, args) => {
+      stepIndex += 1;
+      const toolCall: ModelToolCall = {
+        arguments: args as JsonObject,
+        id: `${context.runId}-ptc-${stepIndex.toString()}`,
+        name: tool
+      };
+      const executed = await this.executeToolCall(context, toolCall, activeTools);
+      if (executed.result.status !== "completed") {
+        throw new ToolPlanStepBlockedError(tool, executed.result.status, executed.result.output);
+      }
+      return executed.result.output;
+    };
+    return executeToolPlan(plan, executor);
   }
 
   private modelTools(context: AgentRunContext): readonly ModelTool[] {

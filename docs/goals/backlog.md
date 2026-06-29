@@ -3170,6 +3170,6 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 ## PROGRAMMATIC TOOL CALLING (PTC) — active loop (feat/programmatic-tool-calling)
 Design: docs/strategy/programmatic-tool-calling.md · plan-first (v1, no arbitrary code).
 - ✓ Phase 1 — plan schema + DAG interpreter (pure) — fire 1
-- ◦ Phase 2 — AgentRuntime gated-path wiring + 5 hostile-review acceptance tests
+- ✓ Phase 2 — AgentRuntime gated-path wiring + 4 acceptance — fire 2
 - ◦ Phase 3 — run_tool_plan tool + grounding wiring + eval:tools golden
 - ◦ Phase 4 — live proof on gemma4 (1-inference multi-step, grounded) + delta measure

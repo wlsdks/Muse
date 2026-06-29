@@ -525,6 +525,7 @@ export { createModelDroppedContextSummarizer } from "./dropped-context-summarize
 
 export {
   AgentRuntime,
+  ToolPlanStepBlockedError,
   augmentCompactionSummary,
   createAgentRuntime,
   type AgentRuntimeOptions,
