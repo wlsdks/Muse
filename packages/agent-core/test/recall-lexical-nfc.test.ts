@@ -36,3 +36,22 @@ describe("recall full-width ASCII fold (CJK 全角 → half-width, the sibling o
     expect(normalizeForRecall("한국어")).toBe("한국어");
   });
 });
+
+describe("normalizeForRecall does NOT over-normalize — the seam is NFC + targeted full-width fold, never NFKC", () => {
+  // Pins the invariant a judge-drill exposed as untested: switching this shared seam (lexical
+  // tokeniser + embedder + citation resolvesExact + anti-fabrication tool-arg guard + contact
+  // resolution) to NFKC would fold compatibility chars and MERGE semantically-distinct tokens —
+  // a false-grounding path. These cases go RED if normalizeForRecall ever becomes NFKC.
+  it("keeps the ﬁ/ﬂ ligatures distinct from their ASCII expansion (NFKC would merge them)", () => {
+    expect(normalizeForRecall("ﬁle")).not.toBe(normalizeForRecall("file"));
+    expect(normalizeForRecall("ﬂow")).not.toBe(normalizeForRecall("flow"));
+  });
+  it("keeps superscript / circled / unit compatibility chars distinct from ASCII", () => {
+    expect(normalizeForRecall("²")).not.toBe("2");
+    expect(normalizeForRecall("①")).not.toBe("1");
+    expect(normalizeForRecall("㎏")).not.toBe("kg");
+  });
+  it("still folds the TARGETED full-width ASCII block (the intended normalization is intact)", () => {
+    expect(normalizeForRecall("１２３")).toBe("123");
+  });
+});
