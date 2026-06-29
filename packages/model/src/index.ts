@@ -269,6 +269,7 @@ export { DEFAULT_OLLAMA_NUM_CTX, OllamaProvider, sanitizeOllamaToolSchema } from
 export { isWellFormedBase64 } from "./base64-image.js";
 export { AnthropicProvider } from "./adapter-anthropic.js";
 export { GeminiProvider } from "./adapter-gemini.js";
+export { MODEL_CATALOG, catalogModelsByCapability, catalogModelsByProvider, findCatalogModel, localCatalogModels, modelSpec, type BooleanCapability } from "./model-catalog.js";
 
 export function canUseNativeTools(model: ModelInfo): boolean {
   return model.capabilities.toolCalling && model.capabilities.structuredOutput;
