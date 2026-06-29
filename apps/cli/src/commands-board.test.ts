@@ -2,7 +2,7 @@ import type { ModelToolCall } from "@muse/model";
 import type { AgentTask } from "@muse/multi-agent";
 import { describe, expect, it } from "vitest";
 
-import { boardToolApprovalGate, formatBoard, taskNeedsReview } from "./commands-board.js";
+import { boardToolApprovalGate, formatBoard, selectObjectiveSpecsToSeed, taskNeedsReview } from "./commands-board.js";
 
 const t = (over: Partial<AgentTask> & { id: string; title: string }): AgentTask => ({
   createdAt: "t0", dependsOn: [], runs: [], status: "todo", updatedAt: "t0", ...over
@@ -46,5 +46,24 @@ describe("boardToolApprovalGate — fail-closed during unattended board executio
     const decision = await boardToolApprovalGate({ risk, runId: "r", toolCall: call });
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toMatch(/review column/u);
+  });
+});
+
+describe("selectObjectiveSpecsToSeed — standing-objective → board seeding (follow-up #3)", () => {
+  const objs = [
+    { spec: "watch the build until green", status: "active" },
+    { spec: "already on board", status: "active" },
+    { spec: "finished goal", status: "done" },
+    { spec: "abandoned goal", status: "cancelled" },
+    { spec: "   ", status: "active" }
+  ];
+  it("seeds only ACTIVE objectives not already on the board (deduped by title); skips done/cancelled/blank", () => {
+    const out = selectObjectiveSpecsToSeed(objs, new Set(["already on board"]));
+    expect(out).toEqual(["watch the build until green"]);
+  });
+  it("re-seeding is idempotent — once seeded, an objective isn't seeded again", () => {
+    const first = selectObjectiveSpecsToSeed(objs, new Set(["already on board"]));
+    const existingAfter = new Set(["already on board", ...first]);
+    expect(selectObjectiveSpecsToSeed(objs, existingAfter)).toEqual([]);
   });
 });

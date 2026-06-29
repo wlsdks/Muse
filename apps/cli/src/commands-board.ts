@@ -10,8 +10,9 @@
 import { randomUUID } from "node:crypto";
 
 import type { ToolApprovalGate } from "@muse/agent-core";
-import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveObjectivesFile } from "@muse/autoconfigure";
 import { addTask, decomposeRequest, dispatchNextTask, expandTaskIntoSubtasks, FileAgentTaskBoard, resolveReview, retryTask, transitionTask, type AgentTask, type TaskExecutor, type TaskStatus } from "@muse/multi-agent";
+import { readObjectives } from "@muse/stores";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
@@ -21,6 +22,20 @@ const OUTBOUND_RE = /\b(send|email|e-mail|reply|forward|post|dm|message|text|pub
 /** True when a task's effect leaves the machine toward a person → it must be reviewed, not auto-run. */
 export function taskNeedsReview(title: string): boolean {
   return OUTBOUND_RE.test(title);
+}
+
+/**
+ * Which standing-objective specs to turn into board tasks: the ACTIVE ones not already on the
+ * board (deduped by title, so re-seeding is idempotent). Pure — the CLI supplies the objectives
+ * + existing titles. A completed/cancelled objective is never seeded.
+ */
+export function selectObjectiveSpecsToSeed(
+  objectives: readonly { readonly spec: string; readonly status: string }[],
+  existingTitles: ReadonlySet<string>
+): string[] {
+  return objectives
+    .filter((o) => o.status === "active" && o.spec.trim().length > 0 && !existingTitles.has(o.spec.trim()))
+    .map((o) => o.spec.trim());
 }
 
 const MOVABLE: readonly TaskStatus[] = ["todo", "in_progress", "review", "blocked", "done", "failed"];
@@ -110,6 +125,19 @@ export function registerBoardCommand(program: Command, io: ProgramIO): void {
       const dependsOn = opts.dependsOn ? opts.dependsOn.split(",").map((s) => s.trim()).filter(Boolean) : [];
       await new FileAgentTaskBoard().mutate((tasks) => addTask(tasks, { dependsOn, id, title, ...(opts.desc ? { description: opts.desc } : {}) }, new Date().toISOString()));
       io.stdout(`Added ${id.slice(0, 8)} — ${title}\n`);
+    });
+
+  board
+    .command("seed")
+    .description("Seed the board from your ACTIVE standing objectives (skips objectives already on the board)")
+    .action(async () => {
+      const objectives = await readObjectives(resolveObjectivesFile(process.env as Record<string, string | undefined>)).catch(() => [] as const);
+      const store = new FileAgentTaskBoard();
+      const existing = new Set((await store.list()).map((t) => t.title.trim()));
+      const specs = selectObjectiveSpecsToSeed(objectives, existing);
+      if (specs.length === 0) { io.stdout("No new active objectives to seed (none active, or all already on the board).\n"); return; }
+      await store.mutate((tasks) => specs.reduce<AgentTask[]>((board2, spec) => addTask(board2, { id: randomUUID(), title: spec }, new Date().toISOString()), [...tasks]));
+      io.stdout(`Seeded ${specs.length.toString()} task(s) from your standing objectives:\n${specs.map((s) => `  • ${s}`).join("\n")}\n`);
     });
 
   board
