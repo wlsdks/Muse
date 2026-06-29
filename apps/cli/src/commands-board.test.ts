@@ -1,7 +1,8 @@
+import type { ModelToolCall } from "@muse/model";
 import type { AgentTask } from "@muse/multi-agent";
 import { describe, expect, it } from "vitest";
 
-import { formatBoard, taskNeedsReview } from "./commands-board.js";
+import { boardToolApprovalGate, formatBoard, taskNeedsReview } from "./commands-board.js";
 
 const t = (over: Partial<AgentTask> & { id: string; title: string }): AgentTask => ({
   createdAt: "t0", dependsOn: [], runs: [], status: "todo", updatedAt: "t0", ...over
@@ -33,5 +34,17 @@ describe("muse board — pure surface helpers (S4)", () => {
       expect(out).toContain("⟵ aaaaaaaa1"); // dependency shown
       expect(out).toContain("rate limit");  // block reason shown
     });
+  });
+});
+
+describe("boardToolApprovalGate — fail-closed during unattended board execution (follow-up #1)", () => {
+  const call = { arguments: {}, id: "c1", name: "x" } as ModelToolCall;
+  it("a READ tool is allowed (the agent can search/look things up)", async () => {
+    expect((await boardToolApprovalGate({ risk: "read", runId: "r", toolCall: call })).allowed).toBe(true);
+  });
+  it.each(["write", "execute"] as const)("a %s tool is DENIED — no autonomous send/modify on the board", async (risk) => {
+    const decision = await boardToolApprovalGate({ risk, runId: "r", toolCall: call });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/review column/u);
   });
 });

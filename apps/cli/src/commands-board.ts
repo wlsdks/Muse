@@ -9,6 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import type { ToolApprovalGate } from "@muse/agent-core";
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { addTask, dispatchNextTask, FileAgentTaskBoard, resolveReview, retryTask, transitionTask, type AgentTask, type TaskExecutor, type TaskStatus } from "@muse/multi-agent";
 import type { Command } from "commander";
@@ -43,24 +44,42 @@ export function formatBoard(tasks: readonly AgentTask[]): string {
 }
 
 /**
- * The production executor: run a board task as a grounded local-agent turn. Outbound work
- * is DRAFTED and returned `needsReview` (parked, never sent); everything else completes on a
- * non-empty answer. The single real seam wiring the board to the agent runtime.
+ * Fail-closed approval gate for board execution: a READ tool runs, but a WRITE/EXECUTE tool
+ * is DENIED — an unattended `board run` must never autonomously send or modify. Outbound
+ * work goes through the review column (a human approves), never a mid-run auto-approval.
+ * This is the deterministic guard that keeps the board agentic-yet-safe (outbound-safety.md).
+ */
+export const boardToolApprovalGate: ToolApprovalGate = ({ risk }) =>
+  risk === "read"
+    ? { allowed: true }
+    : { allowed: false, reason: "a board task does not auto-approve a write/execute tool — route outbound work through the review column" };
+
+/**
+ * The production executor: run a board task through the real AGENT RUNTIME — tools (read-only
+ * here, per the gate above) + grounding + the agent loop — not a single model turn, so a task
+ * can search your notes, do math, look things up, and ground its answer. A retry replays the
+ * prior failure into the prompt so the agent corrects rather than repeats it. Outbound work is
+ * DRAFTED then parked `needsReview` (never sent). The real seam wiring the board to the agent.
  */
 function makeAgentExecutor(io: ProgramIO): TaskExecutor {
-  return async (task) => {
+  return async (task, ctx) => {
     const assembly = createMuseRuntimeAssembly();
-    if (!assembly.modelProvider || !assembly.defaultModel) return { reason: "no local model configured (set MUSE_MODEL)", status: "failed" };
+    if (!assembly.agentRuntime || !assembly.defaultModel) return { reason: "no local agent runtime configured (set MUSE_MODEL)", status: "failed" };
+    const prompt = ctx.retryReason
+      ? `${task.title}\n\n(A previous attempt failed: ${ctx.retryReason}. Take a different approach.)`
+      : task.title;
     try {
-      const res = await assembly.modelProvider.generate({
-        maxOutputTokens: 512,
-        messages: [{ content: task.title, role: "user" }],
+      const result = await assembly.agentRuntime.run({
+        messages: [{ content: prompt, role: "user" }],
         model: assembly.defaultModel,
-        temperature: 0
+        runId: `board-${randomUUID()}`,
+        toolApprovalGate: boardToolApprovalGate
       });
-      const out = (res.output ?? "").trim();
+      const out = (result.response.output ?? "").trim();
       if (out.length === 0) return { reason: "empty answer", status: "failed" };
       io.stdout(`\n${out}\n`);
+      const tools = result.toolsUsed ?? [];
+      if (tools.length > 0) io.stderr(`(tools used: ${tools.join(", ")})\n`);
       // Draft-first: an outbound task is drafted above but PARKED for approval, not sent.
       return taskNeedsReview(task.title) ? { needsReview: true, status: "completed" } : { status: "completed" };
     } catch (cause) {
