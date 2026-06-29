@@ -569,3 +569,14 @@ export { summarizeTokenConfidence, type TokenConfidenceSummary } from "./token-c
 export { baseLevelActivation, computeActivationBoost } from "./actr-activation.js";
 export { adjustConfidenceFloor, sdtCriterion, summarizeNoticeResponses, type NoticeResponseStats } from "./sdt-criterion.js";
 export { splitCompoundQuery } from "./compound-query.js";
+export {
+  parseToolPlan,
+  executeToolPlan,
+  DEFAULT_MAX_PLAN_STEPS,
+  type ToolPlan,
+  type ToolPlanStep,
+  type ToolPlanResult,
+  type ToolPlanStepOutput,
+  type ToolPlanExecutor,
+  type ParseToolPlanOptions
+} from "./tool-plan.js";
