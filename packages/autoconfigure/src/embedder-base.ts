@@ -9,7 +9,7 @@
  * that parity structural instead of two hand-kept string literals.
  */
 
-import { createCachingEmbedder } from "@muse/agent-core";
+import { createCachingEmbedder, normalizeForRecall } from "@muse/agent-core";
 import { isLoopbackUrl, LocalOnlyViolationError } from "@muse/model";
 
 import { parseBoolean } from "./env-parsers.js";
@@ -45,8 +45,10 @@ export function createOllamaEmbedder(model: string): (text: string) => Promise<r
   // break — the always-on companion sets this to 2h via MuseBridge.
   const keepAlive = process.env.MUSE_OLLAMA_KEEP_ALIVE?.trim() || "30m";
   return async (text: string) => {
+    // NFC-normalise the embed input too (sibling of the lexical tokeniser) so an NFD note
+    // (macOS) and an NFC query embed from the SAME bytes — KO semantic recall stays consistent.
     const resp = await fetch(`${base}/api/embeddings`, {
-      body: JSON.stringify({ model, prompt: text, keep_alive: keepAlive }),
+      body: JSON.stringify({ model, prompt: normalizeForRecall(text), keep_alive: keepAlive }),
       headers: { "content-type": "application/json" },
       method: "POST"
     });

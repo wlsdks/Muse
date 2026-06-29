@@ -7,6 +7,17 @@
 
 export { finiteOr } from "@muse/shared";
 
+/**
+ * Canonicalise text for recall comparison — NFC so a Korean syllable composed at the keyboard
+ * (NFC) and the SAME syllable stored decomposed by macOS (NFD, which the desktop passes through
+ * for filenames + pasted text) tokenise IDENTICALLY. Without this, "한국어" indexed NFD never
+ * matches an NFC query — the grounding edge silently MISSES a real KO note and falsely abstains.
+ * Used by the lexical tokeniser below and the embed-input path (one normalisation seam for recall).
+ */
+export function normalizeForRecall(text: string): string {
+  return text.normalize("NFC");
+}
+
 // Drop high-frequency function words so lexical overlap (and the RRF
 // lexical rank) keys on CONTENT terms — otherwise a decoy sharing only
 // "my"/"is" with the query would be falsely recalled.
@@ -27,7 +38,7 @@ export const LEXICAL_STOPWORDS = new Set([
 // (unlike a lone Latin letter), so CJK tokens are kept at length ≥ 1; Latin/digit
 // tokens still need length ≥ 2 to drop stray letters.
 function lexicalTokenList(text: string): string[] {
-  return text.toLowerCase()
+  return normalizeForRecall(text).toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter((token) => {
       if (token.length === 0 || LEXICAL_STOPWORDS.has(token)) {

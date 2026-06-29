@@ -7,9 +7,9 @@ Tier1 (local commit, no push). Worktree: /tmp/muse-competitor-parity. Slug: comp
 ## Candidate gaps (seed — each fire VERIFIES the gap is real before building; Muse may already have it)
 - ◦ Plugin SDK / third-party extension package contract (openclaw plugin-sdk, plugin-package-contract) — Muse has `skills` but not a versioned plugin package system. VERIFY vs packages/skills first.
 - ◦ Web-content extraction (openclaw web-content-core) — page → clean readable markdown. Muse has `browser`; check if clean-extraction exists.
-- ◦ Context compression sophistication (hermes context_compressor.py / context_engine.py) — vs Muse auto-compaction + context-engineering. Measure the delta.
-- ◦ Model catalog with capabilities (openclaw model-catalog-core) — vs Muse `model`. Check if a queryable capability catalog exists.
-- ◦ A2A / ACP interop depth (openclaw acp-core, hermes acp_adapter) — Muse has `a2a`; compare contract coverage.
+- ✓ Context compression — ALREADY-HAVE (dropped-context-summarizer.ts, context-transforms.ts)
+- ✓ Model catalog — DONE (fire 1)
+- ✓ A2A — ALREADY-HAVE substantial (a2a-message, agent-card, signing, peer-registry, receive-quarantine)
 
 ## Fires
 
@@ -20,3 +20,11 @@ ratchet: pkg(model,cli)/kind(new-capability) — fire-0 was docs/chore, this is 
 - WHY (gap): openclaw has model-catalog-core; Muse had per-adapter ModelInfo but NO unified queryable capability index nor a `muse models` command (freshness-guarded: 0 ModelCatalog/byCapability/muse-models hits). Complements `muse setup cloud` — pick a model by capability, offline.
 - REVIEW: behavioral tests (query/filter logic, not config assertions) + mutation RED + live CLI (--local --vision → gemma4 only). Reimplemented in Muse's ModelInfo shape, openclaw (MIT) attributed, no verbatim copy.
 - RISK: catalog DATA is curated/static (capability values conservative; may lag new models) — the QUERY logic is what's tested. `local` honestly = ollama-only (no cloud mislabeled local).
+
+## fire 2 · 2026-06-30 · skill v2.0 · fire2
+meta: value-class=correctness-capability · pkg=@muse/agent-core+@muse/autoconfigure · kind=recall-bugfix · verdict=PASS · firesSinceDrill=2
+ratchet: pkg(agent-core,autoconfigure)/kind(recall-bugfix) — fire-0 docs, fire-1 model+cli, fire-2 agent-core/recall (diverse). fabrication 0.
+- WHAT: NFC normalization in the recall path — `normalizeForRecall` + `lexicalTokenList` NFC-normalizes; sibling-audited the embed input (embedder-base) to NFC too (one seam, lexical + semantic agree).
+- WHY (gap): openclaw has normalization-core; Muse's recall tokeniser did NOT NFC-normalize → a macOS-NFD Korean note never matched an NFC query (REPRODUCED: NFD vs NFC '한국어' → disjoint token sets). The grounding edge silently missed a real KO note + falsely abstained — a CORE-edge correctness bug, high value for a bilingual + macOS product.
+- REVIEW: behavioral test (NFD phrase ≡ NFC phrase tokens) + mutation RED + ASCII unchanged + NFC (not NFKC, lossless). test:changed agent-core 1524 + autoconfigure 282 green.
+- RISK: NFC is canonical-composition (safe); other raw-string recall comparisons (citation exact-resolve, memory-key match) may still be NFC/NFD-naive — noted as a follow-up sibling (not in this fire's proven scope).

@@ -236,6 +236,7 @@ export {
   assessContextSufficiency,
   type SufficiencyVerdict
 } from "./knowledge-recall.js";
+export { normalizeForRecall } from "./recall-lexical.js";
 export {
   reportCitationPrecision,
   DEFAULT_CITATION_PRECISION_FLOOR,
