@@ -88,3 +88,20 @@ describe("removeContact", () => {
     expect(await removeContact(file, "999")).toBe(false);
   });
 });
+
+describe("resolveContact — KO name normalization (recipient resolution must not miss on Unicode form)", () => {
+  it("an NFD-stored Korean contact resolves against an NFC query (outbound recipient found, not unknown)", () => {
+    const contacts = [{ id: "1", name: "홍길동".normalize("NFD") }, { id: "2", name: "김철수".normalize("NFD") }];
+    const r = resolveContact(contacts, "홍길동".normalize("NFC"));
+    expect(r.status).toBe("resolved");
+    expect(r.status === "resolved" && r.contact.id).toBe("1");
+  });
+  it("a full-width-digit name resolves against the ASCII query form", () => {
+    const r = resolveContact([{ id: "3", name: "Room１２３" }], "room123");
+    expect(r.status).toBe("resolved");
+  });
+  it("STILL returns unknown for a genuinely absent name — fail-close recipient resolution intact", () => {
+    const r = resolveContact([{ id: "1", name: "홍길동".normalize("NFD") }], "없는사람");
+    expect(r.status).toBe("unknown");
+  });
+});

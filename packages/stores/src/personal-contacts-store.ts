@@ -251,10 +251,20 @@ export async function linkContacts(
   });
 }
 
+// Canonicalise a contact name/alias for matching: NFC + full-width-ASCII fold + lowercase
+// (mirrors @muse/agent-core normalizeForRecall; INLINED because @muse/stores sits below
+// @muse/agent-core and can't import it without a cycle). A KO contact stored NFD (macOS) must
+// resolve against an NFC query — outbound recipient resolution (outbound-safety rule 3) must not
+// report `unknown` for an EXISTING contact on a Unicode-form mismatch, sending the user into a
+// dead-end clarify loop or, worse, a wrong recipient.
+function normalizeName(name: string): string {
+  return name.trim().normalize("NFC").replace(/[！-～]/gu, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).toLowerCase();
+}
+
 function findContactByName(all: readonly Contact[], name: string): Contact | undefined {
-  const q = name.trim().toLowerCase();
+  const q = normalizeName(name);
   if (q.length === 0) return undefined;
-  return all.find((c) => c.name.toLowerCase() === q || (c.aliases ?? []).some((alias) => alias.toLowerCase() === q));
+  return all.find((c) => normalizeName(c.name) === q || (c.aliases ?? []).some((alias) => normalizeName(alias) === q));
 }
 
 function upsertConnection(
@@ -262,7 +272,7 @@ function upsertConnection(
   to: string,
   as?: string
 ): readonly { readonly to: string; readonly as?: string }[] {
-  const rest = (existing ?? []).filter((edge) => edge.to.toLowerCase() !== to.toLowerCase());
+  const rest = (existing ?? []).filter((edge) => normalizeName(edge.to) !== normalizeName(to));
   return [...rest, { to, ...(as ? { as } : {}) }];
 }
 
@@ -311,7 +321,7 @@ export async function isContactsEncrypted(file: string): Promise<boolean> {
  * a spurious ambiguity.
  */
 export function resolveContact(contacts: readonly Contact[], query: string): ContactResolution {
-  const q = query.trim().toLowerCase();
+  const q = normalizeName(query);
   if (q.length === 0) {
     return { status: "unknown" };
   }
@@ -368,8 +378,8 @@ function phoneMatches(a: string, b: string): boolean {
 }
 
 function matchesExact(contact: Contact, q: string): boolean {
-  return contact.name.toLowerCase() === q
-    || (contact.aliases?.some((alias) => alias.toLowerCase() === q) ?? false)
+  return normalizeName(contact.name) === q
+    || (contact.aliases?.some((alias) => normalizeName(alias) === q) ?? false)
     // A phone number is an unambiguous identifier too — "who is
     // +1 415-555-0101?" (an inbound caller / texter) must resolve the
     // contact, matched by digits so formatting differences don't miss.
@@ -383,8 +393,8 @@ function matchesExact(contact: Contact, q: string): boolean {
 }
 
 function matchesPartial(contact: Contact, q: string): boolean {
-  return contact.name.toLowerCase().includes(q)
-    || (contact.aliases?.some((alias) => alias.toLowerCase().includes(q)) ?? false);
+  return normalizeName(contact.name).includes(q)
+    || (contact.aliases?.some((alias) => normalizeName(alias).includes(q)) ?? false);
 }
 
 /**
