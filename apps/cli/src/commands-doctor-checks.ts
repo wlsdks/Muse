@@ -62,6 +62,33 @@ export interface LocalCheck {
 }
 
 /**
+ * Report which SecretSource readers are available, NEVER a secret value. The
+ * resolver reads credentials on demand from the user's existing local vault
+ * (env / macOS keychain) and falls back to the legacy per-service store. This
+ * only counts configured `MUSE_SECRET_*` env vars + whether keychain is usable
+ * on this platform — a boolean posture, like the official-MCP audit line.
+ */
+export function secretSourcesCheck(
+  env: Record<string, string | undefined>,
+  platform: NodeJS.Platform = process.platform
+): LocalCheck {
+  const envCount = Object.keys(env).filter((k) => k.startsWith("MUSE_SECRET_")).length;
+  const sources: string[] = [];
+  if (envCount > 0) {
+    sources.push(`env (${envCount.toString()} MUSE_SECRET_* set)`);
+  }
+  if (platform === "darwin") {
+    sources.push("keychain (macOS)");
+  }
+  sources.push("legacy store (fallback)");
+  return {
+    detail: `secret sources, vault-first: ${sources.join(" → ")} — values read on demand, never cached or sent to the model`,
+    name: "secret sources",
+    status: "ok"
+  };
+}
+
+/**
  * Report the model the runtime will ACTUALLY use, mirroring `resolveDefaultModel`.
  * Under local-only (the default) the runtime runs the local model and IGNORES any
  * ambient cloud key — so a box that happens to carry a `GEMINI_API_KEY` must NOT

@@ -151,3 +151,16 @@ describe("resumeRunInputFromCheckpoint — durable resume", () => {
     expect(resumeRunInputFromCheckpoint(state).metadata).toBeUndefined();
   });
 });
+
+describe("encodeCheckpointMessages redacts a registered secret before base64", () => {
+  it("a resolved secret in a message is masked in the decoded payload (not stored in clear)", async () => {
+    const { registerSecretValue, clearSecretRegistryForTests } = await import("@muse/shared");
+    clearSecretRegistryForTests();
+    registerSecretValue("ckpt_secret_value_123", "TOKEN");
+    const [encoded] = encodeCheckpointMessages([{ role: "user", content: "auth ckpt_secret_value_123 done" }]);
+    const decoded = Buffer.from(encoded!.split("|")[2]!, "base64").toString("utf8");
+    expect(decoded).not.toContain("ckpt_secret_value_123"); // raw value never survives
+    expect(decoded).toContain("‹secret:TOKEN›");
+    clearSecretRegistryForTests();
+  });
+});

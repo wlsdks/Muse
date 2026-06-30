@@ -27,7 +27,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 
-import type { JsonObject } from "@muse/shared";
+import { type JsonObject, hasRegisteredSecrets, redactSecrets } from "@muse/shared";
 
 import { decryptFileAtRest, encryptFileAtRest, isFileEncryptedAtRest, readMaybeEncrypted, withFileLock, writeMaybeEncrypted } from "./encrypted-file.js";
 
@@ -209,7 +209,26 @@ async function writeActionLog(file: string, entries: readonly ActionLogEntry[], 
 // last-writer-wins read-modify-write. Serialise the whole append per file.
 const appendQueues = new Map<string, Promise<unknown>>();
 
+/** Mask any registered secret value in the entry's free-text fields. No-op when nothing is registered. */
+function redactActionLogEntry(entry: ActionLogEntry): ActionLogEntry {
+  if (!hasRegisteredSecrets()) {
+    return entry;
+  }
+  return {
+    ...entry,
+    what: redactSecrets(entry.what),
+    why: redactSecrets(entry.why),
+    ...(entry.detail !== undefined ? { detail: redactSecrets(entry.detail) } : {})
+  };
+}
+
 export async function appendActionLog(file: string, entry: ActionLogEntry, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  // Fail-closed redaction at the log boundary: a resolved secret value that
+  // landed in any free-text field (what / why / detail) is masked as
+  // `‹secret:NAME›` BEFORE the entry is hashed + persisted, so the audit log
+  // never holds a credential in clear. Done here (the single append seam) so a
+  // value seen once is masked in every action-log write.
+  const redacted = redactActionLogEntry(entry);
   const prior = appendQueues.get(file) ?? Promise.resolve();
   const op = async (): Promise<void> => {
     const existing = await readActionLog(file, env);
@@ -217,7 +236,7 @@ export async function appendActionLog(file: string, entry: ActionLogEntry, env: 
     // history, so a later deletion/edit/reorder breaks verification at a precise
     // index. The append queue already serialises the read-modify-write, so two
     // concurrent appends can't fork the chain.
-    const chained: ActionLogEntry = { ...entry, prevHash: chainTipHash(existing) };
+    const chained: ActionLogEntry = { ...redacted, prevHash: chainTipHash(existing) };
     await writeActionLog(file, [...existing, chained], env);
   };
   const next = prior.then(op, op);

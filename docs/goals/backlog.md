@@ -3167,11 +3167,18 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 - ✅ **X-3 agent-facing `background_list` 툴 (LIVE eval:tools 검증)** (agent capability) — `e0623df08`. 에이전트가 대화중 "백그라운드에 뭐 돌고 있어?"에 답하도록 read-only `background_list` MuseTool 추가(@muse/domain-tools, recent-actions-tool 패턴; id/command/status/exitCode, status 필터). autoconfigure runtime-tool-registry에 배선(비-inert). 공유 경로 일관성: `@muse/stores`에 `defaultBackgroundProcessesFile(env)` 추가→CLI `backgroundStoreFile()`도 이걸 쓰게 리팩터(툴이 CLI와 같은 파일 읽음). spawn/stop/restart는 의도적으로 미노출(state-change exec는 유저-개시 유지). eval-tool-selection.mjs에 background 시나리오(background_list vs recent_actions 혼동 carve + report IrrelAcc). **LIVE gemma4:12b 검증 5/5 PASS 전부 3/3 runs(pass^3 STABLE)** — 모델이 실제로 선택함=delivered(tool-calling.md). 5 유닛(툴3+resolver1+기존) mutation-verified(status필터·env override 각 RED); @muse/stores 386 + @muse/domain-tools 793 + @muse/autoconfigure 632 + byte-hygiene 45 green, lint 0.
 - ✅ **스킬 curator: stale→archive 주기적 데몬 배선** (Gap2-S2/Gap3 skill lifecycle) — `<this commit>`. `AuthoredSkillStore.curate(maxIdleDays)`(stale→archive, 복구가능)는 빌드됐으나 `muse skills curate` 수동-CLI에서만 호출 → 오래 안 쓴 스킬이 자동 정리 안 돼 로컬모델이 stale 스킬 중 선택(tool-calling.md). consolidate-tick(idle-gated 데몬)에 curate 페이즈 추가: idle 게이트 통과 후 **LLM 브레이크(OS-idle/AC/model-resident) 前**에 실행(model-free·cheap이라 모델 cold/배터리여도 정리). tick-daemons가 `MUSE_SKILL_CURATE_IDLE_DAYS`(기본 90d, 0=off)로 배선→non-inert. firing 가드를 idle 게이트 직후로 올려 레이스 제거. 4 테스트(idle시 curate·active시 skip·**model cold여도 curate(브레이크 前 증명)**·옵션 없으면 skip), mutation-verified(curate 가드 무력화→RED); @muse/api 972 + byte-hygiene 45 green, lint 0. hermes curator 참조-전용.
 
-## PROGRAMMATIC TOOL CALLING (PTC) — active loop (feat/programmatic-tool-calling)
+## PROGRAMMATIC TOOL CALLING (PTC) — COMPLETE (feat/programmatic-tool-calling)
 Design: docs/strategy/programmatic-tool-calling.md · plan-first (v1, no arbitrary code).
 - ✓ Phase 1 — plan schema + DAG interpreter (pure) — fire 1
 - ✓ Phase 2 — AgentRuntime gated-path wiring + 4 acceptance — fire 2
 - ✓ Phase 3 — run_tool_plan tool + grounding wiring + eval golden — fire 3
-- ◦ Phase 4 — live proof on gemma4 (1-inference multi-step, grounded) + delta measure
 - ✓ Phase 4 — live proof on gemma4 (4/4 with few-shot; valid plan emission) — fire 4
 - ✓ Phase 5 — production exemplar wiring + run_tool_plan seed — fire 5 (PTC COMPLETE)
+
+## SECRETSOURCE — COMPLETE (feat/secret-source)
+Design: docs/strategy/secret-source.md · convergence pick (openclaw+hermes both built it).
+- ✓ Phase 1 — interface + resolver + redaction primitive (pure)
+- ✓ Phase 2 — keychain + env + legacy-store adapters (FIXED argv subprocess)
+- ✓ Phase 3 — scoping + redaction wiring into live log sinks (secret never in model/grounding)
+- ~ Phase 4 — 1Password+Bitwarden (DEFERRED, design-optional)
+- ✓ Phase 5 — wire into live outbound credential-fetch + e2e + doctor + docs

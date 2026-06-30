@@ -365,3 +365,27 @@ describe("formatErrorForTerminal — single sanitizer for printing unknown error
     expect(formatErrorForTerminal(new Error(""))).toBe("");
   });
 });
+
+describe("redactSecretsInText composes the SecretSource registry (covers every text sink)", () => {
+  it("masks an arbitrary REGISTERED resolved value (not just credential-shaped strings)", async () => {
+    const { redactSecretsInText, registerSecretValue, clearSecretRegistryForTests } = await import("../src/index.js");
+    clearSecretRegistryForTests();
+    registerSecretValue("arbitraryKeychainPw_xyz", "GMAIL");
+    expect(redactSecretsInText("log: arbitraryKeychainPw_xyz end")).toBe("log: ‹secret:GMAIL› end");
+    expect(redactSecretsInText("ordinary text no secret")).toBe("ordinary text no secret"); // no regression
+    clearSecretRegistryForTests();
+    expect(redactSecretsInText("arbitraryKeychainPw_xyz")).toBe("arbitraryKeychainPw_xyz"); // no-op once cleared/unregistered
+  });
+});
+
+describe("registerSecretValue min-length guard (no over-masking from a pathologically short value)", () => {
+  it("a 1-3 char value is NOT registered (would otherwise mask every occurrence and corrupt logs)", async () => {
+    const { redactSecretsInText, registerSecretValue, clearSecretRegistryForTests } = await import("../src/index.js");
+    clearSecretRegistryForTests();
+    registerSecretValue("a", "X"); registerSecretValue("ab", "X"); registerSecretValue("abc", "X");
+    expect(redactSecretsInText("banana cab")).toBe("banana cab"); // no over-masking
+    registerSecretValue("realSecret1234", "GMAIL");
+    expect(redactSecretsInText("pw realSecret1234")).toBe("pw ‹secret:GMAIL›"); // a real-length secret still masks
+    clearSecretRegistryForTests();
+  });
+});

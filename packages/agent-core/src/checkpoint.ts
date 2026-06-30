@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import type { ModelMessage } from "@muse/model";
-import type { JsonObject } from "@muse/shared";
+import { redactSecretsInText, type JsonObject } from "@muse/shared";
 import { ModelRoutingError } from "./errors.js";
 import type { AgentRunInput } from "./types.js";
 
@@ -60,7 +60,10 @@ export function resumeRunInputFromCheckpoint(
 
 export function encodeCheckpointMessages(messages: readonly ModelMessage[]): readonly string[] {
   return messages.map((message) => {
-    const payload = Buffer.from(JSON.stringify(message), "utf8").toString("base64");
+    // Redact any registered SecretSource value BEFORE base64-encoding — else a secret that reached
+    // a message/tool-result would survive in clear inside the durable checkpoint (the encoding hides
+    // it from a text scan, so it must be masked at the source).
+    const payload = Buffer.from(redactSecretsInText(JSON.stringify(message)), "utf8").toString("base64");
     return `v1|${message.role}|${payload}`;
   });
 }
