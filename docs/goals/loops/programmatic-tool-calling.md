@@ -61,3 +61,10 @@ verdict: PASS · Phase 5 (wire tool-exemplar few-shot into the live runtime + se
 
 ## PTC COMPLETE ✅ (fire-5 judge PASS)
 All 5 phases [x]: pure interpreter (1) → gated execution (2) → run_tool_plan tool + grounding (3) → live proof on gemma4 (4) → production few-shot wiring (5). PTC collapses a local-12B N-step tool chain into ONE inference, keeps intermediate results out of context, grounds the answer, and every step passes the same approval + arg-grounding gates as a native call. Source mirror: hermes-agent tools/code_execution_tool.py (MIT/Apache), plan-first reimplementation.
+
+## fire 6 · 2026-06-30 · fire6 · HARDENING — projection transforms (count/first/last)
+verdict: PASS · PTC already COMPLETE; this is the §3A "grow the transform set" hardening
+- WHAT: the plan ref grammar gains a CLOSED set of pure projections piped onto a `$binding.path` — `$rows | count`, `$rows | first`, `$rows | last`. REF_RE allows an optional `| (count|first|last)`; `applyTransform` (count→array length, 0 for null/absent, 1 for non-array; first/last→end element) is applied by a shared `resolveRef` used by BOTH arg substitution and the result projection. The run_tool_plan `result` description documents them.
+- WHY: keeps a result concise — a search step returning 100 rows can project `$rows | count` so a huge array never re-enters context (the design §3A transform set, grown from the minimal dotted-path pick). Useful for both the final result and inter-step data flow.
+- REVIEW: 5 tests (count→len incl. non-array=1 / absent=0; first/last; transform on an ARG ref; unknown transform `$hits | sum` doesn't parse as a ref ⇒ parse rejects; no-transform pick unchanged) + mutation RED (count no-op ⇒ count test RED) + agent-core 2736 + tools 312 + 0 TS + lint 0.
+- RISK: the transform is a FIXED keyword from a closed set, never eval'd — the value-level injection guard is intact; transforms are pure projections of already-resolved values, so the approval/grounding/per-step gates (Phases 2-3) are untouched. filter-by-literal deliberately deferred (needs a comparison + literal — a larger grammar).

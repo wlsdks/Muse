@@ -89,3 +89,36 @@ describe("executeToolPlan — injection guard (a $ is a ref ONLY as a whole valu
     expect((await executeToolPlan(plan, exec)).result).toBe("ok");
   });
 });
+
+describe("tool-plan projections — closed transform set (count/first/last) keeps a result concise", () => {
+  const known = new Set(["search"]);
+  const run = async (result: string, output: unknown): Promise<unknown> => {
+    const p = parseToolPlan({ steps: [{ as: "hits", tool: "search", args: {} }], result }, { knownTools: known }) as ToolPlan;
+    return (await executeToolPlan(p, async () => output)).result;
+  };
+  it("count → array length (so a 100-row search projects a number, not a huge dump)", async () => {
+    expect(await run("$hits | count", [1, 2, 3, 4, 5])).toBe(5);
+    expect(await run("$hits | count", { a: 1 })).toBe(1); // non-array = 1
+    expect(await run("$hits.missing | count", { a: 1 })).toBe(0); // absent = 0
+  });
+  it("first / last pick the end element of an array", async () => {
+    expect(await run("$hits | first", [{ a: 1 }, { a: 2 }])).toEqual({ a: 1 });
+    expect(await run("$hits | last", ["x", "y", "z"])).toBe("z");
+  });
+  it("a transform also applies to an ARG ref (data flow stays concise between steps)", async () => {
+    const p = parseToolPlan(
+      { steps: [{ as: "hits", tool: "search", args: {} }, { as: "n", tool: "search", args: { howMany: "$hits | count" } }], result: "$n" },
+      { knownTools: known }
+    ) as ToolPlan;
+    const seen: Array<Record<string, unknown>> = [];
+    await executeToolPlan(p, async (_t, args) => { seen.push(args); return [1, 2, 3]; });
+    expect(seen[1]!.howMany).toBe(3); // the count of the prior step's array was passed, not the array
+  });
+  it("an UNKNOWN transform is not a ref (parse rejects it as a non-binding result)", () => {
+    const r = parseToolPlan({ steps: [{ as: "hits", tool: "search" }], result: "$hits | sum" }, { knownTools: known });
+    expect("error" in r).toBe(true); // 'sum' isn't in the closed set → $hits|sum doesn't parse as a ref
+  });
+  it("no-transform pick is unchanged (regression)", async () => {
+    expect(await run("$hits.a", { a: 42 })).toBe(42);
+  });
+});

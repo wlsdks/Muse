@@ -32,7 +32,10 @@ export function createRunToolPlanTool(): MuseTool {
         properties: {
           result: {
             description:
-              "Which step binding to return to you, written as \"$<as>\" (e.g. \"$free\"). Only this value re-enters context.",
+              "Which step binding to return to you, written as \"$<as>\" (e.g. \"$free\") or \"$<as>.field\". " +
+              "Only this value re-enters context, so keep it small — optionally pipe ONE projection to " +
+              "condense it: \"$rows | count\" (how many), \"$rows | first\", \"$rows | last\". " +
+              "e.g. for \"how many free slots\" use \"$free | count\" instead of returning the whole list.",
             type: "string"
           },
           steps: {

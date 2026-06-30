@@ -53,18 +53,40 @@ export const DEFAULT_MAX_PLAN_STEPS = 16;
 // A whole-value reference: the ENTIRE arg/result string is `$binding` or `$binding.seg.seg`. A
 // string that merely contains `$` (or interpolates a ref mid-text) is a literal — substitution is
 // value-level only, which is also the injection guard (a ref value is never spliced into text).
-const REF_RE = /^\$([A-Za-z_][\w]*)((?:\.[\w]+)*)$/u;
+// `$binding`, `$binding.path.path`, optionally piped through ONE pure projection
+// (`$hits | count`, `$results.items | first`). Transforms keep a result concise — e.g. a search
+// step returning 100 rows can project `$rows | count` so a huge array never re-enters the context.
+// The transform set is CLOSED (count/first/last) — a fixed keyword, never arbitrary code.
+const REF_RE = /^\$([A-Za-z_][\w]*)((?:\.[\w]+)*)(?:\s*\|\s*(count|first|last))?$/u;
+
+type Transform = "count" | "first" | "last";
 
 interface ParsedRef {
   readonly binding: string;
   readonly path: readonly string[];
+  readonly transform?: Transform;
 }
 
 function parseRef(value: string): ParsedRef | undefined {
   const m = REF_RE.exec(value);
   if (!m) return undefined;
   const path = m[2] ? m[2].split(".").filter((s) => s.length > 0) : [];
-  return { binding: m[1]!, path };
+  return { binding: m[1]!, path, ...(m[3] ? { transform: m[3] as Transform } : {}) };
+}
+
+// Apply a closed-set projection to a resolved value. count → array length (0/1 for a non-array,
+// matching "how many"); first/last → the end element (the value itself when not an array).
+function applyTransform(value: unknown, transform: Transform | undefined): unknown {
+  if (transform === undefined) return value;
+  if (transform === "count") return Array.isArray(value) ? value.length : value === undefined || value === null ? 0 : 1;
+  if (Array.isArray(value)) return transform === "first" ? value[0] : value[value.length - 1];
+  return value;
+}
+
+// Resolve a ref against the bindings: pick the path, then apply any transform — the single seam
+// both arg substitution and the result projection share.
+function resolveRef(ref: ParsedRef, bindings: ReadonlyMap<string, unknown>): unknown {
+  return applyTransform(getPath(bindings.get(ref.binding), ref.path), ref.transform);
 }
 
 function refsInArgs(args: Record<string, unknown>): ParsedRef[] {
@@ -150,7 +172,7 @@ function resolveArgs(args: Record<string, unknown>, bindings: ReadonlyMap<string
     if (typeof value === "string") {
       const ref = parseRef(value);
       if (ref) {
-        out[key] = getPath(bindings.get(ref.binding), ref.path);
+        out[key] = resolveRef(ref, bindings);
         continue;
       }
     }
@@ -174,6 +196,5 @@ export async function executeToolPlan(plan: ToolPlan, executor: ToolPlanExecutor
     bindings.set(step.as, output);
     stepOutputs.push({ as: step.as, output, tool: step.tool });
   }
-  const ref = parseRef(plan.result)!;
-  return { result: getPath(bindings.get(ref.binding), ref.path), steps: stepOutputs };
+  return { result: resolveRef(parseRef(plan.result)!, bindings), steps: stepOutputs };
 }
