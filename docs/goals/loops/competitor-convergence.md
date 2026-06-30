@@ -1,5 +1,16 @@
 # Loop journal — competitor convergence ("내실 다지기")
 
+> ⛔ **THEME STATUS: CONVERGENCE EXHAUSTED (confirmed fire 2, 2026-07-01).** THREE independent thorough
+> scouts — headline capabilities (fire 1), fine-grained mechanisms (fire 1), and 6 cross-cutting
+> dimensions (fire 2) — all landed on "Muse is mature vs openclaw + hermes." Every both-have ∩
+> Muse-lacks gap is shipped (PTC · SecretSource · MCP supply-chain audit). **Future fires: do NOT
+> re-dispatch a full Opus scout — read this banner, do a cheap delta-check (did a competitor add
+> something NEW since 2026-07-01? `git -C /Users/jinan/ai/openclaw log` / hermes since then), and if
+> nothing new, record a one-line "still exhausted" fire + end. Re-pointing the loop to a frontier axis
+> (continuous-personal-learning surfacing · multi-agent orchestration reliability · grounded≠true
+> misgrounding) or stopping it is Jinan's call (surfaced via PushNotification fire 2).**
+
+
 Theme: each fire ANALYZES openclaw (/Users/jinan/ai/openclaw, TS, MIT) + hermes-agent
 (/Users/jinan/ai/hermes-agent, Python, MIT/Apache) to find the next genuine CONVERGENCE gap
 (a capability BOTH built independently = essential signal) that Muse LACKS, then BUILDS it. If a
@@ -15,16 +26,7 @@ Tier1 (local commits, no push). Reference patterns only — verbatim copy forbid
 - Weak/low-conviction convergence (defer unless a real need): MITM traffic-capture proxy (weak convergence + local-only tension).
 
 ## Capabilities in progress
-### MCP supply-chain static vetting (convergence gap: openclaw audit.ts + hermes osv_check/skills_ast_audit)
-A deterministic, LOCAL, fail-close static auditor of an external MCP server's config (command/args/env)
-run at McpManager register/connect — BEFORE the server is connected — alongside the existing name
-allowlist. Dangerous patterns (shell download-pipe-execute, eval/`sh -c` wrappers, command-injection
-metacharacters, suspicious absolute-path binaries) ⇒ server DISABLED fail-close (uncertain ⇒ refuse),
-reason recorded; no exception. Local-only (pure static, no network); a network OSV advisory feed is
-opt-in/offline and DEFERRED. Skill-body AST scan deferred (Muse skills are self-authored, not hub-imported).
-- [x] Phase 1 — `auditMcpServerConfig(server) -> {safe, reasons[]}` pure static scanner + the fail-close
-      gate at McpManager.register/connect (reuse the isServerAllowed seam) + tests (dangerous blocked,
-      normal npx passes, injection trips, mutation: bypass ⇒ dangerous connects RED).
+(none — MCP supply-chain audit shipped fire 1; next fire scouts)
 
 ## Fire log
 (appended per fire)
@@ -40,3 +42,10 @@ verdict: PASS (re-judge PASS after fixes + full pnpm check 0) · the ONE genuine
 - NOTE: this is likely the LAST clear convergence gap — the fine scout confirmed Muse is mature vs both rivals (PTC + SecretSource + this close the "both-have ∩ Muse-lacks" set). Next fires may honestly report vein exhaustion.
 
 lesson: a security gate's two failure modes (false-block legit · miss a bypass) BOTH need an adversarial judge — the builder's own 21 happy-path tests PASSed while the gate would have broken every project-local MCP server AND let `python3 -c` RCE through. And a strict new gate WILL surface a real regression in existing tests that used the now-flagged shape (node -e fixtures) — fix the test to the realistic shape, don't weaken the gate.
+
+## fire 2 · 2026-07-01 · (journal-only) · CONVERGENCE VEIN EXHAUSTED (3rd independent confirmation)
+verdict: no build slice — honest exhaustion, NOT make-work (the loop's "할 게 없다 금지"는 *스카웃을 더 하드하게*가 아니라 정직히 종료하라는 뜻; 억지 갭 금지).
+- DID: cleared the in-progress section (MCP audit shipped fire 1); ran a THIRD scout at a fresh angle — 6 cross-cutting DIMENSIONS (resilience · data-handling · observability · operator affordances · safety guardrails · eval infra) that the two prior capability-focused scouts didn't target.
+- FOUND: every both-have mechanism Muse ALREADY has, freshness-guarded by name: loop/circuit-breaker (tool-loop-progress.ts/tool-failure-streak.ts/tool-call-deduplicator.ts, arXiv-grounded) · state-migration (db/migrations.ts + per-store schemaVersion) · resume-replay + `muse why` + action-log · `muse doctor` + Zod config · SSRF (web-url-guard.ts, IPv4+IPv6+CGNAT+metadata) · output-size cap (tool-output-summary.ts — its header already cites hermes) · eval infra (eval:tools/judge/adversarial/plan-quality + self-eval scoreboard, the deepest of the three). TWO Muse files explicitly cite the competitor/arXiv as reference — Muse absorbed these patterns deliberately, not by coincidence.
+- CONCLUSION: the convergence surface between Muse and openclaw+hermes is genuinely CLOSED. 3 independent passes ⇒ this is a robust finding, not a missed scout.
+lesson: a maturity verdict needs MULTIPLE independent angles (capability · mechanism · cross-cutting dimension) before it's trustworthy — one scout can miss, three converging is signal. When a THEME (not just a vein) is exhausted, the honest move is to record it loudly + surface a re-point to Jinan async (PushNotification) + make future fires CHEAP (a banner the next fire reads to avoid re-burning an Opus scout) — never manufacture a gap to keep the loop "busy".

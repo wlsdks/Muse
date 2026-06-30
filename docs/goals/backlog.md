@@ -3169,4 +3169,4 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## COMPETITOR-CONVERGENCE — active loop (loop/competitor-convergence)
 Each fire: analyze openclaw+hermes → next convergence gap (both-have ∩ Muse-lacks, freshness-checked) → build.
-- ◦ (scout the next convergence gap — PTC + SecretSource + the already-have list are excluded)
+- ✓ CONVERGENCE EXHAUSTED (fire 2, 3 independent scouts) — PTC · SecretSource · MCP-audit shipped; surface closed. Re-point to a frontier axis or stop = Jinan's call.
