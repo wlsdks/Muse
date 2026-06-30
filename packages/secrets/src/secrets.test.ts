@@ -114,8 +114,17 @@ describe("createSecretScope — least-privilege, fail-closed", () => {
     const source = createStoreSource("vault", () => Promise.resolve("tg-secret"));
     const scope = createSecretScope(["telegram-token"]);
     expect(await scope.get({ name: "telegram-token" }, [source])).toBe("tg-secret");
-    expect(scope.permits("telegram-token")).toBe(true);
-    expect(scope.permits("gmail-password")).toBe(false);
+    expect(scope.permits({ name: "telegram-token" })).toBe(true);
+    expect(scope.permits({ name: "gmail-password" })).toBe(false);
+  });
+
+  it("a service-pinned scope entry fails closed across services (cross-service bypass closed)", async () => {
+    const source = createStoreSource("vault", () => Promise.resolve("tg-secret"));
+    const scope = createSecretScope([{ name: "token", service: "telegram" }]);
+    expect(scope.permits({ name: "token", service: "telegram" })).toBe(true);
+    expect(scope.permits({ name: "token", service: "gmail" })).toBe(false); // same name, other service → denied
+    expect(scope.permits({ name: "token" })).toBe(false);                   // unqualified → denied
+    expect(await scope.get({ name: "token", service: "gmail" }, [source])).toBeUndefined();
   });
 });
 

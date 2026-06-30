@@ -1,5 +1,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
+import { redactSecrets } from "./secret-redaction.js";
+
 export {
   clearSecretRegistryForTests,
   hasRegisteredSecrets,
@@ -203,7 +205,11 @@ export function redactSecretsInText(value: string): string {
   for (const { name, regex } of SECRET_PATTERNS) {
     scrubbed = scrubbed.replace(regex, `[redacted-${name}]`);
   }
-  return scrubbed;
+  // ALSO mask any EXACT secret value resolved through SecretSource (the registry). The pattern loop
+  // only catches credential-SHAPED strings; an arbitrary resolved value (a keychain password) has no
+  // shape. Composing both here means every sink that scrubs text (29 call sites) masks resolved
+  // secrets too — a no-op until a secret is registered, so no behavior change for non-secret text.
+  return redactSecrets(scrubbed);
 }
 
 /**

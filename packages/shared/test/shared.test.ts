@@ -365,3 +365,15 @@ describe("formatErrorForTerminal — single sanitizer for printing unknown error
     expect(formatErrorForTerminal(new Error(""))).toBe("");
   });
 });
+
+describe("redactSecretsInText composes the SecretSource registry (covers every text sink)", () => {
+  it("masks an arbitrary REGISTERED resolved value (not just credential-shaped strings)", async () => {
+    const { redactSecretsInText, registerSecretValue, clearSecretRegistryForTests } = await import("../src/index.js");
+    clearSecretRegistryForTests();
+    registerSecretValue("arbitraryKeychainPw_xyz", "GMAIL");
+    expect(redactSecretsInText("log: arbitraryKeychainPw_xyz end")).toBe("log: ‹secret:GMAIL› end");
+    expect(redactSecretsInText("ordinary text no secret")).toBe("ordinary text no secret"); // no regression
+    clearSecretRegistryForTests();
+    expect(redactSecretsInText("arbitraryKeychainPw_xyz")).toBe("arbitraryKeychainPw_xyz"); // no-op once cleared/unregistered
+  });
+});
