@@ -1,5 +1,12 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
+export {
+  clearSecretRegistryForTests,
+  hasRegisteredSecrets,
+  redactSecrets,
+  registerSecretValue
+} from "./secret-redaction.js";
+
 export type JsonPrimitive = string | number | boolean | null;
 
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];

@@ -3169,8 +3169,8 @@ ordering, SHIPPED) and #2's mechanism+measurement are in Done below. Next from t
 
 ## SECRETSOURCE — active loop (feat/secret-source)
 Design: docs/strategy/secret-source.md · convergence pick (openclaw+hermes both built it).
-- ◦ Phase 1 — interface + resolver + redaction primitive (pure)
-- ◦ Phase 2 — keychain + env + legacy-store adapters (FIXED argv subprocess)
-- ◦ Phase 3 — scoping + redaction wiring into live log sinks (secret never in model/grounding)
-- ◦ Phase 4 — 1Password + Bitwarden adapters
-- ◦ Phase 5 — wire into live outbound credential-fetch + e2e + doctor + docs
+- ✓ Phase 1 — interface + resolver + redaction primitive (pure)
+- ✓ Phase 2 — keychain + env + legacy-store adapters (FIXED argv subprocess)
+- ✓ Phase 3 — scoping + redaction wiring into live log sinks (secret never in model/grounding)
+- ~ Phase 4 — 1Password+Bitwarden (DEFERRED, design-optional)
+- ✓ Phase 5 — wire into live outbound credential-fetch + e2e + doctor + docs

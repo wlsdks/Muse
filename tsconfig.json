@@ -89,6 +89,9 @@
       "path": "./packages/scheduler"
     },
     {
+      "path": "./packages/secrets"
+    },
+    {
       "path": "./packages/shared"
     },
     {

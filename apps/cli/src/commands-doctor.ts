@@ -15,7 +15,7 @@ import { existsSync, promises as fs } from "node:fs";
 import { formatRelativeTime } from "./human-formatters.js";
 import { parseAlpha, runCalibrationDoctor } from "./commands-doctor-calibration.js";
 export { buildCalibrationReport, formatCalibration, parseAlpha } from "./commands-doctor-calibration.js";
-import { backgroundProcessCheck, episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, readMuseSpeedEnv, readOllamaPerfEnv, schedulerPauseCheck, selfLearningCheck, weaknessFuelCheck, webEgressCheck, type LocalCheck } from "./commands-doctor-checks.js";
+import { backgroundProcessCheck, episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, readMuseSpeedEnv, readOllamaPerfEnv, schedulerPauseCheck, secretSourcesCheck, selfLearningCheck, weaknessFuelCheck, webEgressCheck, type LocalCheck } from "./commands-doctor-checks.js";
 import { backgroundStoreFile } from "./commands-background.js";
 import { findOllamaModelTag, isOllamaTagsEntry, type OllamaTagsEntry } from "./commands-doctor-ollama.js";
 import { readNotesIndexEmbedModel } from "./commands-doctor-checks.js";
@@ -24,7 +24,7 @@ export { embedModelCheck, recallCalibrationCheck } from "./commands-doctor-check
 export { parseNotesIndexEmbedModel } from "./commands-doctor-checks.js";
 export { findOllamaModelTag } from "./commands-doctor-ollama.js";
 export type { OllamaTagsEntry } from "./commands-doctor-ollama.js";
-export { episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, selfLearningCheck, weaknessFuelCheck } from "./commands-doctor-checks.js";
+export { episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, secretSourcesCheck, selfLearningCheck, weaknessFuelCheck } from "./commands-doctor-checks.js";
 export type { LocalCheck } from "./commands-doctor-checks.js";
 import { classifyHomeAlertsConfig, classifyMcpServersField, classifyWebWatchConfig, resolveDoctorWatchIntervalMs, resolveMuseEnvPath } from "./commands-doctor-config.js";
 export { classifyHomeAlertsConfig, classifyMcpServersField, classifyWebWatchConfig, resolveDoctorWatchIntervalMs, resolveMuseEnvPath } from "./commands-doctor-config.js";
@@ -471,6 +471,10 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   // Outbound messengers (Telegram/Discord/Slack/LINE) — opt-in; surface which
   // are wired so the user knows why `muse messaging send` has/has no target.
   checks.push({ name: "messaging", ...messagingConfigCheck(process.env as Record<string, string | undefined>) });
+
+  // SecretSource posture — which local vault readers the resolver will use
+  // (boolean only; never a secret value).
+  checks.push(secretSourcesCheck(env));
 
   // SearXNG (optional — `MUSE_SEARXNG_URL` opt-in). When set, probe
   // both reachability (`/healthz`) AND the JSON-format path that
