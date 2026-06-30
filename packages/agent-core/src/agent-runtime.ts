@@ -59,6 +59,7 @@ import { applyAttachmentContext as applyAttachmentContextFn } from "./attachment
 import { joinUserMessages } from "./internals.js";
 import { groundToolArguments } from "./tool-argument-grounding.js";
 import { executeToolPlan, parseToolPlan, type ToolPlan, type ToolPlanExecutor, type ToolPlanResult } from "./tool-plan.js";
+import type { ToolExemplar } from "./tool-exemplars.js";
 import type { ToolCallMiddleware } from "./tool-call-middleware.js";
 import {
   applyActiveContext as applyActiveContextFn,
@@ -67,6 +68,7 @@ import {
   applyInboxContextWithGrounding as applyInboxContextWithGroundingFn,
   applyPromptExemplars as applyPromptExemplarsFn,
   applyPromptLayers as applyPromptLayersFn,
+  applyToolExemplars as applyToolExemplarsFn,
   applyStoredConversationSummary as applyStoredConversationSummaryFn,
   applyUserMemory as applyUserMemoryFn,
   persistConversationSummaryFromRequest as persistConversationSummaryFromRequestFn,
@@ -236,6 +238,8 @@ export class AgentRuntime {
   private readonly responseFilters: readonly ResponseFilterStage[];
   private readonly exemplarRetriever?: ExemplarRetriever;
   private readonly exemplarTopK: number;
+  private readonly toolExemplarBank?: readonly ToolExemplar[];
+  private readonly toolExemplarTopK: number;
   private readonly promptLayerRegistry?: PromptLayerRegistry;
   private readonly activeContextProvider?: ActiveContextProvider;
   private readonly ambientSnapshotProvider?: AmbientSnapshotProvider;
@@ -304,6 +308,8 @@ export class AgentRuntime {
     this.responseFilters = options.responseFilters ?? [];
     this.exemplarRetriever = options.exemplarRetriever;
     this.exemplarTopK = Math.max(1, options.exemplarTopK ?? 3);
+    this.toolExemplarBank = options.toolExemplarBank;
+    this.toolExemplarTopK = Math.max(1, options.toolExemplarTopK ?? 3);
     this.promptLayerRegistry = options.promptLayerRegistry;
     this.activeContextProvider = options.activeContextProvider;
     this.ambientSnapshotProvider = options.ambientSnapshotProvider;
@@ -496,6 +502,11 @@ export class AgentRuntime {
     );
     await this.recordRunStart(layeredContext, selected.provider.id, selected.model);
 
+    // Resolve the exposed tool set ONCE (the exposure plan keys off the user
+    // prompt, which the system-section transforms never mutate) so the
+    // tool-exemplar few-shot and the model request advertise the identical set.
+    const tools = this.modelTools(layeredContext);
+
     const memoryAppliedInput = await applyUserMemoryFn(layeredContext, this.userMemoryProvider, this.userMemoryMaxEntries);
     const clarifyAppliedInput = applyClarifyDirectiveFn({ ...layeredContext, input: memoryAppliedInput });
     const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: clarifyAppliedInput };
@@ -518,7 +529,13 @@ export class AgentRuntime {
     );
     const attachmentAppliedInput = applyAttachmentContextFn({ ...memoryAppliedContext, input: playbookInput });
     const skillsAppliedInput = await applySkillsContextFn({ ...memoryAppliedContext, input: attachmentAppliedInput }, this.skillCatalogProvider);
-    const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: skillsAppliedInput };
+    const toolExemplarInput = applyToolExemplarsFn(
+      { ...memoryAppliedContext, input: skillsAppliedInput },
+      this.toolExemplarBank,
+      tools.map((tool) => tool.name),
+      this.toolExemplarTopK
+    );
+    const activeContextContext: AgentRunContext = { ...memoryAppliedContext, input: toolExemplarInput };
     const { input: inboxAppliedInput, groundingSources: inboxGroundingSources } = await applyInboxContextWithGroundingFn(activeContextContext, this.inboxContextProvider);
     const inboxAppliedContext: AgentRunContext = { ...activeContextContext, input: inboxAppliedInput };
     const episodicAppliedInput = await applyEpisodicRecallFn(inboxAppliedContext, this.episodicRecallProvider);
@@ -567,7 +584,6 @@ export class AgentRuntime {
     if (promptBudget) {
       recordPromptBudgetSpanAttributes(runSpan, promptBudgetSpanAttributes(promptBudget));
     }
-    const tools = this.modelTools(layeredContext);
     const cacheKey = buildCacheKey(cacheableModelRequest(preparedRequest.request), tools.map((tool) => tool.name));
     const cached = await this.readCache(cacheKey, selected.model);
 

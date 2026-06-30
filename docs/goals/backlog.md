@@ -3174,4 +3174,4 @@ Design: docs/strategy/programmatic-tool-calling.md · plan-first (v1, no arbitra
 - ✓ Phase 3 — run_tool_plan tool + grounding wiring + eval golden — fire 3
 - ◦ Phase 4 — live proof on gemma4 (1-inference multi-step, grounded) + delta measure
 - ✓ Phase 4 — live proof on gemma4 (4/4 with few-shot; valid plan emission) — fire 4
-- ◦ Phase 5 — PRODUCTION exemplar wiring: renderToolExemplarSection into live runtime + run_tool_plan seed (PTC invisible to the model without it)
+- ✓ Phase 5 — production exemplar wiring + run_tool_plan seed — fire 5 (PTC COMPLETE)

@@ -17,7 +17,7 @@ until COMPLETE. Tier1 (local commits, no push). Source mirror: hermes-agent (MIT
       multi-step task completes in ONE inference, intermediate results absent from context, answer
       grounded. Measure delta vs the per-tool loop.
 
-- [ ] Phase 5 — PRODUCTION delivery: wire renderToolExemplarSection into the LIVE runtime prompt assembly + seed a static run_tool_plan exemplar, so real `muse chat/ask` on gemma4 gets the few-shot and actually selects/emits plans (without it PTC is invisible to the model in production). Then a live end-to-end run.
+- [x] Phase 5 — PRODUCTION delivery: wire renderToolExemplarSection into the LIVE runtime prompt assembly + seed a static run_tool_plan exemplar, so real `muse chat/ask` on gemma4 gets the few-shot and actually selects/emits plans (without it PTC is invisible to the model in production). Then a live end-to-end run.
 
 ## Fire log
 (appended per fire)
@@ -51,3 +51,13 @@ verdict: PARTIAL · Phase 4 live proof on gemma4:12b
 - HONEST GAP (the last mile): `selectToolExemplars`/`renderToolExemplarSection` are an existing capability used ONLY by the eval + tests — they are NOT yet wired into the LIVE runtime prompt. So in real `muse chat/ask`, gemma4 gets no few-shot → would NOT pick run_tool_plan. FULL production delivery needs: (a) wire the tool-exemplar section into the live prompt assembly, (b) seed a static run_tool_plan exemplar. That is the next fire (Phase 4.5 / hardening), a bounded follow-on.
 - REVIEW: eval:tools PTC scenario 4/4 @ threshold 85% (REPEAT=2) on gemma4:12b; the emitted plans are valid + executable (Phase 1 schema). lint 0.
 - lesson: a NEW orchestrator tool is invisible to a 12B without few-shot — the exemplar bank is not optional polish, it is the delivery mechanism. PTC is machinery-complete + live-proven, NOT yet production-wired.
+
+## fire 5 · 2026-06-30 · fire5 · Phase 5 — PRODUCTION delivery (PTC COMPLETE pending)
+verdict: PASS · Phase 5 (wire tool-exemplar few-shot into the live runtime + seed run_tool_plan)
+- WHAT: a new `applyToolExemplars` system-section transform (context-transforms.ts), threaded in AgentRuntime.prepareInvocation alongside the existing playbook/skills injections — when tools are exposed it injects `renderToolExemplarSection(selectToolExemplars(query, bank, k=3))` into the live system prompt; fail-open (empty bank / no overlap / empty query / throw ⇒ no section). agent-runtime hoists the exposed-tool set so the few-shot advertises EXACTLY the tools the model request does. New seed `RUN_TOOL_PLAN_EXEMPLAR_BANK` (tool-plan-exemplars.ts): 10 paraphrases (6 multi-step→run_tool_plan, 2 single-call→native, 2 greeting→null restraint). autoconfigure `buildToolExemplarBank(env)` (default-on; MUSE_TOOL_EXEMPLARS=false opt-out), wired into createAgentRuntime.
+- WHY: Phase 4 proved PTC works on gemma4 ONLY with few-shot, but the exemplar capability wasn't wired live. This is the last mile — real `muse chat/ask` now gets the run_tool_plan few-shot, so a 12B actually selects + emits plans in production.
+- REVIEW: 6 agent-core tests (behavioral — capture the ASSEMBLED prompt via a recording provider: section reaches the prompt for a multi-step query; restraint preserved for single-call; fail-open ×3; no-tools ⇒ no section) + 3 autoconfigure (bank default-on / opt-out) + mutation RED (inject→passthrough ⇒ section tests RED) + agent-core 2731 + autoconfigure 648 (no regression) + 0 TS + lint 0 + live eval 4/4. Invariants untouched (only a prompt SECTION added; approval/grounding/per-step gating from Phases 2-3 unchanged).
+- RISK: few-shot biases toward firing — countered by the seed bank's restraint cases + selectToolExemplars' no-tool swap. The exposed-tool hoist is the one refactor; verified the advertised set + cache key are unchanged for the non-exemplar path.
+
+## PTC COMPLETE ✅ (fire-5 judge PASS)
+All 5 phases [x]: pure interpreter (1) → gated execution (2) → run_tool_plan tool + grounding (3) → live proof on gemma4 (4) → production few-shot wiring (5). PTC collapses a local-12B N-step tool chain into ONE inference, keeps intermediate results out of context, grounds the answer, and every step passes the same approval + arg-grounding gates as a native call. Source mirror: hermes-agent tools/code_execution_tool.py (MIT/Apache), plan-first reimplementation.
