@@ -188,3 +188,14 @@ describe("createKeychainSource — FIXED argv, never a shell string", () => {
     await expect(src.get({ name: "absent" })).resolves.toBeUndefined();
   });
 });
+
+describe("resolveSecret — a throwing source is a fail-open miss (no leak via a propagated error)", () => {
+  it("a source whose get() throws (with the secret in the message) falls through, never propagates", async () => {
+    const SECRET = "throwLeakSecret_9988";
+    const throwing = { id: "bad", local: true, get: async () => { throw new Error("vault failed reading " + SECRET); } };
+    const env = { id: "env", local: true, get: async () => "fallbackval" };
+    await expect(resolveSecret({ name: "API" }, [throwing, env])).resolves.toBe("fallbackval");
+    // and when EVERY source throws → undefined, not a crash
+    await expect(resolveSecret({ name: "X" }, [{ id: "a", local: true, get: async () => { throw new Error("boom"); } }])).resolves.toBeUndefined();
+  });
+});

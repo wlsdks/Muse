@@ -24,7 +24,16 @@ export async function resolveSecret(
       // Fail-closed against egress: never query a non-local source.
       continue;
     }
-    const value = await source.get(ref);
+    let value: string | undefined;
+    try {
+      value = await source.get(ref);
+    } catch {
+      // A source that THROWS (a locked / erroring vault) is a miss — fall through to the next
+      // source (the §4 fail-open contract). Crucially the error is SWALLOWED, never propagated:
+      // it could carry the raw secret (read just before the throw) UN-registered, so a catch/logger
+      // upstream would leak it. The boolean miss is all the caller needs.
+      continue;
+    }
     if (value !== undefined) {
       registerSecretValue(value, ref.name);
       return value;

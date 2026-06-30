@@ -27,8 +27,18 @@ const registry = new Map<string, string>();
  * values are ignored (nothing to mask). Idempotent; a later name for the same
  * value overwrites the label only.
  */
+/**
+ * Below this length a value is NOT registered: a 1-3 char "secret" isn't a real
+ * credential (tokens/keys/passwords are far longer), and masking such a short
+ * literal would replace EVERY occurrence of it across logs — corrupting the log
+ * and, by the mask density, REVEALING the value rather than hiding it.
+ * Over-masking a common short substring is a worse harm than not masking a value
+ * too short to be a real secret.
+ */
+const MIN_REGISTERED_SECRET_LENGTH = 4;
+
 export function registerSecretValue(value: string, name: string): void {
-  if (typeof value !== "string" || value.length === 0) {
+  if (typeof value !== "string" || value.length < MIN_REGISTERED_SECRET_LENGTH) {
     return;
   }
   registry.set(value, name);
