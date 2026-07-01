@@ -14,6 +14,7 @@ import {
   PLAYBOOK_RECENCY_HALF_LIFE_DAYS,
   PLAYBOOK_REWARD_MAX,
   PLAYBOOK_REWARD_MIN,
+  playbookInjectedIdsFromMetadata,
   rankingUtility,
   rankPlaybookStrategies,
   rankPlaybookStrategiesByRelevance,
@@ -149,6 +150,66 @@ describe("playbook wired into the live agent-runtime pipeline (ACE 2510.04618)",
     const hasSystem = (sinkB.request?.messages ?? []).filter((m) => m.role === "system").map((m) => m.content).join("\n");
     expect(hasSystem).toContain("[Learned Strategies]");
     expect(hasSystem).toContain("under 4 sentences");
+  });
+
+  it("run() surfaces the injected strategy ids on the result; stream() carries them on the done event", async () => {
+    const provider: PlaybookProvider = {
+      listStrategies: async () => [
+        { id: "pb_email", tag: "email", text: "keep work emails under 4 sentences" },
+        { text: "no-id legacy strategy" }
+      ]
+    };
+    const result = await createAgentRuntime({ modelProvider: captureProvider({}), playbookProvider: provider }).run({
+      messages: [{ content: "draft a reply to Sam", role: "user" }],
+      metadata: { userId: "stark" }, model: "capture/model", runId: "p-ids"
+    });
+    expect(result.playbookInjectedIds).toEqual(["pb_email"]); // only id-bearing strategies are recordable
+
+    let doneIds: readonly string[] | undefined;
+    for await (const event of createAgentRuntime({ modelProvider: captureProvider({}), playbookProvider: provider }).stream({
+      messages: [{ content: "draft a reply to Sam", role: "user" }],
+      metadata: { userId: "stark" }, model: "capture/model", runId: "p-ids-stream"
+    })) {
+      if (event.type === "done") doneIds = event.playbookInjectedIds;
+    }
+    expect(doneIds).toEqual(["pb_email"]);
+  });
+
+  it("run() omits playbookInjectedIds when no strategy carries an id or nothing was injected", async () => {
+    const withoutIds: PlaybookProvider = { listStrategies: async () => [{ text: "no-id strategy" }] };
+    const injected = await createAgentRuntime({ modelProvider: captureProvider({}), playbookProvider: withoutIds }).run({
+      messages: [{ content: "draft a reply", role: "user" }],
+      metadata: { userId: "stark" }, model: "capture/model", runId: "p-no-ids"
+    });
+    expect(injected.playbookInjectedIds).toBeUndefined();
+
+    const none = await createAgentRuntime({ modelProvider: captureProvider({}) }).run({
+      messages: [{ content: "draft a reply", role: "user" }],
+      metadata: { userId: "stark" }, model: "capture/model", runId: "p-no-playbook"
+    });
+    expect(none.playbookInjectedIds).toBeUndefined();
+  });
+});
+
+describe("applyPlaybook injected-id recording + playbookInjectedIdsFromMetadata", () => {
+  it("records the ids of the strategies the rendered block carries (empty-text entries excluded)", async () => {
+    const out = await applyPlaybook(ctx([{ content: "reschedule the review", role: "user" }], "stark"), {
+      listStrategies: async () => [
+        { id: "pb_a", text: "when rescheduling, default to the next business day" },
+        { id: "pb_blank", text: "   " },
+        { text: "no-id strategy" }
+      ]
+    });
+    expect(out.metadata?.playbookInjectedIds).toEqual(["pb_a"]);
+    expect(playbookInjectedIdsFromMetadata(out.metadata)).toEqual(["pb_a"]);
+  });
+
+  it("parser: undefined on absent/malformed metadata, drops non-string members", () => {
+    expect(playbookInjectedIdsFromMetadata(undefined)).toBeUndefined();
+    expect(playbookInjectedIdsFromMetadata({})).toBeUndefined();
+    expect(playbookInjectedIdsFromMetadata({ playbookInjectedIds: "pb_a" })).toBeUndefined();
+    expect(playbookInjectedIdsFromMetadata({ playbookInjectedIds: [] })).toBeUndefined();
+    expect(playbookInjectedIdsFromMetadata({ playbookInjectedIds: [1, "pb_a", ""] })).toEqual(["pb_a"]);
   });
 });
 

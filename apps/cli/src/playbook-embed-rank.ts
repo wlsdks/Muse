@@ -6,6 +6,7 @@ import { rankPlaybookStrategiesByRelevance, type PlaybookStrategy } from "@muse/
  * CLI doesn't depend on the mcp store's concrete entry type.
  */
 export interface PlaybookEntryLike {
+  readonly id?: string;
   readonly text: string;
   readonly tag?: string;
   readonly reward?: number;
@@ -19,6 +20,9 @@ export interface PlaybookEntryLike {
 
 export function toPlaybookStrategy(entry: PlaybookEntryLike): PlaybookStrategy {
   return {
+    // id must survive the projection — the injected-id record (and with it
+    // session-end reinforcement credit) keys on it; same class as origin below.
+    ...(entry.id ? { id: entry.id } : {}),
     text: entry.text,
     ...(entry.tag ? { tag: entry.tag } : {}),
     ...(typeof entry.reward === "number" ? { reward: entry.reward } : {}),

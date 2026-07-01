@@ -425,6 +425,10 @@ export function buildPlaybookProvider(env: MuseEnvironment): PlaybookProvider | 
   return {
     listStrategies: async (userId: string) =>
       (await queryPlaybook(file, userId)).map((entry) => ({
+        // id must survive the projection — applyPlaybook records the injected
+        // id set from it so session-end reinforcement credit targets an
+        // actually-injected strategy (dropping it reverts credit to cosine).
+        ...(entry.id ? { id: entry.id } : {}),
         ...(typeof entry.decays === "number" ? { decays: entry.decays } : {}),
         ...(entry.probation ? { probation: true } : {}),
         ...(typeof entry.reinforcements === "number" ? { reinforcements: entry.reinforcements } : {}),

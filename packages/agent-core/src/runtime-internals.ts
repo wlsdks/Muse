@@ -187,6 +187,7 @@ export function createRunResult(
     readonly toolsUsed?: readonly string[];
     readonly toolResults?: readonly ExecutedToolResult[];
     readonly inboxSources?: readonly { readonly source: string; readonly text: string }[];
+    readonly playbookInjectedIds?: readonly string[];
   } = {}
 ): AgentRunResult {
   const agentSpecReport = agentSpec ? toAgentSpecRunReport(agentSpec) : undefined;
@@ -198,6 +199,9 @@ export function createRunResult(
     ...(execution.fromCache ? { fromCache: true } : {}),
     ...(execution.toolsUsed && execution.toolsUsed.length > 0 ? { toolsUsed: execution.toolsUsed } : {}),
     ...(groundingSources.length > 0 ? { groundingSources } : {}),
+    ...(execution.playbookInjectedIds && execution.playbookInjectedIds.length > 0
+      ? { playbookInjectedIds: execution.playbookInjectedIds }
+      : {}),
     response,
     runId
   };

@@ -81,7 +81,7 @@ import {
 import type { AmbientSnapshotProvider } from "./ambient-context.js";
 import { applyVetoAvoidance as applyVetoAvoidanceFn } from "./veto-avoidance.js";
 import type { VetoAvoidanceProvider } from "./veto-avoidance.js";
-import { applyPlaybook as applyPlaybookFn } from "./playbook.js";
+import { applyPlaybook as applyPlaybookFn, playbookInjectedIdsFromMetadata } from "./playbook.js";
 import type { PlaybookProvider } from "./playbook.js";
 import type { PlanCacheProvider } from "./plan-cache.js";
 import { applyClarifyDirective as applyClarifyDirectiveFn } from "./clarify-directive.js";
@@ -344,7 +344,7 @@ export class AgentRuntime {
     });
 
     try {
-      const { cached, cacheKey, inboxGroundingSources, layeredContext, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
+      const { cached, cacheKey, inboxGroundingSources, layeredContext, playbookInjectedIds, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
         await this.prepareInvocation(context, runSpan);
 
       if (cached) {
@@ -354,7 +354,7 @@ export class AgentRuntime {
           guardedCachedResponse,
           preparedRequest.contextWindow,
           layeredContext.agentSpec,
-          { fromCache: true, inboxSources: inboxGroundingSources, toolsUsed: cached.toolsUsed }
+          { fromCache: true, inboxSources: inboxGroundingSources, playbookInjectedIds, toolsUsed: cached.toolsUsed }
         );
       }
 
@@ -384,7 +384,7 @@ export class AgentRuntime {
         guardedResponse,
         preparedRequest.contextWindow,
         layeredContext.agentSpec,
-        { inboxSources: inboxGroundingSources, toolResults: execution.toolResults, toolsUsed: execution.toolsUsed }
+        { inboxSources: inboxGroundingSources, playbookInjectedIds, toolResults: execution.toolResults, toolsUsed: execution.toolsUsed }
       );
     } catch (error) {
       await this.handleRunError(context, runSpan, error, startedAtMs);
@@ -409,13 +409,13 @@ export class AgentRuntime {
     });
 
     try {
-      const { cached, cacheKey, layeredContext, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
+      const { cached, cacheKey, layeredContext, playbookInjectedIds, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
         await this.prepareInvocation(context, runSpan);
 
       if (cached) {
         const guardedCachedResponse = await this.processCachedResponse(layeredContext, cached, selected, startedAtMs);
         yield { runId: layeredContext.runId, text: guardedCachedResponse.output, type: "text-delta" };
-        yield { response: guardedCachedResponse, runId: layeredContext.runId, type: "done" };
+        yield { ...(playbookInjectedIds ? { playbookInjectedIds } : {}), response: guardedCachedResponse, runId: layeredContext.runId, type: "done" };
         return;
       }
 
@@ -466,7 +466,7 @@ export class AgentRuntime {
       if ((!forwardTextDeltas || isPlanExecuteRun) && response.output.length > 0) {
         yield { runId: layeredContext.runId, text: response.output, type: "text-delta" };
       }
-      yield { response, runId: layeredContext.runId, type: "done" };
+      yield { ...(playbookInjectedIds ? { playbookInjectedIds } : {}), response, runId: layeredContext.runId, type: "done" };
     } catch (error) {
       await this.handleRunError(context, runSpan, error, startedAtMs);
       throw error;
@@ -483,6 +483,7 @@ export class AgentRuntime {
     readonly cacheKey: string;
     readonly inboxGroundingSources: readonly { readonly source: string; readonly text: string }[];
     readonly layeredContext: AgentRunContext;
+    readonly playbookInjectedIds: readonly string[] | undefined;
     readonly preparedRequest: ReturnType<AgentRuntime["prepareModelRequest"]>;
     readonly promptBudget: ReturnType<typeof measureSystemPromptBudget>;
     readonly selected: { readonly provider: ModelProvider; readonly model: string };
@@ -592,6 +593,7 @@ export class AgentRuntime {
       cacheKey,
       inboxGroundingSources,
       layeredContext,
+      playbookInjectedIds: playbookInjectedIdsFromMetadata(playbookInput.metadata),
       preparedRequest,
       promptBudget,
       selected,

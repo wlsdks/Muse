@@ -7,6 +7,7 @@ import { queryPlaybook, recordPlaybookStrategy } from "@muse/stores";
 import { describe, expect, it } from "vitest";
 
 import { distillSessionCorrections } from "./chat-distill-corrections.js";
+import { appendPlaybookInjection } from "./playbook-injections.js";
 
 const stub = (output: string): ModelProvider => ({
   id: "stub",
@@ -52,6 +53,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async (text: string) => text.startsWith("그게") ? [1, 0, 0] : [0.8, 0.6, 0],
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => correctedSession
     });
     expect(res.status).toBe("recorded");
@@ -78,6 +80,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async (text: string) => text.startsWith("그게") ? [1, 0, 0] : [0.8, 0.6, 0],
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => correctedSession
     });
     expect(res.lowConsistencyRejected).toBe(1);
@@ -96,6 +99,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async () => [1, 0, 0],
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => correctedSession
     });
     expect(res.status).toBe("skipped");
@@ -109,6 +113,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       modelProvider: stub("strategy: should not be used\ntag: -"),
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => [
         { content: "회의록 정리해줘", role: "user" },
         { content: "정리했습니다", role: "assistant" },
@@ -133,6 +138,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async () => [1, 0], // supportive (hermetic) — keep the gate out of these unit tests
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => correctedSession
     });
     expect(res.status).toBe("skipped");
@@ -161,6 +167,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async () => [1, 0], // supportive (hermetic) — keep the gate out of these unit tests
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => correctedSession // request "회의록 정리해줘" → corrected to bullets
     });
     expect(res.decayed.map((d) => d.text)).toContain("회의록은 문단으로 정리한다");
@@ -182,6 +189,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async (text: string) => text.includes("회의록") ? [1, 0, 0] : [0, 1, 0],
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => [
         { content: "회의록 정리해줘", role: "user" },
         { content: "불릿으로 정리했습니다", role: "assistant" },
@@ -208,6 +216,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async (text: string) => text.includes("회의록") ? [1, 0, 0] : [0, 1, 0], // cue is 회의록-similar → matches pb_prob
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => [
         { content: "회의록 정리해줘", role: "user" },
         { content: "불릿으로 정리했습니다", role: "assistant" },
@@ -228,6 +237,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async (text: string) => text.includes("회의록") ? [1, 0, 0] : [0, 1, 0],
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => [
         { content: "회의록 정리해줘", role: "user" },
         { content: "불릿으로 정리했습니다", role: "assistant" },
@@ -252,6 +262,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async (t: string) => (t.includes("회의록") ? [0.58, 0.81462] : [1, 0]),
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => correctedSession
     });
     expect(res.decayed).toHaveLength(0); // 0.58 < 0.62 decay floor → no decay
@@ -274,6 +285,7 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
       embed: async (text: string) => (text.includes("핵심") || text.includes("완벽해") ? [1, 0, 0] : [0, 1, 0]),
       playbookFile: file,
       readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
       readLines: async () => [
         { content: "회의록 정리해줘", role: "user" },
         { content: "정리했습니다", role: "assistant" },
@@ -284,5 +296,74 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
     const saved = await queryPlaybook(file, "stark");
     expect(saved.find((e) => e.id === "pb_true")!.reward).toBe(1); // semantic match → reinforced
     expect(saved.find((e) => e.id === "pb_decoy")!.reward).toBeUndefined(); // lexical decoy → NOT credited
+  });
+});
+
+describe("INJECTED-ID reinforcement credit — reward targets an ACTUALLY-injected strategy", () => {
+  it("HEADLINE: a correction decays the recorded-injected strategy, NOT the cue-nearest never-injected bystander", async () => {
+    const file = await tmpPlaybook();
+    // pb_bystander is the cue-NEAREST strategy (cosine 1.0) but was never
+    // injected this session; pb_injected (cosine 0.8, above the 0.62 decay
+    // floor) is the one the session's prompts actually carried. Cosine-only
+    // credit decays the bystander — the recorded id set must redirect it.
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_bystander", text: "회의록은 문단으로 정리한다", userId: "stark" });
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_injected", text: "회의록은 표로 정리한다", userId: "stark" });
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: stub("NONE"), // no new distillation — isolate the credit decision
+      // cue ("… 그게 아니라 …") → [1,0]; bystander ("…문단…") → [1,0] (cosine 1.0);
+      // injected ("…표…") → [0.8,0.6] (cosine 0.8 ≥ 0.62 decay floor).
+      embed: async (text: string) => (text.includes("그게") || text.includes("문단") ? [1, 0] : [0.8, 0.6]),
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set(["pb_injected"]),
+      readLines: async () => correctedSession
+    });
+    expect(res.decayed.map((d) => d.text)).toContain("회의록은 표로 정리한다");
+    const saved = await queryPlaybook(file, "stark");
+    expect(saved.find((e) => e.id === "pb_injected")!.reward).toBe(-1); // actually injected → decayed
+    expect(saved.find((e) => e.id === "pb_bystander")!.reward).toBeUndefined(); // never injected → untouched
+  });
+
+  it("fail-closed: a recorded set that intersects no injectable candidate moves NOTHING (no cosine fallback)", async () => {
+    const file = await tmpPlaybook();
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_bystander", text: "회의록은 문단으로 정리한다", userId: "stark" });
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: stub("NONE"),
+      embed: async () => [1, 0],
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      // The recorded injected id is gone from the store (e.g. merged away):
+      // the session's real influencer can't be credited, and the bystander
+      // MUST NOT absorb the decay in its place.
+      readInjectedIds: async () => new Set(["pb_gone"]),
+      readLines: async () => correctedSession
+    });
+    expect(res.decayed).toHaveLength(0);
+    expect((await queryPlaybook(file, "stark")).find((e) => e.id === "pb_bystander")!.reward).toBeUndefined();
+  });
+
+  it("default reader wiring: the on-disk injections record (MUSE_PLAYBOOK_INJECTIONS_FILE) restricts credit end-to-end", async () => {
+    const file = await tmpPlaybook();
+    const injectionsFile = join(await mkdtemp(join(tmpdir(), "muse-injections-")), "playbook-injections.jsonl");
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_bystander", text: "회의록은 문단으로 정리한다", userId: "stark" });
+    await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_injected", text: "회의록은 표로 정리한다", userId: "stark" });
+    await appendPlaybookInjection({ ids: ["pb_injected"], tsIso: "2026-05-28T01:00:00.000Z", userId: "stark" }, injectionsFile);
+    process.env.MUSE_PLAYBOOK_INJECTIONS_FILE = injectionsFile;
+    try {
+      const res = await distillSessionCorrections({
+        model: "m",
+        modelProvider: stub("NONE"),
+        embed: async (text: string) => (text.includes("그게") || text.includes("문단") ? [1, 0] : [0.8, 0.6]),
+        playbookFile: file,
+        readBoundaries: async () => boundaries, // session starts 2026-05-28T00:00 — the record above is in-session
+        readLines: async () => correctedSession
+      });
+      expect(res.decayed.map((d) => d.text)).toContain("회의록은 표로 정리한다");
+      expect((await queryPlaybook(file, "stark")).find((e) => e.id === "pb_bystander")!.reward).toBeUndefined();
+    } finally {
+      delete process.env.MUSE_PLAYBOOK_INJECTIONS_FILE;
+    }
   });
 });

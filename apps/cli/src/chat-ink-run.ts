@@ -48,6 +48,7 @@ import { createQwenReverify } from "./grounding-eval-runner.js";
 import { searchRecall } from "./commands-recall.js";
 import { readTrust } from "./commands-trust.js";
 import { appendInputHistory, loadInputHistory } from "./chat-input-history.js";
+import { appendPlaybookInjection, forwardRecordingInjections } from "./playbook-injections.js";
 import { applyTurnLearnings, extractMemoryFromTurn, shouldAutoExtract, type AutoMemoryProvider } from "./chat-auto-memory.js";
 import { buildModelGroundingReverify, formatReflection, synthesizeReflection, type ReflectionProvider } from "./chat-reflection.js";
 import { listRecentJobIds, readJobSummary, startBackgroundJob } from "./commands-jobs.js";
@@ -171,7 +172,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     requestApproval: (toolName: string, detail: string, kind: "outbound" | "tool") => Promise<boolean>
   ): ChatStream => {
     if (!agentRuntime) return stream(messages, useModel);
-    return agentRuntime.stream({
+    const events = agentRuntime.stream({
       messages: messages as { role: "system" | "user" | "assistant"; content: string; attachments?: ReadonlyArray<{ mimeType: string; dataBase64: string }> }[],
       // `localMode` exposes execute-risk tools (email/web/home actuators, shell)
       // to the chat model; the fail-closed gate below is what keeps them safe —
@@ -181,6 +182,12 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
       metadata: { localMode: true, userId },
       model: useModel,
       toolApprovalGate: chatToolApprovalGate(OUTBOUND_ACTUATORS, requestApproval)
+    });
+    // Record which playbook strategies this turn's prompt carried so the
+    // end-of-session reward step credits an actually-injected strategy
+    // (fail-soft: a failed append never disturbs the stream).
+    return forwardRecordingInjections(events, (ids) => {
+      void appendPlaybookInjection({ ids, tsIso: new Date().toISOString(), userId }).catch(() => undefined);
     }) as ChatStream;
   };
 

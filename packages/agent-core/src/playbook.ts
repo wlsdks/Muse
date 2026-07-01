@@ -13,6 +13,13 @@ import type { AgentRunContext, AgentRunInput, Awaitable } from "./types.js";
  * Duck-typed so `agent-core` stays free of a `@muse/mcp` dependency.
  */
 export interface PlaybookStrategy {
+  /**
+   * Durable store id, when the provider has one. Lets the injection layer
+   * record WHICH strategies were injected (`metadata.playbookInjectedIds`) so
+   * session-end reinforcement credit can target an actually-injected strategy
+   * instead of re-deriving the target by cosine similarity.
+   */
+  readonly id?: string;
   /** The learned strategy, e.g. "when rescheduling, default to the next business day". */
   readonly text: string;
   /** Optional task-class tag so strategies can be scoped/filtered later. */
@@ -964,9 +971,33 @@ export async function applyPlaybook(
   if (!rendered) {
     return context.input;
   }
+  // Record WHICH strategies made the rendered block (same non-empty-text filter
+  // as renderPlaybookSection) so session-end reinforcement credit targets an
+  // actually-injected strategy. Entries without a store id are unrecordable.
+  const injectedIds = ranked
+    .filter((s) => sanitizeInline(s.text).length > 0)
+    .map((s) => s.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
   return {
     ...context.input,
     messages: appendSystemSection(context.input.messages, rendered, "playbook"),
-    metadata: { ...context.input.metadata, playbookApplied: true }
+    metadata: {
+      ...context.input.metadata,
+      playbookApplied: true,
+      ...(injectedIds.length > 0 ? { playbookInjectedIds: injectedIds } : {})
+    }
   };
+}
+
+/**
+ * The `playbookInjectedIds` recorded by {@link applyPlaybook}, or `undefined`
+ * when absent/malformed. Non-string members are dropped, never coerced.
+ */
+export function playbookInjectedIdsFromMetadata(metadata: Record<string, unknown> | undefined): readonly string[] | undefined {
+  const raw = metadata?.playbookInjectedIds;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const ids = raw.filter((id): id is string => typeof id === "string" && id.length > 0);
+  return ids.length > 0 ? ids : undefined;
 }

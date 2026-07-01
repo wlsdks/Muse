@@ -184,4 +184,12 @@ export interface AgentRunResult {
    * (e.g. a chat-only or actuator-only run with no recent inbox).
    */
   readonly groundingSources?: readonly { readonly source: string; readonly text: string }[];
+  /**
+   * Store ids of the playbook strategies `applyPlaybook` injected into THIS
+   * run's prompt. Surfaced so the session layer can persist them and
+   * session-end reinforcement credit targets an actually-injected strategy
+   * (never a cosine-nearest bystander). Omitted when nothing was injected or
+   * the provider's entries carry no ids.
+   */
+  readonly playbookInjectedIds?: readonly string[];
 }

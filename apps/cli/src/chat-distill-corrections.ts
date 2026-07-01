@@ -36,6 +36,7 @@ import { createGateEmbedder, resolvePlaybookFile } from "@muse/autoconfigure";
 import { adjustPlaybookReward, queryPlaybook, recordPlaybookStrategy, type PlaybookEntry } from "@muse/stores";
 
 import { readLastChatHistory, readSessionBoundaries } from "./chat-history.js";
+import { readSessionInjectedIds } from "./playbook-injections.js";
 
 type ModelProviderLike = DistillStrategyOptions["modelProvider"];
 
@@ -72,6 +73,14 @@ export interface DistillCorrectionsOptions {
   readonly readBoundaries?: () => Promise<readonly SessionBoundaryRef[]>;
   /** Embedder for the distiller's held-out support gate; defaults to the shared gate embedder. */
   readonly embed?: (text: string) => Promise<readonly number[]>;
+  /**
+   * Session-scoped injected-id reader (defaults to the on-disk
+   * `playbook-injections.jsonl` record). When it returns a non-empty set,
+   * reward credit is restricted to those ACTUALLY-injected strategies; an
+   * empty set means the session predates the record (legacy) and the cosine
+   * derivation stays authoritative.
+   */
+  readonly readInjectedIds?: (args: { readonly sinceIso: string; readonly userId: string }) => Promise<ReadonlySet<string>>;
   /**
    * k drafts for the self-consistency write-admission gate (default 3 in the
    * primitive). Set 1 to disable the gate (admit a single draft). Tests inject
@@ -128,6 +137,15 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
   const feedbackThreshold = options.feedbackThreshold ?? DEFAULT_FEEDBACK_THRESHOLD;
   const adjustedIds = new Set<string>();
   const embed = options.embed ?? createGateEmbedder(process.env);
+  // The ids the injection layer RECORDED for this session (fail-soft: an
+  // unreadable record behaves like a legacy session — cosine derivation).
+  const readInjectedIds = options.readInjectedIds ?? readSessionInjectedIds;
+  let sessionInjectedIds: ReadonlySet<string>;
+  try {
+    sessionInjectedIds = await readInjectedIds({ sinceIso: range.startedAt, userId: ownerId });
+  } catch {
+    sessionInjectedIds = new Set();
+  }
 
   // Credit-assign explicit feedback to the existing strategy the cue implicates,
   // then move that strategy's reward — once per strategy per session (a strategy
@@ -149,9 +167,18 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
     // reward attribution that replays via experience-following (arXiv:2505.16067). Parity
     // with the decay daemon (decay-contradicted.ts), which already scopes to injectable.
     const nowMs = Date.now();
-    const candidates = existing.filter(
+    const injectable = existing.filter(
       (entry) => !adjustedIds.has(entry.id) && isInjectableStrategy(entry) && !isStaleStrategy(entry, nowMs)
     );
+    // INJECTED-ID precision refinement: when the injection layer recorded
+    // which strategies this session's prompts ACTUALLY carried, only those may
+    // absorb credit — a cue-similar strategy that was never injected had no
+    // causal role, so crediting it is fabricated reward attribution. An empty
+    // intersection therefore moves NOTHING (fail-closed), while an absent
+    // record (legacy session / non-runtime turns) keeps the injectable set.
+    const candidates = sessionInjectedIds.size > 0
+      ? injectable.filter((entry) => sessionInjectedIds.has(entry.id))
+      : injectable;
     // Asymmetric precision: a DECAY (delta<0) must clear a HIGHER cue↔strategy
     // match than a reinforce — a wrong decay of a (possibly grounded) strategy is
     // costlier than a missed reinforce (Memory-R2 arXiv:2605.21768; WEDGE).

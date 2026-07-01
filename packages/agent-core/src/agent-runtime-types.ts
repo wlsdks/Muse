@@ -267,5 +267,9 @@ export type AgentRuntimeStreamEvent =
     }
   | { readonly runId: string; readonly stepIndex: number; readonly success: boolean; readonly type: "plan-step-result" }
   | { readonly runId: string; readonly type: "synthesis-started" }
-  | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "done" }>)
+  | ({
+      readonly runId: string;
+      /** Store ids of the playbook strategies injected into this run's prompt (see `AgentRunResult.playbookInjectedIds`). */
+      readonly playbookInjectedIds?: readonly string[];
+    } & Extract<ModelEvent, { readonly type: "done" }>)
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "error" }>);
