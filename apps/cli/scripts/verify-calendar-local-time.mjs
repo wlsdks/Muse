@@ -24,7 +24,7 @@ import path from "node:path";
 
 import { createMuseRuntimeAssembly } from "@muse/autoconfigure";
 import { CalendarProviderRegistry, LocalCalendarProvider } from "@muse/calendar";
-import { createCalendarMcpServer } from "@muse/mcp";
+import { createCalendarMcpServer } from "@muse/domain-tools";
 
 const model = process.argv[2] ?? "ollama/gemma4:12b";
 if (!model.startsWith("ollama/")) { console.error("LOCAL OLLAMA ONLY"); process.exit(2); }

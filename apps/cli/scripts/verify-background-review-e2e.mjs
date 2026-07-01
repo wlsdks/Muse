@@ -23,7 +23,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { createMuseRuntimeAssembly, resolveCheckinsFile } from "@muse/autoconfigure";
-import { readCheckins } from "@muse/mcp";
+import { readCheckins } from "@muse/proactivity";
 
 const model = process.argv[2] ?? "ollama/gemma4:12b";
 if (!model.startsWith("ollama/")) { console.error("LOCAL OLLAMA ONLY"); process.exit(2); }
