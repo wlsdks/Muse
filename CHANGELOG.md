@@ -8,7 +8,34 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
-## [0.2.2] - 2026-07-02
+## [0.2.3] - 2026-07-03
+
+The grounded-recall engine is now a shared package, and the API server can
+answer grounded questions on its own. Early / experimental, macOS only.
+
+### Added
+
+- **`POST /api/ask` — grounded recall over your notes on the API surface.**
+  The server (and anything built on it) can now answer a question from your
+  notes corpus with the same guarantees the CLI gives: every claim cites a
+  real source, a fabricated citation is removed by code before the response
+  leaves, an honest "I'm not sure" never carries a citation, and the response
+  reports the retrieval-confidence verdict plus openable source receipts.
+  Enabled automatically when the server runs with a model and a notes
+  directory configured.
+- A new live release-gate battery drives a real local model through the
+  shared recall pipeline and proves the fabrication guarantee on real output —
+  the grounded-surface count ratchet rises to 30.
+
+### Changed
+
+- The entire retrieval core — embeddings, the notes vector index, chunking,
+  the wiki-link graph, PDF/Office/email text extraction, and the four ask
+  grounding stages (notes, past sessions/feeds/reflections, shell/git/action
+  activity, tasks/calendar/reminders/contacts) — moved from inside the CLI
+  into the shared `@muse/recall` package. `muse ask` behaves exactly as
+  before; the grounding machinery is simply no longer CLI-only, so every
+  current and future surface draws on one implementation.
 
 Deterministic-safety hardening, from a fresh source-level scout of what the
 fastest-moving open agents (openclaw, hermes) shipped in the last nine days.
