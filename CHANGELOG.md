@@ -8,6 +8,36 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-02
+
+Trust-signal accuracy release, driven by a fresh-eyes product probe: the
+grounding warnings now fire only when they should, "learns you" surfaces your
+real memory again, and simple arithmetic answers instantly regardless of
+phrasing. Early / experimental, macOS only.
+
+### Fixed
+
+- **False attribution warnings are gone.** The citation checkers recognized
+  only the `[from <file>]` marker while answers legitimately cite ten other
+  kinds (`[memory: …]`, `[task: …]`, `[reminder: …]`, …) — so the bundled
+  demo, plain memory-fact recall, and even small talk fired scary
+  "carries no citation" warnings on correctly-cited answers. All marker kinds
+  are recognized now, and the ask pipeline no longer feeds a
+  citation-stripped answer variant to those checks.
+- **Your memory is visible again.** Facts written under the legacy "default"
+  user bucket (by an old daemon or early version) were invisible to today's
+  OS-named session — a lived-in profile showed "Muse hasn't learned anything
+  about you yet" with real facts one key away. The local store now surfaces
+  the orphaned bucket as your memory and migrates it on the first write;
+  deliberately-named profiles and `user@slot` sub-profiles are untouched.
+  `muse status` also reads through the store API now (it previously
+  re-parsed the raw file, which would also have broken on an encrypted
+  store).
+- **Arithmetic answers regardless of phrasing.** "간단히 계산해줘: 3+4" and
+  "3+4는 얼마야?" now hit the deterministic calculator instantly instead of
+  reaching the grounded path and refusing grade-school math.
+- `muse --version` reports the right version (0.2.0 shipped reporting 0.1.2).
+
 ## [0.2.0] - 2026-07-02
 
 Muse grows from a grounded Q&A companion into a **durable local agent**: runs
