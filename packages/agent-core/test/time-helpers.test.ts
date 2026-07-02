@@ -102,7 +102,7 @@ describe("humanizeRelativeFromIso", () => {
     expect(humanizeRelativeFromIso(now, "2026-05-09T12:00:00.000Z")).toBe("2 days ago");
   });
 
-  it("pluralises 'day' correctly — singular for exactly 1, plural otherwise (goal 123)", async () => {
+  it("pluralises 'day' correctly — singular for exactly 1, plural otherwise", async () => {
     const { humanizeRelativeFromIso } = await import("../src/time-helpers.js");
     // Singular future + past.
     expect(humanizeRelativeFromIso(now, "2026-05-12T12:00:00.000Z")).toBe("in 1 day");

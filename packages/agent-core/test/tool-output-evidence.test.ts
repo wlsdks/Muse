@@ -63,7 +63,7 @@ describe("extractVerifiedSources", () => {
   it("returns no sources when a tool reports a positive count without any URL fields", () => {
     // Previously `jira_list_projects` / `confluence_list_spaces` synthesized
     // hardcoded Atlassian URLs here. That product-specific carryover was
-    // removed in iteration #57; tools now have to expose real URLs to be
+    // removed; tools now have to expose real URLs to be
     // counted as a verified source.
     const payload = JSON.stringify({ count: 5, projects: [] });
     expect(

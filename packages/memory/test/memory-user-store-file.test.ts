@@ -243,7 +243,7 @@ describe("sanitizeUserMemoryValue (direct unit tests)", () => {
     expect(sanitizeUserMemoryValue("title\x9b31mEVIL")).toBe("title31mEVIL");
   });
 
-  it("redacts credential shapes before persisting (goal 182)", async () => {
+  it("redacts credential shapes before persisting", async () => {
     const { sanitizeUserMemoryValue } = await import("../src/index.js");
     expect(sanitizeUserMemoryValue("deploy token is ghp_abcdefghijklmnopqrstuvwxyzABCDEF"))
       .not.toContain("ghp_abcdefghijklmnopqrstuvwxyzABCDEF");

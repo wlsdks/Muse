@@ -120,7 +120,7 @@ describe("chatTurnPersistText — persist the cue-free chat turn, not the displa
     expect((entry.response as { error?: string }).error).toBe("model timeout");
   });
 
-  it("the ask failure-path payload (grounded:null, empty response/tools) traces as a failure carrying the error — fire 6 wiring contract", () => {
+  it("the ask failure-path payload (grounded:null, empty response/tools) traces as a failure carrying the error", () => {
     // Exactly the shape writeAskFailureLog in commands-ask emits from each of the
     // 3 ask failure paths (runtime-missing / agent-run catch / stream error).
     const entry = buildAskRunLog({

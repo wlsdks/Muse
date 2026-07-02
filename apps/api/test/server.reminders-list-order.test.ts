@@ -1,7 +1,7 @@
 /**
  * `GET /api/reminders` must order by the real due *instant*, not a
  * raw ISO string compare — the REST sibling of the MCP-loopback
- * fix (goal 291). A free-form `dueAt` (hand-edited reminders.json
+ * fix. A free-form `dueAt` (hand-edited reminders.json
  * / import / snooze) with mixed precision or a timezone offset
  * must not surface the wrong reminder as most imminent.
  */

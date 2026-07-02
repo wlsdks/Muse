@@ -237,7 +237,7 @@ describe("boundary and cancellation helpers", () => {
     expect(redactSecretsInText(pgpPublic)).toBe(pgpPublic);
   });
 
-  it("redactSecretsInText covers Stripe secret + GitLab PAT shapes (goal 107)", () => {
+  it("redactSecretsInText covers Stripe secret + GitLab PAT shapes", () => {
     // Build the Stripe shapes via concatenation so the source file
     // does NOT contain a contiguous prefix-plus-24-char literal —
     // GitHub's push-protection secret-scanner reads source bytes,
@@ -270,7 +270,7 @@ describe("boundary and cancellation helpers", () => {
       .toBe("glpat-ok");
   });
 
-  it("redactSecretsInText covers the fine-grained GitHub PAT shape (goal 195)", () => {
+  it("redactSecretsInText covers the fine-grained GitHub PAT shape", () => {
     // Split the prefix so the source file has no contiguous
     // `github_pat_` literal for GitHub's push-protection scanner.
     const finePat = `github_pat${"_"}11ABCDEFG0aBcDeFgHiJ_kLmNoPqRsTuVwXyZ0123456789abcdefABCDEF`;
@@ -284,7 +284,7 @@ describe("boundary and cancellation helpers", () => {
       .toBe("set a github_pat_ in your env");
   });
 
-  it("redactSecretsInText scrubs connection URIs with an inline password (goal 309)", () => {
+  it("redactSecretsInText scrubs connection URIs with an inline password", () => {
     expect(redactSecretsInText("DB=postgres://muse:notarealpw@db.internal:5432/muse_db ok"))
       .toBe("DB=[redacted-connection-uri] ok");
     // Password-only (Redis-style) URI.

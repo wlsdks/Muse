@@ -20,7 +20,7 @@ describe("normalizeStructuredOutput", () => {
     });
   });
 
-  it("takes the first balanced object when the model trails an example (goal 304)", () => {
+  it("takes the first balanced object when the model trails an example", () => {
     const result = normalizeStructuredOutput(
       "Result: {\"answer\":42}. For example {\"answer\":0}",
       "json"

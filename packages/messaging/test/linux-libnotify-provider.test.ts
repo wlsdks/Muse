@@ -71,7 +71,7 @@ function fakeRunner(): { runner: NotifySendRunner; calls: readonly string[][] } 
   };
 }
 
-describe("LinuxLibnotifyProvider (goal 093)", () => {
+describe("LinuxLibnotifyProvider", () => {
   it("buildNotifySendArgv folds title + subtitle into the summary slot", () => {
     expect(buildNotifySendArgv({
       appName: "libnotify",

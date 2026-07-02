@@ -1,9 +1,9 @@
 /**
- * Chat producer for idle self-learning (B1 Slice 1) — at REPL exit, ENQUEUE
+ * Chat producer for idle self-learning — at REPL exit, ENQUEUE
  * the corrections the user made this session onto the learn-queue instead of
  * distilling them synchronously. The idle Sleep daemon distills them later,
  * behind the resource brakes, with NO manual step. This is the migration of
- * the exit-only distillation gap (PART A2): capture the raw exchange when it
+ * the exit-only distillation gap: capture the raw exchange when it
  * happens (episodes keep only summaries), distill on idle.
  *
  * Gated SEPARATELY from `MUSE_PLAYBOOK_DISTILL_ENABLED` (the synchronous
@@ -53,7 +53,7 @@ export async function enqueueSessionCorrections(options: EnqueueCorrectionsOptio
   const idFactory = options.idFactory ?? (() => `lq_${randomUUID()}`);
   const queueFile = options.queueFile ?? resolveLearnQueueFile(env as Record<string, string | undefined>);
 
-  // Kill switch (B1 §5): when learning is paused, enqueue nothing — a true pause
+  // Kill switch: when learning is paused, enqueue nothing — a true pause
   // accumulates no corrections to learn on resume.
   if (await isLearningPaused(resolveLearningPauseFile(env as Record<string, string | undefined>))) {
     return { enqueued: 0, reason: "learning is paused" };

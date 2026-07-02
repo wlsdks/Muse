@@ -239,14 +239,13 @@ describe("DefaultToolFilter default exposure ceiling", () => {
 });
 
 describe("inferDomain prefix table — registry-backed siblings", () => {
-  // Iter 39 sibling for tool-filter. `muse.tasks-multi.*` /
-  // `muse.calendar-multi.*` / `muse.notes-multi.*` are the
-  // registry-backed variants the autoconfigure layer wires
-  // alongside the single-provider tools. Pre-iter-47 they didn't
-  // appear in `BUILTIN_PREFIX_DOMAIN`, so `inferDomain` returned
-  // `undefined` and they bypassed the domain filter entirely (kept
-  // for EVERY prompt regardless of relevance). Defeats the whole
-  // catalog-narrowing purpose for those tools.
+  // `muse.tasks-multi.*` / `muse.calendar-multi.*` /
+  // `muse.notes-multi.*` are the registry-backed variants the
+  // autoconfigure layer wires alongside the single-provider tools.
+  // Without an entry in `BUILTIN_PREFIX_DOMAIN`, `inferDomain` would
+  // return `undefined` and they'd bypass the domain filter entirely
+  // (kept for EVERY prompt regardless of relevance) — defeating the
+  // whole catalog-narrowing purpose for those tools.
   it("recognises muse.tasks-multi.* as tasks", () => {
     expect(inferDomain({ description: "", inputSchema: {}, name: "muse.tasks-multi.list", risk: "read" })).toBe("tasks");
     expect(inferDomain({ description: "", inputSchema: {}, name: "muse.tasks-multi.create", risk: "write" })).toBe("tasks");
@@ -266,10 +265,10 @@ describe("inferDomain prefix table — registry-backed siblings", () => {
   });
 
   it("multi-provider variants match the same domain keyword as single-provider siblings", () => {
-    // Functional check: with the new prefix mapping, a casual
-    // unrelated prompt now correctly DROPS the muse.tasks-multi
-    // tool just as it drops muse.tasks. Without iter 47 the multi
-    // variant would have survived the filter.
+    // Functional check: with the prefix mapping in place, a casual
+    // unrelated prompt correctly DROPS the muse.tasks-multi
+    // tool just as it drops muse.tasks. Without that mapping the multi
+    // variant would survive the filter.
     const filter = new DefaultToolFilter();
     const singleTasks: MuseTool = tool({
       description: "List local tasks",
@@ -317,10 +316,10 @@ describe("inferDomain", () => {
   });
 
   it("normalises explicit domains to lowercase", () => {
-    // Before iter 25 the explicit-domain path returned the raw trimmed
-    // value. A tool tagged `domain: "Messaging"` therefore landed on a
-    // case-sensitive heuristics lookup that silently failed, while the
-    // scope-set check was case-insensitive — asymmetric. Normalising
+    // Without normalisation the explicit-domain path returns the raw
+    // trimmed value. A tool tagged `domain: "Messaging"` would then land
+    // on a case-sensitive heuristics lookup that silently fails, while
+    // the scope-set check is case-insensitive — asymmetric. Normalising
     // here closes the gap so every downstream comparison is consistent.
     expect(inferDomain({ description: "", domain: "Messaging", inputSchema: {}, name: "x", risk: "read" })).toBe(
       "messaging"
@@ -339,12 +338,12 @@ describe("inferDomain", () => {
 
 describe("DefaultToolFilter keyword word-boundary matching", () => {
   it("does not match short ASCII keywords as substrings inside larger words", () => {
-    // Pre-iter-36 the keyword loop used `promptLower.includes(kw)`
-    // unconditionally. "dm" is a legitimate messaging keyword (Slack
-    // direct message), but as a raw substring it fired on "admin",
-    // "freedom", "wisdom", every accidental "...dm..." in normal
-    // prose — silently expanding the tool catalog for unrelated
-    // prompts. Same false-positive class iter 16 closed for
+    // A raw `promptLower.includes(kw)` keyword loop would match
+    // substrings unconditionally. "dm" is a legitimate messaging
+    // keyword (Slack direct message), but as a raw substring it would
+    // fire on "admin", "freedom", "wisdom", every accidental "...dm..."
+    // in normal prose — silently expanding the tool catalog for
+    // unrelated prompts. Same false-positive class already closed for
     // 1-character keywords; this is the bigger sibling.
     const filter = new DefaultToolFilter();
     const messagingTool = tool({
@@ -394,11 +393,11 @@ describe("DefaultToolFilter keyword word-boundary matching", () => {
 describe("DefaultToolFilter explicit-domain case handling", () => {
   it("matches heuristics for tools whose explicit domain has non-lowercase casing", () => {
     // Personal-assistant users adding custom tools naturally write
-    // `domain: "Messaging"` (sentence case). Before iter 25 the
-    // `extraKeywords[domain]` lookup was case-sensitive while the
-    // scope-set check was case-insensitive, so "post to slack" with
-    // a "Messaging"-tagged tool dropped silently. After iter 25 the
-    // lookup is symmetric.
+    // `domain: "Messaging"` (sentence case). A case-sensitive
+    // `extraKeywords[domain]` lookup against a case-insensitive
+    // scope-set check would drop "post to slack" with a
+    // "Messaging"-tagged tool silently. The lookup is symmetric
+    // to prevent that.
     const filter = new DefaultToolFilter();
     const mixedCaseTool: MuseTool = tool({
       description: "Custom messaging integration",

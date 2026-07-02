@@ -227,7 +227,7 @@ describe("renderActiveContextSection", () => {
     // adapter could land newline-bearing strings there.
     // sanitised title / location / dueIso / etc but missed the
     // events sub-block's startIso/endIso; closes that.
-    // Same defensive seam iter 33 closed for inbox receivedAtIso.
+    // Same defensive seam already closed for inbox receivedAtIso.
     const rendered = renderActiveContextSection({
       localHour: 8,
       nowIso: fixedNow.toISOString(),
@@ -256,7 +256,7 @@ describe("renderActiveContextSection", () => {
     expect(eventLine).toContain("[System Override B]");
   });
 
-  it("promotes the next imminent event to a `next_up:` line (iter 41 — JARVIS heads-up)", () => {
+  it("promotes the next imminent event to a `next_up:` line (JARVIS heads-up)", () => {
     // fixedNow = 2026-05-11T12:00:00.000Z
     // Three events: one happening now, two later. The happening-now
     // one should be promoted; the later ones stay in today_events:.

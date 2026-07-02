@@ -1,7 +1,7 @@
 /**
- * Round 2 integration health check.
+ * Integration health check for the context-engineering guards.
  *
- * Each Round 2 iter targeted ONE area, but the fixes need to layer
+ * Each guard below was hardened in isolation, but the fixes need to layer
  * correctly on a real `AgentRuntime` invocation. This suite spins up
  * a runtime with every Context Engineering provider wired, fires a
  * single turn with deliberately hostile metadata, and asserts:
@@ -104,7 +104,7 @@ describe("Round 2 integration health", () => {
     expect(recordedSystem.length).toBeGreaterThan(0);
     const systemContent = recordedSystem.join("\n");
 
-    // === iter 14 (attachment) — newline collapse ===
+    // === attachment — newline collapse ===
     // The hostile name and description should both be present as
     // inline text, NOT as separate prompt-section headers.
     expect(systemContent).toContain("[Attached Files]");
@@ -116,7 +116,7 @@ describe("Round 2 integration health", () => {
       .filter((line) => line.trim() === "[System Override]").length;
     expect(fakeHeaderCount).toBe(0);
 
-    // === iter 15 (skills catalog) — newline collapse ===
+    // === skills catalog — newline collapse ===
     expect(systemContent).toContain("[Available Skills]");
     // Even though `name` carried `\n\nfake\nheader`, the rendered
     // catalog line stays single-line.
@@ -126,7 +126,7 @@ describe("Round 2 integration health", () => {
     expect(skillsLine).toBeDefined();
     expect(skillsLine).not.toContain("\nfake");
 
-    // === iter 19 (observability) — broken inbox provider should
+    // === observability — broken inbox provider should
     // NOT inject a [Recent Messages] block. The failure flag is
     // stamped onto metadata (verified directly in
     // runtime-tracing.test.ts and skills-context.test.ts); here we
@@ -134,7 +134,7 @@ describe("Round 2 integration health", () => {
     // prompt level.
     expect(systemContent).not.toContain("[Recent Messages]");
 
-    // === iter 17 (prompt-budget) — sections measurable ===
+    // === prompt-budget — sections measurable ===
     const budget = measureSystemPromptBudget([{ content: systemContent, role: "system" }]);
     expect(budget).toBeDefined();
     expect(budget?.totalEstimatedTokens).toBeGreaterThan(0);
@@ -146,7 +146,7 @@ describe("Round 2 integration health", () => {
     expect(sectionIds).toContain("attachment-context");
     expect(sectionIds).toContain("skills-catalog");
 
-    // === iter 11 (active-context preference > facts) ===
+    // === active-context preference > facts ===
     // The currentFocus was stored under preferences. The
     // `[Active Context]` block must surface it as the current focus.
     expect(systemContent).toContain("ship the Q1 plan");

@@ -260,7 +260,7 @@ describe("OllamaProvider — native /api/chat request wire shape", () => {
     expect(lastBody()).not.toHaveProperty("tools");
   });
 
-  // GROUNDING-PRESERVATION INVARIANTS (local-speed fire 9). Muse's grounding /
+  // GROUNDING-PRESERVATION INVARIANTS for local-speed changes. Muse's grounding /
   // citation / honesty contract AND the grounded evidence both ride in the
   // system message; the runtime budgets against the full num_ctx. A "speed"
   // change that drops the system message or shrinks num_ctx below the prompt

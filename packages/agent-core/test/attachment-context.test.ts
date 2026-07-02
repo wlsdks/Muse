@@ -60,9 +60,9 @@ describe("parseAttachmentsFromMetadata (D10)", () => {
 
   it("dedupes attachments with the same (name, size, mimeType) tuple", () => {
     // User drags the same file twice / CLI `--attach a.pdf --attach a.pdf`
-    // / buggy metadata producer emits duplicates. Pre-iter-54 both
-    // entries rendered, wasting prompt tokens. After iter 54 the
-    // second entry is dropped silently.
+    // / buggy metadata producer emits duplicates. Without dedup both
+    // entries would render, wasting prompt tokens; the second entry
+    // is dropped silently instead.
     const parsed = parseAttachmentsFromMetadata({
       attachments: [
         { mimeType: "application/pdf", name: "report.pdf", size: 4096 },
@@ -100,7 +100,7 @@ describe("parseAttachmentsFromMetadata (D10)", () => {
   });
 
   it("renderAttachmentSection sanitises every field defensively even when AttachmentHint bypasses the parser", () => {
-    // Round 3 render-boundary completeness: parseAttachmentsFromMetadata
+    // Render-boundary completeness: parseAttachmentsFromMetadata
     // already strips newlines from every user-supplied string at
     // parse time, but `renderAttachmentSection` is exported and
     // external callers can construct AttachmentHint[] directly — a

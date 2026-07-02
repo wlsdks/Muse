@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseLimit, parseOffset } from "../src/scheduler-routes.js";
 
-describe("scheduler-routes parseLimit — strict int parse on `?limit=` query so a typo'd / unit-slipped value falls back to the documented default instead of silently honoring the leading digits (sibling-parity with goal 625's CLI strict env-parse)", () => {
+describe("scheduler-routes parseLimit — strict int parse on `?limit=` query so a typo'd / unit-slipped value falls back to the documented default instead of silently honoring the leading digits (sibling-parity with the CLI's strict env-parse)", () => {
   it("parses a well-formed string limit (?limit=20 → 20)", () => {
     expect(parseLimit("20", 50, 100)).toBe(20);
   });

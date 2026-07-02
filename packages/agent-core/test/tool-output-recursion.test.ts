@@ -33,8 +33,8 @@ describe("tool-output-evidence — recursion safety on deep untrusted JSON", () 
       ]
     });
     const sources = extractVerifiedSources("web_search", output);
-    // De-duped by url (finding from round 12, fixed round 14): each url
-    // appears ONCE, keeping the real `title` field (not the url-derived one).
+    // De-duped by url: each url appears ONCE, keeping the real
+    // `title` field (not the url-derived one).
     expect(sources).toEqual([
       { title: "Doc A", toolName: "web_search", url: "https://a.example.com/page" },
       { title: "Doc B", toolName: "web_search", url: "https://b.example.com/page" }

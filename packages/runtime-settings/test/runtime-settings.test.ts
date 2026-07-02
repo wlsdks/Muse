@@ -31,7 +31,7 @@ describe("RuntimeSettings", () => {
     await service.set({ key: "limits.decimal", type: "number", value: "12.5" });
 
     await expect(service.getBoolean("feature.enabled", false)).resolves.toBe(true);
-    // Goal 127 — boolean parser tolerates common admin spellings.
+    // The boolean parser tolerates common admin spellings.
     await service.set({ key: "feature.alt", value: "1" });
     await expect(service.getBoolean("feature.alt", false)).resolves.toBe(true);
     await service.set({ key: "feature.alt", value: "Yes" });

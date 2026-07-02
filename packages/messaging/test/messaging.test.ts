@@ -120,7 +120,7 @@ describe("TelegramProvider", () => {
     expect(receipt).toMatchObject({ destination: "@me", messageId: "42", providerId: "telegram" });
   });
 
-  it("escapes outbound text for the active parse_mode so Telegram doesn't 400 (goal 311)", async () => {
+  it("escapes outbound text for the active parse_mode so Telegram doesn't 400", async () => {
     let body = "";
     const provider = new TelegramProvider({
       baseUrl: "https://tg.test",
@@ -209,7 +209,7 @@ describe("TelegramProvider", () => {
       .rejects.toMatchObject({ code: "UPSTREAM_FAILED", providerId: "telegram", status: 401, retryable: false });
   });
 
-  it("classifies 429 (rate limit) and 5xx as retryable (goal 134)", async () => {
+  it("classifies 429 (rate limit) and 5xx as retryable", async () => {
     const provider429 = new TelegramProvider({
       fetch: async () => fakeJsonResponse({ description: "Too Many Requests", ok: false }, { status: 429 }),
       token: "x"
@@ -296,7 +296,7 @@ describe("DiscordProvider", () => {
     await expect(provider.send({ destination: "ch-9", text: "yo" })).rejects.toThrow(/timed out after 10ms/u);
   });
 
-  it("suppresses all mention resolution so @everyone in text can't ping the server (goal 315)", async () => {
+  it("suppresses all mention resolution so @everyone in text can't ping the server", async () => {
     let body: { content: string; allowed_mentions?: { parse: readonly string[] } } = { content: "" };
     const provider = new DiscordProvider({
       baseUrl: "https://disc.test/api",
@@ -611,7 +611,7 @@ describe("SlackProvider", () => {
     await expect(provider.send({ destination: "C123", text: "hi" })).rejects.toThrow(/timed out after 10ms/u);
   });
 
-  it("escapes &/</> so Slack mrkdwn can't turn text into links/mentions (goal 312)", async () => {
+  it("escapes &/</> so Slack mrkdwn can't turn text into links/mentions", async () => {
     let sentText = "";
     const provider = new SlackProvider({
       fetch: async (_url, init) => {
@@ -1094,7 +1094,7 @@ describe("TelegramProvider.fetchInbound offset tracking", () => {
   });
 });
 
-describe("isRetryableMessagingStatus (goal 134)", () => {
+describe("isRetryableMessagingStatus", () => {
   it("classifies 429 + 5xx as retryable, everything else as fail-fast", () => {
     expect(isRetryableMessagingStatus(429)).toBe(true);
     expect(isRetryableMessagingStatus(500)).toBe(true);
@@ -1156,7 +1156,7 @@ describe("MessagingProviderRegistry", () => {
     expect(() => registry.require("telgram")).toThrow(/registered: telegram/u);
   });
 
-  it("scrubs credential shapes from outbound text at the dispatch chokepoint (goal 111)", async () => {
+  it("scrubs credential shapes from outbound text at the dispatch chokepoint", async () => {
     // Capture the text the provider actually sees so the assertion
     // pins the *post-redaction* form, not the pre-call form.
     let receivedText: string | undefined;
@@ -1394,7 +1394,7 @@ describe("FileMessagingCredentialStore", () => {
     expect(await store.load("telegram")).toBeUndefined();
   });
 
-  it("persists credentials with file mode 0600 (goal 005 — defense-in-depth on shared boxes)", async () => {
+  it("persists credentials with file mode 0600 (defense-in-depth on shared boxes)", async () => {
     if (process.platform === "win32") {
       // POSIX mode bits don't exist on Windows; the constructor + writes
       // still succeed but stat().mode is meaningless. Skip the assertion.

@@ -1149,7 +1149,7 @@ describe("MonthlyBudgetTracker", () => {
     expect(() => new MonthlyBudgetTracker({ warningPercent: 110 })).toThrow(/warningPercent/u);
   });
 
-  it("snapshot exposes remainingUsd + percentUsed when a positive limit is configured (goal 113)", () => {
+  it("snapshot exposes remainingUsd + percentUsed when a positive limit is configured", () => {
     const tracker = new MonthlyBudgetTracker({
       monthlyLimitUsd: 10,
       now: () => new Date("2026-05-15T00:00:00Z"),
@@ -1179,7 +1179,7 @@ describe("MonthlyBudgetTracker", () => {
     expect(snap.totalCostUsd).toBe(12);
   });
 
-  it("snapshot omits remainingUsd + percentUsed when the budget is unlimited (goal 113)", () => {
+  it("snapshot omits remainingUsd + percentUsed when the budget is unlimited", () => {
     const tracker = new MonthlyBudgetTracker({ now: () => new Date("2026-05-15T00:00:00Z") });
     tracker.recordCost(5);
     const snap = tracker.snapshot();

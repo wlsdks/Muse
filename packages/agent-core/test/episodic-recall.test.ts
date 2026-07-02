@@ -127,10 +127,10 @@ describe("InMemoryEpisodicRecallProvider", () => {
     expect(snapshot?.matches[0]?.sessionId).toBe("s-shanghai");
   });
 
-  it("ranks recently-created episodes higher than equally-similar old ones (iter 43 recency boost)", async () => {
+  it("ranks recently-created episodes higher than equally-similar old ones (recency boost)", async () => {
     // Two episodes with the SAME narrative wording (identical
     // Jaccard score). The newer one should rank first thanks to
-    // the iter-43 recency boost. JARVIS-class personal-assistant
+    // the recency boost. JARVIS-class personal-assistant
     // intuition: "what we talked about LAST WEEK" is usually more
     // relevant than "what we talked about six months ago", even
     // when the topic words are identical.
@@ -236,8 +236,8 @@ describe("renderEpisodicSection", () => {
   it("humanises createdAtIso into relative time when nowIso is passed", () => {
     // JARVIS-class freshness affordance: with `nowIso` threaded
     // through, the agent reads "1 day ago" / "3 weeks ago" instead
-    // of parsing raw ISO datetimes. iter 41 / 52 already humanise
-    // for events / reminders / tasks — episodic now matches.
+    // of parsing raw ISO datetimes, matching the same relative-time
+    // treatment already applied for events / reminders / tasks.
     const rendered = renderEpisodicSection({
       matches: [
         { createdAtIso: "2026-05-10T12:00:00Z", narrative: "Yesterday's chat", sessionId: "s-1", similarity: 0.4 }
@@ -248,7 +248,7 @@ describe("renderEpisodicSection", () => {
     expect(rendered).not.toContain("2026-05-10T12:00:00Z"); // raw ISO replaced
   });
 
-  it("falls back to raw ISO when nowIso is not provided (iter 53 — legacy contract)", () => {
+  it("falls back to raw ISO when nowIso is not provided (legacy contract)", () => {
     // Existing call sites that don't thread nowIso get the same
     // behaviour they had .
     const rendered = renderEpisodicSection({

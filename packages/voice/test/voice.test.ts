@@ -511,7 +511,7 @@ describe("TextScanWakeWordDetector", () => {
     expect(detector.scan("hello there").detected).toBe(false);
   });
 
-  it("matches whole phrases only — never fires inside a longer word (goal 270)", () => {
+  it("matches whole phrases only — never fires inside a longer word", () => {
     const bare = new TextScanWakeWordDetector({ phrase: "hey muse", aliases: ["muse"] });
     // A bare "muse" must NOT trigger on museum / amusement / bemused.
     expect(bare.scan("I visited the museum today").detected).toBe(false);
@@ -541,7 +541,7 @@ describe("TextScanWakeWordDetector", () => {
     expect(info.description).toContain("open sesame");
   });
 
-  it("supports alias phrases — first match wins (goal 121)", () => {
+  it("supports alias phrases — first match wins", () => {
     const detector = new TextScanWakeWordDetector({
       phrase: "hey muse",
       aliases: ["ok muse", "muse please"]
@@ -574,7 +574,7 @@ describe("TextScanWakeWordDetector", () => {
     expect(info.description).toContain("muse please");
   });
 
-  it("dedupes aliases that normalise to the same needle (goal 121)", () => {
+  it("dedupes aliases that normalise to the same needle", () => {
     const detector = new TextScanWakeWordDetector({
       phrase: "hey muse",
       // Both aliases normalise to "hey muse" — should collapse.

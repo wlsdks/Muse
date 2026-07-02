@@ -198,7 +198,7 @@ describe("rankKnowledgeChunksWithHop — query-relative cosine on appended bridg
 // ── near-duplicate bridge dedup on the engine hop path ──────────────────────────
 //
 // Sibling-audit parity with the ask-window `dedupNearDuplicateChunks`
-// (@muse/recall, agent-hardening fire 5): an appended hop/PPR bridge that is
+// (@muse/recall): an appended hop/PPR bridge that is
 // near-identical (cosine ≥ 0.985) to an already-kept chunk pads the small
 // model's grounding window with redundancy. The hop re-queries with a primary's
 // own text, so a paraphrase the ORIGINAL query missed (low query-cosine, below

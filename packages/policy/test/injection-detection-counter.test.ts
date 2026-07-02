@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { InMemoryInjectionDetectionCounter } from "../src/injection-detection-counter.js";
 
-describe("InMemoryInjectionDetectionCounter (goal 085)", () => {
+describe("InMemoryInjectionDetectionCounter", () => {
   it("bumps per-family counts and rolls up totals", () => {
     let now = new Date("2026-05-14T12:00:00Z");
     const counter = new InMemoryInjectionDetectionCounter({ now: () => now });

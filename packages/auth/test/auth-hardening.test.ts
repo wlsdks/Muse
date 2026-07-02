@@ -262,7 +262,7 @@ describe("extractBearerToken", () => {
     expect(extractBearerToken("")).toBeUndefined();
   });
 
-  it("tolerates leading / trailing whitespace + tab separators (goal 122)", () => {
+  it("tolerates leading / trailing whitespace + tab separators", () => {
     // Leading whitespace previously broke the parser — split put
     // an empty string at index 0 so scheme never matched.
     expect(extractBearerToken(" Bearer abc")).toBe("abc");

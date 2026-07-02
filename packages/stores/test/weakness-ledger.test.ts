@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { BKT_PRIOR, MAX_WEAKNESS_ENTRIES, askTimeWeaknessNudge, bktUpdate, isMasteredWeakness, readWeaknesses, recordTimeParseWeakness, recordWeakness, recordWeaknessResolved, remediationHint, renderAskTimeNudge, selectDevFixableWeaknesses, selectRemediableWeaknesses, topicKeyFromMessage, upsertWeakness, writeWeaknesses, type AskTimeNudge, type WeaknessEntry } from "../src/weakness-ledger.js";
 
-describe("recordTimeParseWeakness — wire the DEAD time-parse axis to the deterministic parse-failure signal (fire 9 source-conflict pattern, for time-parse)", () => {
+describe("recordTimeParseWeakness — wire the DEAD time-parse axis to the deterministic parse-failure signal (source-conflict pattern, for time-parse)", () => {
   it("records axis time-parse when the phrase FAILED to parse (the deterministic parser, not the model, said no)", async () => {
     const calls: { axis: string; message: string }[] = [];
     const recordWeaknessStub = async (_file: string, signal: { axis: string; message: string }): Promise<WeaknessEntry | undefined> => {

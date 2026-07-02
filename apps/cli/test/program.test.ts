@@ -421,7 +421,7 @@ describe("cli program", () => {
       .toContain("\"source\":\"cli.local\"");
   });
 
-  it("prepends the active persona preamble to the local chat system message (goal 158)", async () => {
+  it("prepends the active persona preamble to the local chat system message", async () => {
     const { io, output } = captureOutput();
     const workspaceDir = await mkdtemp(path.join(tmpdir(), "muse-cli-persona-chat-"));
     const personaFile = path.join(workspaceDir, "persona.json");
@@ -457,7 +457,7 @@ describe("cli program", () => {
     expect(capturedSystem).toContain("Current local context:");
   });
 
-  it("falls back to now-context-only when the active persona is default (goal 158)", async () => {
+  it("falls back to now-context-only when the active persona is default", async () => {
     const { io } = captureOutput();
     const workspaceDir = await mkdtemp(path.join(tmpdir(), "muse-cli-persona-default-"));
     const personaFile = path.join(workspaceDir, "persona.json");
@@ -1186,7 +1186,7 @@ describe("cli program", () => {
     expect(combined).toContain("Standup");
   });
 
-  it("calendar events rejects an unparseable --from in API mode before any request (goal 261)", async () => {
+  it("calendar events rejects an unparseable --from in API mode before any request", async () => {
     const { io } = captureOutput();
     const requests: string[] = [];
     const program = createProgram({
@@ -1266,11 +1266,11 @@ describe("cli program", () => {
     }
   });
 
-  it("muse memory honours --persona and MUSE_PERSONA so multi-persona slots are addressable (goal 103)", async () => {
+  it("muse memory honours --persona and MUSE_PERSONA so multi-persona slots are addressable", async () => {
     const { resolveMemoryUserId } = await import("../src/commands-memory.js");
 
     // Helper unit-level: --persona wins; env fills the gap; whitespace
-    // is normalised the same as goal 097.
+    // is normalised the same way elsewhere in this resolution.
     expect(resolveMemoryUserId("stark", "work")).toBe("stark@work");
     expect(resolveMemoryUserId("stark", undefined)).toBe("stark");
     const prevPersona = process.env.MUSE_PERSONA;
@@ -2191,7 +2191,7 @@ describe("cli program", () => {
       await program4.parseAsync(["node", "muse", "open", "nonexistent_xyz"], { from: "node" });
       expect(out4.join("")).toContain("no records found with id prefix");
 
-      // Goal 056 — `--raw` emits only the raw record JSON (no
+      // `--raw` emits only the raw record JSON (no
       // `{ kind, record }` envelope, no formatted header).
       const { io: ioRaw, output: outRaw } = captureOutput();
       const programRaw = createProgram({ ...ioRaw, fetch: async () => { throw new Error("no fetch"); } });
@@ -2323,7 +2323,7 @@ describe("cli program", () => {
       await expect(program5.parseAsync(["node", "muse", "history", "--kind", "bogus", "--json"], { from: "node" }))
         .rejects.toThrow(/--kind must be one of/u);
 
-      // Goal 124 — typo on --kind suggests the closest valid kind.
+      // Typo on --kind suggests the closest valid kind.
       const { io: io6 } = captureOutput();
       const program6 = createProgram({ ...io6, fetch: async () => { throw new Error("no fetch"); } });
       program6.exitOverride();
@@ -2391,7 +2391,7 @@ describe("cli program", () => {
     }
   });
 
-  it("today --local lists open tasks due-soonest first, not newest-created (goal 255)", async () => {
+  it("today --local lists open tasks due-soonest first, not newest-created", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-today-taskorder-"));
     const fsp = await import("node:fs/promises");
     const tasksFile = path.join(root, "tasks.json");
@@ -2816,7 +2816,7 @@ describe("cli program", () => {
     expect(output.join("")).toContain("You have 1 open task: Buy milk.");
   });
 
-  it("today --brief applies the active persona as systemPrompt (goal 170)", async () => {
+  it("today --brief applies the active persona as systemPrompt", async () => {
     const workspaceDir = await mkdtemp(path.join(tmpdir(), "muse-cli-today-persona-"));
     const personaFile = path.join(workspaceDir, "persona.json");
     await writeFile(personaFile, JSON.stringify({ version: 1, activeId: "jarvis", custom: {} }), "utf8");
@@ -2855,7 +2855,7 @@ describe("cli program", () => {
     expect(sent.systemPrompt).toContain("Speak as JARVIS");
   });
 
-  it("today --brief --save-to-notes scrubs credential shapes before notes write (goal 112)", async () => {
+  it("today --brief --save-to-notes scrubs credential shapes before notes write", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-today-redact-"));
     const fsp = await import("node:fs/promises");
     const prevNotes = process.env.MUSE_NOTES_DIR;
@@ -2913,7 +2913,7 @@ describe("cli program", () => {
     }
   });
 
-  it("today --save-to-notes requires --brief (goal 054)", async () => {
+  it("today --save-to-notes requires --brief", async () => {
     const { io, output } = captureOutput();
     const program = createProgram({ ...io, fetch: async () => { throw new Error("not reached"); } });
     let threw: Error | undefined;
@@ -3814,7 +3814,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse notes semantic auto-reindex preserves the index's embed model (goal 257)", async () => {
+  it("muse notes semantic auto-reindex preserves the index's embed model", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-notes-model-"));
     const fsp = await import("node:fs/promises");
     const { NOTES_INDEX_SCHEMA_VERSION } = await import("../src/commands-notes-rag.js");
@@ -3861,7 +3861,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse ask auto-reindex preserves the index's embed model (goal 258)", async () => {
+  it("muse ask auto-reindex preserves the index's embed model", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-ask-model-"));
     const fsp = await import("node:fs/promises");
     const { NOTES_INDEX_SCHEMA_VERSION } = await import("../src/commands-notes-rag.js");
@@ -4106,7 +4106,7 @@ describe("cli program", () => {
     }
   }, 30_000);
 
-  it("appendLastChatTurn redacts credential shapes before persisting to disk (goal 108)", async () => {
+  it("appendLastChatTurn redacts credential shapes before persisting to disk", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-chat-redact-"));
     const fsp = await import("node:fs/promises");
     const prev = process.env.HOME;
@@ -4308,7 +4308,7 @@ describe("cli program", () => {
     }
   });
 
-  it("captureEndOfSessionEpisode scrubs LLM-generated summary + topics before write (goal 109)", async () => {
+  it("captureEndOfSessionEpisode scrubs LLM-generated summary + topics before write", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-eos-redact-"));
     const fsp = await import("node:fs/promises");
     const prevHome = process.env.HOME;
@@ -4325,8 +4325,8 @@ describe("cli program", () => {
       const { captureEndOfSessionEpisode } = await import("../src/chat-end-session.js");
 
       // Stub provider hallucinates a credential into BOTH the summary
-      // body AND a topic. Even though goal 108 made the input turns
-      // clean, the LLM is free to invent a sk-/ghp- shape; goal 109's
+      // body AND a topic. Even though the input turns are already
+      // clean, the LLM is free to invent a sk-/ghp- shape; the
       // post-summary scrub catches that.
       const stubProvider = {
         id: "stub",
@@ -4602,7 +4602,7 @@ describe("cli program", () => {
       const program = createProgram({ ...io, fetch: async () => { throw new Error("api fetch off"); } });
       await program.parseAsync(["node", "muse", "search", "test query"], { from: "node" });
       const text = output.join("");
-      // Goal 065 — banner now includes backend latency.
+      // Search banner includes backend latency.
       expect(text).toMatch(/\(2 result\(s\) via duckduckgo — \d+ ms\)/);
       expect(text).toContain("[1] First Result");
       expect(text).toContain("https://example.com/one");
@@ -4615,7 +4615,7 @@ describe("cli program", () => {
     }
   });
 
-  it("HISTORY_KIND_ICONS surfaces one ASCII glyph per kind for quick scanning (goal 063)", async () => {
+  it("HISTORY_KIND_ICONS surfaces one ASCII glyph per kind for quick scanning", async () => {
     const { HISTORY_KIND_ICONS } = await import("../src/commands-history.js");
     // Every documented kind has a glyph.
     expect(HISTORY_KIND_ICONS["reminder"]).toBe("(R)");
@@ -4630,7 +4630,7 @@ describe("cli program", () => {
     }
   });
 
-  it("formatRelativeTime renders past + future deltas and falls back to ISO past 7 days (goal 062)", async () => {
+  it("formatRelativeTime renders past + future deltas and falls back to ISO past 7 days", async () => {
     const { formatRelativeTime } = await import("../src/human-formatters.js");
     const now = new Date("2026-05-14T12:00:00Z");
     // Same moment → "just now" / "in a moment" (depending on sign).
@@ -4659,7 +4659,7 @@ describe("cli program", () => {
     expect(formatRelativeTime("2026-05-14T12:00:59.600Z", now)).toBe("in 1m");    // +59.6s
   });
 
-  it("muse status --json carries schemaVersion (goal 064)", async () => {
+  it("muse status --json carries schemaVersion", async () => {
     const { MUSE_STATUS_SCHEMA_VERSION } = await import("../src/commands-status.js");
     expect(MUSE_STATUS_SCHEMA_VERSION).toBe(1);
     const { io, output } = captureOutput();
@@ -4669,7 +4669,7 @@ describe("cli program", () => {
     expect(parsed.schemaVersion).toBe(MUSE_STATUS_SCHEMA_VERSION);
   });
 
-  it("resolveLockUntilMs honours --hours + --minutes and defaults to 1h on zero (goal 052)", async () => {
+  it("resolveLockUntilMs honours --hours + --minutes and defaults to 1h on zero", async () => {
     const { resolveLockUntilMs } = await import("../src/commands-session.js");
     const now = 1_000_000_000_000; // arbitrary fixed epoch
     // Default → +1h.
@@ -4687,15 +4687,15 @@ describe("cli program", () => {
     expect(() => resolveLockUntilMs(undefined, "-5", now)).toThrow();
     // Non-numeric rejects.
     expect(() => resolveLockUntilMs("abc", undefined, now)).toThrow();
-    // Goal 155 — unit-slip rejects strictly (pre-iter Number.parseFloat
-    // silently parsed "4h" → 4; now Number() returns NaN → throws).
+    // Unit-slip rejects strictly: Number.parseFloat would silently
+    // parse "4h" → 4; strict Number() returns NaN → throws instead.
     expect(() => resolveLockUntilMs("4h", undefined, now)).toThrow("--hours must be numeric");
     expect(() => resolveLockUntilMs(undefined, "30m", now)).toThrow("--minutes must be numeric");
     // Whitespace + empty string still treated as "not supplied" (no throw).
     expect(resolveLockUntilMs("  ", undefined, now) - now).toBe(60 * 60_000);
   });
 
-  it("formatRemainingDuration renders 'Xh Ym' / 'X min' / '<1 min' (goal 141)", async () => {
+  it("formatRemainingDuration renders 'Xh Ym' / 'X min' / '<1 min'", async () => {
     const { formatRemainingDuration } = await import("../src/commands-session.js");
     // Sub-1 minute clamps so a near-expired lock doesn't show "0 min".
     expect(formatRemainingDuration(0)).toBe("<1 min");
@@ -4717,7 +4717,7 @@ describe("cli program", () => {
     expect(formatRemainingDuration(89.4)).toBe("1h 29m");
   });
 
-  it("muse session lock / unlock / status round-trip writes + reads the marker (goal 052)", async () => {
+  it("muse session lock / unlock / status round-trip writes + reads the marker", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-session-"));
     const lockFile = path.join(root, "session-lock.json");
     const prev = process.env.MUSE_SESSION_LOCK_FILE;
@@ -4766,7 +4766,7 @@ describe("cli program", () => {
     }
   });
 
-  it("groupToolsByDomain buckets entries by prefix and lands dot-less names in (unscoped) (goal 053)", async () => {
+  it("groupToolsByDomain buckets entries by prefix and lands dot-less names in (unscoped)", async () => {
     const { groupToolsByDomain } = await import("../src/commands-trust.js");
     const grouped = groupToolsByDomain([
       "notion.notes.search",
@@ -4783,7 +4783,7 @@ describe("cli program", () => {
     expect(groupToolsByDomain([])).toEqual({});
   });
 
-  it("muse with no subcommand prints help instead of erroring (goal 060)", async () => {
+  it("muse with no subcommand prints help instead of erroring", async () => {
     const { io, output } = captureOutput();
     const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
     await program.parseAsync(["node", "muse"], { from: "node" });
@@ -4794,13 +4794,13 @@ describe("cli program", () => {
     // A handful of real subcommands the user could discover.
     expect(text).toContain("status");
     expect(text).toContain("history");
-    // Goal 099 — the fallback `[unknown_subcommand]` argument must
+    // The fallback `[unknown_subcommand]` argument must
     // not leak into the usage banner; "muse [options] [command]"
     // stays canonical.
     expect(text).not.toContain("[unknown_subcommand]");
   });
 
-  it("muse <typo> prints 'Did you mean ...' and exits non-zero (goal 099)", async () => {
+  it("muse <typo> prints 'Did you mean ...' and exits non-zero", async () => {
     const prevExitCode = process.exitCode;
     process.exitCode = 0;
     try {
@@ -4817,7 +4817,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse <unrelated-arg> errors without a misleading suggestion (goal 099)", async () => {
+  it("muse <unrelated-arg> errors without a misleading suggestion", async () => {
     const prevExitCode = process.exitCode;
     process.exitCode = 0;
     try {
@@ -4865,7 +4865,7 @@ describe("cli program", () => {
     }
   });
 
-  it("compileHistoryGrep treats input as regex first, falls back to substring on metacharacter errors (goal 050)", async () => {
+  it("compileHistoryGrep treats input as regex first, falls back to substring on metacharacter errors", async () => {
     const { compileHistoryGrep } = await import("../src/commands-history.js");
     // Plain substring matches the literal anywhere.
     const plain = compileHistoryGrep("budget", false);
@@ -4888,7 +4888,7 @@ describe("cli program", () => {
     expect(broken.test("contains (unclosed paren")).toBe(true);
   });
 
-  it("listMuseImportEntries + findImportCollisions round-trip an exported bundle correctly (goal 049)", async () => {
+  it("listMuseImportEntries + findImportCollisions round-trip an exported bundle correctly", async () => {
     const { buildMuseExport } = await import("../src/commands-export.js");
     const { listMuseImportEntries, findImportCollisions } = await import("../src/commands-import.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-import-"));
@@ -4930,7 +4930,7 @@ describe("cli program", () => {
     expect(collisions).not.toContain("reminders.json");
   });
 
-  it("isSafeMuseEntry rejects path-traversal + non-.muse entries a hostile bundle could carry (goal 238)", async () => {
+  it("isSafeMuseEntry rejects path-traversal + non-.muse entries a hostile bundle could carry", async () => {
     const { isSafeMuseEntry } = await import("../src/commands-import.js");
     // Legit export entries pass.
     expect(isSafeMuseEntry(".muse/tasks.json")).toBe(true);
@@ -4957,7 +4957,7 @@ describe("cli program", () => {
     expect(isSafeMuseEntry(".muse/has\\backslash.json")).toBe(false);
   });
 
-  it("extractMuseBundle restores only the vetted members — a malicious bundle can't escape ~/.muse (goal 238)", async () => {
+  it("extractMuseBundle restores only the vetted members — a malicious bundle can't escape ~/.muse", async () => {
     const { extractMuseBundle, listMuseImportEntries } = await import("../src/commands-import.js");
     const { promisify } = await import("node:util");
     const { execFile } = await import("node:child_process");
@@ -4986,7 +4986,7 @@ describe("cli program", () => {
     await expect(fsp.stat(path.join(home, "pwned.txt"))).rejects.toThrow();
   });
 
-  it("rotateJwtState promotes a new current + grace-windows the previous secret (goal 082)", async () => {
+  it("rotateJwtState promotes a new current + grace-windows the previous secret", async () => {
     const { rotateJwtState, pruneExpiredPreviousSecrets } = await import("../src/jwt-rotation-store.js");
     const now = new Date("2026-05-14T12:00:00Z");
 
@@ -5022,7 +5022,7 @@ describe("cli program", () => {
     expect(futurePruned.previous.length).toBe(1);
   });
 
-  it("muse auth rotate-jwt writes the state file + grace-windows old env-only secret (goal 082)", async () => {
+  it("muse auth rotate-jwt writes the state file + grace-windows old env-only secret", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-rotate-jwt-"));
     const file = path.join(root, "auth-secrets.json");
     const prev = {
@@ -5071,7 +5071,7 @@ describe("cli program", () => {
     }
   });
 
-  it("wireReplGracefulExit fires its onSignal for SIGTERM (goal 072)", async () => {
+  it("wireReplGracefulExit fires its onSignal for SIGTERM", async () => {
     const { wireReplGracefulExit } = await import("../src/chat-repl.js");
     const sawSignals: NodeJS.Signals[] = [];
     const teardown = wireReplGracefulExit({
@@ -5087,7 +5087,7 @@ describe("cli program", () => {
     expect(sawSignals).toEqual(["SIGTERM"]);
   });
 
-  it("buildIterm2InlineImageSequence + detectInlineImageSupport gate inline rendering correctly (goal 096)", async () => {
+  it("buildIterm2InlineImageSequence + detectInlineImageSupport gate inline rendering correctly", async () => {
     const { buildIterm2InlineImageSequence, detectInlineImageSupport } = await import("../src/commands-show.js");
 
     // PNG header bytes — content is opaque to the helper, but a real image makes the test honest.
@@ -5111,7 +5111,7 @@ describe("cli program", () => {
     // claim inline support (else its working viewer fallback is
     // suppressed and `muse show` is a silent no-op there).
     expect(detectInlineImageSupport({ TERM: "xterm-kitty" } as NodeJS.ProcessEnv)).toBe(false);
-    // Goal 142 — Ghostty + VS Code integrated terminal both
+    // Ghostty + VS Code integrated terminal both
     // implement the iTerm2 inline-image protocol natively.
     expect(detectInlineImageSupport({ TERM_PROGRAM: "ghostty" } as NodeJS.ProcessEnv)).toBe(true);
     expect(detectInlineImageSupport({ TERM_PROGRAM: "vscode" } as NodeJS.ProcessEnv)).toBe(true);
@@ -5189,7 +5189,7 @@ describe("cli program", () => {
     }
   });
 
-  it("suggestPatternHints surfaces patterns whose median hour matches now (goal 095)", async () => {
+  it("suggestPatternHints surfaces patterns whose median hour matches now", async () => {
     const { suggestPatternHints } = await import("../src/commands-status.js");
     const now = new Date("2026-05-15T09:00:00Z"); // 09 UTC
 
@@ -5245,7 +5245,7 @@ describe("cli program", () => {
     ] as unknown as readonly unknown[], now)).toEqual([]);
   });
 
-  it("suggestPatternHints centres a midnight-straddling habit circularly (goal 254)", async () => {
+  it("suggestPatternHints centres a midnight-straddling habit circularly", async () => {
     const { suggestPatternHints } = await import("../src/commands-status.js");
     // Six firings clustered around midnight: 23, 00, 01 UTC.
     const fired = ["23", "00", "01", "23", "00", "01"].map((hh, i) => ({
@@ -5265,7 +5265,7 @@ describe("cli program", () => {
     expect(suggestPatternHints(fired, new Date("2026-05-16T15:00:00Z"))).toEqual([]);
   });
 
-  it("persona store: read missing → default, switch active, custom preamble overrides built-in (goal 094)", async () => {
+  it("persona store: read missing → default, switch active, custom preamble overrides built-in", async () => {
     const {
       BUILTIN_PERSONAS,
       isBuiltinPersonaId,
@@ -5385,7 +5385,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse persona show / list flag a dangling active id instead of mislabeling it (goal 242)", async () => {
+  it("muse persona show / list flag a dangling active id instead of mislabeling it", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-persona-dangling-"));
     const file = path.join(root, "persona.json");
     // activeId points at a custom that no longer exists (hand-edited
@@ -5511,7 +5511,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse persona use <typo-id> suggests the closest valid id and exits 1 (goal 100)", async () => {
+  it("muse persona use <typo-id> suggests the closest valid id and exits 1", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-persona-use-typo-"));
     const fsp = await import("node:fs/promises");
     const personaFile = path.join(root, "persona.json");
@@ -5828,7 +5828,7 @@ describe("cli program", () => {
     }
   });
 
-  it("compareFeedEntriesNewestFirst is a consistent total order incl. undated (goal 181)", async () => {
+  it("compareFeedEntriesNewestFirst is a consistent total order incl. undated", async () => {
     const { compareFeedEntriesNewestFirst } = await import("../src/feeds-store.js");
     const newer = { id: "n", publishedAt: "2026-05-15T12:00:00Z" };
     const older = { id: "o", publishedAt: "2026-05-10T12:00:00Z" };
@@ -5854,7 +5854,7 @@ describe("cli program", () => {
     expect(sorted.slice(2)).toEqual(expect.arrayContaining([undatedA, undatedB]));
   });
 
-  it("parseFeedBody handles RSS 2.0 + Atom + filterRecentFeedEntries cutoff (goal 092)", async () => {
+  it("parseFeedBody handles RSS 2.0 + Atom + filterRecentFeedEntries cutoff", async () => {
     const { parseFeedBody, filterRecentFeedEntries } = await import("../src/feeds-store.js");
 
     // RSS 2.0.
@@ -5914,7 +5914,7 @@ describe("cli program", () => {
     expect(filterRecentFeedEntries(noDate, cutoff)).toHaveLength(1);
   });
 
-  it("parseFeedBody strips terminal-injection bytes + collapses whitespace in feed text (goal 240)", async () => {
+  it("parseFeedBody strips terminal-injection bytes + collapses whitespace in feed text", async () => {
     const { parseFeedBody } = await import("../src/feeds-store.js");
     const ESC = String.fromCharCode(27);
     const BEL = String.fromCharCode(7);
@@ -5951,7 +5951,7 @@ describe("cli program", () => {
     expect(e.id).toBe("g-1");
   });
 
-  it("mergeFeedEntries dedupes + retains rolled-off entries + caps growth (goal 115)", async () => {
+  it("mergeFeedEntries dedupes + retains rolled-off entries + caps growth", async () => {
     const { mergeFeedEntries, DEFAULT_FEED_ENTRIES_CAP } = await import("../src/feeds-store.js");
 
     const previous = [
@@ -5991,7 +5991,7 @@ describe("cli program", () => {
     expect(mergeFeedEntries([], incoming).map((e) => e.id)).toEqual(["c", "b"]);
   });
 
-  it("rankRecallCandidates merges + sorts notes + episodes by cosine (goal 091)", async () => {
+  it("rankRecallCandidates merges + sorts notes + episodes by cosine", async () => {
     const { rankRecallCandidates } = await import("../src/commands-recall.js");
     const queryVec = [1, 0, 0, 0];
     const noteChunks = [
@@ -6025,13 +6025,13 @@ describe("cli program", () => {
     expect(oneHit[0]?.ref).toBe("q3.md");
   });
 
-  it("muse recall warns when the index model mismatches --embed-model (goal 114)", async () => {
+  it("muse recall warns when the index model mismatches --embed-model", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-recall-mismatch-"));
     const fsp = await import("node:fs/promises");
     const notesIndexPath = path.join(root, "notes-index.json");
     const epsIndexPath = path.join(root, "episodes-index.json");
     // The note must exist on disk — recall drops index entries for
-    // notes deleted/moved since the last reindex (goal 864).
+    // notes deleted/moved since the last reindex.
     const notePath = path.join(root, "q3.md");
     await fsp.writeFile(notePath, "Q3 budget memo body", "utf8");
 
@@ -6096,7 +6096,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse recall stays silent when the index model matches the query model (goal 114)", async () => {
+  it("muse recall stays silent when the index model matches the query model", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-recall-match-"));
     const fsp = await import("node:fs/promises");
     const notesIndexPath = path.join(root, "notes-index.json");
@@ -6131,7 +6131,7 @@ describe("cli program", () => {
     }
   });
 
-  it("buildEpisodeIndex reuses unchanged entries + re-embeds changed summaries (goal 090)", async () => {
+  it("buildEpisodeIndex reuses unchanged entries + re-embeds changed summaries", async () => {
     const { buildEpisodeIndex } = await import("../src/episode-index.js");
     const calls: string[] = [];
     const fakeEmbed = async (text: string): Promise<number[]> => {
@@ -6201,7 +6201,7 @@ describe("cli program", () => {
     expect(calls).toEqual(["Q3 budget revised"]);
   });
 
-  it("parseOsascriptGlance normalises missing/empty fields (goal 089)", async () => {
+  it("parseOsascriptGlance normalises missing/empty fields", async () => {
     const { parseOsascriptGlance } = await import("../src/commands-glance.js");
     expect(parseOsascriptGlance("Terminal\nmuse — repl\nselected text here\n")).toEqual({
       app: "Terminal", window: "muse — repl", selected: "selected text here"
@@ -6231,7 +6231,7 @@ describe("cli program", () => {
     expect(snap).toEqual({ app: "Safari[2J", window: "EvilPage", selected: "copied text with spaces" });
   });
 
-  it("muse read parses a hand-rolled PDF + builds grounded ask prompt (goal 088)", async () => {
+  it("muse read parses a hand-rolled PDF + builds grounded ask prompt", async () => {
     const { parsePdfBuffer, buildReadAskSystemPrompt } = await import("../src/commands-read.js");
     // System prompt structurally pins the document boundaries.
     const prompt = buildReadAskSystemPrompt("hello world body text");
@@ -6255,7 +6255,7 @@ describe("cli program", () => {
     expect(parsed.text.includes("hello jarvis")).toBe(true);
   });
 
-  it("planActivityLogCompaction filters by suffix + age + allow-list (goal 080)", async () => {
+  it("planActivityLogCompaction filters by suffix + age + allow-list", async () => {
     const { planActivityLogCompaction, COMPACTABLE_STORE_BASENAMES } = await import("../src/commands-maintenance.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-compact-"));
     const fsp = await import("node:fs/promises");
@@ -6263,7 +6263,7 @@ describe("cli program", () => {
     const archiveDir = path.join(root, "archive");
     const nowMs = Date.now();
 
-    // Allow-listed sidecar from goal 079.
+    // Allow-listed sidecar for proactive-history rotation.
     expect(COMPACTABLE_STORE_BASENAMES).toContain("proactive-history.json");
 
     await fsp.writeFile(path.join(museDir, "proactive-history.json.1"), "{}");
@@ -6376,7 +6376,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse status surfaces today's token-cost rollup from the sidecar JSON (goal 078)", async () => {
+  it("muse status surfaces today's token-cost rollup from the sidecar JSON", async () => {
     const { readTokenCostToday } = await import("../src/commands-status.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-cost-"));
     const file = path.join(root, "token-cost-today.json");
@@ -6420,7 +6420,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse status surfaces RAG readiness from the notes index (goal 180)", async () => {
+  it("muse status surfaces RAG readiness from the notes index", async () => {
     const { readRagStatus } = await import("../src/commands-status.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-rag-"));
     const file = path.join(root, "notes-index.json");
@@ -6456,7 +6456,7 @@ describe("cli program", () => {
     }
   });
 
-  it("formatMetricsSnapshot pretty-prints SLO / drift / token / budget sections (goal 077)", async () => {
+  it("formatMetricsSnapshot pretty-prints SLO / drift / token / budget sections", async () => {
     const { formatMetricsSnapshot } = await import("../src/commands-metrics.js");
     // Empty payload → friendly hint.
     expect(formatMetricsSnapshot(null)).toContain("empty snapshot");
@@ -6484,7 +6484,7 @@ describe("cli program", () => {
     expect(rendered).toContain("unknownExtra: stays under 'other'");
   });
 
-  it("muse trace tail helpers parse interval / limit / events (goal 076)", async () => {
+  it("muse trace tail helpers parse interval / limit / events", async () => {
     const {
       resolveTraceTailIntervalMs,
       resolveTraceTailLimit,
@@ -6517,7 +6517,7 @@ describe("cli program", () => {
     expect(extractTraceTailEvents({})).toEqual([]);
   });
 
-  it("muse mcp status renders 'reconnecting in Ns' for servers with a scheduled retry (goal 075)", async () => {
+  it("muse mcp status renders 'reconnecting in Ns' for servers with a scheduled retry", async () => {
     const fixedNow = new Date("2026-05-14T12:00:00Z");
     const { io, output } = captureOutput();
     const program = createProgram({
@@ -6556,7 +6556,7 @@ describe("cli program", () => {
     expect(text).not.toContain("beta\tHEALTHY (reconnecting");
   });
 
-  it("isNotesIndexValid gates the on-disk schema version (goal 074)", async () => {
+  it("isNotesIndexValid gates the on-disk schema version", async () => {
     const { isNotesIndexValid, NOTES_INDEX_SCHEMA_VERSION, isNotesIndexStale } = await import("../src/commands-notes-rag.js");
     expect(NOTES_INDEX_SCHEMA_VERSION).toBe(1);
 
@@ -6587,7 +6587,7 @@ describe("cli program", () => {
     expect(await isNotesIndexStale(notesDir, indexPath)).toBe(true);
   });
 
-  it("resolveDoctorWatchIntervalMs defaults to 5s and clamps to [1s, 3600s] (goal 068)", async () => {
+  it("resolveDoctorWatchIntervalMs defaults to 5s and clamps to [1s, 3600s]", async () => {
     const { resolveDoctorWatchIntervalMs } = await import("../src/commands-doctor.js");
     expect(resolveDoctorWatchIntervalMs(undefined)).toBe(5_000);
     expect(resolveDoctorWatchIntervalMs("")).toBe(5_000);
@@ -6602,7 +6602,7 @@ describe("cli program", () => {
     expect(resolveDoctorWatchIntervalMs("10 seconds")).toBe(5_000);
   });
 
-  it("withSigintAbort threads an AbortSignal + sets exit code 130 on Ctrl-C (goal 067)", async () => {
+  it("withSigintAbort threads an AbortSignal + sets exit code 130 on Ctrl-C", async () => {
     const { withSigintAbort } = await import("../src/sigint-abort.js");
     // Happy path: no SIGINT → action runs to completion + no exit code touched.
     process.exitCode = undefined as unknown as number;
@@ -6630,7 +6630,7 @@ describe("cli program", () => {
     process.exitCode = 0;
   });
 
-  it("muse completion bash + zsh emit valid scripts mentioning real subcommands (goal 066)", async () => {
+  it("muse completion bash + zsh emit valid scripts mentioning real subcommands", async () => {
     const { io, output } = captureOutput();
     const program = createProgram({ ...io, fetch: async () => { throw new Error("no fetch"); } });
     await program.parseAsync(["node", "muse", "completion", "bash"], { from: "node" });
@@ -6687,7 +6687,7 @@ describe("cli program", () => {
     process.exitCode = 0;
   });
 
-  it("colorize respects NO_COLOR + isTty + force flags (goal 061)", async () => {
+  it("colorize respects NO_COLOR + isTty + force flags", async () => {
     const { colorize, colorAllowed } = await import("../src/tty-color.js");
     const prev = process.env.NO_COLOR;
     try {
@@ -6712,7 +6712,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse search formatted output prints backend latency (goal 065)", async () => {
+  it("muse search formatted output prints backend latency", async () => {
     const originalFetch = globalThis.fetch;
     try {
       globalThis.fetch = (async (): Promise<Response> => new Response(
@@ -6731,7 +6731,7 @@ describe("cli program", () => {
     }
   });
 
-  it("parseIcsEvents extracts the minimum-viable VEVENT shape (goal 059)", async () => {
+  it("parseIcsEvents extracts the minimum-viable VEVENT shape", async () => {
     const { parseIcsEvents } = await import("../src/ics-parser.js");
     const body = [
       "BEGIN:VCALENDAR",
@@ -6770,7 +6770,7 @@ describe("cli program", () => {
     expect(events[1]?.startsAt.toISOString()).toBe("2026-05-16T00:00:00.000Z");
   });
 
-  it("computeMemoryDiff buckets added / changed / removed per slot (goal 051)", async () => {
+  it("computeMemoryDiff buckets added / changed / removed per slot", async () => {
     const { computeMemoryDiff } = await import("../src/commands-memory.js");
     const baseline = {
       facts: { name: "Stark", city: "Seoul" },
@@ -6801,7 +6801,7 @@ describe("cli program", () => {
     expect(removal.totalChanges).toBe(1);
   });
 
-  it("encryptExportBuffer + decryptExportBuffer round-trip with the right passphrase (goal 081)", async () => {
+  it("encryptExportBuffer + decryptExportBuffer round-trip with the right passphrase", async () => {
     const { encryptExportBuffer, decryptExportBuffer, isEncryptedExportBuffer } = await import("../src/export-crypto.js");
     const plain = Buffer.from("hello-muse-export-bytes\n");
     const cipher = encryptExportBuffer(plain, "correct horse battery staple");
@@ -6818,7 +6818,7 @@ describe("cli program", () => {
     expect(() => decryptExportBuffer(Buffer.from("PK\x03\x04"), "anything")).toThrow(/MUSE magic/);
   });
 
-  it("buildMuseExport --encrypt round-trips through muse import --decrypt (goal 081)", async () => {
+  it("buildMuseExport --encrypt round-trips through muse import --decrypt", async () => {
     const { buildMuseExport } = await import("../src/commands-export.js");
     const { listMuseImportEntries } = await import("../src/commands-import.js");
     const { decryptExportBuffer, isEncryptedExportBuffer } = await import("../src/export-crypto.js");
@@ -6855,7 +6855,7 @@ describe("cli program", () => {
     expect(entries.some((e) => e === ".muse/notes/hi.md")).toBe(true);
   });
 
-  it("reserveCleartextTemp keeps the pre-encrypt secret tarball owner-only, even over a stale temp (goal 239)", async () => {
+  it("reserveCleartextTemp keeps the pre-encrypt secret tarball owner-only, even over a stale temp", async () => {
     const { reserveCleartextTemp } = await import("../src/commands-export.js");
     const fsp = await import("node:fs/promises");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-export-perms-"));
@@ -6875,7 +6875,7 @@ describe("cli program", () => {
     expect(await fsp.readFile(stale, "utf8")).toBe("");
   });
 
-  it("buildMuseExport bundles every present ~/.muse/*.json + the notes tree, skipping missing siblings (goal 048)", async () => {
+  it("buildMuseExport bundles every present ~/.muse/*.json + the notes tree, skipping missing siblings", async () => {
     const { buildMuseExport, buildExportReadme, DEFAULT_EXPORT_FILES } = await import("../src/commands-export.js");
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-export-"));
     const fsp = await import("node:fs/promises");
@@ -6921,7 +6921,7 @@ describe("cli program", () => {
     expect(DEFAULT_EXPORT_FILES).toContain("user-memory.json");
   });
 
-  it("NOTES_ONLY_TOOL_ALLOWLIST excludes web/search/fetch tools by design (goal 047)", async () => {
+  it("NOTES_ONLY_TOOL_ALLOWLIST excludes web/search/fetch tools by design", async () => {
     const { NOTES_ONLY_TOOL_ALLOWLIST } = await import("../src/commands-ask.js");
     // Whitelist is exactly the notes + memory surface — nothing else.
     expect([...NOTES_ONLY_TOOL_ALLOWLIST].sort()).toEqual(["muse.context", "muse.notes", "muse.notes-multi"]);
@@ -6933,7 +6933,7 @@ describe("cli program", () => {
     expect([...NOTES_ONLY_TOOL_ALLOWLIST]).not.toContain("web_search");
   });
 
-  it("resolveStatusWatchIntervalMs defaults to 5s and clamps to [1s, 3600s] (goal 046)", async () => {
+  it("resolveStatusWatchIntervalMs defaults to 5s and clamps to [1s, 3600s]", async () => {
     const { resolveStatusWatchIntervalMs } = await import("../src/commands-status.js");
     expect(resolveStatusWatchIntervalMs(undefined)).toBe(5_000);
     expect(resolveStatusWatchIntervalMs("")).toBe(5_000);
@@ -6951,7 +6951,7 @@ describe("cli program", () => {
     expect(resolveStatusWatchIntervalMs("99999")).toBe(3_600_000);
   });
 
-  it("muse calendar tomorrow / this-week compute the right ranges (goal 021)", async () => {
+  it("muse calendar tomorrow / this-week compute the right ranges", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-cal-quick-"));
     const fsp = await import("node:fs/promises");
     const calendarFile = path.join(root, "calendar.json");
@@ -6997,7 +6997,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse history --kind X empty output tailors the empty hint to the requested kind (goal 022)", async () => {
+  it("muse history --kind X empty output tailors the empty hint to the requested kind", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-hist-emptyhint-"));
     const fsp = await import("node:fs/promises");
     const remindersHistoryFile = path.join(root, "reminder-history.json");
@@ -7024,7 +7024,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse doctor --local prints an overall verdict footer + exits non-zero on fail (goal 030)", async () => {
+  it("muse doctor --local prints an overall verdict footer + exits non-zero on fail", async () => {
     // Force the "fail" branch by un-setting MUSE_MODEL / every provider key.
     const prev = {
       muse_model: process.env.MUSE_MODEL,
@@ -7100,7 +7100,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse search --site <domain> prepends site:<domain> to the query (goal 017)", async () => {
+  it("muse search --site <domain> prepends site:<domain> to the query", async () => {
     const originalFetch = globalThis.fetch;
     const prev = process.env.MUSE_SEARXNG_URL;
     let capturedUrl = "";
@@ -7131,7 +7131,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse search --to-notes <path> writes a markdown note with title + numbered results (goal 016)", async () => {
+  it("muse search --to-notes <path> writes a markdown note with title + numbered results", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-search-tonotes-"));
     const fsp = await import("node:fs/promises");
     const notesDir = path.join(root, "notes");
@@ -7177,7 +7177,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse search --to-notes scrubs credentials from backend snippets before write (goal 140)", async () => {
+  it("muse search --to-notes scrubs credentials from backend snippets before write", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-search-tonotes-redact-"));
     const fsp = await import("node:fs/promises");
     const notesDir = path.join(root, "notes");
@@ -7298,7 +7298,7 @@ describe("cli program", () => {
     }
   });
 
-  it("setup-model wizard suggests 127.0.0.1 for Ollama, not localhost (goal 273)", async () => {
+  it("setup-model wizard suggests 127.0.0.1 for Ollama, not localhost", async () => {
     const { SETUP_MODEL_PROVIDER_SPECS } = await import("../src/setup-model.js");
     const ollama = SETUP_MODEL_PROVIDER_SPECS.find((s) => s.id === "ollama");
     expect(ollama).toBeDefined();
@@ -7637,7 +7637,7 @@ describe("cli program", () => {
     const { formatApiErrorResponse } = await import("../src/program-helpers.js");
     // A multi-KB HTML 404 (what Next.js dev server returns when
     // the user points --api-url at the web port (3000) instead of
-    // the muse API. Goal 001 moved the API default to 3030 so the
+    // the muse API. The API default now lives on 3030 so the
     // collision no longer happens on a clean install).
     const htmlBody = `<!DOCTYPE html><html><head><title>404</title></head><body>${"<script>".repeat(500)}</body></html>`;
     const fakeResponse = {
@@ -7672,7 +7672,7 @@ describe("cli program", () => {
     expect(err.message).toContain("…");
   });
 
-  it("apiRequest surfaces the Muse error envelope cleanly instead of raw JSON (goal 175)", async () => {
+  it("apiRequest surfaces the Muse error envelope cleanly instead of raw JSON", async () => {
     const { formatApiErrorResponse } = await import("../src/program-helpers.js");
     const envelope = JSON.stringify({
       blockReason: null,
@@ -7695,7 +7695,7 @@ describe("cli program", () => {
     expect(err.message).not.toContain("{");
   });
 
-  it("apiRequest keeps the raw preview for JSON without an errorMessage envelope (goal 175)", async () => {
+  it("apiRequest keeps the raw preview for JSON without an errorMessage envelope", async () => {
     const { formatApiErrorResponse } = await import("../src/program-helpers.js");
     const fakeResponse = {
       status: 422,
@@ -8146,9 +8146,9 @@ describe("cli program", () => {
       expect(tod).toBeDefined();
       expect(tod!.confidence).toBeGreaterThan(0);
 
-      // Goal 177 — an out-of-range --min-confidence is now
-      // rejected (was: silently fell back to 0 and showed
-      // everything, masking the user's intent).
+      // An out-of-range --min-confidence is rejected (was:
+      // silently fell back to 0 and showed everything, masking
+      // the user's intent).
       const { io: io2 } = captureOutput();
       const program2 = createProgram({ ...io2, fetch: async () => { throw new Error("no fetch"); } });
       await expect(
@@ -8271,7 +8271,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse status surfaces persona.workingHours from memory (goal 147)", async () => {
+  it("muse status surfaces persona.workingHours from memory", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-working-hours-"));
     const fsp = await import("node:fs/promises");
     const userMemoryFile = path.join(root, "user-memory.json");
@@ -8333,7 +8333,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse status surfaces persona.currentFocus from memory (goal 146)", async () => {
+  it("muse status surfaces persona.currentFocus from memory", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-focus-"));
     const fsp = await import("node:fs/promises");
     const userMemoryFile = path.join(root, "user-memory.json");
@@ -8396,7 +8396,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse status reads memory + trust at user@slot when MUSE_PERSONA is set (goal 104)", async () => {
+  it("muse status reads memory + trust at user@slot when MUSE_PERSONA is set", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-effective-key-"));
     const fsp = await import("node:fs/promises");
     const userMemoryFile = path.join(root, "user-memory.json");
@@ -8474,7 +8474,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse status surfaces active persona slot (MUSE_PERSONA) and template (~/.muse/persona.json) (goal 098)", async () => {
+  it("muse status surfaces active persona slot (MUSE_PERSONA) and template (~/.muse/persona.json)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-cli-status-persona-"));
     const fsp = await import("node:fs/promises");
     const personaFile = path.join(root, "persona.json");
@@ -8526,7 +8526,7 @@ describe("cli program", () => {
     }
   });
 
-  it("parseKindSegment accepts singular + plural and hints on typos (goal 119)", async () => {
+  it("parseKindSegment accepts singular + plural and hints on typos", async () => {
     const { parseKindSegment } = await import("../src/commands-memory.js");
 
     // Happy path: both singular and plural for both kinds.
@@ -8566,7 +8566,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse search --time <typo> rejects with a closest-match hint (goal 133)", async () => {
+  it("muse search --time <typo> rejects with a closest-match hint", async () => {
     // One-edit typo on the canonical "week".
     const { io: io1 } = captureOutput();
     const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
@@ -8595,7 +8595,7 @@ describe("cli program", () => {
     )).rejects.toThrow(/--time must be one of/u);
   });
 
-  it("muse watch-folder --provider <typo> suggests the closest registered provider (goal 132)", async () => {
+  it("muse watch-folder --provider <typo> suggests the closest registered provider", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-watch-folder-typo-"));
     const prevTg = process.env.MUSE_TELEGRAM_BOT_TOKEN;
     const prevExitCode = process.exitCode;
@@ -8632,7 +8632,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse mcp use <typo-preset> suggests the closest valid preset (goal 131)", async () => {
+  it("muse mcp use <typo-preset> suggests the closest valid preset", async () => {
     // One-edit typo for "filesystem".
     const { io: io1, output: out1 } = captureOutput();
     const program1 = createProgram({ ...io1, fetch: async () => { throw new Error("no fetch"); } });
@@ -8654,7 +8654,7 @@ describe("cli program", () => {
     expect(text2).toContain("Available:");
   });
 
-  it("muse routine pluralises 'day' in the sessions summary (goal 129)", async () => {
+  it("muse routine pluralises 'day' in the sessions summary", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-routine-plural-"));
     const fsp = await import("node:fs/promises");
     const activityFile = path.join(root, "activity.jsonl");
@@ -8698,7 +8698,7 @@ describe("cli program", () => {
     }
   });
 
-  it("maybeCompactLastChatHistory scrubs credential shapes from the LLM summary before write (goal 138)", async () => {
+  it("maybeCompactLastChatHistory scrubs credential shapes from the LLM summary before write", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-chat-compact-redact-"));
     const fsp = await import("node:fs/promises");
     const prev = process.env.HOME;
@@ -8745,7 +8745,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse maintenance compact --keep-days strict Number() parse (goal 144)", async () => {
+  it("muse maintenance compact --keep-days strict Number() parse", async () => {
     const { io, output } = captureOutput();
     const prevExitCode = process.exitCode;
     process.exitCode = 0;
@@ -8769,7 +8769,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse watch-folder --default-lead-minutes strict Number() parse (goal 144)", async () => {
+  it("muse watch-folder --default-lead-minutes strict Number() parse", async () => {
     const { tmpdir } = await import("node:os");
     const root = await mkdtemp(path.join(tmpdir(), "muse-watch-lead-"));
     const prevExitCode = process.exitCode;
@@ -8801,7 +8801,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse feeds today --hours rejects non-numeric / non-positive input (goal 143)", async () => {
+  it("muse feeds today --hours rejects non-numeric / non-positive input", async () => {
     const { io } = captureOutput();
 
     // Non-numeric → error with the offending input verbatim.
@@ -8880,7 +8880,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse remind list rejects --status typos with a closest-match hint (goal 137)", async () => {
+  it("muse remind list rejects --status typos with a closest-match hint", async () => {
     const { io } = captureOutput();
 
     // One-edit typo for "fired" → suggests "fired".
@@ -8942,7 +8942,7 @@ describe("cli program", () => {
     }
   });
 
-  it("muse tasks list rejects --status typos with a closest-match hint (goal 125)", async () => {
+  it("muse tasks list rejects --status typos with a closest-match hint", async () => {
     const { io } = captureOutput();
     const program = createProgram({ ...io, fetch: async () => { throw new Error("not reached — should reject before fetch"); } });
     program.exitOverride();
@@ -8980,7 +8980,7 @@ describe("cli program", () => {
     )).resolves.toBeDefined();
   });
 
-  it("muse trust revoke / unblock hint when the tool wasn't actually listed (goal 118)", async () => {
+  it("muse trust revoke / unblock hint when the tool wasn't actually listed", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "muse-trust-typo-"));
     const fsp = await import("node:fs/promises");
     const trustFile = path.join(root, "trust.json");

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * P18 read-first, slice 2 — the AGENT actually answers grounded in the
- * user's live Chrome page. Slice 1 (goal 750) proved the connector +
+ * user's live Chrome page. An earlier slice proved the connector +
  * tool projection; this drives the whole loop: AgentRuntime → the
  * real MCP-projected `chrome-devtools.take_snapshot` tool → the page
  * snapshot flows back into the model input → a grounded answer.

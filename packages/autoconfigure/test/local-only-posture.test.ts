@@ -42,8 +42,8 @@ describe("evaluateLocalOnlyPosture — single source of truth for doctor + setup
   // The embedder reads OLLAMA_BASE_URL independently of the chat model, so a
   // LOCAL non-ollama chat (lmstudio) + a REMOTE OLLAMA_BASE_URL passes the chat
   // router gate (which only checks OLLAMA_BASE_URL when the CHAT provider is
-  // ollama) while the embedder would egress the user's text — fire 4 fail-closes
-  // that at runtime, but doctor must SURFACE it (not report a false "🔒 ok").
+  // ollama) while the embedder would egress the user's text — this fail-closes
+  // at runtime, but doctor must SURFACE it (not report a false "🔒 ok").
   it("ON + a LOCAL lmstudio chat but a REMOTE OLLAMA_BASE_URL ⇒ fail (embedder egress surfaced)", () => {
     const p = evaluateLocalOnlyPosture({ MUSE_MODEL: "lmstudio/llama", OLLAMA_BASE_URL: "http://192.168.1.50:11434" });
     expect(p).toMatchObject({ enabled: true, status: "fail" });

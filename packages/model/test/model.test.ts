@@ -193,7 +193,7 @@ function createProvider(id: string, models: readonly ModelInfo[]): ModelProvider
   };
 }
 
-describe("stripLeadingThinkBlock (goal 172)", () => {
+describe("stripLeadingThinkBlock", () => {
   it("removes a leaked leading <think>…</think> block and its trailing whitespace", () => {
     expect(stripLeadingThinkBlock("<think>\nlet me reason\n</think>\n\nThe answer is 42."))
       .toBe("The answer is 42.");
@@ -226,7 +226,7 @@ describe("stripLeadingThinkBlock (goal 172)", () => {
   });
 });
 
-describe("createLeadingThinkStripper (goal 173)", () => {
+describe("createLeadingThinkStripper", () => {
   function feed(deltas: readonly string[]): string {
     const strip = createLeadingThinkStripper();
     return deltas.map((d) => strip(d)).join("");
@@ -455,7 +455,7 @@ describe("OpenAICompatibleProvider", () => {
     });
   });
 
-  it("suppresses Qwen3 thinking via chat_template_kwargs, only for qwen3 models (goal 171)", async () => {
+  it("suppresses Qwen3 thinking via chat_template_kwargs, only for qwen3 models", async () => {
     const bodies: Record<string, unknown>[] = [];
     const makeProvider = (defaultModel: string) => new OpenAICompatibleProvider({
       baseUrl: "https://llm.example.test/v1",
@@ -1326,7 +1326,7 @@ describe("OllamaProvider streaming flushes an unterminated final NDJSON line", (
   });
 });
 
-describe("OllamaProvider num_ctx (goal 165)", () => {
+describe("OllamaProvider num_ctx", () => {
   function captureBodyFetch(): { fetch: typeof globalThis.fetch; bodies: Record<string, unknown>[] } {
     const bodies: Record<string, unknown>[] = [];
     const fetch: typeof globalThis.fetch = async (url, init) => {
@@ -1372,7 +1372,7 @@ describe("OllamaProvider num_ctx (goal 165)", () => {
   });
 });
 
-describe("OllamaProvider model-not-found hint (goal 176)", () => {
+describe("OllamaProvider model-not-found hint", () => {
   const notFound: typeof globalThis.fetch = async (url) => {
     if (String(url).includes("/models")) {
       return new Response(JSON.stringify({ data: [] }));

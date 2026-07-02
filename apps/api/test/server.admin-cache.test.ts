@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildServer } from "../src/server.js";
 
-describe("Cache-Control: no-store on /api/admin/* (goal 037)", () => {
+describe("Cache-Control: no-store on /api/admin/*", () => {
   it("admin response has Cache-Control: no-store", async () => {
     const server = buildServer({ logger: false });
     // Any /api/admin/* route works — doctor/summary is light and

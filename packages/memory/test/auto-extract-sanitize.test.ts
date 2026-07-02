@@ -310,7 +310,7 @@ describe("auto-extract value sanitisation at store boundary", () => {
     expect(memory?.facts ?? {}).toEqual({});
   });
 
-  it("extractionCooldownMs throttles repeated extractions per user (goal 073)", async () => {
+  it("extractionCooldownMs throttles repeated extractions per user", async () => {
     let providerCalls = 0;
     const provider = {
       id: "diagnostic",

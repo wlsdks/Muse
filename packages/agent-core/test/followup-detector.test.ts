@@ -5,7 +5,7 @@ import { RULE_FOLLOWUP_FUTURE_HORIZON_MS, extractFollowupPromises } from "../src
 const now = new Date("2026-05-13T10:00:00.000Z");
 
 describe("extractFollowupPromises — future-horizon sanity bound", () => {
-  it("drops a promise scheduled beyond the 365-day horizon (`in 9999 days` would queue a follow-up ~27 years out that never meaningfully fires) — parity with the LLM detector's bound (goal 650)", () => {
+  it("drops a promise scheduled beyond the 365-day horizon (`in 9999 days` would queue a follow-up ~27 years out that never meaningfully fires) — parity with the LLM detector's bound", () => {
     expect(extractFollowupPromises("ping me in 9999 days", { now })).toHaveLength(0);
     // 366 days is just past the horizon → dropped.
     expect(extractFollowupPromises("remind me in 366 days", { now })).toHaveLength(0);

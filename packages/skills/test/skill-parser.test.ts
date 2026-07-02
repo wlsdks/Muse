@@ -166,7 +166,7 @@ metadata:
     expect(parsed).toEqual({ description: "", name: "" });
   });
 
-  it("parses top-level `requires:` with a nested object without losing fields (goal 126)", () => {
+  it("parses top-level `requires:` with a nested object without losing fields", () => {
     // Pre-goal-126, the `inRequires` exit used `line.trim() === "}"`
     // which fires at the FIRST inner `}` — so the outer object's
     // closing `}` was treated as an unrelated frontmatter line and
@@ -187,7 +187,7 @@ description: "Codex CLI"`);
       .toEqual({ darwin: { via: "brew" }, linux: { via: "apt" } });
   });
 
-  it("parses top-level `install:` array with nested entries without losing fields (goal 126)", () => {
+  it("parses top-level `install:` array with nested entries without losing fields", () => {
     // Pre-goal-126 the `inInstall` exit fired at `line.trim() === "]"`
     // — so the inner `["link"]` array closed inInstall prematurely.
     const parsed = parseSkillFrontmatter(`name: codex
@@ -202,13 +202,13 @@ description: "Codex CLI"`);
     expect(parsed.description).toBe("Codex CLI");
   });
 
-  it("exits the metadata block at the closing brace so fields below metadata survive (iter 32)", () => {
-    // Pre-iter-32 the `inMetadata` flag flipped on at `metadata:` but
-    // had NO exit condition — every subsequent line, including
+  it("exits the metadata block at the closing brace so fields below metadata survive", () => {
+    // Without an exit condition, the `inMetadata` flag would flip on at
+    // `metadata:` but never turn off — every subsequent line, including
     // unrelated fields like `description` / `emoji` / `homepage`,
-    // was appended to `metadataJson`. That broke JSON.parse AND
-    // silently lost the trailing fields. (Compare with the
-    // `inRequires` / `inInstall` siblings, which DID exit on
+    // would get appended to `metadataJson`. That would break JSON.parse AND
+    // silently lose the trailing fields. (Compare with the
+    // `inRequires` / `inInstall` siblings, which DO exit on
     // `line.trim() === "}"`.)
     const parsed = parseSkillFrontmatter(`name: codex
 metadata:

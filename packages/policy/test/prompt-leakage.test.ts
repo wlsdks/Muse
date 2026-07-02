@@ -37,7 +37,7 @@ describe("prompt leakage policy", () => {
     expect(detectSystemPromptLeakage("We should design prompts with clear examples and constraints.")).toEqual([]);
   });
 
-  it("detects leaks obfuscated with zero-width / homoglyph splits (goal 298)", () => {
+  it("detects leaks obfuscated with zero-width / homoglyph splits", () => {
     // Built from escapes (never raw invisible bytes in source).
     const ZW = String.fromCharCode(0x200b);
     const cyrA = String.fromCharCode(0x0430); // Cyrillic homoglyph of "a"

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ChatRateLimiter } from "../src/chat-rate-limiter.js";
 import { buildServer } from "../src/server.js";
 
-describe("POST /api/chat per-IP rate limit (goal 031)", () => {
+describe("POST /api/chat per-IP rate limit", () => {
   it("allows N requests then returns 429 with Retry-After once the bucket is empty", async () => {
     // 5-req cap inside a 60s window keeps the test small + deterministic.
     let frozenNow = 1_700_000_000_000;
@@ -113,7 +113,7 @@ describe("POST /api/chat per-IP rate limit (goal 031)", () => {
     expect(nanWin.consume("c").allowed).toBe(false); // bounded normally
   });
 
-  it("clientKeyFromRequest prefers authenticated userId over IP (goal 084)", async () => {
+  it("clientKeyFromRequest prefers authenticated userId over IP", async () => {
     const { clientKeyFromRequest } = await import("../src/chat-rate-limiter.js");
     // Authenticated → user-namespaced.
     expect(
@@ -135,7 +135,7 @@ describe("POST /api/chat per-IP rate limit (goal 031)", () => {
       .not.toBe(clientKeyFromRequest({ ip: "10.0.0.1" }));
   });
 
-  it("two authenticated users sharing one IP get independent buckets (goal 084)", () => {
+  it("two authenticated users sharing one IP get independent buckets", () => {
     const limiter = new ChatRateLimiter({ capacity: 2, windowMs: 60_000 });
     // Alice burns her bucket.
     expect(limiter.consume("user:alice").allowed).toBe(true);

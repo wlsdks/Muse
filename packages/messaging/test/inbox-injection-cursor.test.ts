@@ -37,7 +37,7 @@ describe("inbox-injection-cursor", () => {
     // The cursor records the LAST timestamp each chat / channel was
     // injected from per user; a world-readable file would reveal
     // when the user is active in which channel — same shape concern
-    // goal 598 closed for the sibling sidecars. Both writes go
+    // already closed for the sibling sidecars. Both writes go
     // through `writePersisted`, so testing one entry-point is
     // sufficient to pin the chmod posture.
     await writeInboxInjectionCursor(cursorFile, { C1: { ids: [], iso: "2026-05-11T08:00:00.000Z" } });

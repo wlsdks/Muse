@@ -86,7 +86,7 @@ describe("keysWithActiveRetraction — a forgotten key stays forgotten (auto re-
     expect(recorded[0]?.value).toBe("");
     expect([...keysWithActiveRetraction(recorded)]).toEqual(["home_city"]);
   });
-  it("deriveFactProvenance IGNORES retraction markers (no value/count pollution — fire 16/22 invariant preserved)", () => {
+  it("deriveFactProvenance IGNORES retraction markers (no value/count pollution invariant preserved)", () => {
     const prov = deriveFactProvenance([
       entry({ key: "k", value: "Seoul", learnedAt: "2026-06-01T00:00:00.000Z", source: "auto" }),
       entry({ key: "k", value: "Seoul", learnedAt: "2026-06-05T00:00:00.000Z", source: "auto" }),

@@ -93,7 +93,7 @@ describe("assembleMcpStack — official MCP preset opt-in toggles (default OFF)"
   });
 });
 
-describe("assembleMcpStack — credential resolution + fail-closed when absent (FIRE 7)", () => {
+describe("assembleMcpStack — credential resolution + fail-closed when absent", () => {
   it("toggle ON + GITHUB_MCP_TOKEN present ⇒ transport headers carry Authorization: Bearer <token>", () => {
     const gh = entry(
       { ...baseEnv, MUSE_GITHUB_MCP_ENABLED: "true", GITHUB_MCP_TOKEN: "ghp_secret_abc123" } as MuseEnvironment,

@@ -186,7 +186,7 @@ describe("cache metrics", () => {
     expect(resolveProvider("OpenAI/gpt-4o")).toBe("openai");
   });
 
-  it("estimateCostUsd returns 0 for local providers (Ollama / LM Studio) — goal 117", () => {
+  it("estimateCostUsd returns 0 for local providers (Ollama / LM Studio)", () => {
     // Explicit `<provider>/<model>` form lands directly on the
     // local-provider allowlist.
     expect(estimateCostUsd("ollama/qwen3.5:9b-q4_K_M", 5000, 1000)).toBe(0);

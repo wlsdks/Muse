@@ -75,12 +75,12 @@ describe("InMemoryTelemetryAggregator (phase A)", () => {
     expect(summary.totalRuns).toBe(1);
   });
 
-  it("recent(0) returns empty (slice(-0) was a footgun before iter 26)", () => {
-    // Before iter 26, `Math.max(0, Math.trunc(0)) === 0` followed by
-    // `events.slice(-0) === events.slice(0)` returned the ENTIRE
+  it("recent(0) returns empty (slice(-0) is a footgun)", () => {
+    // `Math.max(0, Math.trunc(0)) === 0` followed by
+    // `events.slice(-0) === events.slice(0)` would return the ENTIRE
     // event list when the caller asked for 0 — a silent footgun for
     // any UI that conditionally requested "the last N where N might
-    // be 0". The fix branches explicitly on bound ≤ 0.
+    // be 0". Branching explicitly on bound ≤ 0 guards against it.
     const agg = new InMemoryTelemetryAggregator({ now: () => 2_000 });
     agg.record(evt({ runId: "r-1" }));
     agg.record(evt({ runId: "r-2" }));

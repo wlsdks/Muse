@@ -20,7 +20,7 @@ import { startObjectivesTick } from "../src/objectives-tick.js";
  * chain composed exactly as `startObjectivesDaemonIfConfigured`
  * wires it — only the model verdict (a deterministic strict-JSON
  * stand-in; the live qwen3:8b decision was separately verified by
- * goal 398's real round-trip) and the HTTP boundary are faked.
+ * a real round-trip) and the HTTP boundary are faked.
  */
 function fakeJsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {

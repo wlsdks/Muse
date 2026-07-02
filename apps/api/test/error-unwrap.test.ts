@@ -32,7 +32,7 @@ describe("unwrapErrorMessage", () => {
     expect(unwrapErrorMessage(a)).toBe("a — b");
   });
 
-  it("scrubs credential shapes from the joined message (goal 145)", () => {
+  it("scrubs credential shapes from the joined message", () => {
     // OpenAI's 401 sometimes echoes the partial Authorization header
     // into its diagnostic text. We don't want that landing on the
     // client / log verbatim.
@@ -45,7 +45,7 @@ describe("unwrapErrorMessage", () => {
     expect(message).toContain("401: invalid token");
   });
 
-  it("redaction also catches GitHub PAT / Anthropic shapes in nested causes (goal 145)", () => {
+  it("redaction also catches GitHub PAT / Anthropic shapes in nested causes", () => {
     const inner = new Error("Anthropic 401 from sk-ant-api03-abcdefghijklmnop session");
     const outer = Object.assign(new Error("retry exhausted"), { cause: inner });
     expect(unwrapErrorMessage(outer)).toContain("[redacted-anthropic-key]");

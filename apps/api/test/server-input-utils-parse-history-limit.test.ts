@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseHistoryLimit } from "../src/server-input-utils.js";
 
-describe("parseHistoryLimit — strict `?limit=` parse for /api/reminders/history + /api/proactive/history so a malformed value falls back to the store default (undefined) instead of silently honoring a truncated / hex / scientific interpretation (sibling-parity with scheduler-routes goal 463/643)", () => {
+describe("parseHistoryLimit — strict `?limit=` parse for /api/reminders/history + /api/proactive/history so a malformed value falls back to the store default (undefined) instead of silently honoring a truncated / hex / scientific interpretation (sibling-parity with scheduler-routes' strict limit parse)", () => {
   it("parses a well-formed positive integer", () => {
     expect(parseHistoryLimit("20", 500)).toBe(20);
     expect(parseHistoryLimit("1", 500)).toBe(1);

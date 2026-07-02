@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 /**
  * Safety capstone (outbound-safety.md rules 1, 2, 4) for the now-live
- * external official-public MCP WRITE path (fire 3 wired GitHub/Notion
+ * external official-public MCP WRITE path (wired GitHub/Notion
  * presets + withOfficialMcpRisk). It proves end-to-end — through the
  * REAL McpManager projection AND the REAL AgentRuntime toolApprovalGate
  * seam — that an external write tool (GitHub `create_issue`) NEVER

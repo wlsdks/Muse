@@ -37,7 +37,7 @@ export function buildAskConnections(params: {
   ];
   // Demote explicitly-stale entries below current ones BEFORE the top-N cut, so a
   // superseded note ("used to live in Seoul") never outranks the current one in
-  // the "related in your brain" footer (fire 8's demoteStaleHits, now wired).
+  // the "related in your brain" footer.
   return demoteStaleHits(
     hits
       .filter((h) => Number.isFinite(h.score) && h.score >= floor)

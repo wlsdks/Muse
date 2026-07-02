@@ -78,7 +78,7 @@ describe("PII patterns", () => {
     expect(result.text).toContain("***:****-****-****-****-************");
   });
 
-  it("masks IPv6 addresses in the canonical and ::-compressed forms (goal 120)", () => {
+  it("masks IPv6 addresses in the canonical and ::-compressed forms", () => {
     // Canonical 8-group form.
     expect(maskPii("local 2001:0db8:85a3:0000:0000:8a2e:0370:7334 reachable").text)
       .toContain("[IPV6 MASKED]");

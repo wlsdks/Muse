@@ -453,7 +453,7 @@ describe("api server: admin / ops / settings / memory", () => {
   });
 
   it("user-memory routes work without auth (personal-use default)", async () => {
-    // Regression for round 90: when auth is disabled (no authService),
+    // Regression guard: when auth is disabled (no authService),
     // canAccessUserMemory previously 403'd every call because
     // currentAuthIdentity returned undefined. The personal-use codebase
     // has only one user, so any non-anonymous userId should be allowed.
@@ -616,7 +616,7 @@ describe("api server: admin / ops / settings / memory", () => {
     });
   });
 
-  it("GET /api/admin/security/injection-counts surfaces the wired counter snapshot (goal 085)", async () => {
+  it("GET /api/admin/security/injection-counts surfaces the wired counter snapshot", async () => {
     const { InMemoryInjectionDetectionCounter } = await import("@muse/policy");
     const counter = new InMemoryInjectionDetectionCounter({ now: () => new Date("2026-05-14T00:00:00Z") });
     counter.bumpFrom([{ name: "history_poisoning", count: 3 }]);
@@ -637,7 +637,7 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(missing.json()).toMatchObject({ code: "INJECTION_COUNTER_DISABLED" });
   });
 
-  it("DELETE /api/admin/runs/:runId removes a run, returns 404 once gone (goal 057)", async () => {
+  it("DELETE /api/admin/runs/:runId removes a run, returns 404 once gone", async () => {
     const historyStore = new InMemoryAgentRunHistoryStore();
     historyStore.createRun({ id: "run-del-1", input: "x", model: "m", provider: "p", userId: "u" });
     const server = buildServer({ historyStore, logger: false });
@@ -651,7 +651,7 @@ describe("api server: admin / ops / settings / memory", () => {
     expect(gone.json()).toMatchObject({ code: "RUN_NOT_FOUND" });
   });
 
-  it("DELETE /api/admin/runs?before=<iso> bulk-removes runs at or before the cutoff (goal 057)", async () => {
+  it("DELETE /api/admin/runs?before=<iso> bulk-removes runs at or before the cutoff", async () => {
     const historyStore = new InMemoryAgentRunHistoryStore();
     historyStore.createRun({
       id: "run-old", input: "x", model: "m", provider: "p", userId: "u",

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
  * Auto-extract is a wired `afterComplete` hook — tool-agnostic by
  * design (that is exactly why hook-wiring fixes the old REPL path,
  * which skipped extraction when tools were enabled). It needs a
- * `metadata.userId`; inbound-channel chats (goal 377) only started
+ * `metadata.userId`; inbound-channel chats only started
  * learning the user once the channel-derived userId was wired in.
  */
 

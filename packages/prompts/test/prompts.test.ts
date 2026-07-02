@@ -166,7 +166,7 @@ describe("system prompt building", () => {
     // — a triple-newline whitespace leak landing in the model's
     // system prompt at the exact spot the marker used to sit.
     //
-    // Iter 28 collapses any 3-or-more newline run that results from
+    // The stripper collapses any 3-or-more newline run that results from
     // marker stripping back to the canonical `\n\n` section gap.
     const prompt = `STABLE\n\n${MUSE_CACHE_BOUNDARY_MARKER}\n\nDYNAMIC`;
     expect(stripPromptCacheBoundary(prompt)).toBe("STABLE\n\nDYNAMIC");

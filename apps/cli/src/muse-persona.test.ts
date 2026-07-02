@@ -57,7 +57,7 @@ describe("buildMusePersona", () => {
     expect(prompt).toContain("home_city: Seoul (previously Busan)");
   });
 
-  it("CONTESTED: a volatile fact (value flipped) carries the 'confirm it's current' caution — chat-path parity with ask (fire 20/21 gate-asymmetry)", () => {
+  it("CONTESTED: a volatile fact (value flipped) carries the 'confirm it's current' caution — chat-path parity with ask (gate-asymmetry)", () => {
     const prompt = buildMusePersona(
       { facts: { home_city: "Busan", name: "Stark" }, preferences: {} },
       "stark",

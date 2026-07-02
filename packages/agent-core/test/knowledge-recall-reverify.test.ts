@@ -172,7 +172,7 @@ describe("verifyGroundingWithReverify — claim-level value escalation (the wron
     expect(out.verdict).toBe("grounded");
   });
 
-  // DATE drift — the ASK-path counterpart of the chat date guard (fire 31). A calendar/
+  // DATE drift — the ASK-path counterpart of the chat date guard. A calendar/
   // renewal date that drifts by a DAY (the model says Sep 14, the note says Sep 13) is a
   // high-harm value the bare-digit guard misses (the day "14" appears elsewhere in
   // evidence; "September" is stoplisted). Bind month+day as one key across ISO/prose/KO.

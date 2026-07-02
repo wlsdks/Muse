@@ -132,7 +132,7 @@ describe("FileBackedInboxContextProvider", () => {
     expect(await provider.resolve()).toBeUndefined();
   });
 
-  it("does NOT silently drop messages capped by totalLimit (regression for inbox-context iter 2)", async () => {
+  it("does NOT silently drop messages capped by totalLimit (regression for inbox-context cursor advance)", async () => {
     // Two providers each contribute 6 fresh messages → 12 total.
     // With totalLimit = 6 the previous flow advanced cursors for all
     // 12 BEFORE applying the cap, marking the 6 unshipped ones as

@@ -1,5 +1,5 @@
 /**
- * Iter 9 regression guard for `extractJsonObject` — the parser
+ * Regression guard for `extractJsonObject` — the parser
  * `runExtraction` uses to pull a JSON payload out of the model
  * reply. Smaller / cheaper extraction models sometimes wrap the
  * payload in prose or trail a comment, and the previous strict

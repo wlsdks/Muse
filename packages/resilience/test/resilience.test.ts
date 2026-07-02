@@ -169,7 +169,7 @@ describe("retry and timeout", () => {
       .rejects.toBeInstanceOf(RetryExhaustedError);
   });
 
-  it("fails fast with the ORIGINAL error on a non-retryable failure (goal 174)", async () => {
+  it("fails fast with the ORIGINAL error on a non-retryable failure", async () => {
     let attempts = 0;
     const rootCause = new Error("model 'xyz' not found");
     const result = await retry(
@@ -190,7 +190,7 @@ describe("retry and timeout", () => {
     expect(attempts).toBe(1);
   });
 
-  it("still exhausts + wraps when the error stays retryable (goal 174 regression)", async () => {
+  it("still exhausts + wraps when the error stays retryable", async () => {
     let attempts = 0;
     const err = await retry(
       () => {

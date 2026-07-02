@@ -383,7 +383,7 @@ describe("McpManager", () => {
     });
   });
 
-  it("connect() returns false + sets status='disabled' when the name is absent from allowedServerNames (goal 032)", async () => {
+  it("connect() returns false + sets status='disabled' when the name is absent from allowedServerNames", async () => {
     const store = new InMemoryMcpServerStore();
     const policyStore = new InMemoryMcpSecurityPolicyStore({
       initial: { allowedServerNames: ["only-this-one"] }
@@ -671,7 +671,7 @@ describe("McpManager", () => {
     });
   });
 
-  it("verifyServerFingerprint passes when no fingerprint is pinned (goal 083)", async () => {
+  it("verifyServerFingerprint passes when no fingerprint is pinned", async () => {
     const { verifyServerFingerprint } = await import("../src/manager.js");
     const server = {
       id: "id-1",
@@ -685,7 +685,7 @@ describe("McpManager", () => {
     expect(verifyServerFingerprint(server).matched).toBe(true);
   });
 
-  it("verifyServerFingerprint matches a pinned sha256 + refuses on mismatch (goal 083)", async () => {
+  it("verifyServerFingerprint matches a pinned sha256 + refuses on mismatch", async () => {
     const { verifyServerFingerprint } = await import("../src/manager.js");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -1831,7 +1831,7 @@ describe("muse.notes loopback server (filesystem-backed)", () => {
     expect((result.matches as Array<{ path: string }>).map((m) => m.path)).toEqual(["journal/2026-05-12.md"]);
     // The hallucinated path is dropped — never appears in the result set.
     expect((result.matches as Array<{ path: string }>).map((m) => m.path)).not.toContain("fake/hallucinated.md");
-    // Goal 058 — and the dropped count is surfaced as a diagnostic
+    // The dropped count is surfaced as a diagnostic
     // so callers can spot prompt drift without leaking the bad
     // strings themselves.
     expect(result.hallucinatedDropped).toBe(1);
@@ -1841,7 +1841,7 @@ describe("muse.notes loopback server (filesystem-backed)", () => {
     expect(seenUser).toContain("Q3 budget memo");
   });
 
-  it("muse.notes.search mode=llm-judge omits hallucinatedDropped when all paths are valid (goal 058)", async () => {
+  it("muse.notes.search mode=llm-judge omits hallucinatedDropped when all paths are valid", async () => {
     const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -2187,7 +2187,7 @@ describe("muse.search loopback server", () => {
     expect(names).toContain("muse.search");
   });
 
-  it("forwards time_range to SearXNG and df to DuckDuckGo (goal 055)", async () => {
+  it("forwards time_range to SearXNG and df to DuckDuckGo", async () => {
     // Path 1 — SearXNG. The hint is normalised: 'today' → 'day'.
     let searxUrl = "";
     const searxFetch: typeof globalThis.fetch = async (input) => {
@@ -2583,7 +2583,7 @@ describe("muse.tasks loopback server", () => {
     expect(all.tasks.find((t) => t.id === "task_2")?.urgent).toBeUndefined();
   });
 
-  it("list returns tasks due-soonest first so the agent prioritises correctly (goal 256)", async () => {
+  it("list returns tasks due-soonest first so the agent prioritises correctly", async () => {
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const tmpdir = await import("node:os").then((m) => m.tmpdir());
     const dir = mkdtempSync(`${tmpdir}/muse-tasks-order-`);
@@ -2636,7 +2636,7 @@ describe("muse.tasks loopback server", () => {
     expect(recovered).toMatchObject({ total: 0 });
   });
 
-  it("quarantines a corrupt store instead of silently destroying it on next write (goal 189)", async () => {
+  it("quarantines a corrupt store instead of silently destroying it on next write", async () => {
     const { readTasks, writeTasks } = await import("@muse/stores");
     const { mkdtempSync, writeFileSync, readdirSync, readFileSync } = await import("node:fs");
     const tmpdir = await import("node:os").then((m) => m.tmpdir());
@@ -2751,7 +2751,7 @@ describe("muse.tasks loopback server", () => {
     }) as { error?: string };
     expect(result.error).toContain("dueAt must be an ISO-8601 timestamp or a supported relative phrase");
     // Actionable: shows accepted EN + KO grammar so the user can
-    // self-correct without reading docs (goal 186).
+    // self-correct without reading docs.
     expect(result.error).toContain("tomorrow 9am");
     expect(result.error).toContain("내일 오후 3시");
     expect(result.error).toContain("다음 주 월요일");
@@ -3004,7 +3004,7 @@ describe("muse.tasks loopback server", () => {
       }
     });
 
-    it("parses 'in N month(s)' with calendar-month math (goal 110)", async () => {
+    it("parses 'in N month(s)' with calendar-month math", async () => {
       const { resolveRelativeTimePhrase } = await import("@muse/mcp-shared");
       const fixed = new Date("2026-05-10T12:00:00Z");
       const now = () => fixed;
@@ -3177,7 +3177,7 @@ describe("muse.tasks loopback server", () => {
       expect(tomorrowMidnight?.getHours()).toBe(0);
     });
 
-    it("accepts the time without the 'at' keyword (goal 159)", async () => {
+    it("accepts the time without the 'at' keyword", async () => {
       const { resolveRelativeTimePhrase } = await import("@muse/mcp-shared");
       const ref = () => new Date("2026-05-10T12:00:00Z"); // Sunday
 
@@ -3360,7 +3360,7 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("tomorrow", ref)?.getDate()).toBe(19);
     });
 
-    it("resolves Korean day + time phrases (goal 160)", async () => {
+    it("resolves Korean day + time phrases", async () => {
       const { resolveRelativeTimePhrase } = await import("@muse/mcp-shared");
       const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday
 
@@ -3424,7 +3424,7 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("아무거나", ref)).toBeUndefined();
     });
 
-    it("resolves the 반 (half-past) shorthand (goal 163)", async () => {
+    it("resolves the 반 (half-past) shorthand", async () => {
       const { resolveRelativeTimePhrase } = await import("@muse/mcp-shared");
       const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday
 
@@ -3453,7 +3453,7 @@ describe("muse.tasks loopback server", () => {
       expect(resolveRelativeTimePhrase("오늘 오후 3시 15분", ref)?.getMinutes()).toBe(15);
     });
 
-    it("resolves Korean duration offsets — 후 / 뒤 (goal 161)", async () => {
+    it("resolves Korean duration offsets — 후 / 뒤", async () => {
       const { resolveRelativeTimePhrase } = await import("@muse/mcp-shared");
       const ref = () => new Date("2026-05-15T12:00:00Z");
 
@@ -3478,7 +3478,7 @@ describe("muse.tasks loopback server", () => {
         .toBe(new Date("2026-05-18T12:00:00Z").toISOString());
     });
 
-    it("resolves Korean weekday phrases — 다음 주 / 이번 주 (goal 162)", async () => {
+    it("resolves Korean weekday phrases — 다음 주 / 이번 주", async () => {
       const { resolveRelativeTimePhrase } = await import("@muse/mcp-shared");
       const ref = () => new Date("2026-05-15T12:00:00Z"); // Friday
 
@@ -3757,12 +3757,12 @@ describe("notes provider abstraction", () => {
     const error = await notion.list().catch((err) => err);
     expect(error).toBeInstanceOf(NotesProviderError);
     expect((error as NotesProviderError).code).toBe("NOTION_AUTH");
-    // Goal 136 — 401 is a permanent auth error, never retryable.
+    // 401 is a permanent auth error, never retryable.
     expect((error as NotesProviderError).retryable).toBe(false);
     expect((error as NotesProviderError).status).toBe(401);
   });
 
-  it("NotionNotesProvider 429 / 5xx errors land as retryable (goal 136)", async () => {
+  it("NotionNotesProvider 429 / 5xx errors land as retryable", async () => {
     const make429 = async () => new Response("Too Many Requests", { status: 429 });
     const notion429 = new NotionNotesProvider({ databaseId: "db1", fetchImpl: make429, token: "t" });
     const e429 = await notion429.list().catch((err) => err);
@@ -4863,7 +4863,7 @@ describe("muse.reminders loopback server", () => {
     expect(after).toMatchObject({ total: 1 });
   });
 
-  it("records a time-parse weakness when a reminder `add` dueAt FAILS to parse (the agent-path sibling of `calendar add`, fire 26 follow-up)", async () => {
+  it("records a time-parse weakness when a reminder `add` dueAt FAILS to parse (the agent-path sibling of `calendar add`)", async () => {
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -5295,7 +5295,7 @@ describe("runDueReminders", () => {
       ]
     }), "utf8");
 
-    // Goal 149 — rem_a fails non-retryably (401 bad token) so the
+    // rem_a fails non-retryably (401 bad token) so the
     // new retry path doesn't mask it. The test still demonstrates
     // "errors don't abort the loop" — rem_b still gets sent.
     const { MessagingProviderError } = await import("@muse/messaging");
@@ -5322,7 +5322,7 @@ describe("runDueReminders", () => {
     expect(summary.errors[0]).toContain("upstream 401");
   });
 
-  it("persists the status flip after EACH delivery so a crash mid-tick doesn't re-fire (goal 069)", async () => {
+  it("persists the status flip after EACH delivery so a crash mid-tick doesn't re-fire", async () => {
     const { readReminders } = await import("@muse/stores");
     const { runDueReminders } = await import("@muse/proactivity");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
@@ -5339,16 +5339,16 @@ describe("runDueReminders", () => {
 
     // Simulate "delivery #2 fails": first send succeeds (gets
     // persisted), second send throws (so its status stays pending).
-    // The pre-069 behavior would lose the rem_first flip because the
-    // final batched write happened only at the end of the tick.
+    // Without the per-delivery write, the rem_first flip would be lost
+    // because the final batched write happened only at the end of the tick.
     //
-    // Goal 149 — the failure is a non-retryable MessagingProviderError
-    // (401) so the new shared retry-with-backoff doesn't mask it.
-    // Pre-149 a plain Error here meant a single attempt; with retry
-    // wired in, plain errors would trigger 3 attempts and we'd need
-    // a different sentinel for "this one always fails". Non-retryable
-    // matches the spirit (a bad token mid-tick) and keeps the
-    // accounting (1 delivered, 1 failed, mid-tick state persisted).
+    // The failure is a non-retryable MessagingProviderError (401) so
+    // the shared retry-with-backoff doesn't mask it. A plain Error here
+    // would mean a single attempt with no retry; with retry wired in, a
+    // plain error would trigger 3 attempts, so a non-retryable sentinel
+    // is needed for "this one always fails". Non-retryable matches the
+    // spirit (a bad token mid-tick) and keeps the accounting (1
+    // delivered, 1 failed, mid-tick state persisted).
     const { MessagingProviderError } = await import("@muse/messaging");
     const sentDuringFirstTick: Array<{ destination: string; text: string }> = [];
     const flakyRegistry = {
@@ -5370,7 +5370,7 @@ describe("runDueReminders", () => {
     });
     expect(firstSummary.delivered).toBe(1);
     expect(firstSummary.errors.length).toBe(1);
-    // Goal 069 — the per-delivery write means rem_first is already
+    // The per-delivery write means rem_first is already
     // `fired` on disk even though the tick failed mid-way.
     const midTickState = await readReminders(file);
     expect(midTickState.find((e) => e.id === "rem_first")?.status).toBe("fired");
@@ -5446,7 +5446,7 @@ describe("runDueReminders", () => {
     ]));
   });
 
-  it("retries transient messaging failures with exponential backoff (goal 149)", async () => {
+  it("retries transient messaging failures with exponential backoff", async () => {
     const { runDueReminders } = await import("@muse/proactivity");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -5485,7 +5485,7 @@ describe("runDueReminders", () => {
     expect(attempts.length).toBe(3);
   });
 
-  it("breaks out of the retry loop early on non-retryable messaging errors (goal 149)", async () => {
+  it("breaks out of the retry loop early on non-retryable messaging errors", async () => {
     const { runDueReminders } = await import("@muse/proactivity");
     const { MessagingProviderError } = await import("@muse/messaging");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
@@ -5867,7 +5867,7 @@ describe("runDueReminders historyFile", () => {
         { createdAt: "2026-01-01T00:00:00Z", dueAt: "1970-01-01T00:00:00Z", id: "rem_fail", status: "pending", text: "FAIL" }
       ]
     }), "utf8");
-    // Goal 149 — rem_fail throws a non-retryable MessagingProviderError
+    // rem_fail throws a non-retryable MessagingProviderError
     // so the shared retry path short-circuits on attempt 1 (instead of
     // 3 calls of "upstream 503"). The test still asserts the history
     // records a 'failed' entry with the original error message.
@@ -5982,7 +5982,7 @@ describe("runDueProactiveNotices", () => {
     };
   }
 
-  it("retries transient messaging failures with exponential backoff (goal 070)", async () => {
+  it("retries transient messaging failures with exponential backoff", async () => {
     const { runDueProactiveNotices } = await import("@muse/proactivity");
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -6103,7 +6103,7 @@ describe("runDueProactiveNotices", () => {
     expect(sent).toEqual(["telegram:@me"]);
   });
 
-  it("gives up after 3 attempts and records failure in history (goal 070)", async () => {
+  it("gives up after 3 attempts and records failure in history", async () => {
     const { runDueProactiveNotices } = await import("@muse/proactivity");
     const { mkdtempSync, readFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -6144,7 +6144,7 @@ describe("runDueProactiveNotices", () => {
     expect(historyRaw).toContain("upstream 503");
   });
 
-  it("breaks out of the retry loop early on non-retryable messaging errors (goal 148)", async () => {
+  it("breaks out of the retry loop early on non-retryable messaging errors", async () => {
     const { runDueProactiveNotices } = await import("@muse/proactivity");
     const { MessagingProviderError } = await import("@muse/messaging");
     const { mkdtempSync } = await import("node:fs");
@@ -6185,7 +6185,7 @@ describe("runDueProactiveNotices", () => {
     expect(attempts.length).toBe(1);
   });
 
-  it("scrubs accidental credentials from delivered notice text (goal 086)", async () => {
+  it("scrubs accidental credentials from delivered notice text", async () => {
     const { runDueProactiveNotices } = await import("@muse/proactivity");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -6222,7 +6222,7 @@ describe("runDueProactiveNotices", () => {
     expect(delivered).toContain("[redacted-openai-key]");
   });
 
-  it("skips firing when sessionLockFile points at an active marker (goal 052)", async () => {
+  it("skips firing when sessionLockFile points at an active marker", async () => {
     const { runDueProactiveNotices, writeSessionLock } = await import("@muse/proactivity");
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -7442,7 +7442,7 @@ describe("runDueFollowups", () => {
       ]
     }), "utf8");
 
-    // Goal 156 — fu_a fails non-retryably (401) so the new shared
+    // fu_a fails non-retryably (401) so the new shared
     // retry path doesn't mask the failure. Test intent ("errors
     // don't abort the loop") preserved; the error class now matches
     // a realistic permanent-failure shape.
@@ -7625,7 +7625,7 @@ describe("runDueFollowups", () => {
     expect(summary).toMatchObject({ delivered: 3, due: 3 });
   });
 
-  it("retries transient messaging failures with exponential backoff (goal 156)", async () => {
+  it("retries transient messaging failures with exponential backoff", async () => {
     const { runDueFollowups } = await import("@muse/proactivity");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -7677,7 +7677,7 @@ describe("runDueFollowups", () => {
     expect(synthesizeCalls).toBe(1);
   });
 
-  it("breaks out of the retry loop early on non-retryable messaging errors (goal 156)", async () => {
+  it("breaks out of the retry loop early on non-retryable messaging errors", async () => {
     const { runDueFollowups } = await import("@muse/proactivity");
     const { MessagingProviderError } = await import("@muse/messaging");
     const { mkdtempSync, writeFileSync } = await import("node:fs");
@@ -9005,7 +9005,7 @@ describe("muse.status loopback server", () => {
   });
 });
 
-describe("followup write durability + temp-file recovery (goal 038)", () => {
+describe("followup write durability + temp-file recovery", () => {
   it("writeFollowups round-trips data through fsync + atomic rename (no tmp orphan on clean write)", async () => {
     const { mkdtempSync, readFileSync, readdirSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -9043,7 +9043,7 @@ describe("followup write durability + temp-file recovery (goal 038)", () => {
   });
 });
 
-describe("sensitive store file-mode lock-ins (goal 035)", () => {
+describe("sensitive store file-mode lock-ins", () => {
   it("writeFollowups persists ~/.muse/followups.json with mode 0600", async () => {
     if (process.platform === "win32") return;
     const { mkdtempSync, statSync } = await import("node:fs");
@@ -9218,7 +9218,7 @@ describe("muse.history loopback server", () => {
   });
 });
 
-describe("proactive-history rotation on capacity (goal 079)", () => {
+describe("proactive-history rotation on capacity", () => {
   function makeEntry(itemId: string): import("../src/index.js").ProactiveHistoryEntry {
     return {
       destination: "@me",
@@ -9276,7 +9276,7 @@ describe("proactive-history rotation on capacity (goal 079)", () => {
     void rotateProactiveHistoryFiles;
   });
 
-  it("scrubs credential shapes from title / text / error before persistence (goal 139)", async () => {
+  it("scrubs credential shapes from title / text / error before persistence", async () => {
     const { appendProactiveHistory, readProactiveHistory } = await import("@muse/stores");
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");

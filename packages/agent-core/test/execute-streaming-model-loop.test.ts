@@ -226,7 +226,7 @@ describe("executeStreamingModelLoop", () => {
   });
 });
 
-describe("executeStreamingModelLoop — tool-failure-streak circuit breaker (streaming-path coverage, fire 42 caveat)", () => {
+describe("executeStreamingModelLoop — tool-failure-streak circuit breaker (streaming-path coverage)", () => {
   const flakyTool = { name: "flaky_read", description: "read", inputSchema: { type: "object" as const }, risk: "read" as const };
   const flakyRequest = (): ModelRequest => ({ model: "m", messages: [{ role: "user", content: "fetch" }], tools: [flakyTool] });
 

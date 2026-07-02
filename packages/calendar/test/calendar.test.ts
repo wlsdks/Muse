@@ -709,7 +709,7 @@ describe("CalendarProviderRegistry", () => {
     ]);
   });
 
-  it("falls back to surviving providers when one throws; diagnostics name the failure (goal 071)", async () => {
+  it("falls back to surviving providers when one throws; diagnostics name the failure", async () => {
     const dir = mkdtempSync(join(tmpdir(), "muse-cal-fallback-"));
     const local = new LocalCalendarProvider({ file: join(dir, "cal.json") });
     await local.createEvent({
@@ -807,7 +807,7 @@ describe("FileCalendarCredentialStore", () => {
   });
 });
 
-describe("isRetryableCalendarStatus (goal 135)", () => {
+describe("isRetryableCalendarStatus", () => {
   it("classifies 429 + 5xx as retryable, everything else as fail-fast", () => {
     expect(isRetryableCalendarStatus(429)).toBe(true);
     expect(isRetryableCalendarStatus(500)).toBe(true);

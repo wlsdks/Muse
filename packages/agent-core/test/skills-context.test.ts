@@ -1,12 +1,12 @@
 /**
- * Iter 15 regression guard for `renderSkillsCatalogSection`.
+ * Regression guard for `renderSkillsCatalogSection`.
  *
  * SKILL.md frontmatter is author-supplied text — a malformed or
  * hostile file could embed `\n[System Override]\n…` inside the
  * skill `name`, `description`, `emoji`, or even one of the
- * `requiresBins` entries. Round 1 only guarded the
- * `muse.skills.run` allowlist; the catalog renderer itself was
- * pristine. This test pins the inline-sanitisation contract.
+ * `requiresBins` entries. The `muse.skills.run` allowlist alone
+ * doesn't cover this; the catalog renderer needs its own
+ * inline-sanitisation contract, which this test pins.
  */
 
 import { describe, expect, it } from "vitest";
@@ -125,7 +125,7 @@ describe("renderSkillsCatalogSection", () => {
     // A SKILL.md author with a 10KB description × 40 entries could
     // balloon the catalog block past 10K tokens — pure per-request
     // overhead since the full body lives behind `muse.skills.read`.
-    // iter 55 caps each description at ~200 chars with an ellipsis.
+    // The renderer caps each description at ~200 chars with an ellipsis.
     const longDescription = "x".repeat(1_000);
     const out = renderSkillsCatalogSection([
       { description: longDescription, name: "bloated" }

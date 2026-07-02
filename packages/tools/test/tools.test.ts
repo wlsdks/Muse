@@ -159,7 +159,7 @@ describe("ToolExecutor", () => {
   });
 
   it("never suggests a tool that shares ZERO tokens — no unrelated/destructive nudge across a realistic registry", async () => {
-    // Hardens the no-misleading-suggestion invariant the JUDGE-DRILL (fire 10)
+    // Hardens the no-misleading-suggestion invariant the JUDGE-DRILL
     // showed was under-guarded: with a SINGLE guard a dropped `shared > 0` gate
     // could steer "delete_everything" → the shell `run_command`. Several unrelated
     // names against several registered tools must each yield NO "Did you mean".
