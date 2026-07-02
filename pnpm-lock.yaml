@@ -641,12 +641,18 @@ importers:
       '@muse/mcp-shared':
         specifier: workspace:*
         version: link:../mcp-shared
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@muse/stores':
         specifier: workspace:*
         version: link:../stores
       '@muse/tools':
         specifier: workspace:*
         version: link:../tools
+      pdf-parse:
+        specifier: ^2.4.5
+        version: 2.4.5
 
   packages/resilience:
     dependencies:

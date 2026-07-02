@@ -1,0 +1,77 @@
+/**
+ * Shared embedding helper. The notes-RAG path, the episode-index
+ * pipeline, and cross-store recall all hit the same Ollama
+ * `/api/embeddings` endpoint with the same body shape; one source
+ * of truth.
+ *
+ * No new dep — wraps Node's global `fetch`. Surfaces that resolve the
+ * Ollama host beyond the environment (the CLI merges `muse setup model`'s
+ * `~/.muse/models.json` via its `resolveOllamaUrl`) MUST pass
+ * `baseUrlResolver`; the package default is env-or-localhost only.
+ */
+
+export { cosineSimilarity } from "@muse/agent-core";
+
+export const DEFAULT_EMBED_TIMEOUT_MS = 30_000;
+
+/** Env-only fallback resolver — no credentials-file merge (that's the caller's seam). */
+function envOllamaUrl(): string {
+  const raw = process.env.OLLAMA_BASE_URL?.trim();
+  const base = raw && raw.length > 0 ? raw : "http://127.0.0.1:11434";
+  return base.replace(/\/+$/u, "");
+}
+
+export interface EmbedOptions {
+  /** Override fetch impl in tests; defaults to `globalThis.fetch`. */
+  readonly fetchImpl?: typeof globalThis.fetch;
+  /** Resolve the Ollama base URL; defaults to `OLLAMA_BASE_URL` or localhost. */
+  readonly baseUrlResolver?: () => string;
+  /**
+   * Hard wall-clock cap on the embeddings POST. Ollama's cold-model
+   * load can wedge a request for minutes; without this every RAG
+   * caller (`muse ask`, `muse notes reindex`, `muse recall`, the
+   * episode-index pipeline) hangs the CLI indefinitely. Default 30s,
+   * same posture as the RSS feed loader. Non-finite / non-positive
+   * values fall back to the default.
+   */
+  readonly timeoutMs?: number;
+}
+
+export async function embed(text: string, model: string, options: EmbedOptions = {}): Promise<number[]> {
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const baseUrl = (options.baseUrlResolver ?? envOllamaUrl)();
+  const timeoutMs = Number.isFinite(options.timeoutMs) && (options.timeoutMs ?? 0) > 0
+    ? (options.timeoutMs as number)
+    : DEFAULT_EMBED_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let resp: Response;
+  try {
+    resp = await fetchImpl(`${baseUrl}/api/embeddings`, {
+      body: JSON.stringify({ model, prompt: text }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      signal: controller.signal
+    });
+  } catch (cause) {
+    if (controller.signal.aborted) {
+      throw new Error(`embeddings ${baseUrl}/api/embeddings timed out after ${timeoutMs.toString()}ms`, { cause });
+    }
+    throw cause;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!resp.ok) {
+    throw new Error(`embeddings ${resp.status.toString()}: ${await resp.text().catch(() => "")}`);
+  }
+  const body = await resp.json() as { embedding?: number[] };
+  // An empty or non-finite vector (wrong model, empty prompt on
+  // some backends) silently makes cosineSimilarity return 0/NaN
+  // for every hit — garbage RAG ranking with no error. Reject it.
+  if (!Array.isArray(body.embedding)
+    || body.embedding.length === 0
+    || !body.embedding.every((n) => typeof n === "number" && Number.isFinite(n))) {
+    throw new Error("embedding response missing a valid numeric 'embedding' vector");
+  }
+  return body.embedding;
+}

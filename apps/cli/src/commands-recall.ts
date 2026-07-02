@@ -15,7 +15,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { relativizeNoteSource, type RecallHit } from "@muse/recall";
+import { relativizeNoteSource, type RecallHit, filterLiveEpisodeEntries, filterLiveNoteIndexFiles } from "@muse/recall";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -209,12 +209,7 @@ export function rankRecallCandidates(args: {
  * wrong, and a "deleted means deleted" surprise. `exists` is injected
  * so the filter is testable without touching the real filesystem.
  */
-export function filterLiveNoteIndexFiles<T extends { readonly path: string }>(
-  files: readonly T[],
-  exists: (path: string) => boolean
-): T[] {
-  return files.filter((file) => exists(file.path));
-}
+export { filterLiveNoteIndexFiles } from "@muse/recall";
 
 /**
  * Drop indexed episodes no longer in the live episode store. Like the
@@ -224,12 +219,7 @@ export function filterLiveNoteIndexFiles<T extends { readonly path: string }>(
  * episode's summary — wrong, and a "removed means removed" surprise.
  * `liveIds` is the set of ids still in the store (injected for testing).
  */
-export function filterLiveEpisodeEntries<T extends { readonly id: string }>(
-  entries: readonly T[],
-  liveIds: ReadonlySet<string>
-): T[] {
-  return entries.filter((entry) => liveIds.has(entry.id));
-}
+export { filterLiveEpisodeEntries } from "@muse/recall";
 
 export function clampLimit(raw: string | undefined): number {
   if (raw === undefined || raw.trim().length === 0) return 5;

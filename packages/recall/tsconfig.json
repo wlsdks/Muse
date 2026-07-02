@@ -20,6 +20,9 @@
       "path": "../mcp-shared"
     },
     {
+      "path": "../shared"
+    },
+    {
       "path": "../stores"
     },
     {

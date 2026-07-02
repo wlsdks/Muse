@@ -5,7 +5,7 @@ import { deflateRawSync } from "node:zlib";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { NOTE_FILE_RE } from "./commands-notes-rag.js";
+import { NOTE_FILE_RE } from "./notes-index.js";
 import { SUPPORTED_DOC_EXT, docxToText, emlToText, extractDirectoryDocuments, extractDocumentText, formatDirectoryCapNotice, formatUrlTruncationNotice, htmlToText, isDocxDocument, isEmlDocument, isHtmlDocument, isLikelyBinary, isPdfDocument, isPptxDocument, parsePdfBuffer, pptxToText, walkDocuments } from "./document-reader.js";
 
 /** Build a minimal but spec-valid ZIP (local headers + central directory + EOCD),
