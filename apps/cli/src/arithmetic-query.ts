@@ -10,6 +10,20 @@
 const QUESTION_FRAMING =
   /^(?:what(?:\s+is|'s|\s+are)?|whats|calculate|compute|evaluate|how\s+much\s+is|equals?)\s+/u;
 
+// Polite/instruction framing around the calculation — a live probe showed
+// "간단히 계산해줘: 3+4" falling through to the grounded path and REFUSING
+// grade-school math ("제공된 정보에 없습니다") purely because of phrasing.
+// Each token may carry a trailing ":" or ",". Precision holds because the
+// remaining core must STILL be all-symbolic with a real operator — framing
+// words followed by a notes question ("간단히 내 예산 알려줘") never qualify.
+const LEADING_FRAMING_TOKEN =
+  /^(?:please|quickly|just|hey|can\s+you|could\s+you|간단히|간단하게|빨리|그냥|이거|자|얼른|계산(?:해\s*줘|해\s*봐|하면|해)?|암산(?:해\s*줘|해)?|산수)\s*[:,]?\s*/iu;
+const TRAILING_FRAMING_TOKEN =
+  /\s*(?:얼마(?:야|지|예요|에요|인가요|인가|임|니|죠)?|몇(?:이야|이지|인가요|이니|이냐)?|뭐(?:야|지|예요|에요|죠|냐)?|무엇(?:인가요|이죠|입니까)?|알려\s*줘(?:요)?|알려\s*줄래|계산해\s*줘(?:요)?|말해\s*줘(?:요)?|해\s*줘(?:요)?|please|equals?\s*(?:to|what)?|is\s+what)\s*[.!?]?\s*$/iu;
+// A trailing Korean topic/subject particle after an operand or between framing
+// suffixes ("3+4는 얼마야" → "3+4는" → "3+4").
+const TRAILING_PARTICLE = /([\d)])\s*(?:은|는|이|가)$/u;
+
 /**
  * Return the bare arithmetic expression if `query` is PURELY a calculation
  * ("what is 1847 * 2963?", "2+2", "calculate (1200 + 850) / 2") — else null.
@@ -21,7 +35,15 @@ const QUESTION_FRAMING =
 export function detectArithmeticQuery(query: string): string | null {
   let q = query.trim().toLowerCase();
   q = q.replace(/[?\s]+$/u, "");
+  for (let previous = ""; previous !== q; ) {
+    previous = q;
+    q = q.replace(LEADING_FRAMING_TOKEN, "").trimStart();
+  }
   q = q.replace(QUESTION_FRAMING, "");
+  for (let previous = ""; previous !== q; ) {
+    previous = q;
+    q = q.replace(TRAILING_FRAMING_TOKEN, "").replace(TRAILING_PARTICLE, "$1").replace(/[?\s]+$/u, "").trimEnd();
+  }
   q = q.replace(/\s*=\s*$/u, "").trim();
   // Natural-language operators → symbols, so "12 times 4" / "17 곱하기 6은" reach
   // the deterministic evaluator just like "12 * 4" — the 8B mis-multiplies either

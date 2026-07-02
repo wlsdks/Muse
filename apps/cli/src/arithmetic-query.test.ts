@@ -56,3 +56,31 @@ describe("formatArithmeticResult — exact answer, grouped for readability", () 
     expect(formatArithmeticResult("1 / 8", 0.125)).toBe("1 / 8 = 0.125");
   });
 });
+
+describe("detectArithmeticQuery — natural framing around the calculation (live-probe regressions)", () => {
+  // "간단히 계산해줘: 3+4" reached the grounded path and REFUSED grade-school
+  // math purely because of phrasing — the framing strip must absorb polite
+  // Korean/English instruction words while the all-symbolic core check keeps
+  // notes questions out of the fast path.
+  it.each([
+    ["간단히 계산해줘: 3+4", "3+4"],
+    ["간단히: 3+4", "3+4"],
+    ["3+4는 얼마야?", "3+4"],
+    ["12*9는 뭐야", "12*9"],
+    ["빨리 계산해줘 (1200 + 850) / 2", "(1200 + 850) / 2"],
+    ["please just calculate 17 * 6", "17 * 6"],
+    ["17 곱하기 6은 얼마야?", "17 * 6"],
+    ["그냥 3+4 알려줘", "3+4"]
+  ])("%s → %s", (query, expression) => {
+    expect(detectArithmeticQuery(query)).toBe(expression);
+  });
+
+  it.each([
+    "간단히 내 Q3 예산 알려줘",
+    "계산해줘 내 지출 요약",
+    "3+4가 내 노트에 있어?",
+    "빨리 오늘 일정 알려줘"
+  ])("notes/personal question never short-circuits: %s", (query) => {
+    expect(detectArithmeticQuery(query)).toBeNull();
+  });
+});
