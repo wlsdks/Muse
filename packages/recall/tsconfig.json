@@ -17,6 +17,9 @@
       "path": "../agent-core"
     },
     {
+      "path": "../calendar"
+    },
+    {
       "path": "../mcp-shared"
     },
     {

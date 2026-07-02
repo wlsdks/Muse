@@ -638,6 +638,9 @@ importers:
       '@muse/agent-core':
         specifier: workspace:*
         version: link:../agent-core
+      '@muse/calendar':
+        specifier: workspace:*
+        version: link:../calendar
       '@muse/mcp-shared':
         specifier: workspace:*
         version: link:../mcp-shared
@@ -650,6 +653,9 @@ importers:
       '@muse/tools':
         specifier: workspace:*
         version: link:../tools
+      fast-xml-parser:
+        specifier: ^5.9.3
+        version: 5.9.3
       pdf-parse:
         specifier: ^2.4.5
         version: 2.4.5

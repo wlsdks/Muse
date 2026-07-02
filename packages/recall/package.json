@@ -18,10 +18,12 @@
   },
   "dependencies": {
     "@muse/agent-core": "workspace:*",
+    "@muse/calendar": "workspace:*",
     "@muse/mcp-shared": "workspace:*",
     "@muse/shared": "workspace:*",
     "@muse/stores": "workspace:*",
     "@muse/tools": "workspace:*",
+    "fast-xml-parser": "^5.9.3",
     "pdf-parse": "^2.4.5"
   }
 }
