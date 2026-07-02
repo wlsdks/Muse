@@ -53,7 +53,7 @@ export const COMMAND_GROUPS: ReadonlyArray<{
   },
   {
     heading: "Documents & analysis",
-    commands: ["read", "show", "ingest", "demo", "csv", "benford", "keywords", "trend", "diversity"]
+    commands: ["read", "show", "ingest", "demo", "csv"]
   },
   { heading: "Reports & history", commands: ["brief", "recap", "history", "runs", "on-this-day", "glance", "anomaly"] },
   {
@@ -62,10 +62,8 @@ export const COMMAND_GROUPS: ReadonlyArray<{
       "metrics",
       "telemetry",
       "traces",
-      "latency",
       "cost",
       "tools",
-      "analytics",
       "debug",
       "runtime",
       "loopback",

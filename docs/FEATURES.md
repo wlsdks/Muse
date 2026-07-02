@@ -146,10 +146,6 @@ Muse가 사용자에게 묻지 않고도 주변 상태를 감지하는 기능들
 
 - **CSV 정밀 집계(`muse csv`)** ✅ — 컬럼 합계/평균/최소/최대/행수를 행 필터와 함께 정확히 계산. 자유서술 질문은 `muse ask --file`, 정확한 총계는 이쪽.
 - **추출 요약(`muse summarize`)** ✅ — 문서 자신의 핵심 문장을 유의어 밀도(Luhn 1958)로 골라내는 추출형 요약. 결정론적·무모델이라 지어내지 못함.
-- **핵심어 추출(`muse keywords`)** ✅ — RAKE(Rose et al. 2010)로 문서의 핵심 구(topic)를 뽑는, 요약의 구(phrase) 단위 보완.
-- **Benford 검사(`muse benford <file> <col>`)** ✅ — 자연 발생 수치(지출·거래)의 선행자리 분포를 Benford 법칙 + Pearson χ²로 검사해 입력 오류/부자연 패턴을 표시(n<30이면 신뢰도 경고).
-- **추세 검정(`muse trend <file> <col>`)** ✅ — 수치 컬럼이 시간순으로 오르는지 내리는지 Mann-Kendall 검정 + Sen's slope로 판정.
-- **다양성 지수(`muse diversity <file> <col>`)** ✅ — 범주형 컬럼이 얼마나 다양/집중되었는지 Shannon·Gini-Simpson·Pielou 균등도(생태학의 생물다양성 측도)로 계산.
 - **그날의 회상(`muse on-this-day`)** ✅ — 지난 해 오늘 날짜에 쓴 노트를 다시 띄우는 날짜-단서 회상(노트 경로의 YYYY-MM-DD 사용, 무모델).
 
 ---

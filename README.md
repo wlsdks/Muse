@@ -330,12 +330,11 @@ theory, linguistics, psychology, forensic & environmental statistics — distill
 mechanism into a deterministic, live-verified capability.
 
 <details>
-<summary><b>The full 20-mechanism catalog</b></summary>
+<summary><b>The full mechanism catalog</b></summary>
 
 | Field | Mechanism (paper) | Muse capability |
 | --- | --- | --- |
 | Ecology | Optimal foraging / Marginal Value Theorem (Charnov 1976) | `muse recall --adaptive` — the evidence picks how many sources to return |
-| Ecology / biodiversity | Shannon & Simpson diversity + Pielou evenness (Shannon 1948; Simpson 1949) | `muse diversity` — is a category column diverse or concentrated? |
 | Collective behaviour / biology | Stigmergy, ant pheromone trails (Grassé 1959; Vittori 2006) | `muse notes trails` / `hubs` — an evaporating co-recall relatedness graph |
 | Physiology / neuroscience | Allostasis — predictive regulation (Sterling 2012) | `muse pattern upcoming` — anticipate a recurring need before its slot |
 | Network science | k-shell decomposition / influential spreaders (Kitsak et al. 2010) | `muse notes hubs` — the load-bearing core of your notes (depth, not degree) |
@@ -344,12 +343,9 @@ mechanism into a deterministic, live-verified capability.
 | Decision / information theory | Expected information gain / EVPI (Lindley 1956; Howard 1966) | `muse ask` clarify arm — ask when divergent sources tie, vs guess or abstain |
 | Computer science (web-scale) | Broder resemblance / shingling (Broder 1997) | `muse feeds` near-duplicate collapse (same story across outlets) |
 | Information science | Luhn extractive summarization (Luhn 1958) | `muse summarize` — a document's own key sentences (cannot fabricate) |
-| NLP | RAKE keyphrase extraction (Rose et al. 2010) | `muse keywords` — a document's key phrases (topics) |
 | Computational linguistics | Pointwise mutual information (Church & Hanks 1990) | `muse contacts related` — inferred relationship edges from co-mention |
 | Queueing / operations research | Little's Law L=λW (Little 1961) | `muse tasks flow` — are you finishing tasks as fast as you add them? |
 | Real-time systems / scheduling | Earliest Deadline First (Liu & Layland 1973) + aging | `muse tasks next` — what to do NOW, with a why-now; old tasks aged up |
-| Forensic statistics | Benford's Law + Pearson χ² (Benford 1938; Pearson 1900) | `muse benford` — unnatural patterns in a numeric column |
-| Environmental statistics | Mann-Kendall trend + Sen's slope (Mann 1945; Kendall 1975) | `muse trend` — is a tracking column rising, falling, or wandering? |
 | Cognitive psychology | Autobiographical / date-cued recall (Rubin et al. 1986) | `muse on-this-day` — notes from today's date in earlier years |
 | Organizational psychology | Attention residue / deep work (Leroy 2009) | `muse calendar focus` — your longest uninterrupted block |
 | Psychology | Implementation intentions / time-blocking (Gollwitzer 1999) | `muse calendar block` — book the next free slot to protect focus |
