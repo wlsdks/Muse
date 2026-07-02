@@ -9,7 +9,7 @@ import { readFile as fsReadFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 import { normalizeMemoryKey } from "@muse/memory";
-import { clamp, stripUntrustedTerminalChars } from "@muse/shared";
+import { clamp, redactSecretsInText, stripUntrustedTerminalChars } from "@muse/shared";
 
 import { MUSE_TAGLINE } from "./muse-identity.js";
 
@@ -488,7 +488,7 @@ export function summarizeToolArgs(args: Record<string, unknown>): string {
   const parts: string[] = [];
   for (const [key, raw] of Object.entries(args)) {
     if (raw === undefined || raw === null || raw === "") continue;
-    const value = stripUntrustedTerminalChars(typeof raw === "string" ? raw : JSON.stringify(raw));
+    const value = redactSecretsInText(stripUntrustedTerminalChars(typeof raw === "string" ? raw : JSON.stringify(raw)));
     const clipped = value.length > 60 ? `${value.slice(0, 60)}…` : value;
     parts.push(`${key}: ${clipped.replace(/\s+/gu, " ")}`);
   }

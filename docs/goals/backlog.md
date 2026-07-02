@@ -82,7 +82,7 @@ realistic partial hedge. Deeper veracity needs a human/product call, not an auto
 ## ★ 2026-07-02 fresh delta-scout — openclaw/hermes 최신 9일(1.3k/1.5k 커밋) + 내부품질 크로스 렌즈 (3 독립 스카우트, 전부 Muse-부재 grep 검증)
 
 Tier S (safety/correctness, 당장):
-- ★ (DS-1) **모델 HTTP 호출에 AbortSignal·timeout 부재** — `AgentRunInput.signal`은 루프 상단에서만 체크, `ModelRequest`에 signal 필드 없음, 어댑터 fetch 무타임아웃 → 행 걸린 Ollama 소켓이 턴/proactive 루프를 영구 동결, ESC로 생성 중단 불가. FIX: ModelRequest.signal + 어댑터 fetch 배선 + 내부 generate() 기본 per-call timeout. (M; DS-5·DS-8 unblock)
+- ✓ (DS-1, 8ccf4b92) 모델 HTTP 호출 AbortSignal+safety-cap timeout 관통 — ModelRequest.signal, 전 어댑터 fetch 배선, 스트리밍은 caller-signal만(idle-timeout이 스톨 담당), caller-abort=non-retryable/timeout=retryable 분류, ask Ctrl-C가 실제 HTTP를 중단. 12 tests mutation-RED, smoke:live 23/0. 잔여 ◦: chat REPL(Ink) ESC→AbortController 배선.
 - ★ (DS-2) **위험명령 승인 게이트 격차** — Muse `dangerous-command.ts` raw regex 9개 vs hermes `tools/approval.py` ~50규칙 + 정규화 패스 + 역난독화(base64/hex decode-pipe shape, $IFS, `$(echo rm)` 치환 재스캔, GNU 플래그 축약, eval $(curl)) + 승인 프롬프트 시크릿 마스킹(미배선인 redactSecretsInText). fail-close 비협상 최전선. (M)
 - ★ (DS-3) **consent/objectives/veto 스토어가 in-process 큐만** — `withFileMutationQueue`는 프로세스 내 Map; 데몬+수동 명령 레이스에 outbound-safety 게이트 기록 lost-update 가능. `withFileLock`(O_EXCL) 승격, tasks/reminders/playbook은 이미 안전. (S/M)
 
