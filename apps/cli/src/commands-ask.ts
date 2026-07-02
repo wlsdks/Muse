@@ -22,21 +22,21 @@
  * Zero recurring cost — all local.
  */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
-import { buildGroundingReverifyPrompt, chunkText, citedSourcesIn, decideRecallClarification, detectEvidenceContradictions, enforceAnswerCitations, explainGroundingVerdict, implicitSuccessReinforceDelta, isInjectableStrategy, lexicalOverlap, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, parseGroundingReverifyJson, resolveRecallConfidentAt, REVERIFY_RESPONSE_FORMAT, renderPlaybookSection, reorderForLongContext, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, summarizeTokenConfidence, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type ContradictionPair, type GroundingReverify } from "@muse/agent-core";
-import { buildAttributedRepairPrompt, describeImage, extractStructuredFromImage, repairToEvidence, REPAIR_SYSTEM_PROMPT } from "@muse/agent-core";
-import { answerPromisesAction, assertiveUnsupportedFraction, classifyActionRequest, classifyCorpusOverview, isMemoryInjection, isUnbackedActionClaim, reportSentenceGroundedness, requestsToolAction, stripCitationMarkers, worstUnsupportedSentence } from "@muse/agent-core";
+import { detectEvidenceContradictions, enforceAnswerCitations, isInjectableStrategy, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, renderPlaybookSection, reorderForLongContext, type ContradictionPair } from "@muse/agent-core";
+import { describeImage } from "@muse/agent-core";
+import { classifyActionRequest, classifyCorpusOverview, isMemoryInjection } from "@muse/agent-core";
 import { contestedFactKeys, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys, staleFactKeys } from "@muse/memory";
-import { buildCalendarRegistry, createMuseRuntimeAssembly, resolveAnswerTemperature, resolveContactsFile, resolveNoteProvenanceFile, resolveNotesDir, resolveNotesIndexFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveAnswerTemperature, resolveNoteProvenanceFile, resolveNotesDir, resolveNotesIndexFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { readNoteProvenance, untrustedNotePaths } from "./note-provenance.js";
 import type { MuseTool } from "@muse/tools";
 import { acquireOllamaLease, releaseOllamaLease, resolveOllamaLeaseFile } from "@muse/stores";
-import { fetchReadableUrl, type MessageApprovalGate } from "@muse/domain-tools";
+import { type MessageApprovalGate } from "@muse/domain-tools";
 
 import { createRunId } from "@muse/shared";
-import { allUserMemoryFacts, buildDiskContents, buildMemoryContextBlock, buildNoteContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
+import { allUserMemoryFacts, buildMemoryContextBlock, buildNoteContextBlock, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
 export { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
 import { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, stripGroundingFences, sufficiencyAdvisory, urlGroundingSource } from "@muse/recall";
 export { answerIsRefusal, composeChatSystemContent, corpusOnboardingHint, formatCorpusOverview, formatGraphLinksSection, looksLikeBinaryContent, queryHasAdHocGrounding, shouldWarmClose, stripEchoedCiteAs, sufficiencyAdvisory, urlGroundingSource };
@@ -45,20 +45,18 @@ export { shouldSuggestRepair, shouldWarnStrippedCitations, suggestOptInSource };
 import { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy } from "@muse/recall";
 export { augmentNoteEvidenceWithCited, selectFilePassages, selectGroundingActions, selectPlaybookSection, selectProbationSuggestion, topAppliedStrategy };
 import { dedupNearDuplicateChunks, diversifyAskChunks, notesGroundingFraming } from "@muse/recall";
-import { groundedSourceSummary, optionalGroundingRelevance, optionalGroundingSections } from "@muse/recall";
-import { citationPrecisionNotice, citationRecallNotice, sourceCheckSignals, untrustedEpisodeMatch, untrustedOnlyGroundingNotice, type SourceCheckSignals } from "@muse/recall";
+import { groundedSourceSummary } from "@muse/recall";
 
 export { citationPrecisionNotice, citationRecallNotice, untrustedOnlyGroundingNotice } from "@muse/recall";
 export { diversifyAskChunks, notesGroundingFraming };
 export { listNoteFiles, notesCorpusFileCount, resolveAskMaxTools, selectGraphConnections };
 export { collectAutoImageAttachments, loadImageAttachment };
 export { CITATION_INSTRUCTION_LINES };
-import { askOutcomeLabel, askWeaknessAxis, contestedOutcome, createStageTimer, misgroundedOutcome, recordAskWeakness, recordAskWeaknessResolved, untrustedFeedMatch } from "@muse/recall";
-import type { AskWeaknessAxis } from "@muse/recall";
+import { askOutcomeLabel, askWeaknessAxis, createStageTimer, recordAskWeakness, recordAskWeaknessResolved } from "@muse/recall";
 export { askOutcomeLabel, askWeaknessAxis, createStageTimer, recordAskWeakness, recordAskWeaknessResolved };
 import { drawBestGroundedRedraft, groundingVerdictNotice } from "@muse/recall";
 export { drawBestGroundedRedraft, groundingVerdictNotice };
-import { buildAskConnections, groundingConflictCue } from "@muse/recall";
+import { buildAskConnections } from "@muse/recall";
 export { buildAskConnections };
 import type { FileEntry } from "@muse/recall";
 
@@ -70,31 +68,33 @@ import { tryDeterministicAnswer } from "./ask-fast-paths.js";
 export { CASUAL_RESPONSES, META_RESPONSE, ACTION_GUIDE } from "./ask-fast-paths.js";
 import { decompositionJsonFields, decompositionStderrNotes, renderAskStreamError, type AskStreamEvent, type AskStreamResult, type DecompositionTrustSignals } from "./ask-result-output.js";
 export { decompositionJsonFields, decompositionStderrNotes, renderAskStreamError, type AskStreamEvent, type AskStreamResult } from "./ask-result-output.js";
-import { crossLingualUnsupportedFraction, rescueMemoryCrossLingual } from "./ask-cross-lingual.js";
+import { rescueMemoryCrossLingual } from "./ask-cross-lingual.js";
 
 export { resolveAskTierModels, routeAskTierModel } from "./ask-tier-models.js";
 import { parseBoundedInt } from "./parse-bounded-int.js";
 import type { Command } from "commander";
 
-import { cosine, isNotesIndexStale, loadNoteLinkGraph, reindexNotes } from "./commands-notes-rag.js";
+import { cosine, isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
 import { filterLiveNoteIndexFiles } from "./commands-recall.js";
-import { formatConnectionsSection } from "./commands-today.js";
 import { embed } from "./embed.js";
 import { rankPlaybookEntriesByRelevance } from "./playbook-embed-rank.js";
-import { readClipboardText } from "./clipboard-reader.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
-import { docxToText, emlToText, extractDirectoryDocuments, formatDirectoryCapNotice, formatUrlTruncationNotice, htmlToText, isDocxDocument, isEmlDocument, isHtmlDocument, isPdfDocument, isPptxDocument, parsePdfBuffer, pptxToText } from "./document-reader.js";
-import { buildAskRunLog, resolvePersona, summarizeRetrieval, writeRunLog, type RetrievalTraceEntry } from "./program-helpers.js";
-import { buildMusePersona, formatCurrentContextLine, readPipedStdin } from "./program.js";
+import { buildAskRunLog, resolvePersona, writeRunLog } from "./program-helpers.js";
+import { buildMusePersona, readPipedStdin } from "./program.js";
 import type { ProgramIO } from "./program.js";
 import { withSigintAbort } from "./sigint-abort.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 import { listNoteFiles, notesCorpusFileCount, resolveAskMaxTools, selectGraphConnections } from "./ask-corpus-helpers.js";
 import { userHasOtherPersonalData } from "./ask-user-data-presence.js";
 import { collectAutoImageAttachments, loadImageAttachment } from "./ask-image-attachments.js";
-import { CITATION_INSTRUCTION_LINES, REASONING_PRINCIPLE_LINES } from "./ask-prompt-constants.js";
+import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { buildSessionFeedReflectionGrounding } from "./ask-session-grounding.js";
 import { retrieveAndRankNotes } from "./ask-note-retrieval.js";
+import { applyAdHocGrounding } from "./ask-adhoc-grounding.js";
+import { runVisionCommandAction } from "./ask-vision-command.js";
+import { runGroundingVerdict } from "./ask-grounding-verdict.js";
+import { buildAskSystemPrompt } from "./ask-system-prompt.js";
+import { finalizeAndRenderAsk } from "./ask-finalize.js";
 import { buildActivityGrounding } from "./ask-activity-grounding.js";
 import { buildPersonalStoreGrounding } from "./ask-personal-store-grounding.js";
 import { DEFAULT_EMBED_MODEL, resolveIndexModel } from "./embed-model-default.js";
@@ -102,35 +102,6 @@ import { DEFAULT_EMBED_MODEL, resolveIndexModel } from "./embed-model-default.js
 
 
 
-async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null, hint?: string): Promise<void> {
-  if (axis === null) {
-    return;
-  }
-  try {
-    const { recordWeakness } = await import("@muse/stores");
-    const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
-    await recordAskWeakness(query, axis, {
-      recordWeakness,
-      weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
-    }, hint);
-  } catch {
-    // lazy-import / path resolution failure is non-fatal
-  }
-}
-
-
-async function recordAskWeaknessResolvedLive(query: string): Promise<void> {
-  try {
-    const { recordWeaknessResolved } = await import("@muse/stores");
-    const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
-    await recordAskWeaknessResolved(query, {
-      recordWeaknessResolved,
-      weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
-    });
-  } catch {
-    // lazy-import / path resolution failure is non-fatal
-  }
-}
 
 
 
@@ -209,9 +180,6 @@ export const NOTES_ONLY_TOOL_ALLOWLIST = ["muse.notes", "muse.notes-multi", "mus
  */
 const RECALL_FORBIDDEN_TOOL_NAMES = ["remember_fact"] as const;
 
-/** S2 warm honesty (B2): the deterministic, on-brand close on an honest refusal. */
-const WARM_REFUSAL_CLOSE =
-  "(I'd rather tell you that than guess — add a note on this and I'll have it next time.)";
 
 
 interface NotesIndex {
@@ -596,199 +564,15 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // `--clipboard` answer (nothing to open). Notes / files keep their local path.
       const adHocVerifyTargets = new Map<string, string | null>();
 
-      // --file: ad-hoc grounding on an explicitly-named file (read-only, NOT
-      // ingested into the corpus). Reuses the NOTES citation class — the file's
-      // passages are injected as note-class context cited `[from <path>]` under
-      // the same code gate (the cite token + allowedNotes normalise the path
-      // identically, so it survives the gate). Lexically ranks the file's
-      // passages against the question and injects the strongest up to a budget,
-      // so a large file doesn't blow the small model's context; an off-topic
-      // question sees real content that lacks the answer ⇒ honest refusal.
-      if (options.file && options.file.trim().length > 0) {
-        const fileLabel = options.file.trim();
-        const fileIsDirectory = (() => {
-          try {
-            return statSync(fileLabel).isDirectory();
-          } catch {
-            return false;
-          }
-        })();
-        if (fileIsDirectory) {
-          // --file <dir>: ground on the FOLDER's documents without ingesting them.
-          // Each supported doc (.txt/.md/.pdf/.log/.csv) is extracted, its passages
-          // ranked by query overlap across all files, and the strongest kept within
-          // a budget — cited per-file `[from <name>]`. An off-topic question finds no
-          // overlapping passage ⇒ honest refusal (never a general-knowledge guess).
-          try {
-            const { documents: docs, totalFound, cap } = await extractDirectoryDocuments(fileLabel);
-            if (docs.length === 0) {
-              io.stderr(`muse: --file ${fileLabel} — no readable text/PDF documents found in that folder (text / markdown / .org / .rst / PDF / .csv / .html / .eml).\n`);
-            } else {
-              // Honest about a truncated big folder — never silently ground on a subset.
-              const capNotice = formatDirectoryCapNotice(fileLabel, totalFound, cap);
-              if (capNotice) {
-                io.stderr(capNotice);
-              }
-              const queryTokens = lexicalTokens(query);
-              const pool = docs
-                .flatMap((doc) => chunkText(doc.text, 1200).map((text) => ({ file: doc.path, overlap: lexicalOverlap(queryTokens, text), text })))
-                .filter((passage) => passage.overlap > 0)
-                .sort((a, b) => b.overlap - a.overlap);
-              let budget = 6000;
-              let pickedCount = 0;
-              for (const passage of pool) {
-                if (budget <= 0) break;
-                scored.push({ chunk: { chunkIndex: pickedCount, embedding: [], file: passage.file, text: passage.text }, file: passage.file, score: 1 });
-                budget -= passage.text.length;
-                pickedCount += 1;
-              }
-              if (pickedCount > 0) {
-                notesUnavailable = false;
-              }
-            }
-          } catch (cause) {
-            io.stderr(`muse: could not read --file ${fileLabel} (${cause instanceof Error ? cause.message : String(cause)})\n`);
-          }
-        } else {
-        try {
-          const bytes = await readFile(fileLabel);
-          let fileText: string | undefined;
-          if (isPdfDocument(fileLabel, bytes)) {
-            // A real PDF: extract its TEXT via pdf-parse (the same reader `muse
-            // read` uses) and ground on that — so a user can ask about a PDF
-            // directly. A scanned/empty PDF yields no text ⇒ honest refusal.
-            try {
-              const extracted = (await parsePdfBuffer(bytes)).text;
-              if (extracted.trim().length > 0) {
-                fileText = extracted;
-              } else {
-                io.stderr(`muse: --file ${fileLabel} is a PDF with no extractable text (it may be scanned images) — I can't ground on it.\n`);
-              }
-            } catch (pdfErr) {
-              io.stderr(`muse: --file ${fileLabel} could not be read as a PDF (${pdfErr instanceof Error ? pdfErr.message : String(pdfErr)}) — I won't ground on it.\n`);
-            }
-          } else if (isEmlDocument(fileLabel)) {
-            // A saved email — extract the decoded subject/sender + readable body
-            // (reusing the mbox MIME parser) so it grounds as the message, not raw
-            // RFC822 headers and quoted-printable/base64 noise. Before the binary
-            // check: an .eml's text headers never trip it, and a base64 part inside
-            // is exactly what the parser decodes.
-            fileText = emlToText(bytes.toString("utf8"));
-          } else if (isDocxDocument(fileLabel)) {
-            // A Word .docx is a ZIP of XML, so it trips the binary check below —
-            // extract its body text BEFORE that refusal (the same way .eml is).
-            try {
-              fileText = docxToText(bytes, fileLabel);
-            } catch (docxErr) {
-              io.stderr(`muse: --file ${fileLabel} could not be read as a .docx (${docxErr instanceof Error ? docxErr.message : String(docxErr)}) — I won't ground on it.\n`);
-            }
-          } else if (isPptxDocument(fileLabel)) {
-            // A PowerPoint .pptx is likewise a ZIP of XML — extract its slide text
-            // BEFORE the binary refusal below.
-            try {
-              fileText = pptxToText(bytes, fileLabel);
-            } catch (pptxErr) {
-              io.stderr(`muse: --file ${fileLabel} could not be read as a .pptx (${pptxErr instanceof Error ? pptxErr.message : String(pptxErr)}) — I won't ground on it.\n`);
-            }
-          } else if (looksLikeBinaryContent(bytes)) {
-            // A non-PDF binary (image, archive, office doc): refuse — feeding
-            // garbled UTF-8 to the model makes it hallucinate content and cite
-            // it to the file. Tell the user how to make it groundable instead.
-            io.stderr(
-              `muse: --file ${fileLabel} looks like a binary file (image, office doc, …), not text — ` +
-              `I won't ground on it, because reading it as text would feed garbled bytes that I might ` +
-              `answer from incorrectly. Export it to .txt/.md and pass that.\n`
-            );
-          } else if (isHtmlDocument(fileLabel)) {
-            // Extract the readable text from HTML — grounding on raw markup feeds
-            // <script>/<style> noise and leaves entities undecoded (a mangled
-            // "jane&#64;globex.com" instead of "jane@globex.com").
-            fileText = htmlToText(bytes.toString("utf8"));
-          } else {
-            fileText = bytes.toString("utf8");
-          }
-          if (fileText !== undefined) {
-            const picked = selectFilePassages(fileText, query);
-            for (const passage of picked) {
-              scored.push({ chunk: { chunkIndex: passage.chunkIndex, embedding: [], file: fileLabel, text: passage.text }, file: fileLabel, score: 1 });
-            }
-            if (picked.length > 0) {
-              notesUnavailable = false; // we DO have note-class grounding now
-            }
-          }
-        } catch (cause) {
-          io.stderr(`muse: could not read --file ${fileLabel} (${cause instanceof Error ? cause.message : String(cause)})\n`);
-        }
-        }
-      }
-
-      // --url: ad-hoc grounding on a public web page WITHOUT ingesting it (the web
-      // counterpart of --file). fetchReadableUrl is SSRF-guarded (public hosts
-      // only, re-checked after redirects) and extracts the readable text; we ground
-      // on it cited `[from <host>]`. An off-topic question finds no overlap ⇒ honest
-      // refusal; a fetch failure is reported, never silently grounded-on-nothing.
-      if (options.url && options.url.trim().length > 0) {
-        const urlLabel = options.url.trim();
-        if (!options.json) {
-          io.stderr(`🌐 fetching ${urlLabel}…\n`);
-        }
-        try {
-          const fetched = await fetchReadableUrl(urlLabel, {
-            maxChars: 60_000,
-            // Read an online PDF (a policy doc / paper / manual linked on the web)
-            // via the same pdf-parse path `--file <pdf>` uses, instead of refusing it.
-            pdfExtractor: async (bytes) => (await parsePdfBuffer(Buffer.from(bytes))).text
-          });
-          if (!fetched.ok) {
-            io.stderr(`muse: could not fetch --url ${urlLabel} (${fetched.error}) — I won't ground on it.\n`);
-          } else if (fetched.text.trim().length > 0) {
-            const source = urlGroundingSource(fetched.finalUrl);
-            adHocVerifyTargets.set(source, fetched.finalUrl);
-            // Honest about a truncated long page — never silently ground on a prefix.
-            if (fetched.truncated) {
-              io.stderr(formatUrlTruncationNotice(source, 60_000));
-            }
-            const picked = selectFilePassages(fetched.text, query);
-            for (const passage of picked) {
-              scored.push({ chunk: { chunkIndex: passage.chunkIndex, embedding: [], file: source, text: passage.text }, file: source, score: 1 });
-            }
-            if (picked.length > 0) {
-              notesUnavailable = false;
-            }
-          } else {
-            io.stderr(`muse: --url ${urlLabel} returned no readable text — I can't ground on it.\n`);
-          }
-        } catch (cause) {
-          io.stderr(`muse: could not fetch --url ${urlLabel} (${cause instanceof Error ? cause.message : String(cause)})\n`);
-        }
-      }
-
-      // --clipboard: ad-hoc grounding on whatever the user just copied — the
-      // ephemeral sibling of --file/--url. Read-only and local (shells out to
-      // pbpaste / xclip / Get-Clipboard). Grounds on it cited `[from clipboard]`;
-      // an empty clipboard or a read failure is reported, never grounded-on-nothing.
-      if (options.clipboard) {
-        if (!options.json) {
-          io.stderr("📋 reading your clipboard…\n");
-        }
-        try {
-          const clipText = await readClipboardText();
-          if (clipText.trim().length > 0) {
-            adHocVerifyTargets.set("clipboard", null);
-            const picked = selectFilePassages(clipText, query);
-            for (const passage of picked) {
-              scored.push({ chunk: { chunkIndex: passage.chunkIndex, embedding: [], file: "clipboard", text: passage.text }, file: "clipboard", score: 1 });
-            }
-            if (picked.length > 0) {
-              notesUnavailable = false;
-            }
-          } else {
-            io.stderr("muse: your clipboard is empty — I can't ground on it.\n");
-          }
-        } catch (cause) {
-          io.stderr(`muse: could not read the clipboard (${cause instanceof Error ? cause.message : String(cause)}) — I won't ground on it.\n`);
-        }
-      }
+      const adHoc = await applyAdHocGrounding({
+        adHocVerifyTargets,
+        notesUnavailable,
+        onStderr: (text) => { io.stderr(text); },
+        options,
+        query,
+        scored
+      });
+      notesUnavailable = adHoc.notesUnavailable;
 
       // Second-brain grounding: past-session episodes (auto-refreshed + untrusted-
       // tagged), recent feed headlines, and the user's own reflections. Each store
@@ -964,121 +748,14 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // notes) and emit structured output / a draft action, so they short-circuit
       // the normal recall+grounding flow. Both require --image.
       if (options.extract || options.toCalendar || options.auto) {
-        if (imageAttachments.length === 0) {
-          io.stderr("--extract / --to-calendar / --auto require --image <path>\n");
-          process.exitCode = 1;
-          return;
-        }
-        const img = imageAttachments[0]!;
-        if (options.auto) {
-          const { classifyVisionAction, normalizeStartsAt, splitUnverified, dropUnverifiedOptional } = await import("./vision-actions.js");
-          const action = await classifyVisionAction(assembly.modelProvider, { imageBase64: img.dataBase64, mimeType: img.mimeType, model });
-          if ("ok" in action && action.ok === false) {
-            io.stderr(`muse ask --auto: ${action.error}\n`);
-            process.exitCode = 1;
-            return;
-          }
-          let act = action as import("./vision-actions.js").VisionAction;
-          io.stdout(`${act.draftText}\n`);
-          if (act.route === "none") {
-            return;
-          }
-          if (options.apply !== true) {
-            io.stdout("\n(draft only — re-run with --apply to perform it)\n");
-            return;
-          }
-          // Grounding gate (fail-close, field-level): a field that couldn't be
-          // confirmed against an independent transcription of the image is a
-          // fabrication risk. A REQUIRED un-grounded field blocks the WHOLE action
-          // (the grounded core is meaningless without it). An OPTIONAL un-grounded
-          // field is DROPPED — the action recomposes WITHOUT it (the dropped value
-          // is never persisted) and the grounded core still applies.
-          const { blocking, droppable } = splitUnverified(act);
-          if (blocking.length > 0) {
-            io.stderr(`\n⚠ not applied — these field(s) couldn't be verified against the image: ${blocking.join(", ")}. Check them and correct the source, then re-run.\n`);
-            process.exitCode = 1;
-            return;
-          }
-          if (droppable.length > 0) {
-            act = dropUnverifiedOptional(act, droppable);
-            io.stdout(`\nℹ dropped unverified optional field(s) — applying the grounded core only: ${droppable.join(", ")}\n`);
-          }
-          const env = process.env as MuseEnvironment;
-          let result: unknown;
-          if (act.route === "calendar") {
-            const { createCalendarMcpServer } = await import("@muse/domain-tools");
-            const addTool = createCalendarMcpServer({ registry: buildCalendarRegistry(env) }).tools.find((t) => t.name === "add");
-            result = await addTool?.execute({ ...act.fields, startsAt: normalizeStartsAt(String(act.fields.startsAt)) });
-          } else if (act.route === "note") {
-            const { createNotesMcpServer } = await import("@muse/domain-tools");
-            const appendTool = createNotesMcpServer({ notesDir: resolveNotesDir(env) }).tools.find((t) => t.name === "append");
-            const notePath = typeof act.fields.path === "string" ? act.fields.path : "expenses.md";
-            const noteContent = act.kind === "receipt" ? `- ${String(act.fields.note)}\n` : `${String(act.fields.note)}\n`;
-            result = await appendTool?.execute({ content: noteContent, path: notePath });
-          } else {
-            const { addContact, readContacts } = await import("@muse/stores");
-        const { createContactsAddTool } = await import("@muse/domain-tools");
-            const file = resolveContactsFile(env);
-            // Use the store's id-idempotent + queued addContact (not a raw read+append):
-            // with the tool's name-match id-reuse this UPDATES an existing contact in
-            // place instead of duplicating, and is lost-update safe under concurrency.
-            const addContactTool = createContactsAddTool({ contacts: () => readContacts(file, env), save: (c) => addContact(file, c, env) });
-            result = await addContactTool.execute(act.fields, { runId: "vision-auto", userId: userKey });
-          }
-          io.stdout(result && typeof result === "object" && "error" in result ? `\n❌ ${String((result as { error: unknown }).error)}\n` : `\n✅ Done: ${JSON.stringify(result)}\n`);
-          return;
-        }
-        if (options.toCalendar) {
-          const ex = await extractStructuredFromImage(assembly.modelProvider, {
-            imageBase64: img.dataBase64,
-            instruction: "Extract a calendar event from this image: its title, the start date/time (startsAt, copied EXACTLY as shown, e.g. '2026-06-20 19:00' or 'June 20 7pm'), plus location and notes if present. Omit any field that isn't visible.",
-            mimeType: img.mimeType,
-            model,
-            schema: { properties: { location: { type: "string" }, notes: { type: "string" }, startsAt: { type: "string" }, title: { type: "string" } }, required: ["title", "startsAt"], type: "object" }
-          });
-          if (!ex.ok || typeof ex.data?.title !== "string" || typeof ex.data?.startsAt !== "string") {
-            io.stderr(`muse ask --to-calendar: couldn't read an event from the image (${ex.error ?? "no visible title/start time"}).\n`);
-            process.exitCode = 1;
-            return;
-          }
-          const ev = ex.data;
-          io.stdout(`📅 Draft event from the image:\n  title: ${String(ev.title)}\n  startsAt: ${String(ev.startsAt)}${typeof ev.location === "string" ? `\n  location: ${ev.location}` : ""}${typeof ev.notes === "string" ? `\n  notes: ${ev.notes}` : ""}\n`);
-          if (options.apply !== true) {
-            io.stdout("\n(draft only — re-run with --apply to create it)\n");
-            return;
-          }
-          const { createCalendarMcpServer } = await import("@muse/domain-tools");
-          const registry = buildCalendarRegistry(process.env as MuseEnvironment);
-          const addTool = createCalendarMcpServer({ registry }).tools.find((t) => t.name === "add");
-          if (!addTool) { io.stderr("no calendar provider configured\n"); process.exitCode = 1; return; }
-          const res = await addTool.execute({
-            startsAt: String(ev.startsAt),
-            title: String(ev.title),
-            ...(typeof ev.location === "string" ? { location: ev.location } : {}),
-            ...(typeof ev.notes === "string" ? { notes: ev.notes } : {})
-          });
-          io.stdout(res && typeof res === "object" && "error" in res ? `\n❌ ${String((res as { error: unknown }).error)}\n` : `\n✅ Created: ${JSON.stringify(res)}\n`);
-          return;
-        }
-        const fields = (options.extract ?? "").split(",").map((f) => f.trim()).filter(Boolean);
-        if (fields.length === 0) {
-          io.stderr("--extract needs at least one field, e.g. --extract 'merchant,total,date'\n");
-          process.exitCode = 1;
-          return;
-        }
-        const ex = await extractStructuredFromImage(assembly.modelProvider, {
-          imageBase64: img.dataBase64,
-          instruction: `Extract these fields from the image: ${fields.join(", ")}.`,
-          mimeType: img.mimeType,
+        await runVisionCommandAction({
+          imageAttachments,
+          io,
           model,
-          schema: { properties: Object.fromEntries(fields.map((f) => [f, { type: "string" }])), type: "object" }
+          modelProvider: assembly.modelProvider,
+          options,
+          userKey
         });
-        if (!ex.ok) {
-          io.stderr(`muse ask --extract: ${ex.error}\n`);
-          process.exitCode = 1;
-          return;
-        }
-        io.stdout(`${JSON.stringify(ex.data, null, options.json === true ? 0 : 2)}\n`);
         return;
       }
 
@@ -1261,88 +938,35 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         probationSuggestion = undefined;
       }
 
-      const systemPrompt = [
-        ...(personaTemplatePreamble.length > 0 ? [personaTemplatePreamble, ""] : []),
-        ...(personaPrompt ? [personaPrompt, ""] : []),
-        "You are Muse, the user's JARVIS-style personal AI conductor.",
-        // The chat-only path is context-locked; the --with-tools path must NOT
-        // be, or the lock wins over the armed tools and the model never calls
-        // them (observed live: browser_open 0 calls under the ONLY phrasing).
-        ...(options.withTools === true
-          ? [
-              "Answer the user's question from the context provided below, plus your TOOLS when the context is not enough.",
-              "When the user asks to open / read / act on a web page or live resource the context below does not contain, CALL the matching tool (e.g. browser_open for a URL) instead of refusing or answering from memory.",
-              // Agentic persistence — without this the local model stops after the
-              // first tool call (ran a test, saw it fail, then quit) or answers
-              // short instead of acting. Lifts the edit→run→verify loop 1/3 → 3/3
-              // (eval:edit-run-verify). Conditional ("when a task needs several
-              // steps") so a single-tool ask is unaffected.
-              "When a task needs several steps (e.g. read a file, change it, run a command), keep taking the next action after each tool result until it is actually done — do not stop after a single tool call.",
-              "If a command or test you run reports a failure, find the cause, fix it with your tools, and run it again to confirm it passes before you answer.",
-              "If neither the provided context nor a tool result contains enough information, say so directly — do not invent facts."
-            ]
-          : [
-              "Answer the user's question USING ONLY the notes, open tasks, upcoming events, pending reminders, matching contacts, past session summaries, and recent feed headlines provided below as context.",
-              "If none of the provided context contains enough information, say so directly — do not invent facts."
-            ]),
-        "Reply in the user's preferred language (from persona prefs).",
-        "Keep it concise — 2–4 sentences unless the question explicitly needs more.",
-        "Do NOT include the raw '<<note N — ...>>' / '<<task N>>' / '<<event N>>' / '<<reminder N>>' wrapper markers in your answer; speak naturally.",
-        // A small local model (qwen3:8b) PARROTS a concrete example
-        // citation verbatim — earlier this prompt showed
-        // `[from journal/2026-05-12.md]` / `[feed: Hacker News]` as
-        // examples and the model cited those exact fake sources
-        // regardless of the real corpus, fabricating the one thing the
-        // wedge promises is verifiable. So: NO concrete example values.
-        // Anchor every citation to the marker of the passage actually
-        // used, use ALL-CAPS placeholders (explicitly "never output the
-        // placeholder word"), and hard-forbid citing any source not
-        // shown in a marker below.
-        ...CITATION_INSTRUCTION_LINES,
-        // The reasoning-principles block is on by default; MUSE_ASK_REASONING_PRINCIPLES=0
-        // disables it — used by the A/B efficacy eval (verify-reasoning-efficacy.mjs)
-        // to MEASURE whether the principles actually improve answers, not just run.
-        ...(process.env.MUSE_ASK_REASONING_PRINCIPLES === "0" ? [] : REASONING_PRINCIPLE_LINES),
-        "",
-        // Volatile lines live BELOW the stable instruction block so the long
-        // static prefix stays byte-identical across turns — Ollama reuses the
-        // KV cache for a shared prompt prefix, and a time string near the top
-        // was breaking that reuse on every turn. The date/time line itself is
-        // still ALWAYS present ("anything due today?" needs `now`); when a
-        // persona is injected it duplicates buildMusePersona's line — harmless.
-        ...(notesFraming.guidance ? [notesFraming.guidance] : []),
-        // Persona already carries its own date/time line (buildMusePersona);
-        // only the persona-less path needs this one — the duplicate was ~20
-        // wasted tokens every persona turn (subtraction sweep).
-        ...(personaPrompt ? [] : [formatCurrentContextLine()]),
-        "",
-        notesFraming.header,
+      const systemPrompt = buildAskSystemPrompt({
+        actionBlock,
+        calendarBlock,
+        contactBlock,
         contextBlock,
-        "=== END NOTES ===",
-        "",
-        // Optional sources: each is included ONLY when it has content this turn —
-        // an empty block bloats the small model's prompt and invites a spurious
-        // "[reminder: none]"-style citation. (Notes above is always present.)
-        ...groundingSectionLines(optionalGroundingSections({
-          tasks: { body: taskBlock, present: openTasks.length > 0 },
-          calendar: { body: calendarBlock, present: upcomingEvents.length > 0 },
-          reminders: { body: reminderBlock, present: pendingReminders.length > 0 },
-          contacts: { body: contactBlock, present: matchedContacts.length > 0 },
-          memories: { body: memoryBlock, present: matchedMemories.length > 0 },
-          shell: { body: shellBlock, present: matchedCommands.length > 0 },
-          git: { body: gitBlock, present: matchedCommits.length > 0 },
-          actions: { body: actionBlock, present: matchedActions.length > 0 },
-          episodes: {
-            body: episodeBlock,
-            present: episodeHits.length > 0,
-            relevance: episodeHits.length > 0
-              ? optionalGroundingRelevance("episodes", Math.max(...episodeHits.map((e) => e.score)))
-              : undefined
-          },
-          feeds: { body: feedBlock, present: feedHeadlines.length > 0 },
-          reflection: { body: reflectionBlock, present: reflectionLines.length > 0 }
-        }))
-      ].join("\n").trimEnd();
+        episodeBlock,
+        episodeHits,
+        feedBlock,
+        feedHeadlines,
+        gitBlock,
+        matchedActions,
+        matchedCommands,
+        matchedCommits,
+        matchedContacts,
+        matchedMemories,
+        memoryBlock,
+        notesFraming,
+        openTasks,
+        pendingReminders,
+        personaPrompt,
+        personaTemplatePreamble,
+        reflectionBlock,
+        reflectionLines,
+        reminderBlock,
+        shellBlock,
+        taskBlock,
+        upcomingEvents,
+        withTools: options.withTools === true
+      });
 
       // Show citation header before streaming the answer so the user
       // sees what's being grounded against, then the model output.
@@ -1385,9 +1009,6 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       let collectedAnswer = "";
       let answerLogprobs: AskStreamResult["logprobs"];
       let toolsUsed: readonly string[] = [];
-      // What retrieval surfaced (top sources + cosine) for the run-log trace, so
-      // "why this answer / which sources ranked" is answerable locally (P1.2).
-      let askRetrieval: readonly RetrievalTraceEntry[] | undefined;
       // One run id shared across the runtime input, token-usage attribution, the
       // checkpoints, AND the run-log filename — so per-run cost works and `muse
       // trace <id>` links a run to its steps (they were unrelated ids).
@@ -1698,609 +1319,75 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // signal the citation gate alone can't see. The ambiguous `weak` band
       // spends ONE extra local-Qwen inference (MaTTS) to re-check the answer
       // against the evidence — fail-close, so a judge error still warns.
-      let groundedVerdictLabel: "grounded" | "ungrounded" | null = null;
-      // Lifted to the run-log / --json scope (assigned inside the verdict block
-      // below), mirroring groundedVerdictLabel: the machine surface reads it.
-      let sourceCheck: SourceCheckSignals | undefined;
-      // The verdict now runs in --json mode too (previously skipped): a JSON
-      // consumer (desktop bridge, scripts) could not tell a gated answer from
-      // an unchecked one, and json traces carried grounded:null. Emissions
-      // below stay non-json-only; the COMPUTATION is unconditional.
-      {
-        const provider = assembly.modelProvider;
-        const reverify: GroundingReverify | undefined = provider
-          ? async ({ answer, evidence, query: q }) => {
-              const judged = await provider.generate({
-                maxOutputTokens: 24,
-      responseFormat: REVERIFY_RESPONSE_FORMAT,
-                messages: [
-                  { content: REVERIFY_SYSTEM_PROMPT, role: "system" },
-                  { content: buildGroundingReverifyPrompt({ answer, evidence, query: q }), role: "user" }
-                ],
-                model,
-                temperature: 0
-              });
-              return parseGroundingReverifyJson(judged.output ?? "");
-            }
-          : undefined;
-        // The verdict scores the answer's coverage against retrieved evidence. A
-        // fact drawn from a NON-NOTE source (a contact's email, a task title, a
-        // reminder, a calendar event, a past session, a logged action, a feed
-        // headline) has no support in the note chunks, so a notes-only evidence
-        // set falsely flags it "not backed by your notes". Score against EVERY
-        // grounded source the model was actually shown — each a high-precision
-        // structured / retrieved match — so an answer drawn from the user's own
-        // tasks / reminders / events / contacts verifies as grounded, not
-        // unverified. Fabrication is still caught: the evidence is ONLY the real
-        // retrieved sources, so a claim in none of them stays uncovered →
-        // ungrounded.
-        const exactMatch = (source: string, text: string): { cosine: number; score: number; source: string; text: string } =>
-          ({ cosine: 1, score: 1, source, text });
-        // A date-bearing answer reformats the stored ISO timestamp into prose
-        // ("Saturday, June 4th, 8:00 PM"), so the evidence text must carry that
-        // SAME human rendering or the coverage check false-flags the derived
-        // date/time as unsupported. Render in the system locale/tz — the same
-        // basis the model reasons from — and keep the ISO form too (belt-and-suspenders).
-        const humanDate = (value: string | Date | undefined): string => {
-          if (!value) return "";
-          const d = value instanceof Date ? value : new Date(value);
-          if (Number.isNaN(d.getTime())) return "";
-          const human = d.toLocaleString("en-US", { day: "numeric", hour: "numeric", minute: "2-digit", month: "long", weekday: "long", year: "numeric" });
-          return `${human} ${d.toISOString().slice(0, 10)}`;
-        };
-        // Note evidence for the verdict. Chat-only: `scored` (the top-K shown to
-        // the model) IS exactly what grounded the answer. --with-tools: the agent
-        // can pull a chunk via `knowledge_search` (often on a REFORMULATED query)
-        // that the CLI's pre-retrieval top-K didn't include, so scoring against
-        // `scored` alone would false-flag a legitimately grounded agent answer.
-        // Augment with the FULL text of every note the answer actually cites
-        // (each already gate-validated against the live corpus above) so a cited
-        // note is always covered. This only ADDS evidence — it can prevent a
-        // false "ungrounded", never cause a false "grounded": a drifted value
-        // that appears in no cited note still scores uncovered → ungrounded.
-        // `untrustedNoteSources` is computed once near the note-context block above
-        // (ingested-note paths) and reused here to tag grounding evidence trusted:false
-        // so an answer resting solely on a poisoned ingested note trips the
-        // untrusted-only cue (GROUNDED≠TRUE). User-authored notes → no entry → trusted.
-        const baseNoteMatches = scored.map((r) => {
-          const source = relativizeNoteSource(r.file, notesDir);
-          return { cosine: r.score, score: r.score, source, text: r.chunk.text, ...(untrustedNoteSources.has(source) ? { trusted: false } : {}) };
-        });
-        const noteMatches = options.withTools && index
-          ? augmentNoteEvidenceWithCited(
-              baseNoteMatches,
-              citedSourcesIn(collectedAnswer),
-              filterLiveNoteIndexFiles(index.files, existsSync).map((f) => ({ chunks: f.chunks, source: relativizeNoteSource(f.path, notesDir) }))
-            )
-          : baseNoteMatches;
-        const scoredMatches = [
-          ...noteMatches,
-          ...matchedContacts.map((c) => exactMatch(`contact: ${c.name}`, contactGroundingEvidence(c))),
-          ...openTasks.map((t) => exactMatch(`task: ${t.title}`, `${t.title}${t.notes ? ` ${t.notes}` : ""}${t.dueAt ? ` due ${t.dueAt} ${humanDate(t.dueAt)}` : ""}`)),
-          ...upcomingEvents.map((e) => exactMatch(`event: ${e.title}`, `${e.title}${e.location ? ` ${e.location}` : ""} ${humanDate(e.startsAt)} ${humanDate(e.endsAt)}`.trim())),
-          ...pendingReminders.map((r) => exactMatch(`reminder: ${r.text}`, `${r.text} ${humanDate(r.dueAt)}`.trim())),
-          ...episodeHits.map((e) => untrustedEpisodeIds.has(e.id)
-            ? untrustedEpisodeMatch(e.id, e.summary, e.score)
-            : ({ cosine: e.score, score: e.score, source: `session: ${e.id}`, text: e.summary })),
-          ...matchedActions.map((a) => exactMatch(`action: ${a.what}`, `${a.what} ${a.result}${a.detail ? ` ${a.detail}` : ""}`)),
-          ...matchedCommands.map((cmd) => exactMatch(`command: ${cmd}`, cmd)),
-          ...matchedCommits.map((c) => exactMatch(`commit: ${c.subject}`, c.subject)),
-          ...allMemoryFacts.map((f) => exactMatch(`memory: ${f.key}`, renderMemoryFact(f))),
-          // Feeds are third-party publisher content (RSS/Atom) — NOT the user's
-          // own data — so tag them trusted:false: an answer resting SOLELY on a
-          // poisonable feed headline must trip the untrusted-only source-check
-          // cue (grounded≠true), exactly like a web/MCP tool result below.
-          ...feedHeadlines.map((h) => untrustedFeedMatch(h.feedName, h.title, h.summary)),
-          // The --with-tools agent's OWN read-tool outputs (web fetches,
-          // knowledge_search, …): the evidence it was shown. Without these a
-          // correctly web-grounded answer scores ~zero coverage against the
-          // notes-only set above and false-flags "not backed by your notes".
-          // Still fabrication-safe: only REAL tool outputs are added, so a claim
-          // in none of them (notes OR tool results) stays uncovered → ungrounded.
-          // trusted:false — tool output is NOT the user's own data; the
-          // provenance bit feeds groundedOnUntrustedOnly (grounded≠true).
-          ...agentGroundingSources.map((s) => ({ ...exactMatch(`tool: ${s.source}`, s.text), trusted: false }))
-        ];
-        askRetrieval = summarizeRetrieval(scoredMatches);
-        // The coverage check strips citation markers before scoring, so a LIST
-        // answer whose claims live only inside `[task: …]` / `[event: …]` markers
-        // (the model put the titles in the citation, not the prose) would score
-        // ~zero coverage and false-flag. By verdict time every surviving
-        // content-citation is already gate-validated against a real source, so
-        // expand them inline for the verdict ONLY — their content is grounded by
-        // construction and is present in `scoredMatches`. `[from …]` note
-        // provenance is left alone (it carries no claim).
-        const expandContentCitations = (answer: string): string => answer.replace(
-          /\[(?:task|event|reminder|contact|session|feed|command|commit|memory|action):\s*([^\]]*)\]/giu,
-          " $1 "
-        );
-        let verdictAnswer = expandContentCitations(collectedAnswer);
-        // A vision query (`--image`) is grounded in the IMAGE the user supplied,
-        // not in their notes — so the notes-grounding verdict is irrelevant here
-        // and its "unverified" warning would be misleading. Skip it.
-        let verdictNotice = imageAttachments.length > 0
-          ? undefined
-          : await groundingVerdictNotice(verdictAnswer, scoredMatches, query, reverify, 3);
-        // Best-of-N resample (--best-of): when the first draft fails the
-        // verdict, redraw fresh drafts and let the DETERMINISTIC verifier pick
-        // the best grounded survivor; the full (reverify-backed) gate then
-        // confirms it before it replaces the answer. No survivor ⇒ the honest
-        // warning path stands untouched, so resampling can only raise the
-        // answered rate, never admit a fabrication. Chat-only path — a
-        // --with-tools redraw would re-execute side-effecting tools.
-        const bestOfTotal = parseBoundedInt(options.bestOf, "--best-of", 1, 5, 1);
-        if (verdictNotice && bestOfTotal > 1 && provider && !options.withTools && !options.json && imageAttachments.length === 0 && !refusalAnswer) {
-          const survivor = await drawBestGroundedRedraft({
-            attempts: bestOfTotal - 1,
-            clean: (draft) => enforceAnswerCitations(stripEchoedCiteAs(draft), citationAllowed).text,
-            confirm: (verdictText) => groundingVerdictNotice(verdictText, scoredMatches, query, reverify, 3),
-            draw: async () => {
-              const drawn = await provider.generate({
-                messages: [
-                  { content: composeChatSystemContent(systemPrompt, playbookSection), role: "system" },
-                  { content: query, role: "user" }
-                ],
-                model,
-                temperature: resolveAnswerTemperature(process.env as MuseEnvironment)
-              });
-              return drawn.output ?? "";
-            },
-            expand: expandContentCitations,
-            isRefusal: answerIsRefusal,
-            select: (drafts) => selectBestGroundedDraft(drafts, scoredMatches, query)
-          });
-          if (survivor !== undefined) {
-            collectedAnswer = survivor;
-            verdictAnswer = expandContentCitations(survivor);
-            verdictNotice = undefined;
-            io.stderr(`\n🎯 Best-of-${bestOfTotal.toString()}: the first draft didn't verify against your notes — this re-drawn one did:\n`);
-            io.stdout(`${survivor}\n`);
-          }
-        }
-        if (imageAttachments.length === 0) {
-          groundedVerdictLabel = verdictNotice ? "ungrounded" : "grounded";
-        }
-        // grounded≠true: a faithful answer (no verdictNotice) can still rest only
-        // on untrusted tool-fetched sources. The label stays "grounded" (it IS
-        // faithful), but surface the untrusted-only provenance as a scrutiny cue.
-        const untrustedNotice = !verdictNotice && imageAttachments.length === 0
-          ? untrustedOnlyGroundingNotice(verdictAnswer, scoredMatches)
-          : undefined;
-        if (untrustedNotice && !options.json) {
-          io.stderr(untrustedNotice);
-        }
-        // ALCE per-citation support: a cited source that resolves but doesn't
-        // support its sentence (right source, wrong claim) the whole-answer
-        // verdict can miss. Only on a grounded answer (else the verdict warns).
-        const citationNotice = !verdictNotice && imageAttachments.length === 0
-          ? citationPrecisionNotice(verdictAnswer, scoredMatches)
-          : undefined;
-        if (citationNotice && !options.json) {
-          io.stderr(citationNotice);
-        }
-        // ALCE citation RECALL: a groundable claim handed over with no [from …]
-        // attribution. Complement to the precision cue; grounded answers only.
-        const recallNotice = !verdictNotice && imageAttachments.length === 0
-          ? citationRecallNotice(verdictAnswer, scoredMatches)
-          : undefined;
-        if (recallNotice && !options.json) {
-          io.stderr(recallNotice);
-        }
-        // Machine twin of the three cues above: a `--json`/run-log consumer can't
-        // read the human stderr cue, so without this a grounded-but-untrusted (or
-        // mis-/un-cited) answer reaches a downstream agent as a clean
-        // `groundedVerdict:"grounded"` — a GROUNDED≠TRUE machine-surface leak (the
-        // same one V1 closed for fan-out signals). Same gate + predicates as the
-        // stderr cues, so the surfaces can't drift.
-        sourceCheck = !verdictNotice && imageAttachments.length === 0
-          ? sourceCheckSignals(verdictAnswer, scoredMatches)
-          : undefined;
-        if (verdictNotice && !options.json) {
-          io.stderr(verdictNotice);
-          // Constructive grounding (RARR, arXiv:2210.08726): rather than only
-          // warning, attempt ONE rewrite constrained to the retrieved evidence
-          // and show it ONLY if it re-verifies grounded through the SAME gate
-          // (so a wrong value can't survive — the claim-level check applies to
-          // the fix too). Fail-closed: no grounded rewrite ⇒ the refusal stands.
-          if (options.repair && provider && reverify) {
-            const repair = await repairToEvidence(collectedAnswer, scoredMatches, query, {
-              gate: (candidate) => enforceAnswerCitations(candidate, { notes: allowedNotes }).text,
-              isRefusal: answerIsRefusal,
-              rewrite: async ({ answer: draft, evidence, query: q }) => {
-                const rewritten = await provider.generate({
-                  maxOutputTokens: 400,
-                  messages: [
-                    { content: REPAIR_SYSTEM_PROMPT, role: "system" },
-                    { content: buildAttributedRepairPrompt({ answer: draft, evidence, query: q }), role: "user" }
-                  ],
-                  model,
-                  temperature: 0
-                });
-                return rewritten.output ?? "";
-              },
-              verify: (candidate, candidateMatches, q) => verifyGroundingWithReverify(candidate, candidateMatches, q, reverify, { confidentAt: resolveRecallConfidentAt() })
-            });
-            if (repair.repaired) io.stderr(`\n🔧 Corrected from your notes:\n${repair.repaired}\n`);
-          } else if (shouldSuggestRepair({ evidenceCount: scoredMatches.length, json: Boolean(options.json), repairRequested: Boolean(options.repair), verdictFired: true })) {
-            io.stderr("(Re-run with --repair and I'll rewrite this using only your notes — shown only if it then checks out.)\n");
-          }
-        } else if (reverify && !options.json && !answerIsRefusal(collectedAnswer)) {
-          // Per-claim ISSUP refinement (MiniCheck, arXiv:2404.10774): DEFAULT-ON on
-          // the grounded-PASS branch. A single fabricated sentence can ride through
-          // whole-answer scoring; the semantic cosine pre-filter (screenClaimsBySemanticSupport)
-          // cheaply marks only SUSPECT claims for the LLM judge — non-suspect claims
-          // skip the model call entirely. Runs only after the whole-answer gate PASSED
-          // (no verdictNotice) so it can only TIGHTEN, never manufacture a refusal.
-          // FAIL-OPEN at both layers: screen error → suspect:false; judge error → keep.
-          // --verify-claims forces all-claims judging (bypasses the cheap screen).
-          const claimsToCheck = segmentClaims(verdictAnswer);
-          if (claimsToCheck.length > 1) {
-            const evidenceTexts = scoredMatches.map((m) => m.text);
-            let suspectClaims: ReadonlySet<string> | undefined;
-            if (!options.verifyClaims) {
-              const screens = await screenClaimsBySemanticSupport(
-                claimsToCheck,
-                evidenceTexts,
-                (t) => embed(t, embedModel)
-              );
-              suspectClaims = new Set(screens.filter((s) => s.suspect).map((s) => s.claim));
-            }
-            const refinement = await verifyGroundingPerClaim(verdictAnswer, scoredMatches, query, reverify, { suspectClaims, reverifySamples: 3 });
-            if (refinement.dropped > 0) {
-              io.stderr(`\n🔬 Per-claim check — I can only ground part of that:\n${refinement.answer}\n`);
-            }
-          }
-        }
-
-        // `--why`: the "shows its work" edge applied to the REFUSAL itself. When
-        // the answer isn't grounded, name the deterministic rubric criterion that
-        // fell short + the measured value vs threshold, so an opaque "I'm not
-        // sure" becomes actionable (rephrase / reindex / add a note). No extra
-        // model call (the rubric is deterministic); silent on a grounded answer;
-        // runs even on a refusal — which the fabrication warning above skips —
-        // since explaining WHY it refused is exactly the point.
-        if (options.why && !options.json) {
-          const topCosine = scoredMatches.length > 0
-            ? Math.max(...scoredMatches.map((m) => m.cosine ?? m.score))
-            : undefined;
-          const whyLines = explainGroundingVerdict(verifyGrounding(verdictAnswer, scoredMatches, query, { confidentAt: resolveRecallConfidentAt() }), { topCosine });
-          if (whyLines.length > 0) {
-            const head = answerIsRefusal(collectedAnswer) ? "Why I can't answer from your notes" : "Why this answer is flagged";
-            io.stderr(`\n🔎 ${head}:\n${whyLines.map((l) => `  • ${l}`).join("\n")}\n`);
-          }
-        }
-
-        // "Shows its work" made FOLLOWABLE *and FELT* (S1 citation-as-voice):
-        // each cited note rendered as a memory — "from your note of <date> —
-        // '<verbatim snippet>'" + the openable path. Rendered ONLY when the
-        // answer PASSED the grounding verdict — a receipt on an ungrounded answer
-        // would vouch for a fabrication (the edge must not "show its work" for
-        // work that failed its own check); the warning above stands alone there.
-        // A refusal asserts no claim so it never reaches here with citations.
-        if (!verdictNotice && !options.json) {
-          // L4 disk-verify: re-read each cited note NOW so a snippet the file no
-          // longer contains (note edited/deleted after indexing) is hidden instead
-          // of quoted as a fake citation. Ad-hoc sources skipped (own provenance).
-          const diskContents = await buildDiskContents(
-            collectedAnswer,
-            scored.map((r) => ({ file: r.file, text: r.chunk.text })),
-            notesDir,
-            adHocVerifyTargets
-          );
-          const receipts = formatSourceReceipts(
-            collectedAnswer,
-            notesDir,
-            scored.map((r) => ({ file: r.file, text: r.chunk.text })),
-            query,
-            adHocVerifyTargets,
-            diskContents
-          );
-          if (receipts) io.stderr(receipts);
-          // Staleness heads-up: a fact drawn from a long-untouched note may be
-          // out of date — show the source's age so the user can judge it.
-          if (!options.json) {
-            const staleness = formatStalenessWarning(
-              await collectCitedNoteAges(collectedAnswer, scored.map((r) => ({ file: r.file, text: r.chunk.text })), notesDir, new Date(), adHocVerifyTargets),
-              180 * 86_400_000
-            );
-            if (staleness) {
-              io.stderr(staleness);
-            }
-          }
-          const moreReceipts = formatNonNoteReceipts(collectedAnswer, {
-            actions: matchedActions.map((a) => a.what),
-            commands: matchedCommands,
-            commits: matchedCommits.map((c) => c.subject),
-            contacts: matchedContacts.map((c) => c.name),
-            events: upcomingEvents.map((e) => e.title),
-            feeds: feedHeadlines.map((h) => h.feedName),
-            memories: allMemoryFacts.map(renderMemoryFact),
-            reminders: pendingReminders.map((r) => r.text),
-            sessions: episodeHits.map((e) => e.summary),
-            tasks: openTasks.map((t) => t.title)
-          });
-          if (moreReceipts) io.stderr(moreReceipts);
-        }
-      }
-
-      // EVPI / expected-information-gain (Lindley 1956; Howard 1966): when the
-      // notes hold several EQUALLY-strong but DISTINCT matches, the residual
-      // uncertainty is over WHICH the user meant — a single clarifying question
-      // has higher expected value than silently answering the top one (which may
-      // be the wrong reading). Surface the divergent sources so the user can
-      // disambiguate; the best-effort answer above still stands. Deterministic
-      // (no model call), suppressed on a refusal (already says "I'm not sure").
-      if (!options.json && !answerIsRefusal(collectedAnswer)) {
-        const clarification = decideRecallClarification(
-          scored.map((r) => ({ cosine: r.score, score: r.score, source: relativizeNoteSource(r.file, notesDir), text: r.chunk.text }))
-        );
-        if (clarification.clarify) {
-          const offered = clarification.sources.map((s) => `[${s}]`).join(", ");
-          io.stderr(`\n⚖️ Your notes gave a few equally-strong but different matches — did you mean ${offered}? Re-ask naming one for a single grounded answer.\n`);
-        }
-      }
-
-      // Set-level sufficiency advisory (arXiv:2411.06037): when a multi-part
-      // query has sub-queries with no covering passage, name the uncovered parts
-      // so the user knows which half is unverified. ADVISORY-ONLY — never blocks
-      // the answer or changes the citation gate. Fail-open (empty vecs → no-op).
-      const sufficiencyLine = sufficiencyAdvisory({
-        answer: collectedAnswer,
-        evidenceVecs: scored.map((r) => r.chunk.embedding as readonly number[]),
-        json: Boolean(options.json),
-        subQueries: splitClauses,
-        subQueryVecs: subqueryEmbeddings
-      });
-      if (sufficiencyLine) {
-        io.stderr(`\n⚠️ ${sufficiencyLine}\n`);
-      }
-
-      // S2 warm honesty (B2): when Muse honestly refuses AND the user has
-      // notes, close with one on-brand line so the refusal feels cared-for,
-      // not blocked. Empty corpus gets the on-ramp hint instead; a real cited
-      // answer gets nothing. Deterministic line, no note pointer (so it can't
-      // reintroduce the spurious-citation-on-a-refusal confusion that was fixed).
-      if (!options.json && shouldWarmClose(collectedAnswer, noteFileCount)) {
-        io.stderr(`\n${WARM_REFUSAL_CLOSE}\n`);
-      }
-
-      // Honesty backstop: the model claimed an action ("I'll remind you…") on the
-      // chat-only path, where nothing was actually done — correct it. Catches the
-      // MIXED "what's my rent AND remind me to pay it tomorrow" the imperative-
-      // anchored classifyActionRequest misses. (--with-tools really acts, so the
-      // claim is TRUE there — never correct it on that path.)
-      if (!options.json && !options.withTools && answerPromisesAction(collectedAnswer)) {
-        io.stderr("\n(Heads up: I can't actually set reminders, tasks, or events on this path — re-run with `--with-tools` to do that.)\n");
-      }
-
-      // S6 "I learned this about you" (B2): when a learned preference was both
-      // INJECTED and genuinely RELEVANT to this question (token overlap — a
-      // recency-floor pick never triggers the claim), surface a one-line beat so
-      // the user FEELS Muse growing with them. Deterministic (no second model
-      // call), grounded in the user's OWN taught strategy, suppressed on a
-      // refusal (which applied nothing), and wired to the `undo` reversal.
-      if (!options.json && appliedStrategy && !answerIsRefusal(collectedAnswer)
-        && lexicalOverlap(lexicalTokens(query), appliedStrategy) > 0) {
-        io.stderr(`\n💡 Applied a preference you taught me: "${appliedStrategy}". (Not right? \`muse playbook undo\`.)\n`);
-      }
-
-      // Felt self-learning: when a topic the user CORRECTED resurfaces,
-      // surface the strategy the daemon distilled from that correction — recorded
-      // unattended but still on PROBATION (not applied) — so the user is reminded
-      // at the relevant moment and can choose to apply it. Surface-only: it never
-      // entered the model's reasoning (the held graduation stays user-gated); one
-      // command applies it. Suppressed on a refusal (no claim to refine) and when a
-      // graduated preference already applied (don't double up on one answer).
-      if (!options.json && probationSuggestion && !appliedStrategy && !answerIsRefusal(collectedAnswer)) {
-        io.stderr(`\n💡 You've corrected me on this before — I noted: "${probationSuggestion.text}". Apply it going forward with \`muse playbook reward ${probationSuggestion.id.slice(0, 8)}\`.\n`);
-      }
-
-      // Outcome-labeled trace — parity with the remote path: writeRunLog lifts
-      // `grounded`/`success` to the top level, so error-analysis can grep real
-      // labels off cli.local runs instead of an unlabeled corpus.
-      askStages.mark("verdictMs");
-      if (process.env.MUSE_TIMINGS === "1" && !options.json) {
-        const t = askStages.timings();
-        io.stderr(`(timings: ${Object.entries(t).map(([k, v]) => `${k}=${(v / 1000).toFixed(1)}s`).join(" · ")})\n`);
-      }
-      const baseOutcome = askOutcomeLabel({ refusal: refusalAnswer, verdict: groundedVerdictLabel });
-      // Evidence the answer should be backed by — the same recall / task / calendar
-      // / reminder surfaces the grounding gate drew from. Reused for the
-      // misgrounding probe and the weakness-ledger hint.
-      const askEvidenceTexts = [
-        ...scored.map((r) => r.chunk.text),
-        ...openTasks.map((t) => t.title),
-        ...upcomingEvents.map((e) => e.title),
-        ...pendingReminders.map((r) => r.text)
-      ];
-      // Misgrounding probe: a "grounded" verdict can still hide a confident
-      // misgrounding — the gate matched the claim to a real source, but the
-      // per-sentence diagnostic shows most of the answer isn't actually backed
-      // (GROUNDED != TRUE). Downgrade the TRACE label to "misgrounded" so the
-      // failure becomes error-analysis fuel instead of a hidden success; the
-      // user-facing answer and the gate verdict are unchanged. Skipped with no
-      // evidence to check against (can't claim misgrounding without a source).
-      // Strip Muse's own `[from <source>]` citation markers before the per-sentence
-      // probe — they are attribution metadata, not claims, and the marker's internal
-      // "." would split into a junk sentence the probe scores unsupported.
-      const askAnswerForProbe = stripCitationMarkers(collectedAnswer);
-      const askGroundedReport =
-        baseOutcome === "grounded" && askEvidenceTexts.length > 0
-          ? reportSentenceGroundedness(askAnswerForProbe, askEvidenceTexts)
-          : undefined;
-      // Cross-lingual faithfulness: a KO answer scores lexical-0 against an EN note,
-      // so the lexical fraction can't tell a true cross-lingual grounding from a
-      // fabrication. Re-judge each lexically-unsupported sentence by semantic cosine;
-      // fail-soft to the lexical fraction if the embedder is unavailable.
-      let askUnsupportedFraction = 0;
-      if (askGroundedReport) {
-        try {
-          askUnsupportedFraction = await crossLingualUnsupportedFraction({
-            report: askGroundedReport,
-            evidence: askEvidenceTexts,
-            embed: (t) => embed(t, embedModel)
-          });
-        } catch {
-          askUnsupportedFraction = assertiveUnsupportedFraction(askGroundedReport);
-        }
-      }
-      // Source-conflict (contested): if the answer's OWN grounding sources disagree
-      // on a field (notes / episodes / remembered facts), a "grounded" verdict rests
-      // on a disputed fact — the cited source may be the wrong half (GROUNDED != TRUE).
-      // Downgrade the trace to "contested". Computed ONCE here and reused for the
-      // user-facing cue below.
-      const askSourceConflictCue = groundingConflictCue(
-        scored.map((r) => ({ file: r.file, text: r.chunk.text })),
-        episodeHits.map((e) => ({ id: e.id, summary: e.summary })),
-        matchedMemories
-      );
-      const askMisgroundedOutcome = askGroundedReport
-        ? misgroundedOutcome({ outcome: baseOutcome, unsupportedFraction: askUnsupportedFraction })
-        : baseOutcome;
-      const askOutcome = contestedOutcome({ outcome: askMisgroundedOutcome, hasSourceConflict: Boolean(askSourceConflictCue) });
-      await writeRunLog(io.workspaceDir ?? process.cwd(), buildAskRunLog({
-        query,
+      const verdict = await runGroundingVerdict({
+        adHocVerifyTargets,
+        agentGroundingSources,
+        allMemoryFacts,
+        allowedNotes,
+        citationAllowed,
+        collectedAnswer,
+        embedModel,
+        episodeHits,
+        feedHeadlines,
+        imageAttachments,
+        index,
+        io,
+        matchedActions,
+        matchedCommands,
+        matchedCommits,
+        matchedContacts,
         model,
-        runId: askRunId,
-        timings: askStages.timings(),
-        ...(answerLogprobs ? { confidence: summarizeTokenConfidence(answerLogprobs) ?? null } : {}),
-        grounded: askOutcome,
-        response: collectedAnswer,
-        success: true,
-        toolsUsed,
-        ...(decompositionSignals ? { decomposition: decompositionSignals } : {}),
-        ...(sourceCheck ? { sourceCheck } : {}),
-        ...(askRetrieval && askRetrieval.length > 0 ? { retrieval: askRetrieval } : {})
-      }));
-      // Whetstone fuel: an ASK failure becomes a weakness-ledger entry so doctor
-      // / error-analysis can mine real-usage gaps — previously only chat-repl fed
-      // the ledger. An UNBACKED-ACTION (the answer claimed a tool action the user
-      // asked for, but no actuator ran — a false promise) takes precedence over a
-      // grounding miss, mirroring chat-repl.
-      const askIsActionRequest = requestsToolAction(query);
-      const askUnbackedAction = isUnbackedActionClaim({ query, answer: collectedAnswer, toolNames: toolsUsed });
-      const askAxis = askWeaknessAxis(askOutcome, { claimedUnbackedAction: askUnbackedAction, isActionRequest: askIsActionRequest });
-      let askHint: string | undefined;
-      if (askAxis === "grounding-gap") {
-        askHint = worstUnsupportedSentence(reportSentenceGroundedness(askAnswerForProbe, askEvidenceTexts));
-      } else if (askAxis === "misgrounding") {
-        askHint = askGroundedReport ? worstUnsupportedSentence(askGroundedReport) : undefined;
-      }
-      await recordAskWeaknessLive(query, askAxis, askHint);
-      if (askOutcome === "grounded" && !askIsActionRequest) {
-        await recordAskWeaknessResolvedLive(query);
-        // Positive half of the reinforcement loop: a strategy that was injected AND
-        // led to an answer the EXTERNAL grounding gate verified earns a gentle reward
-        // (≪ the explicit ±1 of a correction/approval), so what quietly works resists
-        // disuse-decay. Probation strategies are never injected → never reach here, so
-        // the self-confirmation guard holds. Best-effort + fail-soft.
-        // A source-check caveat (untrusted-only sources / unsupported / uncited
-        // citation — `sourceCheck` is set only then) marks a GROUNDED≠TRUE-weak
-        // success that must NOT reinforce, so a missed misgrounding can't corrupt the bank.
-        const reinforceDelta = implicitSuccessReinforceDelta(askOutcome, { hasSourceCheckCaveat: Boolean(sourceCheck) });
-        if (appliedStrategyId && reinforceDelta > 0) {
-          try {
-            const { adjustPlaybookReward } = await import("@muse/stores");
-            const { resolvePlaybookFile } = await import("@muse/autoconfigure");
-            await adjustPlaybookReward(resolvePlaybookFile(process.env as Record<string, string | undefined>), appliedStrategyId, reinforceDelta, Date.now());
-          } catch { /* reinforcement is best-effort — a reward write must never break the answer */ }
-        }
-      }
-      // Runtime learn→apply: if THIS ask failed on a topic that is now a RECURRING
-      // user-remediable weakness, surface the remediation AT the moment of repeated
-      // failure (not just the daily recap) — a deterministic user-facing nudge.
-      if (!options.json && askAxis !== null) {
-        try {
-          const { askTimeWeaknessNudge, readWeaknesses, renderAskTimeNudge, topicKeyFromMessage } = await import("@muse/stores");
-          const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
-          const weaknessEntries = await readWeaknesses(resolveWeaknessesFile(process.env as Record<string, string | undefined>));
-          const nudge = askTimeWeaknessNudge(weaknessEntries, topicKeyFromMessage(query), { nowMs: Date.now() });
-          if (nudge) {
-            io.stderr(`💡 ${renderAskTimeNudge(nudge, /[가-힣]/u.test(query))}\n`);
-          }
-        } catch { /* ledger unavailable — no nudge */ }
-      }
+        notesDir,
+        openTasks,
+        options,
+        pendingReminders,
+        playbookSection,
+        provider: assembly.modelProvider,
+        query,
+        refusalAnswer,
+        scored,
+        systemPrompt,
+        untrustedEpisodeIds,
+        untrustedNoteSources,
+        upcomingEvents
+      });
+      collectedAnswer = verdict.collectedAnswer;
+      const groundedVerdictLabel = verdict.groundedVerdictLabel;
+      const sourceCheck = verdict.sourceCheck;
+      // What retrieval surfaced (top sources + cosine) for the run-log trace, so
+      // "why this answer / which sources ranked" is answerable locally (P1.2).
+      const askRetrieval = verdict.askRetrieval;
 
-      if (options.json) {
-        // Emit a single JSON object on stdout — consumers can pipe
-        // through `jq` to extract the answer, grounded sources, or
-        // both. The grounded banner on stderr already announced what
-        // was injected; the JSON repeats it in structured form so
-        // downstream scripts don't have to parse the banner.
-        const payload = {
-          query,
-          model,
-          answer: collectedAnswer,
-          // The gate's verdict, so a JSON consumer can render trust honestly:
-          // "grounded" | "ungrounded" | "abstain" | null (verdict didn't run).
-          groundedVerdict: askOutcome,
-          // Fan-out trust signals (decomposed runs only) so a machine consumer learns the
-          // sub-answers contradicted / a sub-result was dropped / the list was capped —
-          // the stderr banner the human gets isn't on the --json surface.
-          ...(decompositionSignals ? { decomposition: decompositionSignals } : {}),
-          // Source-check signals on a grounded answer (grounded≠true): rests only on
-          // untrusted sources / a citation is unsupported / a claim is uncited. The
-          // human got the stderr cue; the machine surface gets it structured here.
-          ...(sourceCheck ? { sourceCheck } : {}),
-          ...(citationGate.stripped.length > 0 ? { strippedCitations: citationGate.stripped } : {}),
-          ...(options.withTools ? { toolsUsed } : {}),
-          grounded: {
-            noteChunks: scored.map((r) => ({ file: r.file, score: r.score, text: r.chunk.text })),
-            openTasks: openTasks.map((t) => ({
-              id: t.id,
-              title: t.title,
-              ...(t.dueAt ? { dueAt: t.dueAt } : {}),
-              ...(t.urgent ? { urgent: true } : {})
-            })),
-            upcomingEvents: upcomingEvents.map((e) => ({
-              id: e.id,
-              providerId: e.providerId,
-              title: e.title,
-              startsAt: e.startsAt.toISOString(),
-              endsAt: e.endsAt.toISOString(),
-              allDay: e.allDay,
-              ...(e.location ? { location: e.location } : {})
-            })),
-            pendingReminders: pendingReminders.map((r) => ({
-              id: r.id,
-              text: r.text,
-              dueAt: r.dueAt
-            }))
-          }
-        };
-        io.stdout(`${JSON.stringify(payload, null, 2)}\n`);
-      } else {
-        io.stdout("\n");
-        // grounded≠true: if two of the sources backing this answer DISAGREE on a
-        // field, surface it — the receipt would otherwise vouch for whichever one
-        // got cited. Independent of --connect (a safety cue, not the opt-in footer).
-        // Reuse the cue already computed for the contested-outcome downgrade above.
-        if (askSourceConflictCue) io.stderr(`${askSourceConflictCue}\n`);
-        // SB-3: a readable second-brain provenance footer the user can
-        // scan — reuses the grounding already ranked this turn (no extra
-        // search), only the strongest hits, shared formatter with `today`.
-        if (options.connect) {
-          const section = formatConnectionsSection(buildAskConnections({
-            episodes: episodeHits,
-            notes: scored.map((r) => ({ file: r.file, score: r.score, text: r.chunk.text }))
-          }));
-          if (section.length > 0) {
-            io.stdout(section);
-          }
-          // Explicit [[wiki-link]] neighbours of the grounded notes — the user-
-          // authored connections embeddings miss. Best-effort: a missing/unreadable
-          // notes dir or ad-hoc-only grounding just yields no footer.
-          try {
-            const groundedNoteFiles = [...new Set(scored.map((r) => r.file))];
-            const graph = await loadNoteLinkGraph(resolveNotesDir(process.env as Record<string, string | undefined>));
-            const graphSection = formatGraphLinksSection(selectGraphConnections(graph, groundedNoteFiles));
-            if (graphSection.length > 0) {
-              io.stdout(graphSection);
-            }
-          } catch {
-            // no notes dir / unreadable graph — skip the link footer silently
-          }
-        }
-      }
+      await finalizeAndRenderAsk({
+        answerLogprobs,
+        appliedStrategy,
+        appliedStrategyId,
+        askRetrieval,
+        askRunId,
+        askStages,
+        citationGate,
+        collectedAnswer,
+        decompositionSignals,
+        embedModel,
+        episodeHits,
+        groundedVerdictLabel,
+        io,
+        matchedMemories,
+        model,
+        noteFileCount,
+        notesDir,
+        openTasks,
+        options,
+        pendingReminders,
+        probationSuggestion,
+        query,
+        refusalAnswer,
+        scored,
+        sourceCheck,
+        splitClauses,
+        subqueryEmbeddings,
+        toolsUsed,
+        upcomingEvents
+      });
     });
 }
