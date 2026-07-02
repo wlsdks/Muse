@@ -363,7 +363,11 @@ export class AgentRuntime {
         maxOutputTokens: this.defaults?.maxOutputTokens,
         temperature: this.defaults?.temperature,
         tools,
-        ...logprobsFromInput(layeredContext.input)
+        ...logprobsFromInput(layeredContext.input),
+        // Thread the run's cancellation into the model HTTP call itself —
+        // without this the signal is only checked BETWEEN steps and an
+        // in-flight generation can't be interrupted.
+        ...(layeredContext.input.signal ? { signal: layeredContext.input.signal } : {})
       };
       const execution = isPlanExecuteMode(layeredContext.input.metadata)
         ? await executePlanExecuteLoopFn(this.modelLoopRunner(), layeredContext, selected.provider, loopRequest)
@@ -425,7 +429,8 @@ export class AgentRuntime {
         maxOutputTokens: this.defaults?.maxOutputTokens,
         temperature: this.defaults?.temperature,
         tools,
-        ...logprobsFromInput(layeredContext.input)
+        ...logprobsFromInput(layeredContext.input),
+        ...(layeredContext.input.signal ? { signal: layeredContext.input.signal } : {})
       };
       let execution: ModelLoopExecution;
       const isPlanExecuteRun = isPlanExecuteMode(layeredContext.input.metadata);

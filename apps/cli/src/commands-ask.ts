@@ -1168,6 +1168,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               ...(process.env.MUSE_LOGPROBS === "1" || process.env.MUSE_LOGPROBS === "true" ? { logprobs: true } : {}),
               ...(webSearchPolicy ? { metadata: { webSearchPolicy } } : {}),
               model,
+              // Ctrl-C aborts the in-flight HTTP call itself (Ollama stops
+              // generating), not just the client-side chunk loop.
+              signal,
               // Grounding-first answer temperature, set explicitly so the
               // direct (no-tools) stream doesn't inherit the model's high
               // Ollama default (gemma4 ships 1.0).

@@ -101,6 +101,14 @@ export interface ModelRequest {
   readonly maxOutputTokens?: number;
   readonly metadata?: JsonObject;
   /**
+   * Cooperative cancellation for THIS model call. Adapters hand it to their
+   * HTTP `fetch` (composed with the non-streaming safety-cap timeout — see
+   * `modelCallSignal`), so an in-flight generation aborts immediately when
+   * the caller cancels instead of waiting for the between-step check. An
+   * abort surfaces as a NON-retryable ModelProviderError.
+   */
+  readonly signal?: AbortSignal;
+  /**
    * JSON Schema the model output MUST conform to — native structured output
    * (constrained decoding), not parse-and-hope. Adapters of providers that
    * declare `structuredOutput` translate it to the wire format (Ollama
@@ -261,7 +269,7 @@ export interface DiagnosticModelProviderOptions {
   readonly models?: readonly string[];
 }
 
-export { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus } from "./provider-base.js";
+export { DEFAULT_MODEL_CALL_TIMEOUT_MS, fetchOrThrowAsProviderError, isRetryableHttpStatus, modelCallSignal, ModelProviderError, OpenAICompatibleProvider, resolveModelCallTimeoutMs } from "./provider-base.js";
 export { createLeadingThinkStripper, recoverToolArgsJson, sanitizeLoneSurrogates, sanitizeToolCallName, stripLeadingThinkBlock } from "./provider-shared.js";
 export { DiagnosticModelProvider } from "./adapter-diagnostic.js";
 export { OpenAIProvider, OpenRouterProvider } from "./adapter-openai.js";

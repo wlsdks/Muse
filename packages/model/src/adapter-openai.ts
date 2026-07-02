@@ -16,7 +16,7 @@
 
 import { truncateErrorBody } from "@muse/shared";
 
-import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus } from "./provider-base.js";
+import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus, fetchOrThrowAsProviderError, modelCallSignal } from "./provider-base.js";
 import { parseJson } from "./provider-shared.js";
 import {
   fromOpenAIResponsesResponse,
@@ -65,15 +65,17 @@ export class OpenAIProvider extends OpenAICompatibleProvider {
     const url = `${this.wire.baseUrl}/responses`;
     const body = JSON.stringify(toOpenAIResponsesRequest(request, this.wire.defaultModel, policy));
 
-    const response = await this.wire.fetchImpl(url, {
+    const signal = modelCallSignal(request.signal);
+    const response = await fetchOrThrowAsProviderError(this.wire.fetchImpl, this.id, this.wire.baseUrl, "OpenAI Responses", url, {
       body,
       headers: {
         "content-type": "application/json",
         ...(this.wire.apiKey ? { authorization: `Bearer ${this.wire.apiKey}` } : {}),
         ...this.wire.headers
       },
-      method: "POST"
-    });
+      method: "POST",
+      ...(signal ? { signal } : {})
+    }, request.signal);
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");
@@ -106,15 +108,17 @@ export class OpenAIProvider extends OpenAICompatibleProvider {
     const url = `${this.wire.baseUrl}/responses`;
     const body = JSON.stringify({ ...toOpenAIResponsesRequest(request, this.wire.defaultModel, policy), stream: true });
 
-    const response = await this.wire.fetchImpl(url, {
+    const signal = modelCallSignal(request.signal, { streaming: true });
+    const response = await fetchOrThrowAsProviderError(this.wire.fetchImpl, this.id, this.wire.baseUrl, "OpenAI Responses", url, {
       body,
       headers: {
         "content-type": "application/json",
         ...(this.wire.apiKey ? { authorization: `Bearer ${this.wire.apiKey}` } : {}),
         ...this.wire.headers
       },
-      method: "POST"
-    });
+      method: "POST",
+      ...(signal ? { signal } : {})
+    }, request.signal);
 
     if (!response.ok) {
       const errBody = await response.text().catch(() => "");

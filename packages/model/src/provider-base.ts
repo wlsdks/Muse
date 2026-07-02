@@ -85,11 +85,27 @@ export async function fetchOrThrowAsProviderError(
   baseUrl: string,
   label: string,
   url: string,
-  init: RequestInit
+  init: RequestInit,
+  callerSignal?: AbortSignal
 ): Promise<Response> {
   try {
     return await fetchImpl(url, init);
   } catch (cause) {
+    // A caller-initiated abort (ESC, run teardown) is a deliberate stop —
+    // NOT retryable, or the retry/fallback layer would resurrect the very
+    // call the user just cancelled.
+    if (callerSignal?.aborted) {
+      throw new ModelProviderError(providerId, `${label} request cancelled by the caller`, false);
+    }
+    // The safety-cap timeout (modelCallSignal) fires as a TimeoutError — a
+    // hung socket / wedged server, transient like a connection failure.
+    if (cause instanceof Error && cause.name === "TimeoutError") {
+      throw new ModelProviderError(
+        providerId,
+        `${label} request to ${baseUrl} timed out (MUSE_MODEL_TIMEOUT_MS, default ${DEFAULT_MODEL_CALL_TIMEOUT_MS.toString()}ms) — the server accepted the connection but never answered`,
+        true
+      );
+    }
     const detail = cause instanceof Error ? cause.message : String(cause);
     const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/|$)/iu.test(baseUrl);
     const hint = isLoopback
@@ -97,6 +113,46 @@ export async function fetchOrThrowAsProviderError(
       : " — endpoint unreachable; check the URL and network";
     throw new ModelProviderError(providerId, `${label} request to ${baseUrl} failed: ${detail}${hint}`, true);
   }
+}
+
+/**
+ * Safety cap for a NON-streaming model HTTP call. A hung socket (Ollama
+ * wedged mid-restart, a dead proxy) otherwise blocks `generate()` forever —
+ * the agent loop's between-step signal check never runs, freezing the turn
+ * and every daemon tick behind it. Generous by default so a slow legitimate
+ * local generation is never killed; `MUSE_MODEL_TIMEOUT_MS=0` disables.
+ */
+export const DEFAULT_MODEL_CALL_TIMEOUT_MS = 300_000;
+
+export function resolveModelCallTimeoutMs(env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const raw = env.MUSE_MODEL_TIMEOUT_MS?.trim();
+  if (raw === undefined || raw.length === 0 || !/^\d+$/u.test(raw)) {
+    return DEFAULT_MODEL_CALL_TIMEOUT_MS;
+  }
+  const parsed = Number(raw);
+  return parsed === 0 ? undefined : parsed;
+}
+
+/**
+ * The AbortSignal an adapter should hand to `fetch` for a model call:
+ * the caller's cancellation signal (ESC / run teardown) composed with the
+ * safety-cap timeout. STREAMING calls get the caller signal only — the
+ * stream-idle-timeout layer owns stall protection there, and a total cap
+ * would kill legitimately long streams.
+ */
+export function modelCallSignal(
+  callerSignal: AbortSignal | undefined,
+  options: { readonly streaming?: boolean; readonly env?: NodeJS.ProcessEnv } = {}
+): AbortSignal | undefined {
+  if (options.streaming) {
+    return callerSignal;
+  }
+  const timeoutMs = resolveModelCallTimeoutMs(options.env);
+  if (timeoutMs === undefined) {
+    return callerSignal;
+  }
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
 }
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -129,11 +185,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
+    const signal = modelCallSignal(request.signal);
     const response = await this.fetchOrThrow(`${this.baseUrl}/chat/completions`, {
       body: JSON.stringify(toOpenAIChatRequest(request, this.defaultModel)),
       headers: this.requestHeaders(),
-      method: "POST"
-    });
+      method: "POST",
+      ...(signal ? { signal } : {})
+    }, request.signal);
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
@@ -162,12 +220,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     let response: Response;
+    const signal = modelCallSignal(request.signal, { streaming: true });
     try {
       response = await this.fetchOrThrow(`${this.baseUrl}/chat/completions`, {
         body: JSON.stringify({ ...toOpenAIChatRequest(request, this.defaultModel), stream: true }),
         headers: this.requestHeaders(),
-        method: "POST"
-      });
+        method: "POST",
+        ...(signal ? { signal } : {})
+      }, request.signal);
     } catch (cause) {
       yield {
         error: cause instanceof ModelProviderError
@@ -215,8 +275,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
     yield* parseOpenAIStream(this.id, request.model, response.body);
   }
 
-  private async fetchOrThrow(url: string, init: RequestInit): Promise<Response> {
-    return fetchOrThrowAsProviderError(this.fetchImpl, this.id, this.baseUrl, "OpenAI-compatible", url, init);
+  private async fetchOrThrow(url: string, init: RequestInit, callerSignal?: AbortSignal): Promise<Response> {
+    return fetchOrThrowAsProviderError(this.fetchImpl, this.id, this.baseUrl, "OpenAI-compatible", url, init, callerSignal);
   }
 
   private requestHeaders(): Record<string, string> {

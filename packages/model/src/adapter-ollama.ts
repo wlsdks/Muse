@@ -22,7 +22,7 @@ import { isWellFormedBase64 } from "./base64-image.js";
 import {
   localModelCapabilities
 } from "./provider-wire.js";
-import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus } from "./provider-base.js";
+import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus, modelCallSignal } from "./provider-base.js";
 import { createLeadingThinkStripper, parseJson, recoverToolArgsJson, sanitizeToolCallName, stripLeadingThinkBlock } from "./provider-shared.js";
 import type {
   ModelEvent,
@@ -101,11 +101,13 @@ export class OllamaProvider extends OpenAICompatibleProvider {
 
   override async generate(request: ModelRequest): Promise<ModelResponse> {
     const body = this.buildNativeChatBody(request, false);
+    const signal = modelCallSignal(request.signal);
     const resp = await this.nativeFetchOrThrow(`${this.nativeBaseUrl}/api/chat`, {
       body: JSON.stringify(body),
       headers: { "content-type": "application/json" },
-      method: "POST"
-    });
+      method: "POST",
+      ...(signal ? { signal } : {})
+    }, request.signal);
     if (!resp.ok) {
       throw await this.buildNativeError(request, resp, "/api/chat");
     }
@@ -161,12 +163,14 @@ export class OllamaProvider extends OpenAICompatibleProvider {
   override async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const body = this.buildNativeChatBody(request, true);
     let resp: Response;
+    const signal = modelCallSignal(request.signal, { streaming: true });
     try {
       resp = await this.nativeFetchOrThrow(`${this.nativeBaseUrl}/api/chat`, {
         body: JSON.stringify(body),
         headers: { "content-type": "application/json" },
-        method: "POST"
-      });
+        method: "POST",
+        ...(signal ? { signal } : {})
+      }, request.signal);
     } catch (cause) {
       yield {
         error: cause instanceof ModelProviderError
@@ -304,7 +308,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     yield { response: final, type: "done" };
   }
 
-  private async nativeFetchOrThrow(url: string, init: RequestInit): Promise<Response> {
+  private async nativeFetchOrThrow(url: string, init: RequestInit, callerSignal?: AbortSignal): Promise<Response> {
     // Opt-in latency trace (MUSE_MODEL_TRACE=1): one line per chat call with a
     // sequence id + start/end + duration, so a turn's call pattern (how many,
     // sequential vs overlapping) is visible without a profiler.
@@ -324,6 +328,19 @@ export class OllamaProvider extends OpenAICompatibleProvider {
       return response;
     } catch (cause) {
       if (trace) process.stderr.write(`[modeltrace] #${id.toString()} ERR   +${(Date.now() - t0).toString()}ms\n`);
+      // A caller abort is a deliberate stop — non-retryable, or the retry
+      // layer would resurrect the cancelled call.
+      if (callerSignal?.aborted) {
+        throw new ModelProviderError(this.id, "Ollama request cancelled by the caller", false);
+      }
+      // The non-streaming safety-cap timeout — a wedged server, transient.
+      if (cause instanceof Error && cause.name === "TimeoutError") {
+        throw new ModelProviderError(
+          this.id,
+          `Ollama request to ${this.nativeBaseUrl}/api/chat timed out (MUSE_MODEL_TIMEOUT_MS) — the server accepted the connection but never answered`,
+          true
+        );
+      }
       // fetch() rejects with no HTTP status on a connection-level
       // failure — Ollama not running, restarting, or evicting a
       // cold-loaded model. Transient like a 5xx, so retryable

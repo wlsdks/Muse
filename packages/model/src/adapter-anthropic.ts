@@ -7,7 +7,7 @@
 
 import { truncateErrorBody } from "@muse/shared";
 
-import { fetchOrThrowAsProviderError, ModelProviderError, isRetryableHttpStatus } from "./provider-base.js";
+import { fetchOrThrowAsProviderError, ModelProviderError, isRetryableHttpStatus, modelCallSignal } from "./provider-base.js";
 import { parseJson } from "./provider-shared.js";
 import {
   anthropicModelCapabilities,
@@ -60,11 +60,13 @@ export class AnthropicProvider implements ModelProvider {
     const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
       ?? { enabled: false, maxUses: 5 };
 
+    const signal = modelCallSignal(request.signal);
     const response = await fetchOrThrowAsProviderError(this.fetchImpl, this.id, this.baseUrl, "Anthropic", `${this.baseUrl}/messages`, {
       body: JSON.stringify(toAnthropicRequest(request, this.defaultModel, policy)),
       headers: this.requestHeaders(),
-      method: "POST"
-    });
+      method: "POST",
+      ...(signal ? { signal } : {})
+    }, request.signal);
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
