@@ -19,7 +19,9 @@ it before tagging anything.
   patch to `0`, so reserve it (`bump-minor-pre-major` — breaking bumps minor,
   not major, while in `0.x`).
 - **`1.0.0`** — cut only when the stability gate below is fully met.
-- Releases are **deliberate, human-cut snapshots**, never automated per commit.
+- Releases are **deliberate snapshots**, never automated per commit — but they
+  should be **frequent**: cut a PATCH whenever a milestone lands (진안 standing
+  guidance, 2026-07-02). See [Release cadence](#release-cadence).
 
 ## Why `0.x` and not `-beta`
 
@@ -55,6 +57,22 @@ Reserve MINOR for the two escalators above, because bumping it resets patch to
 **config / env vars** (`MUSE_*`), and the **on-disk store formats** under
 `~/.muse`. A breaking change to any of those is what escalates a release to
 MINOR.
+
+## Release cadence
+
+Tags should be **many and small, not rare and huge** (진안, 2026-07-02 — after
+v0.1.2→v0.2.0 silently accumulated 305 commits that deserved ~6 intermediate
+patch cuts). A release stays deliberate — someone runs `/release` — but the
+*trigger* is proactive, not "only when asked":
+
+- **Cut (or propose) a PATCH when a milestone completes**: a loop theme winds
+  down, a multi-slice feature ships end-to-end (an X-3 / P-series / PTC-sized
+  wave), or a user-visible fix cluster lands.
+- **Don't let more than ~30 user-facing commits pile up untagged.** When a
+  session notices the backlog of untagged work crossing that line, propose a
+  cut to 진안 (or cut directly when already authorized in-session).
+- Frequent PATCH cuts are cheap by design: the routine-patch gate is fast
+  (build + touched-package tests), and the patch number is meant to climb.
 
 ## The `1.0.0` gate
 

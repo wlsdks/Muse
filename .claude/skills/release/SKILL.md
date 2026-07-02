@@ -1,6 +1,6 @@
 ---
 name: release
-version: 1.2.0
+version: 1.3.0
 description: Use when 진안 wants to cut/tag a Muse release or asks anything about the next version — "릴리스 찍어줘", "release 만들자", "버전 올려줘", "v0.2 내자", "patch 올려줘", "다음 버전 뭐야", "changelog/릴리스 노트 만들어줘", "GitHub release 올려줘", "이번엔 minor야 patch야". Reads the full commit history since the last tag, AUTO-DECIDES patch vs minor vs major (patch climbs by default, minor only on a breaking public-surface change or an explicit milestone — per docs/VERSIONING.md), writes curated user-facing release notes from those commits, then bumps + changelogs + commits + tags + pushes + creates the GitHub Release (pre-release while 0.x). Muse-specific.
 ---
 
@@ -26,9 +26,12 @@ with worked examples and the quality bar, live in
 Step 1 and Step 3; it is the part that makes the output identical-quality on
 every run.
 
-**Releases are deliberate, human-cut milestones — never automated per commit.**
-`main` iterates continuously (autonomous loops included), so a release is a
-snapshot of a chosen *known-good* commit, not a reaction to every push.
+**Releases are deliberate, human-cut milestones — never automated per commit,
+but FREQUENT.** `main` iterates continuously (autonomous loops included), so a
+release is a snapshot of a chosen *known-good* commit, not a reaction to every
+push. Per `docs/VERSIONING.md §Release cadence` (진안, 2026-07-02): cut or
+propose a PATCH whenever a milestone wave completes, and never let ~30+
+user-facing commits pile up untagged — many small tags beat one huge one.
 
 ## Step 0 — orient
 
