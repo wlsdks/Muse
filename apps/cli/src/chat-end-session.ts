@@ -40,7 +40,7 @@ import {
 } from "@muse/agent-core";
 import { readEpisodes, upsertEpisode, vacuumEpisodes, type PersistedEpisode } from "@muse/stores";
 import { parseBoolean, resolveEpisodesFile } from "@muse/autoconfigure";
-import { redactSecretsInText } from "@muse/shared";
+import { errorMessage, redactSecretsInText } from "@muse/shared";
 
 // Pull the ModelProvider shape from the summariser's own options so
 // @muse/cli stays off a direct @muse/model dependency — the
@@ -239,8 +239,4 @@ export async function captureEndOfSessionEpisode(options: CaptureEndOfSessionOpt
   } catch (cause) {
     return { reason: `persist failed: ${errorMessage(cause)}`, status: "skipped" };
   }
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

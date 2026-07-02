@@ -12,7 +12,7 @@
  * implementations stay in `./manager.ts` + `./transport.ts`.
  */
 
-import { createRunId } from "@muse/shared";
+import { clamp, createRunId } from "@muse/shared";
 
 import type {
   McpReconnectPolicy,
@@ -261,10 +261,6 @@ function compareServers(left: McpServer, right: McpServer): number {
 
 function uniqueStrings(values: readonly string[]): readonly string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {

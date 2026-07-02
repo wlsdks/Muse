@@ -1,4 +1,6 @@
-import type { JsonObject } from "@muse/shared";
+import { errorMessage, type JsonObject } from "@muse/shared";
+
+export { errorMessage };
 
 /**
  * Shared shape-readers for loopback MCP tool implementations.
@@ -35,13 +37,6 @@ export function readJsonObject(args: JsonObject, key: string): Record<string, un
     return undefined;
   }
   return value as Record<string, unknown>;
-}
-
-export function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }
 
 /**

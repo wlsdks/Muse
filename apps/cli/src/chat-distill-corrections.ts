@@ -33,6 +33,7 @@ import {
   type SessionTurnLine
 } from "@muse/agent-core";
 import { createGateEmbedder, resolvePlaybookFile } from "@muse/autoconfigure";
+import { errorMessage } from "@muse/shared";
 import { adjustPlaybookReward, queryPlaybook, recordPlaybookStrategy, type PlaybookEntry } from "@muse/stores";
 
 import { readLastChatHistory, readSessionBoundaries } from "./chat-history.js";
@@ -258,8 +259,7 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
       await recordPlaybookStrategy(playbookFile, {
         createdAt: now().toISOString(),
         id: idFactory(),
-        // Provenance (B1 §4): grounded in the real correction; keep it as the
-        // "why" `muse learned` shows.
+        // Grounded in the real correction; kept as the "why" `muse learned` shows.
         origin: "grounded",
         source: exchange.correction,
         text: distilled.text,
@@ -285,8 +285,4 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
     };
   }
   return { decayed, lowConsistencyRejected, reinforced, status: "recorded", strategies: recorded };
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

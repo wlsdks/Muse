@@ -12,8 +12,9 @@
  */
 
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
+
+import { resolveHomeDir } from "@muse/shared";
 
 import { isRecord } from "./credential-store.js";
 
@@ -31,20 +32,12 @@ export interface PlaybookInjectionRecord {
   readonly ids: readonly string[];
 }
 
-function resolveHome(): string {
-  const envHome = process.env.HOME?.trim();
-  if (envHome && envHome.length > 0) return envHome;
-  const sysHome = homedir().trim();
-  if (sysHome.length > 0) return sysHome;
-  throw new Error("Cannot resolve home directory — HOME is empty and os.homedir() returned no value");
-}
-
 export function playbookInjectionsPath(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.MUSE_PLAYBOOK_INJECTIONS_FILE?.trim();
   if (override && override.length > 0) {
     return override;
   }
-  return path.join(resolveHome(), ".muse", "playbook-injections.jsonl");
+  return path.join(resolveHomeDir(), ".muse", "playbook-injections.jsonl");
 }
 
 export async function appendPlaybookInjection(

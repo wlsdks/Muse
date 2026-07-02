@@ -33,6 +33,7 @@ import {
   type SelectFireablePatternsOptions
 } from "@muse/memory";
 import type { MessagingProviderRegistry } from "@muse/messaging";
+import { errorMessage } from "@muse/shared";
 
 import { sendWithRetry } from "@muse/mcp-shared";
 import { isPatternDismissed, isPatternOnCooldown, readPatternsFired, recordPatternFired } from "@muse/stores";
@@ -138,8 +139,4 @@ export async function runDuePatternNotices(options: RunDuePatternNoticesOptions)
   }
 
   return { delivered, errors, fireable: fireable.length, fired };
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

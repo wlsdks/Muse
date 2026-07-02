@@ -1,10 +1,12 @@
 import type { AgentRunInput, AgentRunResult } from "@muse/agent-core";
 import { neutralizeInjectionSpans } from "@muse/agent-core";
 import { trimToolOutput } from "@muse/memory";
-import { createRunId } from "@muse/shared";
+import { createRunId, errorMessage } from "@muse/shared";
 import type { OrchestrationStepResult } from "./index.js";
 import { parseHandoffPart } from "./worker-result.js";
 import { joinMessages } from "./workers.js";
+
+export { errorMessage };
 
 /** The user's request to verify the final answer against — the latest user turn,
  *  or the whole transcript if there is none. */
@@ -207,8 +209,4 @@ function capWorkerOutput(workerId: string, output: string, cap: number | undefin
     hint: `agent ${workerId} output trimmed by orchestrator fan-in`,
     maxChars: cap
   }).output;
-}
-
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "unknown error";
 }

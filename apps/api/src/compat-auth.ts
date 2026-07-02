@@ -5,7 +5,7 @@
  */
 
 import type { LoginResult, MuseAuth } from "@muse/auth";
-import type { JsonObject } from "@muse/shared";
+import { errorMessage, type JsonObject } from "@muse/shared";
 import type { FastifyReply } from "fastify";
 import {
   invalid,
@@ -76,6 +76,4 @@ export function toCompatUserResponse(user: LoginResult["user"]): JsonObject {
   };
 }
 
-export function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
+export { errorMessage };

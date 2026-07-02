@@ -26,6 +26,8 @@
  * documented Gemini Live frames.
  */
 
+import { isRecord } from "@muse/shared";
+
 import type { LiveVoiceEvent } from "./live-voice.js";
 
 export interface GeminiLiveSetupOptions {
@@ -173,10 +175,6 @@ export function parseGeminiLiveServerFrame(rawJson: string): readonly LiveVoiceE
     events.push({ type: "turn-complete" });
   }
   return events;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

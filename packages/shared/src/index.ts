@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { homedir } from "node:os";
 
 import { redactSecrets } from "./secret-redaction.js";
 
@@ -227,6 +228,20 @@ export function formatErrorForTerminal(cause: unknown, cap: number = DEFAULT_ERR
   return truncateErrorBody(stripUntrustedTerminalChars(message), cap);
 }
 
+/**
+ * Extract a human-readable message from an unknown thrown value.
+ * An `Error` instance yields its `.message`; anything else falls
+ * back to `fallback` when given, else `String(cause)` (so a thrown
+ * string / number / plain object still produces useful text instead
+ * of a generic placeholder).
+ */
+export function errorMessage(cause: unknown, fallback?: string): string {
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+  return fallback ?? String(cause);
+}
+
 export function truncateErrorBody(body: string | undefined, cap: number = DEFAULT_ERROR_BODY_CAP): string {
   if (!body) {
     return "";
@@ -310,4 +325,18 @@ export function finiteOr(value: number | undefined, fallback: number): number {
 
 export function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
+}
+
+/**
+ * Resolve the user's home directory, preferring `$HOME` and falling
+ * back to `os.homedir()`. Throws when both are empty — silently
+ * writing under a blank/root-relative path is worse than a loud
+ * failure for `~/.muse/*` state files.
+ */
+export function resolveHomeDir(): string {
+  const envHome = process.env.HOME?.trim();
+  if (envHome && envHome.length > 0) return envHome;
+  const sysHome = homedir().trim();
+  if (sysHome.length > 0) return sysHome;
+  throw new Error("Cannot resolve home directory — HOME is empty and os.homedir() returned no value");
 }
