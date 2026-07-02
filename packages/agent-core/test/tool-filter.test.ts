@@ -463,7 +463,7 @@ describe("inflection-aware keyword matching (agrees with @muse/tools selection)"
   });
 
   it("does NOT starve a task-relevant OPTIONAL tool when always-on mandatory tools alone fill the cap", () => {
-    // The structural bug computer-control fires 1-4 chased: a large always-on
+    // The structural bug this guards against: a large always-on
     // mandatory set (core/untagged tools, here 7) exceeds the cap of 6, so the
     // optional tail is dropped ENTIRELY (remaining=0) — making file_edit, the
     // tool the user's "fix the file" task NEEDS, INVISIBLE to the model. The fix

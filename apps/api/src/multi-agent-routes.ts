@@ -585,8 +585,8 @@ export async function buildTieredOrchestration(
 }
 
 /**
- * A worker that runs `runCascade` (fire 5) over the agent runtime: the fast
- * model answers first with logprobs (fire 10), `summarizeTokenConfidence`
+ * A worker that runs `runCascade` over the agent runtime: the fast
+ * model answers first with logprobs, `summarizeTokenConfidence`
  * scores it, and a low / unmeasurable mean-logprob escalates ONCE to the heavy
  * model. Bounded — never a loop. Confidence drives the escalation, so a strong
  * fast answer pays only the fast model (the latency win) while a weak one still

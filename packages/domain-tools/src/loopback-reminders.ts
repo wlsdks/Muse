@@ -63,7 +63,7 @@ export interface RemindersMcpServerOptions {
   /**
    * When set, a `dueAt` phrase the deterministic parser CAN'T resolve records a
    * `time-parse` weakness here — the agent-path sibling of the CLI `calendar add/edit`
-   * producer (fire 26). Omitted ⇒ no whetstone signal (back-compat).
+   * producer. Omitted ⇒ no whetstone signal (back-compat).
    */
   readonly weaknessesFile?: string;
 }

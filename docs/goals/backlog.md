@@ -68,10 +68,7 @@ realistic partial hedge. Deeper veracity needs a human/product call, not an auto
 
 - ✓ recall-conflict staleness demotion (detectStaleMarker + demoteStaleHits, @muse/recall conflict.ts) — recall-spine fire 8: high-precision past/superseded markers (예전에/지금은 아니/used to/no longer) demote a stale entry below its current counterpart so a correction recalls the CURRENT value top-1 (addresses confident-wrong). Pure, lossless (demote not drop), 32/32 conflict tests, ④b PASS + precision-tightened. UNWIRED — production wiring into the recall path is the follow-up.
 
-- ★ 응집도 트랙(C+) 명령 표면 감사 — recall-spine fire 7: **102개 command 모듈**. 골든패스 온전(ask/remember/recall/memory[+forget 서브명령]/chat `/forget`). 정리 후보(분석/수치 노이즈, 대부분 테스트 0): benford·diversity·keywords·trend·latency·analytics (전부 test=없음, 37–59줄). 결정론 작업이나 behavior-preserving 검증에 cli 테스트 스위트(deps) 필요 → 격리 worktree에서 싸게 검증 불가, **메인-레포 검증 fire**여야. loop-sized 슬라이스:
-  - ◦ (C+a) benford/diversity/keywords/trend/latency 중 1개를 commander 등록에서 HIDE(handler 보존, help/registration만 제거) + 파서 테스트로 "더 이상 노출 안 됨" 검증 (cli, command-consolidation). 메인-레포 검증.
-  - ◦ (C+b) god-file `apps/cli/src/commands-ask.ts`(2781줄)에서 회상-표시/grounding 한 덩어리를 behavior-preserving 추출 → 기존 cli 테스트 전부 green 유지로 검증 (cli, god-file-split). 메인-레포 검증.
-  - 주의: commands-ask.ts는 동시 루프(codebase-quality 등)도 만질 수 있어 merge 충돌 위험 — 추출 전 main churn 확인.
+- ✓ 응집도 트랙(C+) CLOSED by the 2026-07-02 quality initiative (진안 attended, 전 웨이브 푸시됨): 노이즈 명령 6종(benford·diversity·keywords·trend·latency·analytics)은 HIDE가 아니라 **삭제**(승인됨, ~1.1k LOC); commands-ask.ts는 5개 스테이지 추출로 2306→1393 LOC (조기-return/lazy-holder 구간은 의도적 인라인 보존); 추가로 council/knowledge-recall/playbook/chat-grounding/commands-daemon/autoconfigure-index 분해 + loopback 패밀리 통일 + barrel 큐레이션(−205 public symbols) + 주석마커 가드(`pnpm lint:comments`, CI 배선). 상세는 CHANGELOG [Unreleased].
 
 - ✓ recall-quality golden-set eval (personal-memory recall, KO facts/prefs/goal + temporal-correction) — recall-spine fire 1
 - ✓ recall-quality diagnostic: split retrieval hit@1 from confidence gate — recall-spine fire 2 (finding: 43% is 100% under-confidence, retrieval hit@1=5/5)

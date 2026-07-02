@@ -9,7 +9,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 // End-to-end proof of CROSS-SESSION self-improvement on the fixed local model:
 // an experience persisted in one CLI session must be RECALLED by a fresh process
-// in the next — the whole point of file-backing the summary store (fires 19/21).
+// in the next — the whole point of file-backing the summary store.
 // Before that fix the CLI used an in-memory store that was empty every process,
 // so this chain (persist → retrieve) silently did nothing. Deterministic: a stub
 // embedder (no Ollama) gives the query a high cosine to the relevant narrative and

@@ -114,7 +114,7 @@ export async function finalizeGatedChatAnswer(args: FinalizeGatedChatAnswerArgs)
   const semanticConflictCue = args.embed
     ? await semanticConflictCueFromMatches(args.matches, args.embed)
     : undefined;
-  // ALCE per-citation support + recall (parity with `muse ask`, fires 15-16):
+  // ALCE per-citation support + recall (parity with `muse ask`):
   // a cited source that doesn't support its sentence, or a citable claim with no
   // citation. Computed on the user's OWN grounded matches.
   const precisionCue = chatCitationPrecisionNotice(deFabbed, args.matches);

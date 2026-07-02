@@ -248,7 +248,7 @@ const KO_DATE_RE = /(\d{1,2})\s*월\s*(\d{1,2})\s*일/gu;
  * ("2026-09-14"), English prose ("September 14"), Korean ("9월 14일"). Binds month+day
  * as ONE key so a drifted calendar/deadline DAY can't be waved through by an unrelated
  * same-digit elsewhere in the evidence (the bare-number guard's blind spot). Year is
- * dropped (the number guard owns it). The chat date gate (fire 31) shares this one copy.
+ * dropped (the number guard owns it). The chat date gate shares this one copy.
  */
 export function monthDayKeys(text: string): Set<string> {
   const out = new Set<string>();

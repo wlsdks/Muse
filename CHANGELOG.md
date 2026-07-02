@@ -8,6 +8,34 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+### Changed — 2026-07-02 repo-wide quality initiative
+
+- **CI**: a workspace-wide gate (`ci.yml`: lint + comment-marker guard +
+  full build/test) now protects every push — previously only `harness/**`
+  was covered. `.nvmrc` aligned to node 24.
+- **Structure**: seven god files decomposed behavior-preservingly on a
+  re-export-hub pattern (agent-core `council`/`knowledge-recall`/`playbook`,
+  autoconfigure `index`→`runtime-assembly`, cli
+  `chat-grounding`/`commands-daemon`/`commands-ask`); the loopback tool-server
+  family unified under `@muse/domain-tools` (transport stays in `@muse/mcp`).
+- **Hygiene**: ~260 iteration/history markers swept from source comments
+  (now guarded by `pnpm lint:comments`); duplicated `errorMessage`/
+  `resolveHomeDir`/`isRecord`/`clamp` consolidated into `@muse/shared`;
+  `domain-tools` + `stores` barrels curated to named exports
+  (public surface −205 symbols); knip dead exports removed; `apps/web`
+  brought under eslint.
+- **Removed**: six noise analytics CLI commands
+  (`benford`/`diversity`/`keywords`/`trend`/`latency`/`analytics`, ~1.1k LOC).
+- **Dependencies**: latest-stable across the tree (react 19.2.7, vitest
+  4.1.9, eslint 10.6, fastify 5.9, ink 7.1, vite 8.1 …), dev majors
+  `@types/node` 26 + `testcontainers` 12, and **commander 15** (zero source
+  changes needed); ten identical vitest configs collapsed into
+  `vitest.shared.ts`.
+- **Eval integrity**: the domain-tools split had silently broken 5
+  `verify-*.mjs` batteries, a broad-smoke case, and 232 of 365
+  `eval:tools` cases (skips masked as green) — all restored
+  (eval:tools 360/365 live, smoke:broad 52/52, smoke:live 23/0).
+
 ## [0.1.2] - 2026-06-22
 
 A CLI-and-companion polish release on top of `0.1.1` — **early /
