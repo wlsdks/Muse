@@ -421,9 +421,9 @@ describe("autoconfigure", () => {
   });
 
   it("wires working-budget compaction into the AgentRuntime by default", async () => {
-    // added workingBudgetTokens to ConversationTrimOptions.
-    // Round 158 wires autoconfigure to compute it as 40% of nominal
-    // by default. We verify the soft trigger by setting a tiny
+    // autoconfigure wires workingBudgetTokens on ConversationTrimOptions,
+    // computing it as 40% of nominal by default. We verify the soft
+    // trigger by setting a tiny
     // nominal context window (200 tokens) so the working budget
     // (40% = 80 tokens) is easy to exceed with a few-message
     // conversation. The hard cap (200) is still well above what
@@ -472,6 +472,15 @@ describe("autoconfigure", () => {
     // unreached and proactive compaction is disabled.
     const assembly = createMuseRuntimeAssembly({
       env: {
+        // Disable the Context Engineering Phase 1 system-prompt
+        // injection (same reason as the sibling test above): with it
+        // on, the [Active Context] block's reminders/user-memory
+        // resolvers default to the real `~/.muse/reminders.json` and
+        // `~/.muse/user-memory.json` when no env override is given —
+        // on a lived-in dev box those files are non-empty and inflate
+        // the prompt past the 200-token hard cap, flipping this test's
+        // `hard_limit` vs `none` assertion depending on machine state.
+        MUSE_ACTIVE_CONTEXT_ENABLED: "false",
         MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "200",
         MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
         MUSE_LLM_WORKING_BUDGET_TOKENS: "0",
@@ -714,7 +723,7 @@ describe("autoconfigure", () => {
     expect(parseInteger("1000000", 100)).toBe(1000000);
   });
 
-  it("the float parsers reject lenient-garbage like parseInteger does (goal 414 sibling)", () => {
+  it("the float parsers reject lenient-garbage like parseInteger does", () => {
     // Number.parseFloat("0.5x") === 0.5, parseFloat("60s") === 60 —
     // the same unit-slip footgun parseInteger was hardened against.
     // Invalid input must hit the fallback, not silently take effect.
@@ -750,7 +759,7 @@ describe("autoconfigure", () => {
     expect(parseNonNegativeFloat("-0.01", 9)).toBe(9);
   });
 
-  it("parseBoolean accepts 'on/off' + falls back on unknown values (goal 128)", () => {
+  it("parseBoolean accepts 'on/off' + falls back on unknown values", () => {
     // Truthy set widened to include `on` for symmetry with the
     // goal-127 RuntimeSettings.getBoolean contract.
     expect(parseBoolean("on", false)).toBe(true);

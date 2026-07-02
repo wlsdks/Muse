@@ -1045,9 +1045,21 @@ describe("muse daemon — unattended self-learning tick", () => {
 
   // SUBTRACTIVE correction-decay: a NEW correction that CONTRADICTS an
   // injected strategy autonomously drops it below the inject line, unattended.
+  //
+  // lastReinforcedAt is pinned to "now" (not a fixed past date) so this
+  // fixture never crosses decayStalePlaybookRewards' 30-day staleness
+  // threshold (PLAYBOOK_DECAY_STALE_DAYS) as real calendar time passes —
+  // the daemon's disuse-decay tick runs unconditionally on every `--once`
+  // invocation (module-scope `lastDecayMs` starts undefined) whenever
+  // MUSE_SELFLEARN_ENABLED is set, independent of the contradiction
+  // classifier this test/its sibling actually exercise. Without a fresh
+  // anchor, a hardcoded createdAt eventually goes stale and the disuse tick
+  // silently shaves an extra -1 off the reward the contradiction path
+  // never touched — exactly the flake this suite must stay hermetic against.
   const seedInjected = async (env: NodeJS.ProcessEnv): Promise<void> => {
+    const now = new Date().toISOString();
     await writePlaybook(env.MUSE_PLAYBOOK_FILE!, [
-      { createdAt: "2026-06-01T00:00:00Z", id: "inj1", origin: "grounded", probation: false, reward: 3, text: "Always give a long, detailed multi-paragraph answer.", userId: "u1" }
+      { createdAt: "2026-06-01T00:00:00Z", id: "inj1", lastReinforcedAt: now, origin: "grounded", probation: false, reward: 3, text: "Always give a long, detailed multi-paragraph answer.", userId: "u1" }
     ]);
   };
 
