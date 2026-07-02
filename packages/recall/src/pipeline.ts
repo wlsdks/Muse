@@ -17,6 +17,7 @@
 import { citedSourcesIn, detectEvidenceContradictions, enforceAnswerCitations } from "@muse/agent-core";
 
 import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
+import { createCitationStreamFilter } from "./citation-stream.js";
 import { retrieveAndRankNotes } from "./ask-note-retrieval.js";
 import { notesGroundingFraming, type ScoredChunk } from "./chunks.js";
 import { loadIndex, type ReindexSummary } from "./notes-index.js";
@@ -50,6 +51,17 @@ export interface GroundedRecallRuntime {
     readonly model: string;
     readonly temperature?: number;
   }) => Promise<string>;
+  /**
+   * Token-delta streaming, when the caller's provider supports it. Optional —
+   * absent, `streamGroundedRecall` degrades to one gate-clean delta after the
+   * buffered generation.
+   */
+  readonly streamAnswer?: (args: {
+    readonly system: string;
+    readonly user: string;
+    readonly model: string;
+    readonly temperature?: number;
+  }) => AsyncIterable<string>;
 }
 
 export interface GroundedRecallInput {
@@ -109,7 +121,32 @@ function buildSystemPrompt(args: {
   ].join("\n");
 }
 
-export async function runGroundedRecall(input: GroundedRecallInput): Promise<GroundedRecallResult> {
+/**
+ * The live event stream of `streamGroundedRecall`. `answer-delta` text has
+ * already passed the LIVE citation filter — a fabricated `[from …]` never
+ * reaches a display, not even for a flash (the buffered gate then remains the
+ * authoritative pass on the full answer). The final event is always `result`.
+ */
+export type GroundedRecallEvent =
+  | {
+    readonly type: "retrieval";
+    readonly groundedChunkCount: number;
+    readonly verdict: "confident" | "ambiguous" | "none";
+    readonly notesUnavailable: boolean;
+  }
+  | { readonly type: "answer-delta"; readonly text: string }
+  | { readonly type: "result"; readonly result: GroundedRecallResult };
+
+interface PreparedRecall {
+  readonly systemPrompt: string;
+  readonly allowedNotes: readonly string[];
+  readonly scored: readonly ScoredChunk[];
+  readonly verdict: "confident" | "ambiguous" | "none";
+  readonly notesUnavailable: boolean;
+}
+
+/** Retrieval + context + prompt — everything before the model speaks. */
+async function prepareRecall(input: GroundedRecallInput): Promise<PreparedRecall> {
   const { query, sources, options, runtime } = input;
   const topK = options.topK ?? 6;
 
@@ -133,15 +170,18 @@ export async function runGroundedRecall(input: GroundedRecallInput): Promise<Gro
   ).catch(() => [] as const);
   const contextBlock = buildNoteContextBlock(retrieval.scored, contradictions, sources.notesDir);
 
-  const raw = await runtime.generateAnswer({
-    model: options.answerModel,
-    system: buildSystemPrompt({ contextBlock, framing }),
-    ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-    user: query
-  });
+  return {
+    allowedNotes: [...new Set(retrieval.scored.map((s) => relativizeNoteSource(s.file, sources.notesDir)))],
+    notesUnavailable: retrieval.notesUnavailable,
+    scored: retrieval.scored,
+    systemPrompt: buildSystemPrompt({ contextBlock, framing }),
+    verdict: framing.verdict
+  };
+}
 
-  const allowedNotes = [...new Set(retrieval.scored.map((s) => relativizeNoteSource(s.file, sources.notesDir)))];
-  const enforced = enforceAnswerCitations(stripEchoedCiteAs(raw), { notes: allowedNotes });
+/** The deterministic gates over the full raw answer — shared by both entry points. */
+function finalizeRecall(raw: string, prepared: PreparedRecall, input: GroundedRecallInput): GroundedRecallResult {
+  const enforced = enforceAnswerCitations(stripEchoedCiteAs(raw), { notes: [...prepared.allowedNotes] });
   let answer = enforced.text.trim();
   const strippedCitations = [...enforced.stripped];
 
@@ -157,19 +197,87 @@ export async function runGroundedRecall(input: GroundedRecallInput): Promise<Gro
   const citations = [...new Set(citedSourcesIn(answer))];
   const receipts = formatSourceReceipts(
     answer,
-    sources.notesDir,
-    retrieval.scored.map((s) => ({ file: relativizeNoteSource(s.file, sources.notesDir), text: s.chunk.text })),
-    query
+    input.sources.notesDir,
+    prepared.scored.map((s) => ({ file: relativizeNoteSource(s.file, input.sources.notesDir), text: s.chunk.text })),
+    input.query
   );
 
   return {
     answer,
     citations,
-    groundedChunkCount: retrieval.scored.length,
-    notesUnavailable: retrieval.notesUnavailable,
+    groundedChunkCount: prepared.scored.length,
+    notesUnavailable: prepared.notesUnavailable,
     ...(receipts !== undefined ? { receipts } : {}),
     refusal,
     strippedCitations,
-    verdict: framing.verdict
+    verdict: prepared.verdict
   };
+}
+
+/**
+ * The streaming form of the seam. Deltas pass through the LIVE citation filter
+ * (`createCitationStreamFilter` over the same `enforceAnswerCitations` set), so
+ * a fabricated citation never flashes on a display; the buffered gate then runs
+ * over the FULL answer and the final `result` event is the authoritative one
+ * (identical to `runGroundedRecall`'s). Without `runtime.streamAnswer`, the
+ * buffered generation is used and the single delta is the already-gated answer.
+ */
+export async function* streamGroundedRecall(input: GroundedRecallInput): AsyncGenerator<GroundedRecallEvent> {
+  const prepared = await prepareRecall(input);
+  yield {
+    groundedChunkCount: prepared.scored.length,
+    notesUnavailable: prepared.notesUnavailable,
+    type: "retrieval",
+    verdict: prepared.verdict
+  };
+
+  const generateArgs = {
+    model: input.options.answerModel,
+    system: prepared.systemPrompt,
+    ...(input.options.temperature !== undefined ? { temperature: input.options.temperature } : {}),
+    user: input.query
+  };
+
+  let raw = "";
+  if (input.runtime.streamAnswer) {
+    const filter = createCitationStreamFilter(
+      (span) => enforceAnswerCitations(span, { notes: [...prepared.allowedNotes] }).text
+    );
+    for await (const delta of input.runtime.streamAnswer(generateArgs)) {
+      raw += delta;
+      const safe = filter.push(delta);
+      if (safe.length > 0) {
+        yield { text: safe, type: "answer-delta" };
+      }
+    }
+    const tail = filter.flush();
+    if (tail.length > 0) {
+      yield { text: tail, type: "answer-delta" };
+    }
+    const result = finalizeRecall(raw, prepared, input);
+    yield { result, type: "result" };
+    return;
+  }
+
+  raw = await input.runtime.generateAnswer(generateArgs);
+  const result = finalizeRecall(raw, prepared, input);
+  if (result.answer.length > 0) {
+    yield { text: result.answer, type: "answer-delta" };
+  }
+  yield { result, type: "result" };
+}
+
+export async function runGroundedRecall(input: GroundedRecallInput): Promise<GroundedRecallResult> {
+  // Single implementation: the buffered form consumes the stream and returns
+  // its authoritative final event.
+  let final: GroundedRecallResult | undefined;
+  for await (const event of streamGroundedRecall(input)) {
+    if (event.type === "result") {
+      final = event.result;
+    }
+  }
+  if (!final) {
+    throw new Error("streamGroundedRecall ended without a result event");
+  }
+  return final;
 }
