@@ -79,6 +79,31 @@ realistic partial hedge. Deeper veracity needs a human/product call, not an auto
   - ◦ (3c) wire `muse doctor --calibration` to emit MUSE_GROUNDING_MIN_COSINE for the memory-recall path from 3a's larger set (conformal, KnowNo arXiv:2307.01928 — already referenced in resolveRecallConfidentAt). (cli, wiring)
   - ✅ **SHIPPED (2026-06-27): embedder-aware conformal-calibrated confidence bar — the REAL fix.** Investigation first DISPROVED the planned promoteOnMargin wiring: production memory recall is lexical (`selectMemoryFacts`, no `classifyRetrievalConfidence`), and a LIVE measurement showed promoteOnMargin is a no-op on the NOTES surface (v2-moe genuine matches top out ~0.32–0.42, BELOW the 0.45 promote floor; margin doesn't separate either — an absent scored margin 0.209). The true bug: the single hardcoded `DEFAULT_CONFIDENT_AT=0.55` was calibrated for nomic-embed-text but the shipped default is nomic-embed-text-v2-moe (compressed cosine scale) → the NOTES verdict (`notesGroundingFraming`) over-abstains. FIX: made the bar EMBEDDER-AWARE (`resolveRecallConfidentAt(env, embedModel)` + per-embedder table), with the v2-moe bar CONFORMAL-CALIBRATED over the 24-answerable/12-refuse edge corpus (`muse doctor --calibration`): raw distribution has a clean gap [0.415 max-absent, 0.460 first-clear-positive], so a **0.45** bar holds 12/12 refuses with margin AND lifts answerable coverage **15/24 → 21/24** vs 0.55 (same fabrication-safety, −6 over-abstentions). nomic STAYS 0.55 (its 0.44–0.51 distractors would leak at 0.45 — an embedder-blind bump would regress it). Threaded `embedModel` into `notesGroundingFraming` + the two `commands-ask` verdict sites; unknown embedder + every other surface fall back to the conservative 0.55 (opt-in, zero cross-surface change → agent-core 2645 + recall 510 + cli-ask 286 green). Live pass on the production ranking path (21/24 confident, 12/12 refuse-abstain); deterministic unit tests mutation-verified (v2-moe→0.55 RES RED). NOTE for later: `eval-recall-quality.mjs` still measures a `rankKnowledgeChunks→classifyRetrievalConfidence` path that production memory recall (lexical) doesn't use — realigning it (fork B) remains a separate integrity cleanup.
 
+## ★ 2026-07-02 fresh delta-scout — openclaw/hermes 최신 9일(1.3k/1.5k 커밋) + 내부품질 크로스 렌즈 (3 독립 스카우트, 전부 Muse-부재 grep 검증)
+
+Tier S (safety/correctness, 당장):
+- ★ (DS-1) **모델 HTTP 호출에 AbortSignal·timeout 부재** — `AgentRunInput.signal`은 루프 상단에서만 체크, `ModelRequest`에 signal 필드 없음, 어댑터 fetch 무타임아웃 → 행 걸린 Ollama 소켓이 턴/proactive 루프를 영구 동결, ESC로 생성 중단 불가. FIX: ModelRequest.signal + 어댑터 fetch 배선 + 내부 generate() 기본 per-call timeout. (M; DS-5·DS-8 unblock)
+- ★ (DS-2) **위험명령 승인 게이트 격차** — Muse `dangerous-command.ts` raw regex 9개 vs hermes `tools/approval.py` ~50규칙 + 정규화 패스 + 역난독화(base64/hex decode-pipe shape, $IFS, `$(echo rm)` 치환 재스캔, GNU 플래그 축약, eval $(curl)) + 승인 프롬프트 시크릿 마스킹(미배선인 redactSecretsInText). fail-close 비협상 최전선. (M)
+- ★ (DS-3) **consent/objectives/veto 스토어가 in-process 큐만** — `withFileMutationQueue`는 프로세스 내 Map; 데몬+수동 명령 레이스에 outbound-safety 게이트 기록 lost-update 가능. `withFileLock`(O_EXCL) 승격, tasks/reminders/playbook은 이미 안전. (S/M)
+
+Tier A (싸고 즉효):
+- ◦ (DS-4) V8 compile cache (`module.enableCompileCache()`, ~10줄) — 모든 muse 호출 콜드스타트 단축 (openclaw entry.compile-cache.ts 패턴; --version/--help fast-path 동봉 검토)
+- ◦ (DS-5) aux 컴팩션 요약기 failure-cooldown + <10%-절약 2회 연속 시 skip (hermes context_compressor.py:1096; CLI-freeze 클래스) — `dropped-context-summarizer.ts` 쿨다운 부재 확인됨
+- ◦ (DS-6) per-tool 실행 latency span — executeToolCall 주변 타이밍 없음; 기존 latency 시계열에 {tool,durationMs,status} 기록 (S/M)
+- ◦ (DS-7) atomic write에 부모 dir fsync 추가 (openclaw json-files.ts, ~3줄 내구성)
+
+Tier B (다음 슬라이스 후보):
+- ◦ (DS-8) proactive/scheduler 2-파일 heartbeat(alive/fired) + doctor 표면화 (hermes cron/jobs.py:592) — 침묵사 감지
+- ◦ (DS-9) read-only 툴 배치 병렬 fan-out (`risk==="read"`만 Promise.all; openclaw 기본, hermes 경로충돌 게이트)
+- ◦ (DS-10) `on-exit` 스케줄 kind — bg 레지스트리의 exit 신호(background-process-spawn.ts onExit)를 proactivity로 배선 ("빌드 끝나면 알려줘"; openclaw cron-exit-watchers.ts, store-persist one-shot fail-close)
+- ◦ (DS-11) doctor 상태-무결성: 클라우드싱크 폴더 배치(iCloud/Dropbox 하의 ~/.muse = 동기화 손상 트랩)·볼라틸 마운트·사후 퍼미션 드리프트 검증 (openclaw doctor-state-integrity.ts; 실사용 프로브의 recall-hits 644 발견과 합류) + tool-result-cap advisory
+- ◦ (DS-12) 큐레이터: cron/루프-참조 스킬 프루닝 면제 + 배치 스냅샷/롤백 (hermes curator_backup.py; Muse curate()는 참조 체크 없음)
+- ◦ (DS-13) runs/checkpoints/action-log/learn-queue 연령 기반 pruner (hermes maybe_auto_prune_and_vacuum 패턴; 24h 게이트, never-raise)
+- ◦ (DS-14) MCP 연결 전 OSV 라이브 멀웨어 조회(MAL-* advisory, 12s bounded fail-open) — 기존 static 감사의 동적 보완 + "reconnect task never dies" 회귀 테스트
+- ◦ (DS-15) MoA 로컬 멀티모델 advisory fan-out (hermes moa_loop.py; council과 다른 축 — N 로컬모델 자문→1 종합; prompt-끝 배치로 KV캐시 보존 트릭 포함)
+
+parity/Muse-우위 확인(액션 없음): eval 인프라 Muse 우위, atomic write core·failure taxonomy·circuit breaker parity, prompt cache_control은 로컬 posture상 의도적 non-gap.
+
 ## ★ capability-parity — hermes/openclaw 대비 순수 에이전트 역량 갭 (2026-06-23 gap-scout, 코드레벨 비교)
 
 Theme: Muse를 hermes/openclaw 급 peer로. grounding/local 해자는 floor로 유지하고, 둘 다 가졌는데 Muse가 얇거나 없는 **순수 에이전트 역량 4개**를 결정론-우선으로 메운다. (소스: /Users/jinan/ai/hermes-agent, /Users/jinan/ai/openclaw 코드레벨 인벤토리.)
