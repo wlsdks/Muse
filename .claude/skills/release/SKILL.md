@@ -1,6 +1,6 @@
 ---
 name: release
-version: 1.3.0
+version: 1.3.1
 description: Use when 진안 wants to cut/tag a Muse release or asks anything about the next version — "릴리스 찍어줘", "release 만들자", "버전 올려줘", "v0.2 내자", "patch 올려줘", "다음 버전 뭐야", "changelog/릴리스 노트 만들어줘", "GitHub release 올려줘", "이번엔 minor야 patch야". Reads the full commit history since the last tag, AUTO-DECIDES patch vs minor vs major (patch climbs by default, minor only on a breaking public-surface change or an explicit milestone — per docs/VERSIONING.md), writes curated user-facing release notes from those commits, then bumps + changelogs + commits + tags + pushes + creates the GitHub Release (pre-release while 0.x). Muse-specific.
 ---
 
@@ -117,7 +117,10 @@ clean fresh clone is the source of truth).
 Work on `origin/main`'s tip (rebase your release commit onto it; `main`
 churns). Stage with **explicit paths** (other loops may have files staged).
 
-1. **Bump** root `package.json` `version` → the chosen number. (Workspace
+1. **Bump** root `package.json` `version` → the chosen number, AND
+   `MUSE_CLI_VERSION` in `apps/cli/src/muse-version.ts` (the `muse --version`
+   fast path; its drift-guard test fails the cli suite if you forget — v0.2.0
+   shipped reporting 0.1.2 because this step was missed). (Workspace
    `packages/*` stay `private` + `0.0.0`; not published to npm — root version is
    the single source of truth.)
 2. **CHANGELOG** — analyse the **entire** commit history since the last tag and
