@@ -96,6 +96,18 @@ describe("playAudioWithWatchdog (shared --speak player watchdog)", () => {
     await expect(promise).rejects.toThrow(/ENOENT afplay/u);
   });
 
+  it("decodes a multi-byte UTF-8 character correctly when the player's stderr is split across two `data` events (DS-17)", async () => {
+    const { child, spawnFn } = makeFakeSpawn();
+    const promise = playAudioWithWatchdog("aplay", "/tmp/out.wav", spawnFn);
+    const full = Buffer.from("오류: 장치 없음 🚫\n", "utf8");
+    const splitAt = 4; // mid-character inside a 3-byte Hangul sequence
+    child.stderr.emit("data", full.subarray(0, splitAt));
+    child.stderr.emit("data", full.subarray(splitAt));
+    child.emit("close", 1);
+    await expect(promise).rejects.toThrow("aplay exited with code 1: 오류: 장치 없음 🚫");
+    await expect(promise).rejects.not.toThrow(/�/u);
+  });
+
   it("SIGKILLs and rejects when the player wedges past the timeout", async () => {
     vi.useFakeTimers();
     const { child, spawnFn } = makeFakeSpawn();

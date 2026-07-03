@@ -93,6 +93,13 @@ export function loadDefaultTts(): TextToSpeechProvider | undefined {
 
 export const AUDIO_PLAYER_TIMEOUT_MS = 30_000;
 
+const STDERR_CAP_CHARS = 4096;
+// UTF-8 encodes one code point in at most 4 bytes, so capping raw
+// accumulation at 4x the char limit guarantees enough bytes survive to
+// decode a full STDERR_CAP_CHARS string without cutting a multi-byte
+// sequence mid-character at the truncation boundary.
+const STDERR_CAP_BYTES = STDERR_CAP_CHARS * 4;
+
 export async function playAudioWithWatchdog(
   player: string,
   filePath: string,
@@ -111,11 +118,18 @@ export async function playAudioWithWatchdog(
     // can wedge once its OS buffer fills, AND the captured text is
     // the only clue WHY playback failed ("No such device") — without
     // it the user sees a bare exit code. Bounded so a pathological
-    // player can't grow this without limit.
-    let stderr = "";
+    // player can't grow this without limit. Chunks are decoded ONCE
+    // from the concatenated bytes below — never per-chunk — so a
+    // multi-byte UTF-8 character split across two `data` events
+    // decodes correctly instead of U+FFFD on both halves.
+    const stderrChunks: Buffer[] = [];
+    let stderrBytes = 0;
     if (child.stderr) {
       child.stderr.on("data", (chunk: Buffer) => {
-        if (stderr.length < 4096) stderr += chunk.toString("utf8");
+        if (stderrBytes < STDERR_CAP_BYTES) {
+          stderrChunks.push(chunk);
+          stderrBytes += chunk.length;
+        }
       });
     }
     // Without this watchdog a wedged player — a busy CoreAudio /
@@ -134,7 +148,9 @@ export async function playAudioWithWatchdog(
           resolve();
           return;
         }
-        const detail = truncateErrorBody(stripUntrustedTerminalChars(stderr).trim(), 240);
+        const decoded = Buffer.concat(stderrChunks).toString("utf8");
+        const capped = decoded.length > STDERR_CAP_CHARS ? decoded.slice(0, STDERR_CAP_CHARS) : decoded;
+        const detail = truncateErrorBody(stripUntrustedTerminalChars(capped).trim(), 240);
         reject(new Error(
           `${player} exited with code ${code ?? "unknown"}${detail ? `: ${detail}` : ""}`
         ));

@@ -97,6 +97,22 @@ describe("runOsascript", () => {
     await expect(promise).resolves.toBe("Safari\nWin\nSel");
   });
 
+  it("decodes a multi-byte UTF-8 character correctly when stdout is split across two `data` events (DS-17)", async () => {
+    const { child, spawnFn } = makeFakeSpawn();
+    const promise = runOsascript(spawnFn);
+    // A Korean app name + window title + emoji-bearing selection — exactly
+    // the shape of real `muse glance` output that can straddle a chunk
+    // boundary mid-character.
+    const full = Buffer.from("메모\n회의록 정리\n선택된 텍스트 🎉", "utf8");
+    const splitAt = 4; // mid-character inside a 3-byte Hangul sequence
+    child.stdout.emit("data", full.subarray(0, splitAt));
+    child.stdout.emit("data", full.subarray(splitAt));
+    child.emit("close", 0);
+    const result = await promise;
+    expect(result).toBe("메모\n회의록 정리\n선택된 텍스트 🎉");
+    expect(result).not.toContain("�");
+  });
+
   it("rejects with the exit code + stderr on a non-zero exit", async () => {
     const { child, spawnFn } = makeFakeSpawn();
     const promise = runOsascript(spawnFn);

@@ -46,7 +46,7 @@ export function defaultRunner(
 ): Promise<NotifySendRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawnFn("notify-send", [...args], { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
+    const stderrChunks: Buffer[] = [];
     let settled = false;
     const finish = (action: () => void): void => {
       if (settled) return;
@@ -63,11 +63,14 @@ export function defaultRunner(
         `notify-send timed out after ${NOTIFY_SEND_TIMEOUT_MS.toString()}ms and was killed`
       )));
     }, NOTIFY_SEND_TIMEOUT_MS);
+    // Raw chunks are decoded ONCE from the concatenated bytes on close —
+    // never per-chunk — so a multi-byte UTF-8 character split across two
+    // `data` events decodes correctly instead of U+FFFD on both halves.
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+      stderrChunks.push(chunk);
     });
     child.on("error", (error) => { finish(() => reject(error)); });
-    child.on("close", (code) => { finish(() => resolve({ exitCode: code, stderr })); });
+    child.on("close", (code) => { finish(() => resolve({ exitCode: code, stderr: Buffer.concat(stderrChunks).toString("utf8") })); });
   });
 }
 

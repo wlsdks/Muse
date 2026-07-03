@@ -48,6 +48,12 @@ export interface SkillRegistryView {
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 10 * 60_000;
 const MAX_STREAM_CHARS = 16_384;
+// UTF-8 encodes one code point in at most 4 bytes, so capping raw
+// accumulation at 4x the char limit guarantees enough bytes survive to
+// decode a full MAX_STREAM_CHARS string without cutting a multi-byte
+// sequence mid-character at the truncation boundary. The final string
+// returned to the caller is still truncated to MAX_STREAM_CHARS below.
+const MAX_STREAM_BYTES = MAX_STREAM_CHARS * 4;
 
 export function createSkillListTool(registry: SkillRegistryView): MuseTool {
   return {
@@ -279,8 +285,10 @@ function runChild(
       reject(cause instanceof Error ? cause : new Error(String(cause)));
       return;
     }
-    let stdout = "";
-    let stderr = "";
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -291,20 +299,20 @@ function runChild(
       }
     }, options.timeoutMs);
 
+    // Buffer chunks are accumulated raw (capped by BYTE count) and decoded
+    // ONCE at close via `decodeCapped` — never per-chunk — so a multi-byte
+    // UTF-8 character split across two `data` events decodes correctly
+    // instead of becoming U+FFFD replacement chars on both sides.
     child.stdout?.on("data", (chunk: Buffer) => {
-      if (stdout.length < MAX_STREAM_CHARS) {
-        stdout += chunk.toString("utf8");
-        if (stdout.length > MAX_STREAM_CHARS) {
-          stdout = stdout.slice(0, MAX_STREAM_CHARS) + "\n…[truncated]";
-        }
+      if (stdoutBytes < MAX_STREAM_BYTES) {
+        stdoutChunks.push(chunk);
+        stdoutBytes += chunk.length;
       }
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      if (stderr.length < MAX_STREAM_CHARS) {
-        stderr += chunk.toString("utf8");
-        if (stderr.length > MAX_STREAM_CHARS) {
-          stderr = stderr.slice(0, MAX_STREAM_CHARS) + "\n…[truncated]";
-        }
+      if (stderrBytes < MAX_STREAM_BYTES) {
+        stderrChunks.push(chunk);
+        stderrBytes += chunk.length;
       }
     });
     child.on("error", (error) => {
@@ -313,7 +321,13 @@ function runChild(
     });
     child.on("close", (exitCode, signal) => {
       clearTimeout(timer);
-      resolve({ exitCode, signal: typeof signal === "string" ? signal : null, stderr, stdout, timedOut });
+      resolve({
+        exitCode,
+        signal: typeof signal === "string" ? signal : null,
+        stderr: decodeCapped(stderrChunks),
+        stdout: decodeCapped(stdoutChunks),
+        timedOut
+      });
     });
 
     if (child.stdin) {
@@ -324,4 +338,9 @@ function runChild(
       child.stdin.end();
     }
   });
+}
+
+function decodeCapped(chunks: readonly Buffer[]): string {
+  const decoded = Buffer.concat(chunks).toString("utf8");
+  return decoded.length > MAX_STREAM_CHARS ? `${decoded.slice(0, MAX_STREAM_CHARS)}\n…[truncated]` : decoded;
 }

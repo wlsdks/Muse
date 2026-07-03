@@ -47,7 +47,7 @@ export function defaultRunner(
 ): Promise<OsascriptRunResult> {
   return new Promise((resolve, reject) => {
     const child = spawnFn("osascript", ["-e", script], { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
+    const stderrChunks: Buffer[] = [];
     let settled = false;
     const finish = (action: () => void): void => {
       if (settled) return;
@@ -64,11 +64,14 @@ export function defaultRunner(
         `osascript notification timed out after ${NOTIFICATION_OSASCRIPT_TIMEOUT_MS.toString()}ms and was killed`
       )));
     }, NOTIFICATION_OSASCRIPT_TIMEOUT_MS);
+    // Raw chunks are decoded ONCE from the concatenated bytes on close —
+    // never per-chunk — so a multi-byte UTF-8 character split across two
+    // `data` events decodes correctly instead of U+FFFD on both halves.
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+      stderrChunks.push(chunk);
     });
     child.on("error", (error) => { finish(() => reject(error)); });
-    child.on("close", (code) => { finish(() => resolve({ exitCode: code, stderr })); });
+    child.on("close", (code) => { finish(() => resolve({ exitCode: code, stderr: Buffer.concat(stderrChunks).toString("utf8") })); });
   });
 }
 

@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+import type { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,6 +7,32 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildMuseExport, DEFAULT_EXPORT_FILES } from "./commands-export.js";
+
+interface FakeChild extends EventEmitter {
+  stderr: EventEmitter;
+}
+
+/**
+ * `buildMuseExport` awaits real disk I/O (stat/mkdir/writeFile) before
+ * calling `spawnImpl`, so a test can't synchronously emit on a
+ * pre-built child — the `data`/`close` listeners aren't attached yet.
+ * The factory instead defers the emission to a `setImmediate` INSIDE
+ * the spawn call itself, guaranteeing it runs after the listeners are
+ * registered synchronously in the same tick `spawnImpl(...)` resolves.
+ */
+function makeFakeSpawn(scriptedStderrChunks: readonly Buffer[], exitCode: number): typeof spawn {
+  return ((): FakeChild => {
+    const child = new EventEmitter() as FakeChild;
+    child.stderr = new EventEmitter();
+    setImmediate(() => {
+      for (const chunk of scriptedStderrChunks) {
+        child.stderr.emit("data", chunk);
+      }
+      child.emit("close", exitCode);
+    });
+    return child;
+  }) as unknown as typeof spawn;
+}
 
 describe("muse export — bundles every user-data store, not just some", () => {
   let dir: string;
@@ -65,5 +93,22 @@ describe("muse export — bundles every user-data store, not just some", () => {
     const out = await buildMuseExport({ museDir, notesDir: join(museDir, "notes"), outputPath: join(dir, "backup.tar.gz") });
     expect(out.files).toContain("notes-index.json");
     expect(out.files).toContain("episodes-index.json");
+  });
+
+  it("decodes a `tar` stderr error message correctly when split mid-character across two `data` events (DS-17)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "muse-export-utf8-"));
+    const museDir = join(dir, ".muse");
+    mkdirSync(museDir, { recursive: true });
+    writeFileSync(join(museDir, "tasks.json"), "{}", "utf8");
+    const full = Buffer.from("tar: 오류 발생 🚫", "utf8");
+    const splitAt = 6; // mid-character inside a 3-byte Hangul sequence
+    const spawnFn = makeFakeSpawn([full.subarray(0, splitAt), full.subarray(splitAt)], 1);
+    const promise = buildMuseExport({
+      museDir,
+      notesDir: join(museDir, "notes"),
+      outputPath: join(dir, "backup.tar.gz"),
+      spawnImpl: spawnFn
+    });
+    await expect(promise).rejects.toThrow("tar: 오류 발생 🚫");
   });
 });

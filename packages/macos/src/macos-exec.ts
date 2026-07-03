@@ -19,12 +19,13 @@ export function runChild(
   bin: string,
   argv: readonly string[],
   stdin: string | undefined,
-  timeoutMs: number
+  timeoutMs: number,
+  spawnImpl: typeof spawn = spawn
 ): Promise<MacCommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, [...argv], { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
+    const child = spawnImpl(bin, [...argv], { stdio: ["pipe", "pipe", "pipe"] });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     let settled = false;
     const finish = (action: () => void): void => {
       if (settled) return;
@@ -37,12 +38,28 @@ export function runChild(
     // forever — the awaiting agent turn never resolves.
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(() => resolve({ exitCode: null, stderr, stdout, timedOut: true }));
+      finish(() => resolve({
+        exitCode: null,
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        timedOut: true
+      }));
     }, timeoutMs);
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    // Chunks are decoded ONCE from the fully concatenated bytes (never
+    // per-chunk) — a multi-byte UTF-8 character split across two `data`
+    // events would otherwise decode as U+FFFD replacement chars on both
+    // sides of the split.
+    child.stdout.on("data", (chunk: Buffer) => { stdoutChunks.push(chunk); });
+    child.stderr.on("data", (chunk: Buffer) => { stderrChunks.push(chunk); });
     child.on("error", (error) => { finish(() => reject(error)); });
-    child.on("close", (code) => { finish(() => resolve({ exitCode: code, stderr, stdout, timedOut: false })); });
+    child.on("close", (code) => {
+      finish(() => resolve({
+        exitCode: code,
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        timedOut: false
+      }));
+    });
     // A failed spawn destroys stdin; writing then emits EPIPE — swallow it,
     // the real failure surfaces via the 'error'/'close' handlers.
     child.stdin.on("error", () => { /* surfaced via child 'error'/'close' */ });

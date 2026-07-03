@@ -94,19 +94,25 @@ export function isSafeMuseEntry(entry: string): boolean {
  * `isSafeMuseEntry`). Exported for direct test coverage of the
  * filter logic.
  */
-export async function listMuseImportEntries(bundlePath: string): Promise<readonly string[]> {
+export async function listMuseImportEntries(
+  bundlePath: string,
+  spawnImpl: typeof spawn = spawn
+): Promise<readonly string[]> {
   const stdout = await new Promise<string>((resolveSpawn, reject) => {
-    const child = spawn("tar", ["-tzf", bundlePath], { stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (chunk: Buffer) => { out += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk: Buffer) => { err += chunk.toString("utf8"); });
+    const child = spawnImpl("tar", ["-tzf", bundlePath], { stdio: ["ignore", "pipe", "pipe"] });
+    const outChunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+    // Decode ONCE from the fully concatenated bytes on close — never
+    // per-chunk — so a multi-byte UTF-8 filename (CJK/emoji entries in
+    // the notes tree) split across two `data` events decodes correctly.
+    child.stdout.on("data", (chunk: Buffer) => { outChunks.push(chunk); });
+    child.stderr.on("data", (chunk: Buffer) => { errChunks.push(chunk); });
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
-        resolveSpawn(out);
+        resolveSpawn(Buffer.concat(outChunks).toString("utf8"));
       } else {
-        reject(new Error(`tar -tzf exited with code ${(code ?? -1).toString()}: ${err.trim()}`));
+        reject(new Error(`tar -tzf exited with code ${(code ?? -1).toString()}: ${Buffer.concat(errChunks).toString("utf8").trim()}`));
       }
     });
   });
@@ -155,18 +161,19 @@ export async function findImportCollisions(
 export async function extractMuseBundle(
   bundlePath: string,
   home: string,
-  entries: readonly string[]
+  entries: readonly string[],
+  spawnImpl: typeof spawn = spawn
 ): Promise<void> {
   await new Promise<void>((resolveSpawn, reject) => {
-    const child = spawn("tar", ["-xzf", bundlePath, "-C", home, "--", ...entries], { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    const child = spawnImpl("tar", ["-xzf", bundlePath, "-C", home, "--", ...entries], { stdio: ["ignore", "ignore", "pipe"] });
+    const errChunks: Buffer[] = [];
+    child.stderr.on("data", (chunk: Buffer) => { errChunks.push(chunk); });
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
         resolveSpawn();
       } else {
-        reject(new Error(`tar -xzf exited with code ${(code ?? -1).toString()}: ${stderr.trim()}`));
+        reject(new Error(`tar -xzf exited with code ${(code ?? -1).toString()}: ${Buffer.concat(errChunks).toString("utf8").trim()}`));
       }
     });
   });

@@ -58,6 +58,19 @@ describe("notify-send defaultRunner watchdog", () => {
     child.emit("close", 0);
     await assertion;
   });
+
+  it("decodes a multi-byte UTF-8 character correctly when the notify-send stderr is split across two `data` events (DS-17)", async () => {
+    const { child, spawnFn } = fakeSpawn();
+    const p = defaultRunner(["Muse", "hi"], spawnFn);
+    const full = Buffer.from("오류: 디스플레이 없음 🚫", "utf8");
+    const splitAt = 4; // mid-character inside a 3-byte Hangul sequence
+    child.stderr.emit("data", full.subarray(0, splitAt));
+    child.stderr.emit("data", full.subarray(splitAt));
+    child.emit("close", 1);
+    const result = await p;
+    expect(result.stderr).toBe("오류: 디스플레이 없음 🚫");
+    expect(result.stderr).not.toContain("�");
+  });
 });
 
 function fakeRunner(): { runner: NotifySendRunner; calls: readonly string[][] } {

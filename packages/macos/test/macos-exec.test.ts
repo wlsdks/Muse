@@ -1,6 +1,28 @@
-import { describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
+import type { spawn } from "node:child_process";
 
-import { escapeAppleScript, isPermissionError, parseWifiDevice } from "../src/macos-exec.js";
+import { describe, expect, it, vi } from "vitest";
+
+import { escapeAppleScript, isPermissionError, parseWifiDevice, runChild } from "../src/macos-exec.js";
+
+interface FakeChild extends EventEmitter {
+  stdout: EventEmitter;
+  stderr: EventEmitter;
+  stdin: EventEmitter & { write: (chunk: unknown) => void; end: () => void };
+  kill: (signal?: string) => boolean;
+}
+
+function makeFakeChild(): FakeChild {
+  const child = new EventEmitter() as FakeChild;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  const stdin = new EventEmitter() as FakeChild["stdin"];
+  stdin.write = () => undefined;
+  stdin.end = () => undefined;
+  child.stdin = stdin;
+  child.kill = () => true;
+  return child;
+}
 
 describe("escapeAppleScript", () => {
   it("backslash-escapes backslashes and double-quotes for an AppleScript string literal", () => {
@@ -35,6 +57,38 @@ describe("isPermissionError", () => {
     expect(isPermissionError("command not found")).toBe(false);
     expect(isPermissionError("timed out")).toBe(false);
     expect(isPermissionError("")).toBe(false);
+  });
+});
+
+describe("runChild — UTF-8 decode across chunk boundaries (DS-17)", () => {
+  it("decodes a multi-byte character correctly when split across two stdout `data` events", async () => {
+    const child = makeFakeChild();
+    const spawnFn = vi.fn(() => child) as unknown as typeof spawn;
+    const promise = runChild("echo", [], undefined, 5_000, spawnFn);
+    // "한글 🎉" split mid-character: the first byte of the 3-byte 한 (U+D55C)
+    // arrives in chunk 1, the remaining bytes in chunk 2.
+    const full = Buffer.from("한글 🎉 emoji test", "utf8");
+    const splitAt = 1;
+    child.stdout.emit("data", full.subarray(0, splitAt));
+    child.stdout.emit("data", full.subarray(splitAt));
+    child.emit("close", 0);
+    const result = await promise;
+    expect(result.stdout).toBe("한글 🎉 emoji test");
+    expect(result.stdout).not.toContain("�");
+  });
+
+  it("decodes a multi-byte character correctly when split across two stderr `data` events", async () => {
+    const child = makeFakeChild();
+    const spawnFn = vi.fn(() => child) as unknown as typeof spawn;
+    const promise = runChild("echo", [], undefined, 5_000, spawnFn);
+    const full = Buffer.from("오류: 파일 없음 🚫", "utf8");
+    const splitAt = 4;
+    child.stderr.emit("data", full.subarray(0, splitAt));
+    child.stderr.emit("data", full.subarray(splitAt));
+    child.emit("close", 1);
+    const result = await promise;
+    expect(result.stderr).toBe("오류: 파일 없음 🚫");
+    expect(result.stderr).not.toContain("�");
   });
 });
 

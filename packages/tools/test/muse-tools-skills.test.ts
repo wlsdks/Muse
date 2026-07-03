@@ -157,6 +157,22 @@ describe("muse.skills.run allowlist enforcement", () => {
     expect(fakeChild.killed).toBe(true);
   });
 
+  it("decodes a multi-byte UTF-8 character correctly when split across two stdout `data` events (DS-17)", async () => {
+    const full = Buffer.from("결과: 완료 🎉 done", "utf8");
+    const splitAt = 5; // lands mid-character inside a 3-byte Hangul sequence
+    const fakeChild = makeFakeChild({
+      exitCode: 0,
+      stdoutChunks: [full.subarray(0, splitAt), full.subarray(splitAt)]
+    });
+    spawnMock.mockReturnValueOnce(fakeChild);
+    const tool = createSkillRunTool(makeRegistry([gh]), { spawnImpl: spawnMock as never });
+    const out = (await tool.execute({ command: "gh pr list", name: "gh" }, { runId: "r-1" })) as {
+      readonly stdout: string;
+    };
+    expect(out.stdout).toBe("결과: 완료 🎉 done");
+    expect(out.stdout).not.toContain("�");
+  });
+
   it("survives an EPIPE on the child's stdin (binary exited before consuming stdin) without crashing the parent", async () => {
     // Pre-fix runChild wrote/ended child.stdin with no `error` listener.
     // A binary that exits while the parent is writing closes the pipe and
@@ -177,6 +193,8 @@ describe("muse.skills.run allowlist enforcement", () => {
 interface FakeChildOptions {
   readonly stdout?: string;
   readonly stderr?: string;
+  /** Raw stdout chunks emitted as separate `data` events, in order — for pinning UTF-8 chunk-boundary decoding. */
+  readonly stdoutChunks?: readonly Buffer[];
   readonly exitCode?: number | null;
   readonly neverClose?: boolean;
   /** Emit an `error` (EPIPE) on stdin the moment the parent writes/ends it. */
@@ -221,7 +239,11 @@ function makeFakeChild(options: FakeChildOptions): FakeChild {
 
   // Defer the synthetic output + close so the caller can subscribe.
   setImmediate(() => {
-    if (options.stdout) {
+    if (options.stdoutChunks) {
+      for (const chunk of options.stdoutChunks) {
+        emitter.stdout.emit("data", chunk);
+      }
+    } else if (options.stdout) {
       emitter.stdout.emit("data", Buffer.from(options.stdout, "utf8"));
     }
     if (options.stderr) {

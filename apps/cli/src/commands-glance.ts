@@ -97,8 +97,8 @@ const GLANCE_OSASCRIPT_TIMEOUT_MS = 30_000;
 export async function runOsascript(spawnFn: typeof spawn = spawn): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawnFn("osascript", ["-e", OSASCRIPT_SOURCE], { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     let settled = false;
     const finish = (action: () => void): void => {
       if (settled) return;
@@ -116,15 +116,19 @@ export async function runOsascript(spawnFn: typeof spawn = spawn): Promise<strin
         + "(unanswered Accessibility prompt or a wedged UI-scripting target?)"
       )));
     }, GLANCE_OSASCRIPT_TIMEOUT_MS);
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    // Raw chunks are decoded ONCE from the concatenated bytes on close —
+    // never per-chunk — so a multi-byte UTF-8 character in a window title
+    // or selected text (CJK/emoji are common here) split across two
+    // `data` events decodes correctly instead of U+FFFD on both halves.
+    child.stdout.on("data", (chunk: Buffer) => { stdoutChunks.push(chunk); });
+    child.stderr.on("data", (chunk: Buffer) => { stderrChunks.push(chunk); });
     child.on("error", (error) => { finish(() => reject(error)); });
     child.on("close", (code) => {
       finish(() => {
         if (code === 0) {
-          resolve(stdout);
+          resolve(Buffer.concat(stdoutChunks).toString("utf8"));
         } else {
-          reject(new Error(`osascript exited ${(code ?? -1).toString()}: ${stderr.trim()}`));
+          reject(new Error(`osascript exited ${(code ?? -1).toString()}: ${Buffer.concat(stderrChunks).toString("utf8").trim()}`));
         }
       });
     });

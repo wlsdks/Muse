@@ -194,7 +194,9 @@ export async function buildMuseExport(args: {
   readonly outputPath: string;
   readonly nowIso?: string;
   readonly passphrase?: string;
+  readonly spawnImpl?: typeof spawn;
 }): Promise<{ readonly outputPath: string; readonly files: readonly string[]; readonly notesIncluded: boolean; readonly encrypted: boolean }> {
+  const spawnImpl = args.spawnImpl ?? spawn;
   const sources = await collectSources(args.museDir, args.notesDir);
 
   // When encrypting, build the tar into a temp sibling of the
@@ -241,15 +243,19 @@ export async function buildMuseExport(args: {
       await reserveCleartextTemp(tarPath);
     }
     await new Promise<void>((resolveSpawn, reject) => {
-      const child = spawn("tar", tarArgs, { stdio: ["ignore", "ignore", "pipe"] });
-      let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+      const child = spawnImpl("tar", tarArgs, { stdio: ["ignore", "ignore", "pipe"] });
+      const errChunks: Buffer[] = [];
+      // Decode ONCE from the fully concatenated bytes on close — never
+      // per-chunk — so a multi-byte UTF-8 character in a tar error message
+      // (e.g. a non-ASCII path) split across two `data` events decodes
+      // correctly instead of U+FFFD on both halves.
+      child.stderr.on("data", (chunk: Buffer) => { errChunks.push(chunk); });
       child.on("error", reject);
       child.on("close", (code) => {
         if (code === 0) {
           resolveSpawn();
         } else {
-          reject(new Error(`tar exited with code ${(code ?? -1).toString()}: ${stderr.trim()}`));
+          reject(new Error(`tar exited with code ${(code ?? -1).toString()}: ${Buffer.concat(errChunks).toString("utf8").trim()}`));
         }
       });
     });
