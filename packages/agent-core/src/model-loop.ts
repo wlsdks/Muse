@@ -157,6 +157,43 @@ function withRepetitionNudge(content: string, isDuplicate: boolean): string {
   return isDuplicate ? `${content}${REPEAT_TOOL_CALL_NUDGE}` : content;
 }
 
+/**
+ * Time a single real tool execution as a `muse.tool.execute` span. The span's
+ * start→end duration lands in the same trace-event store the existing
+ * `LatencyQuery` reads, so per-tool latency is queryable via
+ * `LatencyQuery.summary({ spanName: "muse.tool.execute" })` /
+ * `.timeSeries(...)` — the same percentile machinery the
+ * `/api/admin/metrics/latency` endpoints and the Muse observability snapshot
+ * are built on. Mirrors the `muse.model.stream` span house-style. Only GENUINE
+ * executions reach here; deduplicated / blocked / capped calls are never timed.
+ * Tolerates a missing tracer (test runners omit it) via optional chaining.
+ */
+async function executeToolCallWithSpan(
+  runner: ModelLoopRunner,
+  context: AgentRunContext,
+  toolCall: ModelToolCall,
+  activeTools: NonNullable<ModelRequest["tools"]>
+): Promise<ExecutedToolResult> {
+  const startedAt = Date.now();
+  const span = runner.tracer?.startSpan("muse.tool.execute", {
+    "run.id": context.runId,
+    "tool.name": toolCall.name
+  });
+  try {
+    const executed = await runner.executeToolCall(context, toolCall, activeTools);
+    span?.setAttribute("tool.status", executed.result.status === "failed" ? "error" : "ok");
+    span?.setAttribute("duration.ms", Date.now() - startedAt);
+    return executed;
+  } catch (error) {
+    span?.setAttribute("tool.status", "error");
+    span?.setAttribute("duration.ms", Date.now() - startedAt);
+    span?.setError(error);
+    throw error;
+  } finally {
+    span?.end();
+  }
+}
+
 function interruptedExecution(
   request: ModelRequest,
   intermediateMessages: ModelMessage[],
@@ -191,6 +228,27 @@ interface ToolBatchState {
 interface ToolBatchResult {
   readonly toolCallCount: number;
   readonly messages: readonly ModelMessage[];
+}
+
+/**
+ * A single tool call's resolved execution plan within one batch segment: the
+ * sequential decision (gate + dedup + counter) captured in Phase 1, carrying
+ * the in-flight `promise` for concurrently-launched read-only executions and
+ * the per-call checkpoint `step` so Phase 3 bookkeeping stays byte-identical
+ * to the previous sequential body regardless of execution overlap.
+ */
+interface PlannedToolCall {
+  readonly toolCall: ModelToolCall;
+  readonly toolRisk: string | undefined;
+  readonly canRun: boolean;
+  readonly signature: string;
+  readonly step: number;
+  readonly memoResult?: ExecutedToolResult["result"];
+  readonly intraSegmentDuplicate: boolean;
+  readonly middlewareBlock: string | null;
+  readonly conflicting: boolean;
+  readonly deadlineReason: boolean;
+  promise?: Promise<ExecutedToolResult>;
 }
 
 /**
@@ -237,66 +295,145 @@ async function* runToolBatch(
     const risk = (activeTools ?? []).find((t) => t.name === call.name)?.risk;
     return risk === "write" || risk === "execute";
   });
-  for (const toolCall of calls) {
-    const remaining = runner.maxToolCalls - toolCallCount;
-    const crossedDeadlineMidBatch = !batchStartedPastDeadline
-      && deadlineMs !== undefined && now() > deadlineMs;
-    const conflicting = conflictingIds.has(toolCall.id);
-    // Deterministic pre-call policy gate: a middleware may veto this call
-    // before it runs. Empty chain → null → unchanged execution.
-    const middlewareBlock = applyToolCallMiddleware(toolCall, runner.toolCallMiddleware ?? []);
-    const canRun = remaining > 0 && !crossedDeadlineMidBatch && !conflicting && !middlewareBlock;
-    const duplicate = canRun ? deduplicator.check(toolCall) : undefined;
-    const executed = duplicate?.duplicate
-      ? { result: duplicate.result, toolCall }
-      : middlewareBlock
-        ? blockedToolResult(toolCall, `Error: ${middlewareBlock}`)
-        : conflicting
-          ? blockedToolResult(toolCall, "Error: conflicting write withheld — ambiguous duplicate action in this batch")
-          : canRun
-            ? await runner.executeToolCall(context, toolCall, activeTools ?? [])
-            : blockedToolResult(toolCall, crossedDeadlineMidBatch && remaining > 0
-                ? "Error: run wall-clock deadline reached"
-                : "Error: max tool call limit reached");
+  const riskOf = (toolCall: ModelToolCall): string | undefined =>
+    (activeTools ?? []).find((t) => t.name === toolCall.name)?.risk;
 
-    const grounding = groundingSourceFromExecuted(executed);
-    yield { runId: context.runId, toolCall, type: "tool-result", ...(grounding ? { grounding } : {}) };
-    toolCallCount += canRun ? 1 : 0;
-    const toolRisk = (activeTools ?? []).find((t) => t.name === toolCall.name)?.risk;
-    const mutating = toolRisk === "write" || toolRisk === "execute";
-    deduplicator.record(toolCall, executed.result, mutating);
-    // Feed only GENUINE executions (not blocked / exact-dups) to the stall
-    // tracker; a mutating call resets the window (it advanced state).
-    if (canRun && !duplicate?.duplicate) {
-      progress.record(executed.result.output, mutating);
-      failureStreak.record(toolCall.name, executed.result.status);
-      shellPhase.record(toolCall.name, executed.result.output);
-      reverify.recordTool(toolRisk);
+  // DS-9: a read-only tool call (risk === "read") has no observable side
+  // effect, so a MAXIMAL CONTIGUOUS RUN of read-only calls is EXECUTED
+  // concurrently. Write / execute calls — and any call whose risk can't be
+  // resolved — stay strictly sequential (their own singleton segment). Every
+  // call's decision (gate + dedup + counter) and every call's bookkeeping
+  // (dedup record, trackers, tool-result event, message, checkpoint) are
+  // applied in the ORIGINAL call order, so observable side-effect ordering,
+  // the max-tool-call cap, the wall-clock cut, and per-tool checkpoint steps
+  // are byte-identical to the previous sequential body — only read EXECUTION
+  // overlaps in wall-clock.
+  let segmentStart = 0;
+  while (segmentStart < calls.length) {
+    let segmentEnd = segmentStart + 1;
+    if (riskOf(calls[segmentStart]!) === "read") {
+      while (segmentEnd < calls.length && riskOf(calls[segmentEnd]!) === "read") {
+        segmentEnd += 1;
+      }
     }
-    toolsUsed.push(toolCall.name);
-    toolResults.push(executed);
-    // cap individual tool results so a single big
-    // output doesn't blow the context window. Original
-    // executed.result.output is left intact for traces / metrics
-    // — only the message-bound copy is truncated.
-    const messageContent = withRepetitionNudge(
-      capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars, runner.contextReferenceStore, anchorTerms),
-      Boolean(duplicate?.duplicate)
+    const segment = calls.slice(segmentStart, segmentEnd);
+    segmentStart = segmentEnd;
+
+    // Phase 1 — decide each call's fate IN ORDER (pure/sync, no I/O): gate,
+    // dedup, advance the tool-call counter. Nothing executes yet.
+    const planned: PlannedToolCall[] = [];
+    const launchedSignatures = new Set<string>();
+    for (const toolCall of segment) {
+      const remaining = runner.maxToolCalls - toolCallCount;
+      const crossedDeadlineMidBatch = !batchStartedPastDeadline
+        && deadlineMs !== undefined && now() > deadlineMs;
+      const conflicting = conflictingIds.has(toolCall.id);
+      // Deterministic pre-call policy gate: a middleware may veto this call
+      // before it runs. Empty chain → null → unchanged execution.
+      const middlewareBlock = applyToolCallMiddleware(toolCall, runner.toolCallMiddleware ?? []);
+      const canRun = remaining > 0 && !crossedDeadlineMidBatch && !conflicting && !middlewareBlock;
+      const signature = deduplicator.buildSignature(toolCall);
+      const memo = canRun ? deduplicator.check(toolCall) : undefined;
+      // An identical call earlier IN THIS SAME segment hasn't recorded its
+      // result yet (records happen post-execution), so replicate the
+      // sequential dedup by matching against signatures already launched here.
+      const intraSegmentDuplicate = canRun === true && memo?.duplicate !== true && launchedSignatures.has(signature);
+      const willExecute = canRun && memo?.duplicate !== true && !intraSegmentDuplicate;
+      if (willExecute) {
+        launchedSignatures.add(signature);
+      }
+      toolCallCount += canRun ? 1 : 0;
+      planned.push({
+        toolCall,
+        toolRisk: riskOf(toolCall),
+        canRun,
+        signature,
+        step: toolCallCount,
+        ...(memo?.duplicate ? { memoResult: memo.result } : {}),
+        intraSegmentDuplicate,
+        middlewareBlock,
+        conflicting,
+        deadlineReason: crossedDeadlineMidBatch && remaining > 0
+      });
+    }
+
+    // Phase 2 — launch the executable calls. A read-only segment with >1
+    // executable call runs them CONCURRENTLY; a sequential singleton awaits
+    // exactly as before. A thrown (unexpected) tool error propagates out of
+    // the batch, replicating the old sequential stop-the-batch semantic.
+    for (const plan of planned) {
+      if (plan.canRun && plan.memoResult === undefined && !plan.intraSegmentDuplicate) {
+        plan.promise = executeToolCallWithSpan(runner, context, plan.toolCall, activeTools ?? []);
+      }
+    }
+    await Promise.all(
+      planned.map((plan) => plan.promise).filter((p): p is Promise<ExecutedToolResult> => p !== undefined)
     );
-    toolMessages.push({
-      content: messageContent,
-      name: toolCall.name,
-      role: "tool",
-      toolCallId: toolCall.id
-    });
-    // Per-tool checkpoint for a MULTI-tool batch (rare): the post-batch checkpoint is
-    // written only after ALL calls in the response, so a crash BETWEEN two tools in one
-    // response would lose the ones already run — resume couldn't replay+dedup them, risking
-    // a re-send/re-book. A 1-tool batch (the norm) is fully covered by the post-batch one,
-    // so this fires only when it adds protection. Every tool pushes a result message
-    // (above), so the replayed transcript is consistent. Best-effort (recordCheckpoint swallows).
-    if (calls.length > 1) {
-      await recordCheckpoint({ checkpointStore: runner.checkpointStore, context, messages: [...messages, ...toolMessages], phase: "act", step: toolCallCount });
+    const executedBySignature = new Map<string, ExecutedToolResult>();
+    for (const plan of planned) {
+      if (plan.promise) {
+        executedBySignature.set(plan.signature, await plan.promise);
+      }
+    }
+
+    // Phase 3 — apply bookkeeping and emit results IN ORDER, identical to the
+    // pre-parallel sequential body.
+    for (const plan of planned) {
+      const { toolCall } = plan;
+      const executed: ExecutedToolResult = plan.memoResult !== undefined
+        ? { result: plan.memoResult, toolCall }
+        : plan.intraSegmentDuplicate
+          // Same content as the sibling that executed, but this call's id/name
+          // (matching how deduplicator.check re-labels a cross-turn duplicate).
+          ? { result: { ...executedBySignature.get(plan.signature)!.result, id: toolCall.id, name: toolCall.name }, toolCall }
+          : plan.middlewareBlock
+            ? blockedToolResult(toolCall, `Error: ${plan.middlewareBlock}`)
+            : plan.conflicting
+              ? blockedToolResult(toolCall, "Error: conflicting write withheld — ambiguous duplicate action in this batch")
+              : plan.canRun
+                ? executedBySignature.get(plan.signature)!
+                : blockedToolResult(toolCall, plan.deadlineReason
+                    ? "Error: run wall-clock deadline reached"
+                    : "Error: max tool call limit reached");
+      const isDuplicate = plan.memoResult !== undefined || plan.intraSegmentDuplicate;
+
+      const grounding = groundingSourceFromExecuted(executed);
+      yield { runId: context.runId, toolCall, type: "tool-result", ...(grounding ? { grounding } : {}) };
+      const mutating = plan.toolRisk === "write" || plan.toolRisk === "execute";
+      deduplicator.record(toolCall, executed.result, mutating);
+      // Feed only GENUINE executions (not blocked / exact-dups) to the stall
+      // tracker; a mutating call resets the window (it advanced state).
+      if (plan.canRun && !isDuplicate) {
+        progress.record(executed.result.output, mutating);
+        failureStreak.record(toolCall.name, executed.result.status);
+        shellPhase.record(toolCall.name, executed.result.output);
+        reverify.recordTool(plan.toolRisk);
+      }
+      toolsUsed.push(toolCall.name);
+      toolResults.push(executed);
+      // cap individual tool results so a single big
+      // output doesn't blow the context window. Original
+      // executed.result.output is left intact for traces / metrics
+      // — only the message-bound copy is truncated.
+      const messageContent = withRepetitionNudge(
+        capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars, runner.contextReferenceStore, anchorTerms),
+        isDuplicate
+      );
+      toolMessages.push({
+        content: messageContent,
+        name: toolCall.name,
+        role: "tool",
+        toolCallId: toolCall.id
+      });
+      // Per-tool checkpoint for a MULTI-tool batch (rare): the post-batch checkpoint is
+      // written only after ALL calls in the response, so a crash BETWEEN two tools in one
+      // response would lose the ones already run — resume couldn't replay+dedup them, risking
+      // a re-send/re-book. A 1-tool batch (the norm) is fully covered by the post-batch one,
+      // so this fires only when it adds protection. Every tool pushes a result message
+      // (above), so the replayed transcript is consistent. Best-effort (recordCheckpoint swallows).
+      if (calls.length > 1) {
+        await recordCheckpoint({ checkpointStore: runner.checkpointStore, context, messages: [...messages, ...toolMessages], phase: "act", step: plan.step });
+      }
     }
   }
 
