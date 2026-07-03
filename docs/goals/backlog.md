@@ -94,21 +94,21 @@ Tier S (safety/correctness, 당장):
 - ✓ (DS-1, 8ccf4b92) 모델 HTTP 호출 AbortSignal+safety-cap timeout 관통 — ModelRequest.signal, 전 어댑터 fetch 배선, 스트리밍은 caller-signal만(idle-timeout이 스톨 담당), caller-abort=non-retryable/timeout=retryable 분류, ask Ctrl-C가 실제 HTTP를 중단. 12 tests mutation-RED, smoke:live 23/0. 잔여 ◦: chat REPL(Ink) ESC→AbortController 배선.
 - ✓ (DS-2, 13fa0537) 위험명령 게이트 격리-강화 — 정규화 패스(quote-aware 주석 strip·$IFS·라인연속·echo/printf 치환 해석) + 커맨드-포지션 센티널 앵커링으로 우회 7클래스 차단, 잠재 오탐(git rm --cached·인용 문자열)도 수정, 승인 프롬프트 시크릿 마스킹, 8KB 초과 fail-close, <1ms/8KB. 클래스별 차단+near-miss 쌍 테스트, 뮤테이션 RED 2층.
 - ✓ (DS-3, 97d5bbdf) consent/objectives/veto + proposed-action(draft-first 게이트, ad-hoc 큐였음) 4개 스토어 크로스-프로세스 withFileLock 승격 — 외부락 블로킹 + 50-병렬 무손실 테스트, 락 우회 시 RED 11. 잔여 in-process-큐 스토어 15종은 outbound-safety 무관으로 보존.
-Tier A (싸고 즉효):
-- ◦ (DS-4) V8 compile cache (`module.enableCompileCache()`, ~10줄) — 모든 muse 호출 콜드스타트 단축 (openclaw entry.compile-cache.ts 패턴; --version/--help fast-path 동봉 검토)
-- ◦ (DS-5) aux 컴팩션 요약기 failure-cooldown + <10%-절약 2회 연속 시 skip (hermes context_compressor.py:1096; CLI-freeze 클래스) — `dropped-context-summarizer.ts` 쿨다운 부재 확인됨
-- ◦ (DS-6) per-tool 실행 latency span — executeToolCall 주변 타이밍 없음; 기존 latency 시계열에 {tool,durationMs,status} 기록 (S/M)
-- ◦ (DS-7) atomic write에 부모 dir fsync 추가 (openclaw json-files.ts, ~3줄 내구성)
+Tier A — CLOSED (2026-07-03, 4/4 shipped):
+- ✓ (DS-4, ec0d495c) V8 compile cache — leaf 모듈을 첫 정적 임포트로 배치(ESM 순서 보장), 워밍 콜드스타트 ~12% 단축. --version fast-path는 이미 있고 0.025s라 불필요 판정.
+- ✓ (DS-5, 000f8409) aux 요약기 실패 10분 쿨다운 + 2연속 <10%-절약 시 skip, 클로저 상태로 기존 시그니처 무변경. 4 tests, 뮤테이션 RED 3/7.
+- ✓ (DS-6+DS-9, 63e67814) muse.tool.execute span(LatencyQuery로 즉시 조회 가능) + read-only 연속 구간 Promise.all 병렬화 — phase1(동기 게이트/dedup/체크포인트 캡처)→phase2(병렬 실행)→phase3(순차 기록) 3단 설계로 순서/체크포인트 안전성 완전 보존. 7 tests, 뮤테이션 RED.
+- ✓ (DS-7, 7f8c3545) atomicWriteFile 부모 dir fsync (rename 후, best-effort try/catch, 플랫폼 미지원 시 write 자체는 성공 유지).
 
-Tier B (다음 슬라이스 후보):
-- ◦ (DS-8) proactive/scheduler 2-파일 heartbeat(alive/fired) + doctor 표면화 (hermes cron/jobs.py:592) — 침묵사 감지
-- ◦ (DS-9) read-only 툴 배치 병렬 fan-out (`risk==="read"`만 Promise.all; openclaw 기본, hermes 경로충돌 게이트)
-- ◦ (DS-10) `on-exit` 스케줄 kind — bg 레지스트리의 exit 신호(background-process-spawn.ts onExit)를 proactivity로 배선 ("빌드 끝나면 알려줘"; openclaw cron-exit-watchers.ts, store-persist one-shot fail-close)
-- ◦ (DS-11) doctor 상태-무결성: 클라우드싱크 폴더 배치(iCloud/Dropbox 하의 ~/.muse = 동기화 손상 트랩)·볼라틸 마운트·사후 퍼미션 드리프트 검증 (openclaw doctor-state-integrity.ts; 실사용 프로브의 recall-hits 644 발견과 합류) + tool-result-cap advisory
-- ◦ (DS-12) 큐레이터: cron/루프-참조 스킬 프루닝 면제 + 배치 스냅샷/롤백 (hermes curator_backup.py; Muse curate()는 참조 체크 없음)
-- ◦ (DS-13) runs/checkpoints/action-log/learn-queue 연령 기반 pruner (hermes maybe_auto_prune_and_vacuum 패턴; 24h 게이트, never-raise)
-- ◦ (DS-14) MCP 연결 전 OSV 라이브 멀웨어 조회(MAL-* advisory, 12s bounded fail-open) — 기존 static 감사의 동적 보완 + "reconnect task never dies" 회귀 테스트
-- ◦ (DS-15) MoA 로컬 멀티모델 advisory fan-out (hermes moa_loop.py; council과 다른 축 — N 로컬모델 자문→1 종합; prompt-끝 배치로 KV캐시 보존 트릭 포함)
+Tier B — CLOSED (2026-07-03, 8/8 shipped):
+- ✓ (DS-8, 609a3f3d) proactive/scheduler alive/fired 2-파일 하트비트 + doctor 표면화 — 기존 sidecarFile 디렉토리에서 자동 파생(데몬 파일 무편집), 배달 실패 0건일 때만 fired, healthy/failing/dead/unknown 판정. 30 tests.
+- ✓ (DS-9, 63e67814) — DS-6과 결합 병합됨, 아래 참조.
+- ✓ (DS-10, 609a3f3d) 배경 프로세스 exit → 1회성 proactive notice — poll 방식 채택(콜백 대신: crash-restart 케이스까지 커버), persist-before-deliver로 fail-closed 1회성 보장. 데몬 runTick에 배선 완료.
+- ✓ (DS-11, 545748f4) doctor 4종 체크: 클라우드싱크 폴더/volatile마운트/8개 민감파일 퍼미션 드리프트(recall-hits 644 실발견 포함)/tool-result-cap advisory. 전부 fail-soft. 17 tests.
+- ✓ (DS-12, 28ac9ee6) curate() 스케줄잡-참조 스킬 면제(덕타이핑, scheduler 의존성 무추가) + 5-스냅샷 링 + rollback()(post-snapshot 충돌 시 archive, never delete). 15 tests.
+- ✓ (DS-13, 156f46b6) 4-타겟 연령기반 pruner, 24h 게이트, 타겟별 독립 try/catch. action-log는 해시체인 무결성 보존 위해 삭제 대신 아카이브 로테이션 채택(설계 하이라이트). 26 tests.
+- ✓ (DS-14, 7d5eba70) OSV MAL-* 라이브 조회(12s bounded, fail-open) opt-in 배선 + 조사 중 발견한 진짜 버그 수정(reconnectDue 배치가 서버 간 격리 없이 1개 실패 시 전체 스킵 — try/catch 격리로 수정). 22 tests.
+- ✓ (DS-15, ca673167) moaFanout — N 로컬모델 병렬 자문(no-tools)→1 acting 모델 종합, 참조블록을 trailing system 메시지로 붙여 prefix byte-identical 보존(캐시 친화). Opt-in standalone, 기본 런타임 미배선(후속 과제로 명시). 12 tests.
 
 parity/Muse-우위 확인(액션 없음): eval 인프라 Muse 우위, atomic write core·failure taxonomy·circuit breaker parity, prompt cache_control은 로컬 posture상 의도적 non-gap.
 
