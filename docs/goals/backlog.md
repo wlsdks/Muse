@@ -91,11 +91,11 @@ realistic partial hedge. Deeper veracity needs a human/product call, not an auto
 ## ★ 2026-07-03 delta-scout ROUND 2 (7/2 이후 신규 251+104 커밋, 3독립 스카우트) — Tier 1 5건 즉시착수, 내부품질 렌즈가 "이 방향 소진" 명시적 신호
 
 Tier 1 (자체 코드 실버그, 고신뢰, 근거 확보):
-- ★ (DS-16) MCP 죽은 세션이 영구 재사용됨 — `SdkMcpConnection`(transport.ts)에 onclose/onerror 미배선, `healthCheckAll` 호출자 0(존재하지만 아무도 안 부름), McpManager는 부팅시 1회 생성 후 프로세스 수명 내내 유지. stdio 서버 크래시 시 이후 모든 런이 인간이 수동 재연결할 때까지 계속 같은 방식으로 실패 (openclaw agent-bundle-mcp-runtime.ts requireConnectedSession 패턴 참조).
-- ★ (DS-17) 자식 프로세스 stdout/stderr의 청크별 UTF-8 디코드가 멀티바이트 문자를 청크 경계에서 깨뜨림 — 8개 지점 확인(macos-exec.ts, muse-tools-skills.ts, macos/linux 알림 provider, commands-import/export/glance.ts, voice-playback.ts). `packages/tools/src/runner.ts`는 이미 Buffer.concat 후 1회 디코드로 올바르게 처리 중 — 나머지를 그 패턴에 맞추면 됨 (openclaw windows-encoding.ts TextDecoder 참조).
-- ★ (DS-18) aux 요약기가 단발 실패에도 즉시 10분 쿨다운 — 진짜 일시적 blip(네트워크 hiccup)까지 10분간 요약 포기. hermes auxiliary_client.py가 오늘 고친 것과 동일 클래스: 쿨다운 열기 전에 지수백오프로 N회(기본 3) 재시도 필요. **DS-5(오늘 배송)의 직속 후속.**
-- ★ (DS-19) MoA reference 호출이 acting 호출과 동일한 maxOutputTokens 사용 — hermes 측정: advisor 출력 토큰이 턴 지연과 0.88 상관, reference만 별도 캡(`referenceMaxOutputTokens`) 걸면 59s→33s(44%) 개선, 최종답변 불변. **DS-15(오늘 배송)의 직속 후속.**
-- ★ (DS-20) 스키마버전 스토어(feeds/episode-index/notes-index)가 버전 불일치 시 백업 없이 즉시 discard-on-mismatch — 현재는 전부 v1이라 잠복 상태지만, 다음 v2 스키마 변경 시 사용자의 feeds.json(재생성 불가한 구독목록) 등이 조용히 증발. 최소수정: 덮어쓰기 대신 `.bak-v{n}-{ts}` 리네임 + 로그 (hermes config.py 버전 마이그레이션 프레임워크 참조, 풀버전은 과함).
+- ✓ (DS-16, c7ef8ba4) MCP 죽은 세션 self-heal — onclose/onerror 배선 + ensureLiveConnection이 다음 호출에서 투명 재연결, closure-staleness도 resolveConnection 콜백으로 해결, mid-refresh race 2곳 차단. 실제 stdio 자식 종료로 e2e 검증. 8 tests.
+- ✓ (DS-17, ba111203) 8개 지점 전부 실버그 확인 후 Buffer.concat-then-decode-once로 통일 — 2곳은 바이트캡→문자캡 전환의 의도적 동작변화 명시. 9 tests, 4개 패키지 전부 그린.
+- ✓ (DS-18, ad624b7a) @muse/resilience의 기존 retry() 재사용(신규 의존성 無), 250ms/500ms 백오프 3회 시도 후에만 쿨다운. 뮤테이션 RED 6/10.
+- ✓ (DS-19, 6664cce9) referenceMaxOutputTokens 추가 — opt-in, 미설정시 기존과 byte-identical. 3 tests.
+- ✓ (DS-20, fdea1953) 공유 헬퍼 backupVersionMismatchedStore — 3개 스토어 전부 rename-then-discard로 전환, fail-soft. 12 tests.
 
 Tier 2 (참고, 낮은 우선순위):
 - ◦ (DS-21) 로컬 모델 컨텍스트윈도우 정적 카탈로그(128K 하드코딩) 대신 라이브 서버 프로브 — num_ctx가 실제보다 작으면 조용한 truncation 위험 (hermes model_metadata.py)
