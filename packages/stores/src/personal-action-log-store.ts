@@ -345,3 +345,54 @@ export async function decryptActionLogAtRest(
 export async function isActionLogEncrypted(file: string): Promise<boolean> {
   return isFileEncryptedAtRest(file);
 }
+
+export interface ActionLogPruneResult {
+  readonly rotated: boolean;
+  readonly archivePath?: string;
+  readonly entriesArchived?: number;
+}
+
+/**
+ * Age-gated retention for the action log (DS-13). The store's own contract
+ * forbids losing or rewriting history (file header) AND every hash-linked
+ * entry is bound to its predecessor's content — deleting or splicing
+ * entries out of the middle of the chain would either break
+ * `verifyActionLogChain` for the survivors or require re-hashing history,
+ * which defeats tamper evidence entirely (an attacker could "prune" away
+ * the evidence of tampering). So pruning here is WHOLE-FILE archival
+ * rotation, never per-entry deletion: when the OLDEST entry is older than
+ * `ageDays`, the entire live file — a self-contained, still fully
+ * hash-verifiable chain — is renamed aside to
+ * `<file>.archive-<nowMs>.json`, and a fresh empty log starts: a new,
+ * independently verifiable chain segment (an empty chain's tip is the
+ * genesis hash by definition — see `chainTipHash` — so this is NOT a
+ * tamper signal). Nothing is ever deleted, only relocated out of the hot
+ * file; the archive is a complete, ordinary action-log file `muse actions
+ * --verify` can still validate on its own.
+ *
+ * No-op when the file is empty/missing or the oldest entry is still within
+ * the window. Preserves whatever encryption-at-rest state the file was in.
+ */
+export async function pruneActionLogByAge(
+  file: string,
+  options: { readonly ageDays: number; readonly now?: number },
+  env: NodeJS.ProcessEnv = process.env
+): Promise<ActionLogPruneResult> {
+  const now = options.now ?? Date.now();
+  const entries = await readActionLog(file, env);
+  if (entries.length === 0) {
+    return { rotated: false };
+  }
+  const oldestMs = Date.parse(entries[0]!.when);
+  const cutoffMs = now - Math.max(0, options.ageDays) * 86_400_000;
+  if (!Number.isFinite(oldestMs) || oldestMs >= cutoffMs) {
+    return { rotated: false };
+  }
+  const archivePath = `${file}.archive-${now.toString()}.json`;
+  return withFileLock(file, async () => {
+    const wasEncrypted = await isFileEncryptedAtRest(file);
+    await fs.rename(file, archivePath);
+    await writeMaybeEncrypted(file, EMPTY_ACTION_LOG_BODY, wasEncrypted, env);
+    return { archivePath, entriesArchived: entries.length, rotated: true };
+  });
+}

@@ -65,6 +65,7 @@ import type { ProgramIO } from "./program.js";
 import { randomUUID } from "node:crypto";
 import { DaemonStopSignal, runDaemonLoop } from "./commands-daemon-loop.js";
 import { defaultChromeConnection, defaultFollowupModel, defaultKnowledgeEnrich, type FollowupModel } from "./commands-daemon-connections.js";
+import { maybeAutoPrune } from "./local-state-retention.js";
 
 export interface DaemonHelpers {
   /** Test seam — defaults to `process.env`. */
@@ -1000,6 +1001,29 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         } catch { /* fail-soft — a calendar hiccup must never break the daemon */ }
       };
 
+      // DS-13: age-based retention for unbounded append-only local state
+      // (.muse/runs, .muse/checkpoints, ~/.muse/action-log.json,
+      // ~/.muse/learn-queue.jsonl). `maybeAutoPrune` already self-gates via a
+      // persisted ~/.muse/prune-meta.json marker (default 24h) so it survives
+      // daemon restarts; this in-memory throttle just avoids re-checking that
+      // marker file on every short tick within one daemon's uptime, mirroring
+      // the other ticks' `last*Ms` pattern. Never throws (log-and-continue
+      // is baked into maybeAutoPrune itself — each of the four targets prunes
+      // independently).
+      const RETENTION_PRUNE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+      let lastRetentionPruneCheckMs: number | undefined;
+      const retentionPruneTick = async (): Promise<void> => {
+        const nowMs = Date.now();
+        if (lastRetentionPruneCheckMs !== undefined && nowMs - lastRetentionPruneCheckMs < RETENTION_PRUNE_CHECK_INTERVAL_MS) return;
+        lastRetentionPruneCheckMs = nowMs;
+        try {
+          const summary = await maybeAutoPrune({ env: e, workspaceDir: io.workspaceDir ?? process.cwd() });
+          if (summary.ran && options.print) {
+            io.stdout(`[${new Date(nowMs).toISOString()}] retention-prune: ${summary.reason}\n`);
+          }
+        } catch { /* maybeAutoPrune already never throws — this is a final backstop */ }
+      };
+
       const runTick = async (): Promise<void> => {
         await proactiveTick();
         await remindersTick();
@@ -1020,6 +1044,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await recapTick();
         await messagingPollTick();
         await conflictWatchTick();
+        await retentionPruneTick();
       };
 
       io.stdout(`muse daemon — provider=${provider}, destination=${destination}, lead ${leadMinutes.toString()} min\n`);

@@ -92,3 +92,29 @@ export async function markLearnEventsDone(file: string, doneIds: readonly string
     await atomicWriteFile(file, trimmed.map((e) => JSON.stringify(e)).join("\n") + (trimmed.length > 0 ? "\n" : ""));
   });
 }
+
+/**
+ * Defensive age cap (DS-13). `MAX_LEARN_QUEUE_EVENTS` only bounds the queue
+ * on a successful drain (`markLearnEventsDone`) — if the idle distiller never
+ * runs (disabled, crashing, `MUSE_SELFLEARN` off), `enqueueLearnEvent` keeps
+ * appending unconditionally and the file grows forever. Drops any pending
+ * event older than `ageDays` regardless of consumption state; a stale
+ * correction is no longer a useful learning signal anyway. Shares the same
+ * per-file mutation queue as enqueue/markDone so this can't race a
+ * concurrent write. No-op (no write) when nothing is old enough to drop.
+ */
+export async function pruneLearnQueueByAge(
+  file: string,
+  options: { readonly ageDays: number; readonly now?: number }
+): Promise<{ readonly kept: number; readonly dropped: number }> {
+  const now = options.now ?? Date.now();
+  const cutoffMs = now - Math.max(0, options.ageDays) * 86_400_000;
+  return withFileMutationQueue(file, async () => {
+    const existing = await readPendingLearnEvents(file);
+    const kept = existing.filter((e) => e.enqueuedAtMs >= cutoffMs);
+    if (kept.length !== existing.length) {
+      await atomicWriteFile(file, kept.map((e) => JSON.stringify(e)).join("\n") + (kept.length > 0 ? "\n" : ""));
+    }
+    return { dropped: existing.length - kept.length, kept: kept.length };
+  });
+}
