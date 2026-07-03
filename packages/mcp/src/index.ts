@@ -3,6 +3,7 @@ import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool, ToolRisk } from "@muse/tools";
 
 import type { McpSecurityPolicyProvider } from "./in-memory-stores.js";
+import type { CheckPackageForMalwareAdvisoryOptions } from "./osv-check.js";
 
 export type Awaitable<T> = T | Promise<T>;
 export type McpTransportType = "stdio" | "sse" | "streamable" | "http";
@@ -138,6 +139,16 @@ export interface McpManagerOptions {
   readonly store?: McpServerStore;
   readonly validation?: McpServerValidationOptions;
   readonly now?: () => Date;
+  /**
+   * Live OSV malware-advisory preflight (`osv-check.ts`), additional to
+   * the static `server-audit.ts` scan. Opt-in and unset by default —
+   * mirrors the fingerprint-pinning posture (`verifyServerFingerprint`:
+   * "missing pin = no enforcement"), for the same reason: a network
+   * dependency should never turn on for every deployment/test unasked.
+   * Pass `{}` (or explicit `fetchImpl`/`timeoutMs`/`endpoint`) to enable
+   * the live check at `connect()`.
+   */
+  readonly osvMalwareCheck?: CheckPackageForMalwareAdvisoryOptions;
 }
 
 export interface McpReconnectPolicy {
@@ -237,6 +248,16 @@ export {
   type McpServerAuditResult,
   type McpServerAuditTarget
 } from "./server-audit.js";
+
+export {
+  auditMcpServerPackageForMalware,
+  checkPackageForMalwareAdvisory,
+  type CheckPackageForMalwareAdvisoryOptions,
+  type MalwareAdvisory,
+  type MalwareAdvisoryResult,
+  type McpServerMalwareAuditResult,
+  type OsvEcosystem
+} from "./osv-check.js";
 
 export function createMcpMuseTool(serverName: string, tool: McpRemoteTool, connection: McpConnection): MuseTool {
   return {

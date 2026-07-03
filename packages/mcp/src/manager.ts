@@ -29,6 +29,7 @@ import {
   createMcpMuseTool,
   normalizeMcpServerInput,
   normalizeReconnectPolicy,
+  type CheckPackageForMalwareAdvisoryOptions,
   type McpConnection,
   type McpHealthSnapshot,
   type McpHealthStatus,
@@ -44,6 +45,7 @@ import {
   type McpServerValidationOptions,
   type McpTransportConnector
 } from "./index.js";
+import { auditMcpServerPackageForMalware } from "./osv-check.js";
 import { auditMcpServerConfig } from "./server-audit.js";
 import { validateMcpServer } from "./validators.js";
 
@@ -53,6 +55,7 @@ export class McpManager {
   private readonly reconnectPolicy: McpReconnectPolicy;
   private readonly securityPolicyProvider: McpSecurityPolicyProvider;
   private readonly validation: McpServerValidationOptions;
+  private readonly osvMalwareCheck?: CheckPackageForMalwareAdvisoryOptions;
   private readonly statuses = new Map<string, McpServerStatus>();
   private readonly connections = new Map<string, McpConnection>();
   private readonly health = new Map<string, McpHealthSnapshot>();
@@ -68,6 +71,7 @@ export class McpManager {
     this.securityPolicyProvider = options.securityPolicyProvider ?? new McpSecurityPolicyProvider();
     this.store = options.store ?? store;
     this.validation = options.validation ?? {};
+    this.osvMalwareCheck = options.osvMalwareCheck;
   }
 
   async register(input: McpServerInput): Promise<McpServer | undefined> {
@@ -167,6 +171,26 @@ export class McpManager {
         this.statuses.set(name, "disabled");
         this.health.set(name, this.createHealthSnapshot(name, "unhealthy", auditReason(connectAudit.reasons)));
         return false;
+      }
+
+      // Live OSV malware-advisory preflight — additional to the static
+      // audit above, not a replacement. Opt-in (see `osvMalwareCheck`
+      // doc): skipped entirely when unset, so this never adds a network
+      // call to a deployment/test that didn't ask for it. When enabled,
+      // a genuine MAL-* hit fails CLOSED exactly like the static audit;
+      // a network failure fails OPEN inside `auditMcpServerPackageForMalware`
+      // itself, so this call always resolves quickly and never blocks
+      // `connect()` past the bounded OSV timeout.
+      if (this.osvMalwareCheck) {
+        const malwareAudit = await auditMcpServerPackageForMalware(
+          { config: server.config, transportType: server.transportType },
+          this.osvMalwareCheck
+        );
+        if (!malwareAudit.safe) {
+          this.statuses.set(name, "disabled");
+          this.health.set(name, this.createHealthSnapshot(name, "unhealthy", auditReason(malwareAudit.reasons)));
+          return false;
+        }
       }
     }
 
@@ -367,7 +391,19 @@ export class McpManager {
     const results: McpHealthSnapshot[] = [];
 
     for (const snapshot of due) {
-      await this.reconnect(snapshot.serverName);
+      try {
+        await this.reconnect(snapshot.serverName);
+      } catch (error) {
+        // One server's reconnect must never abort the whole batch — an
+        // unexpected throw here (e.g. the security policy provider's
+        // backing store hiccups) would otherwise silently skip EVERY
+        // other due server for this tick, and — worse — leave THIS
+        // server permanently un-probeable if nothing re-arms it. Park
+        // it for another retry (same backoff path as a normal connect
+        // failure) instead of letting the exception propagate, then
+        // keep processing the rest of the batch.
+        this.scheduleReconnect(snapshot.serverName, toErrorMessage(error));
+      }
       results.push(this.getHealth(snapshot.serverName));
     }
 

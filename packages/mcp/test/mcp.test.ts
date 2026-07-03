@@ -631,6 +631,76 @@ describe("McpManager", () => {
     expect(manager.getHealth("ext").reconnectAttempts).toBe(2);
   });
 
+  it("reconnectDue never permanently wedges — one due server throwing doesn't skip or drop retry for the rest of the batch", async () => {
+    // Regression for the "reconnect task returns and exits, permanently
+    // disabling further reconnects" bug class: an unexpected throw from
+    // ONE due server's reconnect() attempt (here, its security policy
+    // check hitting a flaky backing store) must not (a) abort processing
+    // of the OTHER due servers in the same reconnectDue() batch, and
+    // (b) must not leave the throwing server stuck with no future
+    // reconnect armed — it should be parked/retried, never dropped.
+    class FlakyAfterFirstCheckPolicyProvider extends McpSecurityPolicyProvider {
+      private flakyCalls = 0;
+      override async isServerAllowed(serverName: string): Promise<boolean> {
+        if (serverName === "flaky") {
+          this.flakyCalls += 1;
+          if (this.flakyCalls > 1) {
+            throw new Error("policy store unavailable");
+          }
+        }
+        return super.isServerAllowed(serverName);
+      }
+    }
+
+    let nowMs = 1_767_228_800_000;
+    const connector = { connect: vi.fn().mockRejectedValue(new Error("still down")) };
+    const manager = new McpManager(new InMemoryMcpServerStore(), {
+      connector,
+      now: () => new Date(nowMs),
+      reconnect: { initialDelayMs: 1, maxAttempts: 5 },
+      securityPolicyProvider: new FlakyAfterFirstCheckPolicyProvider()
+    });
+
+    await manager.register({ config: { command: "node" }, name: "flaky", transportType: "stdio" });
+    await manager.register({ config: { command: "node" }, name: "ok", transportType: "stdio" });
+
+    // Both fail their first connect via the connector (the policy check
+    // succeeds this once), arming an immediate reconnect for each.
+    await expect(manager.connect("flaky")).resolves.toBe(false);
+    await expect(manager.connect("ok")).resolves.toBe(false);
+    expect(manager.getHealth("flaky").nextReconnectAt).toBeDefined();
+    expect(manager.getHealth("ok").nextReconnectAt).toBeDefined();
+    expect(connector.connect).toHaveBeenCalledTimes(2);
+
+    // Both are due at the same instant — jump the clock to it.
+    nowMs = manager.getHealth("flaky").nextReconnectAt!.getTime();
+
+    // On this tick, "flaky"'s policy check throws mid-batch. "ok" must
+    // still get its reconnect attempt (proving the batch isn't aborted).
+    const results = await manager.reconnectDue();
+    expect(results).toHaveLength(2);
+    expect(connector.connect).toHaveBeenCalledTimes(3); // "flaky" never reached the connector; "ok" did.
+
+    // "flaky" is parked for another retry, not permanently stuck.
+    const flakyHealth = manager.getHealth("flaky");
+    expect(flakyHealth.status).toBe("unhealthy");
+    expect(flakyHealth.error).toMatch(/policy store unavailable/iu);
+    expect(flakyHealth.nextReconnectAt).toBeDefined();
+    expect(flakyHealth.reconnectAttempts).toBeGreaterThan(0);
+
+    // "ok" kept retrying on its own schedule too — no collateral damage.
+    expect(manager.getStatus("ok")).toBe("failed");
+    const okHealth = manager.getHealth("ok");
+    expect(okHealth.status).toBe("unhealthy");
+    expect(okHealth.nextReconnectAt).toBeDefined();
+
+    // A later tick proves "flaky" is still probeable (re-armed, not dead) —
+    // once its policy check recovers, it can reconnect like any other server.
+    nowMs = flakyHealth.nextReconnectAt!.getTime();
+    const secondRoundResults = await manager.reconnectDue();
+    expect(secondRoundResults.map((snapshot) => snapshot.serverName).sort()).toEqual(["flaky", "ok"]);
+  });
+
   it("reports local preflight diagnostics before live MCP execution", async () => {
     const policyStore = new InMemoryMcpSecurityPolicyStore({
       initial: {
