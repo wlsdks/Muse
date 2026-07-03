@@ -55,6 +55,20 @@ export interface MoaFanoutOptions {
   readonly acting: MoaSlot;
   readonly temperature?: number;
   readonly maxOutputTokens?: number;
+  /**
+   * Overrides `maxOutputTokens` for the reference/advisor calls ONLY — the
+   * acting call always keeps `maxOutputTokens` unchanged. Advisor output is
+   * gist material for the acting model, not the final answer, so it rarely
+   * needs full length: turn latency correlates with the SLOWEST advisor's
+   * output length, and capping it (a few hundred tokens is a reasonable
+   * starting point for advisory-only text) can cut latency substantially
+   * with no measured drop in final-answer quality. Left undefined by
+   * default (no cap beyond the provider/model's own default) since the
+   * right value is model/use-case dependent — a caller opts in explicitly.
+   * Unset ⇒ byte-identical to today: references fall back to the shared
+   * `maxOutputTokens`.
+   */
+  readonly referenceMaxOutputTokens?: number;
   /** Threaded into every reference call AND the acting call. */
   readonly signal?: AbortSignal;
   /**
@@ -130,6 +144,7 @@ export function buildReferenceBlock(references: readonly { readonly label: strin
  */
 export async function moaFanout(options: MoaFanoutOptions): Promise<MoaFanoutResult> {
   const { messages, references, acting } = options;
+  const referenceMaxOutputTokens = options.referenceMaxOutputTokens ?? options.maxOutputTokens;
 
   const settled = await Promise.allSettled(
     references.map((slot) => {
@@ -137,7 +152,7 @@ export async function moaFanout(options: MoaFanoutOptions): Promise<MoaFanoutRes
         model: slot.model,
         messages,
         temperature: options.temperature,
-        maxOutputTokens: options.maxOutputTokens,
+        maxOutputTokens: referenceMaxOutputTokens,
         signal: options.signal,
         reasoning: false,
       };

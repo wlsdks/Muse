@@ -253,6 +253,51 @@ describe("moaFanout — advisory fan-out (DS-15)", () => {
     expect(elapsed).toBeLessThan(150);
   });
 
+  it("referenceMaxOutputTokens set → reference calls carry the cap, acting call keeps the shared maxOutputTokens", async () => {
+    const refA = fixedProvider("A");
+    const refB = fixedProvider("B");
+    const act = acting();
+    await moaFanout({
+      messages: question,
+      references: [
+        { provider: refA.provider, model: "gemma" },
+        { provider: refB.provider, model: "qwen" },
+      ],
+      acting: act.slot,
+      maxOutputTokens: 512,
+      referenceMaxOutputTokens: 200,
+    });
+    expect(refA.calls[0]!.maxOutputTokens).toBe(200);
+    expect(refB.calls[0]!.maxOutputTokens).toBe(200);
+    expect(act.calls[0]!.maxOutputTokens).toBe(512);
+  });
+
+  it("referenceMaxOutputTokens unset → references and acting both use the same shared maxOutputTokens (regression: byte-identical to pre-change behavior)", async () => {
+    const refA = fixedProvider("A");
+    const act = acting();
+    await moaFanout({
+      messages: question,
+      references: [{ provider: refA.provider, model: "gemma" }],
+      acting: act.slot,
+      maxOutputTokens: 256,
+    });
+    expect(refA.calls[0]!.maxOutputTokens).toBe(256);
+    expect(act.calls[0]!.maxOutputTokens).toBe(256);
+  });
+
+  it("referenceMaxOutputTokens set but maxOutputTokens unset → references get the cap, acting gets no cap", async () => {
+    const refA = fixedProvider("A");
+    const act = acting();
+    await moaFanout({
+      messages: question,
+      references: [{ provider: refA.provider, model: "gemma" }],
+      acting: act.slot,
+      referenceMaxOutputTokens: 150,
+    });
+    expect(refA.calls[0]!.maxOutputTokens).toBe(150);
+    expect(act.calls[0]!.maxOutputTokens).toBeUndefined();
+  });
+
   it("buildReferenceBlock is pure and labels each perspective", () => {
     const block = buildReferenceBlock([
       { label: "gemma", output: "  use pnpm  " },
