@@ -97,10 +97,10 @@ Tier 1 (자체 코드 실버그, 고신뢰, 근거 확보):
 - ✓ (DS-19, 6664cce9) referenceMaxOutputTokens 추가 — opt-in, 미설정시 기존과 byte-identical. 3 tests.
 - ✓ (DS-20, fdea1953) 공유 헬퍼 backupVersionMismatchedStore — 3개 스토어 전부 rename-then-discard로 전환, fail-soft. 12 tests.
 
-Tier 2 (참고, 낮은 우선순위):
-- ◦ (DS-21) 로컬 모델 컨텍스트윈도우 정적 카탈로그(128K 하드코딩) 대신 라이브 서버 프로브 — num_ctx가 실제보다 작으면 조용한 truncation 위험 (hermes model_metadata.py)
-- ◦ (DS-22) OpenAI-호환 provider에 커스텀 헤더(extraHeaders) 지원 부재 — 리버스프록시/게이트웨이 뒤 자가호스팅 LLM 시나리오에 필요 (hermes extra_headers)
-- ◦ (DS-23) `/compress --preview` — 자동 트리밍이 뭘 버릴지 사전 미리보기 (hermes partial_compress.py; "shows its work" 정체성에 부합하는 저비용 UX)
+Tier 2 (완료):
+- ✓ (DS-21, d8f87c11) /api/show 라이브 프로브(캐시, opt-in MUSE_OLLAMA_PROBE_CONTEXT) — gemma4 실측 262144 vs 카탈로그 128K로 확인, num_ctx 상회 시 다운클램프+1회경고. 23 tests.
+- ✓ (DS-22, e0197b40) MUSE_MODEL_EXTRA_HEADERS(JSON) — 전 provider 분기(anthropic/gemini/ollama/openai/openrouter/preset/custom) 배선, fail-soft parseHeaderMap. 11 tests.
+- ✓ (DS-23, 01e0e158) `/compact` — buildContextWindowOptions 재수출로 실런타임과 동일 예산 사용, trimConversationMessages 순수호출(read-only 증명 테스트 포함). 5 tests.
 
 기각(액션 없음, 사유 명확): 멀티에이전트 fan-out 동시성 캡(약한 신호, 미확인 버그) · CLI config 미지 키 검증(파일 config 표면 2필드뿐이라 blast radius 작음) · Node-side exec의 부모 env 상속(runner.rs가 이미 env_clear+allowlist로 모델주도 명령 케이스 커버, 잔여는 고정 1st-party 바이너리라 노출 작음).
 
