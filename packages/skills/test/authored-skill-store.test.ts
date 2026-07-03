@@ -4,7 +4,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { parseSkillFile } from "../src/skill-parser.js";
-import { AuthoredSkillStore, rankSkillsForEviction, scanSkillBodyForRisks, serializeAuthoredSkill, skillBodyIsSubsumed, slugifySkillName } from "../src/authored-skill-store.js";
+import {
+  AuthoredSkillStore,
+  rankSkillsForEviction,
+  referencedByScheduledJob,
+  scanSkillBodyForRisks,
+  serializeAuthoredSkill,
+  skillBodyIsSubsumed,
+  slugifySkillName
+} from "../src/authored-skill-store.js";
+import type { Skill } from "../src/skill-contract.js";
 
 function tmpDir(): string {
   return mkdtempSync(join(tmpdir(), "muse-authored-"));
@@ -268,6 +277,75 @@ describe("AuthoredSkillStore — curate", () => {
     expect(await storeCurate.curate(0)).toEqual([]);
     expect(await storeCurate.listAuthored()).toHaveLength(1);
   });
+
+  it("exempts a skill referenced by a scheduled job from idle pruning at zero uses (control: unreferenced zero-use skill still archived)", async () => {
+    const dir = tmpDir();
+    const store0 = new AuthoredSkillStore({ dir, now: () => new Date("2026-05-01T00:00:00Z") });
+    await store0.writeOrPatch({ name: "cron-backed-skill", description: "alpha", body: "1" });
+    await store0.writeOrPatch({ name: "orphan-skill", description: "beta", body: "2" });
+
+    const storeCurate = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-11T00:00:00Z") });
+    const archived = await storeCurate.curate(30, {
+      scheduledJobs: [{ agentPrompt: "Every night, run the cron-backed-skill skill against the inbox.", name: "nightly-inbox", enabled: true }]
+    });
+
+    expect(archived).toEqual(["orphan-skill"]);
+    const live = (await storeCurate.listAuthored()).map((s) => s.name).sort();
+    expect(live).toEqual(["cron-backed-skill"]);
+  });
+
+  it("a DISABLED job's reference still exempts (resuming the job must find the skill)", async () => {
+    const dir = tmpDir();
+    const store0 = new AuthoredSkillStore({ dir, now: () => new Date("2026-05-01T00:00:00Z") });
+    await store0.writeOrPatch({ name: "paused-job-skill", description: "alpha", body: "1" });
+
+    const storeCurate = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-11T00:00:00Z") });
+    const archived = await storeCurate.curate(30, {
+      scheduledJobs: [{ agentPrompt: "uses paused-job-skill", enabled: false, name: "paused" }]
+    });
+    expect(archived).toEqual([]);
+  });
+});
+
+describe("referencedByScheduledJob — cross-reference exemption predicate", () => {
+  function fakeSkill(name: string): Skill {
+    return {
+      body: "body",
+      description: "d",
+      frontmatter: { description: "d", name },
+      name,
+      sourceInfo: { baseDir: `/tmp/${name}`, filePath: `/tmp/${name}/SKILL.md`, source: "authored" }
+    };
+  }
+
+  it("matches a job whose agentPrompt names the skill (word-boundary, case-insensitive)", () => {
+    const skill = fakeSkill("summarise-email");
+    expect(referencedByScheduledJob(skill, [{ agentPrompt: "Please use Summarise-Email daily." }])).toBe(true);
+  });
+
+  it("matches a job whose tags include the skill name", () => {
+    const skill = fakeSkill("book-flight");
+    expect(referencedByScheduledJob(skill, [{ name: "travel", tags: ["book-flight"] }])).toBe(true);
+  });
+
+  it("matches a job whose toolArguments stringify to include the skill name", () => {
+    const skill = fakeSkill("expense-report");
+    expect(referencedByScheduledJob(skill, [{ name: "job", toolArguments: { skill: "expense-report" } }])).toBe(true);
+  });
+
+  it("does NOT match a job that never mentions the skill", () => {
+    const skill = fakeSkill("unrelated-skill");
+    expect(referencedByScheduledJob(skill, [{ agentPrompt: "do something else entirely", name: "job" }])).toBe(false);
+  });
+
+  it("does not false-positive on a name that is only a substring of another word", () => {
+    const skill = fakeSkill("cat");
+    expect(referencedByScheduledJob(skill, [{ agentPrompt: "run the category report", name: "job" }])).toBe(false);
+  });
+
+  it("empty job list never references", () => {
+    expect(referencedByScheduledJob(fakeSkill("anything"), [])).toBe(false);
+  });
 });
 
 describe("AuthoredSkillStore — consolidate (umbrella merge, archive-never-delete)", () => {
@@ -462,6 +540,122 @@ describe("AuthoredSkillStore — restore (curate/consolidate rollback)", () => {
     expect(await store.listArchived()).not.toContain("one");
 
     expect(await store.restore("never-archived")).toBe(false);
+  });
+});
+
+describe("AuthoredSkillStore — snapshotBeforeCurate / rollback (batch safety net)", () => {
+  it("takes a snapshot before curate's mutating pass runs", async () => {
+    const dir = tmpDir();
+    const store0 = new AuthoredSkillStore({ dir, now: () => new Date("2026-05-01T00:00:00Z") });
+    await store0.writeOrPatch({ name: "will-be-archived", description: "d", body: "original body" });
+
+    const storeCurate = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-11T00:00:00Z") });
+    expect(await storeCurate.listSnapshots()).toEqual([]);
+    const archived = await storeCurate.curate(30);
+    expect(archived).toEqual(["will-be-archived"]);
+
+    const snapshots = await storeCurate.listSnapshots();
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.entries.map((e) => e.name)).toEqual(["will-be-archived"]);
+    expect(snapshots[0]?.entries[0]?.content).toContain("original body");
+  });
+
+  it("does not write a snapshot when curate finds nothing to touch", async () => {
+    const dir = tmpDir();
+    const store0 = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-10T00:00:00Z") });
+    await store0.writeOrPatch({ name: "fresh", description: "d", body: "b" });
+
+    const storeCurate = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-11T00:00:00Z") });
+    expect(await storeCurate.curate(30)).toEqual([]);
+    expect(await storeCurate.listSnapshots()).toEqual([]);
+  });
+
+  it("rollback() restores the prior content of an archived skill", async () => {
+    const dir = tmpDir();
+    const store0 = new AuthoredSkillStore({ dir, now: () => new Date("2026-05-01T00:00:00Z") });
+    await store0.writeOrPatch({ name: "revert-me", description: "d", body: "the original procedure" });
+
+    const storeCurate = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-11T00:00:00Z") });
+    await storeCurate.curate(30);
+    expect((await storeCurate.listAuthored()).map((s) => s.name)).not.toContain("revert-me");
+
+    const result = await storeCurate.rollback();
+    expect(result.restored).toEqual(["revert-me"]);
+    expect(result.archivedConflicts).toEqual([]);
+
+    const live = await storeCurate.listAuthored();
+    expect(live.map((s) => s.name)).toContain("revert-me");
+    expect(live.find((s) => s.name === "revert-me")?.body).toContain("the original procedure");
+  });
+
+  it("rollback of a batch archives (does not delete) a skill created post-snapshot into the same slot", async () => {
+    const dir = tmpDir();
+    const store0 = new AuthoredSkillStore({ dir, now: () => new Date("2026-05-01T00:00:00Z") });
+    await store0.writeOrPatch({ name: "reused-name", description: "d", body: "OLD body before curate" });
+
+    const storeCurate = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-11T00:00:00Z") });
+    await storeCurate.curate(30); // archives "reused-name", snapshot #1 records OLD body
+
+    // A DIFFERENT skill gets authored into the same name/slug after the snapshot.
+    const storeReauthor = new AuthoredSkillStore({ dir, now: () => new Date("2026-06-12T00:00:00Z") });
+    await storeReauthor.writeOrPatch({ name: "reused-name", description: "d2", body: "NEW body authored after curate" });
+
+    const result = await storeCurate.rollback();
+    expect(result.archivedConflicts).toEqual(["reused-name"]);
+
+    // The live slot now holds the OLD (rolled-back) content — the new skill was
+    // preserved (archived), never deleted.
+    const live = await storeCurate.listAuthored();
+    const liveSkill = live.find((s) => s.name === "reused-name");
+    expect(liveSkill?.body).toContain("OLD body before curate");
+
+    const { readdir } = await import("node:fs/promises");
+    const archivedFolders = await readdir(join(dir, ".archive")).catch(() => [] as string[]);
+    expect(archivedFolders.some((f) => f.startsWith("reused-name-postsnapshot-"))).toBe(true);
+  });
+
+  it("rollback throws when there is no snapshot to restore", async () => {
+    const dir = tmpDir();
+    const store = new AuthoredSkillStore({ dir });
+    await expect(store.rollback()).rejects.toThrow();
+  });
+
+  it("rollback(snapshotId) restores a specific snapshot, not just the most recent", async () => {
+    const dir = tmpDir();
+    let t = Date.parse("2026-05-01T00:00:00Z");
+    const store = new AuthoredSkillStore({ dir, maxSkills: 100, now: () => new Date(t) });
+    await store.writeOrPatch({ name: "skill-a", description: "d", body: "a-v1" });
+    t += 40 * 86_400_000;
+    await store.curate(30); // snapshot #1: skill-a archived
+    await store.restore("skill-a");
+
+    t += 40 * 86_400_000;
+    await store.curate(30); // snapshot #2: skill-a archived again
+
+    const snapshots = await store.listSnapshots();
+    expect(snapshots).toHaveLength(2);
+
+    const result = await store.rollback(snapshots[0]?.id);
+    expect(result.snapshotId).toBe(snapshots[0]?.id);
+  });
+
+  it("the snapshot ring is bounded — older than N entries are pruned", async () => {
+    const dir = tmpDir();
+    let t = Date.parse("2026-01-01T00:00:00Z");
+    const store = new AuthoredSkillStore({ dir, maxSkills: 100, now: () => new Date(t), snapshotRingSize: 3 });
+
+    for (let i = 0; i < 5; i += 1) {
+      await store.writeOrPatch({ name: `idle-${i.toString()}`, description: "d", body: `body-${i.toString()}` });
+      t += 40 * 86_400_000; // push this skill past the idle window
+      await store.curate(30); // one snapshot per tick, one archived skill each time
+    }
+
+    const snapshots = await store.listSnapshots();
+    expect(snapshots).toHaveLength(3); // ring bounded to snapshotRingSize
+    // The ring keeps the NEWEST snapshots — the earliest two (idle-0, idle-1) were pruned.
+    const namesAcrossSnapshots = snapshots.flatMap((s) => s.entries.map((e) => e.name));
+    expect(namesAcrossSnapshots).not.toContain("idle-0");
+    expect(namesAcrossSnapshots).toContain("idle-4");
   });
 });
 

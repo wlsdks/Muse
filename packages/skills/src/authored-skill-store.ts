@@ -8,6 +8,7 @@
  * (atomic fsync+rename, 0600).
  */
 
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -66,6 +67,8 @@ export interface AuthoredSkillStoreOptions {
   readonly now?: () => Date;
   /** 0..1 similarity used for create-vs-patch. Default: local Jaccard. */
   readonly similarity?: (a: string, b: string) => number;
+  /** Pre-mutation snapshot ring size (see {@link DEFAULT_SKILL_SNAPSHOT_RING_SIZE}). */
+  readonly snapshotRingSize?: number;
 }
 
 export const DEFAULT_MAX_AUTHORED_SKILLS = 30;
@@ -176,12 +179,97 @@ export function rankSkillsForEviction(entries: readonly SkillEvictionEntry[]): r
     .map((entry) => entry.name);
 }
 
+/**
+ * Minimal, duck-typed shape of a scheduled job / standing objective that
+ * might still need a skill to exist. Deliberately NOT imported from
+ * `@muse/scheduler` — every field is optional and structurally compatible
+ * with `ScheduledJob`, so a caller can pass real scheduler/objective records
+ * straight through without this package taking a build dependency on
+ * `packages/scheduler`.
+ */
+export interface SkillReferencingJob {
+  readonly enabled?: boolean;
+  readonly name?: string;
+  readonly description?: string;
+  readonly agentPrompt?: string;
+  readonly toolArguments?: unknown;
+  readonly tags?: readonly string[];
+}
+
+/**
+ * Is `skill` still named by any job (scheduled job or standing objective)?
+ * A referenced skill is exempt from idle pruning even at zero uses — mirrors
+ * Hermes Agent curator's cron-reference exemption (`_cron_referenced_skills`,
+ * MIT), which DELIBERATELY includes paused/disabled jobs too: "resuming or
+ * the next fire must find it" — a job disabled today may be re-enabled
+ * tomorrow, and a skill archived out from under it in the meantime is a
+ * silent regression the user never asked for. So `enabled` is intentionally
+ * NOT used to filter here (kept on the type for callers/future use, e.g.
+ * surfacing which references are live vs. dormant).
+ *
+ * KNOWN LIMITATION: Muse has no structured skill<->job link today (no
+ * `skillId` field on `ScheduledJob`), so this is a conservative
+ * case-insensitive, word-boundary SUBSTRING match of the skill's name
+ * against free-text job fields (`name`/`description`/`agentPrompt`/`tags`/
+ * stringified `toolArguments`). Consequences: (a) a job that paraphrases a
+ * skill instead of naming it produces a false negative (skill still gets
+ * pruned) — acceptable, matches today's un-exempted behavior; (b) a job
+ * whose text happens to mention the skill's name in an unrelated sense
+ * produces a false positive (skill over-exempted) — the safe direction,
+ * since over-retaining a skill costs disk, not correctness. Replace with an
+ * exact `skillId` match the day a structured link exists.
+ */
+export function referencedByScheduledJob(skill: Skill, jobs: readonly SkillReferencingJob[]): boolean {
+  const needle = skill.name.trim().toLowerCase();
+  if (needle.length === 0) return false;
+  const pattern = new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "iu");
+  for (const job of jobs) {
+    const haystacks: unknown[] = [job.name, job.description, job.agentPrompt, ...(job.tags ?? [])];
+    if (job.toolArguments !== undefined) {
+      try {
+        haystacks.push(JSON.stringify(job.toolArguments));
+      } catch {
+        // non-serializable arguments — ignore, other fields still checked
+      }
+    }
+    for (const text of haystacks) {
+      if (typeof text === "string" && pattern.test(text)) return true;
+    }
+  }
+  return false;
+}
+
+/** One archived-content record inside a {@link SkillSnapshot}. */
+export interface SkillSnapshotEntry {
+  readonly name: string;
+  readonly slug: string;
+  readonly contentHash: string;
+  readonly content: string;
+}
+
+/** A pre-mutation snapshot taken before `curate`/`consolidate` archives skills. */
+export interface SkillSnapshot {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly entries: readonly SkillSnapshotEntry[];
+}
+
+/**
+ * Snapshot ring size: how many pre-mutation snapshots are kept before the
+ * oldest is pruned. 5 mirrors Hermes Agent curator_backup's `DEFAULT_KEEP`
+ * — enough undo history to cover several curate/consolidate ticks (this
+ * store already ticks at most a few times a day) without unbounded disk
+ * growth from a snapshot format that stores full skill content per entry.
+ */
+export const DEFAULT_SKILL_SNAPSHOT_RING_SIZE = 5;
+
 export class AuthoredSkillStore {
   private readonly dir: string;
   private readonly maxSkills: number;
   private readonly existingNames: () => readonly string[];
   private readonly now: () => Date;
   private readonly similarity: (a: string, b: string) => number;
+  private readonly snapshotRingSize: number;
 
   constructor(options: AuthoredSkillStoreOptions) {
     this.dir = options.dir;
@@ -189,6 +277,7 @@ export class AuthoredSkillStore {
     this.existingNames = options.existingNames ?? (() => []);
     this.now = options.now ?? (() => new Date());
     this.similarity = options.similarity ?? defaultSimilarity;
+    this.snapshotRingSize = options.snapshotRingSize ?? DEFAULT_SKILL_SNAPSHOT_RING_SIZE;
   }
 
   async listAuthored(): Promise<readonly Skill[]> {
@@ -285,15 +374,30 @@ export class AuthoredSkillStore {
    * non-positive window is a no-op. Keeps the learned-skill set relevant so
    * the local model isn't choosing among stale skills (tool-calling.md).
    *
+   * `options.scheduledJobs` exempts a skill still named by a scheduled job /
+   * standing objective (enabled or disabled) from idle pruning even at zero uses
+   * (see {@link referencedByScheduledJob}) — mirrors treating a cron-
+   * referenced skill like a pinned one. Before archiving, a snapshot of
+   * every about-to-be-touched skill's content is taken (see
+   * {@link SkillSnapshot}) so a bad batch can be undone with `rollback()`.
+   *
    * Pattern adapted from Hermes Agent's curator lifecycle — last_used_at
-   * feeding stale → auto-archive transitions (MIT) — reimplemented for Muse.
+   * feeding stale → auto-archive transitions, cron-reference exemption, and
+   * pre-mutation snapshotting (MIT) — reimplemented for Muse.
    */
-  async curate(maxIdleDays: number): Promise<readonly string[]> {
+  async curate(
+    maxIdleDays: number,
+    options: { readonly scheduledJobs?: readonly SkillReferencingJob[] } = {}
+  ): Promise<readonly string[]> {
     if (!(maxIdleDays > 0)) return [];
     const cutoff = this.now().getTime() - maxIdleDays * 24 * 60 * 60 * 1000;
+    const jobs = options.scheduledJobs ?? [];
+    const candidates = (await this.listAuthored()).filter(
+      (s) => this.lastActiveAt(s) < cutoff && !referencedByScheduledJob(s, jobs)
+    );
+    if (candidates.length > 0) await this.snapshotSkills(candidates);
     const archived: string[] = [];
-    for (const s of await this.listAuthored()) {
-      if (this.lastActiveAt(s) >= cutoff) continue;
+    for (const s of candidates) {
       if (await this.archiveSkill(s)) archived.push(s.name);
     }
     return archived;
@@ -402,6 +506,9 @@ export class AuthoredSkillStore {
         out.push({ merged: cluster.map((s) => s.name), umbrella: umbrella.name });
         continue;
       }
+      // Snapshot the cluster's current content BEFORE this cluster's mutating
+      // pass so a bad merge can be undone with rollback().
+      await this.snapshotSkills(cluster);
       // Archive originals FIRST so the subsequent umbrella write can't
       // similarity-match (and accidentally patch) one of them.
       for (const s of cluster) await this.archiveSkill(s);
@@ -452,6 +559,123 @@ export class AuthoredSkillStore {
       // slot free — proceed
     }
     return fs.rename(src, dest).then(() => true).catch(() => false);
+  }
+
+  /** Pre-mutation snapshots, newest last — what `rollback()` can restore. */
+  async listSnapshots(): Promise<readonly SkillSnapshot[]> {
+    const files = await fs.readdir(this.snapshotsDir()).catch(() => [] as string[]);
+    const out: SkillSnapshot[] = [];
+    for (const file of files.filter((f) => f.endsWith(".json")).sort()) {
+      const raw = await fs.readFile(join(this.snapshotsDir(), file), "utf8").catch(() => undefined);
+      if (raw === undefined) continue;
+      try {
+        out.push(JSON.parse(raw) as SkillSnapshot);
+      } catch {
+        // corrupt/partial snapshot file — skip, don't fail the whole list
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Roll a batch back: restore every skill recorded in a snapshot (default:
+   * the most recent) to its snapshotted content. Never-delete preserved — a
+   * skill that was newly authored/edited into the same slot AFTER the
+   * snapshot was taken is preserved by archiving it (under a distinct
+   * `<slug>-postsnapshot-<ts>` folder) instead of being overwritten or
+   * removed. Throws if no snapshot exists (or a given `snapshotId` isn't
+   * found) — there's nothing safe to roll back to.
+   */
+  async rollback(snapshotId?: string): Promise<{
+    readonly snapshotId: string;
+    readonly restored: readonly string[];
+    readonly archivedConflicts: readonly string[];
+  }> {
+    const snapshots = await this.listSnapshots();
+    const snapshot = snapshotId ? snapshots.find((s) => s.id === snapshotId) : snapshots.at(-1);
+    if (!snapshot) {
+      throw new Error(
+        snapshotId ? `snapshot not found: ${snapshotId}` : "no snapshots available to roll back to"
+      );
+    }
+    const restored: string[] = [];
+    const archivedConflicts: string[] = [];
+    for (const entry of snapshot.entries) {
+      const conflict = await this.restoreSnapshotEntry(entry);
+      restored.push(entry.name);
+      if (conflict) archivedConflicts.push(entry.name);
+    }
+    return { archivedConflicts, restored, snapshotId: snapshot.id };
+  }
+
+  private snapshotsDir(): string {
+    return join(this.dir, ".snapshots");
+  }
+
+  /**
+   * Write a pre-mutation snapshot for `skills` (the set about to be
+   * archived/merged) and prune the ring down to `snapshotRingSize`. A JSON
+   * manifest per skill (name/slug/contentHash/full content) is sufficient in
+   * Node — no tar needed, matching the file-based house style already used
+   * for skill storage. No-op (writes nothing) when `skills` is empty, so an
+   * idle curate/consolidate tick that finds nothing to touch doesn't churn
+   * the ring.
+   */
+  private async snapshotSkills(skills: readonly Skill[]): Promise<string | undefined> {
+    if (skills.length === 0) return undefined;
+    const entries: SkillSnapshotEntry[] = [];
+    for (const skill of skills) {
+      const content = await fs.readFile(skill.sourceInfo.filePath, "utf8").catch(() => "");
+      entries.push({
+        content,
+        contentHash: createHash("sha256").update(content).digest("hex"),
+        name: skill.name,
+        slug: slugifySkillName(skill.name)
+      });
+    }
+    const id = `${this.now().toISOString().replace(/[:.]/gu, "-")}-${Math.random().toString(36).slice(2, 8)}`;
+    const snapshot: SkillSnapshot = { createdAt: this.now().toISOString(), entries, id };
+    await writeFileAtomic(join(this.snapshotsDir(), `${id}.json`), JSON.stringify(snapshot));
+    await this.pruneSnapshots();
+    return id;
+  }
+
+  private async pruneSnapshots(): Promise<void> {
+    const files = (await fs.readdir(this.snapshotsDir()).catch(() => [] as string[]))
+      .filter((f) => f.endsWith(".json"))
+      .sort();
+    const excess = files.length - this.snapshotRingSize;
+    if (excess <= 0) return;
+    for (const file of files.slice(0, excess)) {
+      await fs.unlink(join(this.snapshotsDir(), file)).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Restore one snapshot entry to `<dir>/<slug>/SKILL.md`. Returns true when
+   * a DIFFERENT skill occupying the slot (authored/edited after the
+   * snapshot) had to be preserved by archiving it under a distinct name —
+   * i.e. a conflict was resolved by archive-not-delete rather than a clean
+   * restore.
+   */
+  private async restoreSnapshotEntry(entry: SkillSnapshotEntry): Promise<boolean> {
+    const liveDir = join(this.dir, entry.slug);
+    const liveFile = join(liveDir, "SKILL.md");
+    const archiveDir = join(this.dir, ".archive", entry.slug);
+
+    const currentContent = await fs.readFile(liveFile, "utf8").catch(() => undefined);
+    let conflict = false;
+    if (currentContent !== undefined && currentContent !== entry.content) {
+      const preserveDir = join(this.dir, ".archive", `${entry.slug}-postsnapshot-${this.now().getTime().toString()}`);
+      await fs.rename(liveDir, preserveDir).catch(() => undefined);
+      conflict = true;
+    } else if (currentContent === undefined) {
+      // Not live — if curate/consolidate archived it, reclaim the folder so
+      // rollback doesn't leave an orphaned duplicate under .archive.
+      await fs.rename(archiveDir, liveDir).catch(() => undefined);
+    }
+    await writeFileAtomic(liveFile, entry.content);
+    return conflict;
   }
 
   private authoredAt(skill: Skill): number {
