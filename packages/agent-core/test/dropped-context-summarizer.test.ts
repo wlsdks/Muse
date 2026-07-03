@@ -52,6 +52,21 @@ function fakeClock(startMs: number) {
   };
 }
 
+/**
+ * Injectable sleep for retry-backoff tests: resolves instantly (no real
+ * wall-clock wait) and records every requested delay so tests can assert
+ * the retry loop actually backed off, without the test taking real time.
+ */
+function fakeSleep(): { sleep: (ms: number) => Promise<void>; delays: number[] } {
+  const delays: number[] = [];
+  return {
+    delays,
+    sleep: async (ms: number) => {
+      delays.push(ms);
+    }
+  };
+}
+
 // Mirrors the `role: content` transcript join createModelDroppedContextSummarizer
 // builds internally, so the effective/ineffective fixtures below stay correct
 // against the real savedRatio calculation even if `dropped` changes.
@@ -77,45 +92,103 @@ describe("createModelDroppedContextSummarizer (CMP-2 production summarizer)", ()
     expect(seen?.messages.some((m) => m.role === "system")).toBe(true);
   });
 
-  it("propagates a provider error on the FIRST call (fail-open handled upstream by summarizeDroppedContext)", async () => {
-    const provider: ModelProvider = {
-      id: "boom", async listModels() { return []; },
-      async generate() { throw new Error("ollama down"); },
-      async *stream() { /* unused */ }
-    };
-    const summarize = createModelDroppedContextSummarizer(provider, "m");
+  it("propagates a provider error after exhausting all retry attempts (fail-open handled upstream by summarizeDroppedContext)", async () => {
+    const { sleep } = fakeSleep();
+    const { provider, calls } = scriptedProvider(() => { throw new Error("ollama down"); });
+    const summarize = createModelDroppedContextSummarizer(provider, "m", { sleep });
     await expect(summarize(dropped)).rejects.toThrow(/ollama down/);
+    // default maxAttempts is 3 total attempts (1 + 2 retries), not 1.
+    expect(calls).toHaveLength(3);
+  });
+
+  describe("failure retry (DS-18)", () => {
+    it("retries a transient failure within a single call and succeeds without opening the cooldown", async () => {
+      const clock = fakeClock(0);
+      const { sleep, delays } = fakeSleep();
+      const { provider, calls } = scriptedProvider((callIndex) => {
+        if (callIndex === 0) throw new Error("transient blip");
+        return EFFECTIVE_OUTPUT;
+      });
+      const summarize = createModelDroppedContextSummarizer(provider, "m", { cooldownMs: 60_000, now: clock.now, sleep });
+
+      const result = await summarize(dropped);
+      expect(result).toBe(EFFECTIVE_OUTPUT);
+      // the failed first attempt + the succeeding retry, well short of a full 10-min gate.
+      expect(calls.length).toBeGreaterThanOrEqual(2);
+      expect(calls.length).toBeLessThanOrEqual(3);
+      expect(delays.length).toBeGreaterThan(0); // backoff was actually requested between attempts
+
+      // cooldown must NOT have opened: the very next call still reaches the LLM.
+      const callsBeforeSecondSummarize = calls.length;
+      const second = await summarize(dropped);
+      expect(second).toBe(EFFECTIVE_OUTPUT);
+      expect(calls.length).toBeGreaterThan(callsBeforeSecondSummarize);
+    });
+
+    it("uses the injectable sleep for exponential backoff delays instead of real wall-clock time", async () => {
+      const { sleep, delays } = fakeSleep();
+      const { provider } = scriptedProvider(() => { throw new Error("ollama down"); });
+      const summarize = createModelDroppedContextSummarizer(provider, "m", { sleep });
+
+      const start = Date.now();
+      await expect(summarize(dropped)).rejects.toThrow(/ollama down/);
+      const elapsedMs = Date.now() - start;
+
+      // 3 attempts -> 2 backoff delays, strictly increasing (exponential).
+      expect(delays).toHaveLength(2);
+      expect(delays[1]).toBeGreaterThan(delays[0] ?? 0);
+      // the fake sleep never actually waited, so this ran near-instantly —
+      // proves the delays were requested via the injected sleep, not a real timer.
+      expect(elapsedMs).toBeLessThan(1_000);
+    });
   });
 
   describe("failure cooldown", () => {
     it("skips the LLM call entirely on the 2nd compaction within the cooldown window", async () => {
       const clock = fakeClock(0);
+      const { sleep } = fakeSleep();
       const { provider, calls } = scriptedProvider(() => { throw new Error("ollama down"); });
-      const summarize = createModelDroppedContextSummarizer(provider, "m", { cooldownMs: 60_000, now: clock.now });
+      const summarize = createModelDroppedContextSummarizer(provider, "m", { cooldownMs: 60_000, now: clock.now, sleep });
 
       await expect(summarize(dropped)).rejects.toThrow(/ollama down/);
-      expect(calls).toHaveLength(1);
+      expect(calls).toHaveLength(3); // all 3 attempts exhausted before the cooldown opened
 
       const result = await summarize(dropped);
       expect(result).toBe("");
-      expect(calls).toHaveLength(1); // no second LLM attempt while in cooldown
+      expect(calls).toHaveLength(3); // no further LLM attempt while in cooldown
     });
 
     it("retries the LLM call once the cooldown window has elapsed", async () => {
       const clock = fakeClock(0);
+      const { sleep } = fakeSleep();
       const { provider, calls } = scriptedProvider((callIndex) => {
-        if (callIndex === 0) throw new Error("ollama down");
+        if (callIndex < 3) throw new Error("ollama down"); // exhausts the first summarize()'s 3 attempts
         return EFFECTIVE_OUTPUT;
       });
-      const summarize = createModelDroppedContextSummarizer(provider, "m", { cooldownMs: 60_000, now: clock.now });
+      const summarize = createModelDroppedContextSummarizer(provider, "m", { cooldownMs: 60_000, now: clock.now, sleep });
 
       await expect(summarize(dropped)).rejects.toThrow(/ollama down/);
-      expect(calls).toHaveLength(1);
+      expect(calls).toHaveLength(3);
 
       clock.advance(60_001);
       const result = await summarize(dropped);
       expect(result).toBe(EFFECTIVE_OUTPUT);
-      expect(calls).toHaveLength(2); // cooldown expired — the retry actually reached the LLM
+      expect(calls).toHaveLength(4); // cooldown expired — the retry actually reached the LLM
+    });
+
+    it("still opens the cooldown after all bounded retries are exhausted", async () => {
+      const clock = fakeClock(0);
+      const { sleep } = fakeSleep();
+      const { provider, calls } = scriptedProvider(() => { throw new Error("ollama down"); });
+      const summarize = createModelDroppedContextSummarizer(provider, "m", { cooldownMs: 60_000, now: clock.now, sleep });
+
+      await expect(summarize(dropped)).rejects.toThrow(/ollama down/);
+      expect(calls).toHaveLength(3);
+
+      clock.advance(59_000); // still within the cooldown
+      const result = await summarize(dropped);
+      expect(result).toBe("");
+      expect(calls).toHaveLength(3);
     });
   });
 

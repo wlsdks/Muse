@@ -13,17 +13,31 @@
  *
  * Cooldown / ineffectiveness skip: without this, a persistently-failing
  * aux model (down, malformed response, timeout) re-attempts the LLM call on
- * EVERY subsequent compaction — the "CLI freeze" bug class. A failing call
- * opens a cooldown window; while it's open the returned summarizer skips
- * the LLM call entirely and returns "" (which `summarizeDroppedContext`
- * already treats as "no aux summary" and falls back to the deterministic
- * one) instead of re-attempting. The same cooldown gate also opens after 2
- * consecutive calls that each saved less than `ineffectivenessThreshold` of
- * the transcript length — paying for a model call that isn't helping is as
+ * EVERY subsequent compaction — the "CLI freeze" bug class. Only once a
+ * failing call has exhausted its bounded retries (see below) does a cooldown
+ * window open; while it's open the returned summarizer skips the LLM call
+ * entirely and returns "" (which `summarizeDroppedContext` already treats
+ * as "no aux summary" and falls back to the deterministic one) instead of
+ * re-attempting. The same cooldown gate also opens after 2 consecutive
+ * calls that each saved less than `ineffectivenessThreshold` of the
+ * transcript length — paying for a model call that isn't helping is as
  * wasteful as paying for one that's failing. The gate is a plain cooldown,
  * not a permanent kill switch: once it expires, the next compaction tries
  * again, and an effective result resets the ineffectiveness streak.
+ *
+ * Retry-before-cooldown (DS-18): opening a 10-minute cooldown on the VERY
+ * FIRST failure treats a transient blip (one dropped connection, one slow
+ * response) the same as a real outage. Before the cooldown gate can open,
+ * the `provider.generate` call gets `maxAttempts` bounded attempts with
+ * exponential backoff between them — mirrors hermes'
+ * `agent/auxiliary_client.py` (3 total attempts) for its identical
+ * pinned-model aux-call mechanism. Only once ALL attempts are exhausted
+ * does the cooldown open; a non-retryable error class (auth, bad request,
+ * model-not-found — see `@muse/resilience`'s `classifyError`) still fails
+ * fast on the first attempt, same as any other permanent failure.
  */
+
+import { retry, RetryExhaustedError } from "@muse/resilience";
 
 import type { DroppedContextSummarizer } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
@@ -34,6 +48,10 @@ const SUMMARIZER_SYSTEM_PROMPT =
 const DEFAULT_COOLDOWN_MS = 10 * 60_000;
 const DEFAULT_INEFFECTIVENESS_THRESHOLD = 0.1;
 const DEFAULT_INEFFECTIVENESS_STREAK_LIMIT = 2;
+const DEFAULT_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_INITIAL_DELAY_MS = 250;
+const DEFAULT_RETRY_MAX_DELAY_MS = 4_000;
+const RETRY_MULTIPLIER = 2;
 
 export interface DroppedContextSummarizerOptions {
   /** Injectable clock for deterministic tests. Defaults to `() => new Date()`. */
@@ -55,6 +73,32 @@ export interface DroppedContextSummarizerOptions {
    * Defaults to 2.
    */
   readonly ineffectivenessStreakLimit?: number;
+  /**
+   * Total attempts (including the first) the aux call gets before the
+   * failure cooldown opens. Defaults to 3 (2 retries), matching hermes'
+   * `auxiliary_client.py` reference. A non-retryable error class (auth,
+   * bad request, model-not-found) still fails on its first attempt.
+   */
+  readonly maxAttempts?: number;
+  /**
+   * Base delay for the exponential backoff between retry attempts
+   * (delay = retryInitialDelayMs * 2^(attempt-1), capped at
+   * `retryMaxDelayMs`). Defaults to 250ms.
+   */
+  readonly retryInitialDelayMs?: number;
+  /** Hard cap on a single backoff delay. Defaults to 4000ms. */
+  readonly retryMaxDelayMs?: number;
+  /**
+   * Injectable sleep for the backoff delays, so tests never take real
+   * wall-clock time. Defaults to a real `setTimeout`-based sleep.
+   */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export function createModelDroppedContextSummarizer(
@@ -66,6 +110,10 @@ export function createModelDroppedContextSummarizer(
   const cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS;
   const ineffectivenessThreshold = options.ineffectivenessThreshold ?? DEFAULT_INEFFECTIVENESS_THRESHOLD;
   const ineffectivenessStreakLimit = options.ineffectivenessStreakLimit ?? DEFAULT_INEFFECTIVENESS_STREAK_LIMIT;
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const retryInitialDelayMs = options.retryInitialDelayMs ?? DEFAULT_RETRY_INITIAL_DELAY_MS;
+  const retryMaxDelayMs = options.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS;
+  const sleep = options.sleep ?? defaultSleep;
 
   let cooldownUntilMs = 0;
   let ineffectiveStreak = 0;
@@ -81,17 +129,28 @@ export function createModelDroppedContextSummarizer(
 
     let response;
     try {
-      response = await provider.generate({
-        messages: [
-          { content: SUMMARIZER_SYSTEM_PROMPT, role: "system" },
-          { content: transcript, role: "user" }
-        ],
-        model,
-        temperature: 0.2
-      });
+      response = await retry(
+        () =>
+          provider.generate({
+            messages: [
+              { content: SUMMARIZER_SYSTEM_PROMPT, role: "system" },
+              { content: transcript, role: "user" }
+            ],
+            model,
+            temperature: 0.2
+          }),
+        {
+          initialDelayMs: retryInitialDelayMs,
+          maxAttempts,
+          maxDelayMs: retryMaxDelayMs,
+          multiplier: RETRY_MULTIPLIER,
+          name: "dropped-context-summarizer",
+          sleep
+        }
+      );
     } catch (error) {
       cooldownUntilMs = now().getTime() + cooldownMs;
-      throw error;
+      throw error instanceof RetryExhaustedError ? error.cause : error;
     }
 
     const savedRatio = transcript.length > 0 ? 1 - response.output.length / transcript.length : 1;
