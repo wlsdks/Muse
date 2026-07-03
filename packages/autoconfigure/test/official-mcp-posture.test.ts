@@ -84,7 +84,7 @@ describe("describeOfficialMcpPosture — audit view per official preset", () => 
     expect(gh?.detail).toMatch(/credential/i);
   });
 
-  it("strict allowlist NOT containing the preset ⇒ enabled+credential but BLOCKED (warn)", () => {
+  it("strict allowlist NOT containing the preset, but turnkey-enabled (toggle+credential) ⇒ allowed:true (mirrors assembleMcpStack's auto-add, never falsely reports 'blocked')", () => {
     const env = {
       ...baseEnv,
       GITHUB_MCP_TOKEN: SECRET,
@@ -94,9 +94,22 @@ describe("describeOfficialMcpPosture — audit view per official preset", () => 
     const gh = describeOfficialMcpPosture(env).find((p) => p.name === "github");
     expect(gh?.enabled).toBe(true);
     expect(gh?.credentialPresent).toBe(true);
-    expect(gh?.allowed).toBe(false);
+    expect(gh?.allowed).toBe(true);
+    expect(gh?.status).toBe("ok");
+    expect(gh?.detail).toMatch(/eligible/i);
+  });
+
+  it("strict allowlist NOT containing the preset AND no credential ⇒ still warn-no-credential, not a false 'blocked'", () => {
+    const env = {
+      ...baseEnv,
+      MUSE_GITHUB_MCP_ENABLED: "true",
+      MUSE_MCP_ALLOWED_SERVERS: "some-other-server"
+    } as MuseEnvironment;
+    const gh = describeOfficialMcpPosture(env).find((p) => p.name === "github");
+    expect(gh?.enabled).toBe(true);
+    expect(gh?.credentialPresent).toBe(false);
     expect(gh?.status).toBe("warn");
-    expect(gh?.detail).toMatch(/allowlist|blocked/i);
+    expect(gh?.detail).toMatch(/credential/i);
   });
 
   it("strict allowlist CONTAINING the preset ⇒ allowed:true", () => {

@@ -40,9 +40,19 @@ export interface OfficialMcpPresetPosture {
  * the token). Unit-testable without a full `muse doctor` run.
  *
  * The allowlist semantics MIRROR `assembleMcpStack`: an empty / absent
- * `MUSE_MCP_ALLOWED_SERVERS` means allow-all; a non-empty list is strict,
- * so a preset NOT in it is reported blocked even when enabled — surfacing
- * the silent "won't connect, and here's why" case.
+ * `MUSE_MCP_ALLOWED_SERVERS` means allow-all; a non-empty list is strict —
+ * EXCEPT `assembleMcpStack` auto-adds any turnkey-enabled official preset
+ * (toggle on + credential resolves) to the effective allowlist, so an
+ * explicit opt-in is never silently denied by an unrelated strict list
+ * (see its `turnkeyEnabledServers` comment). This view mirrors that exact
+ * condition — `enabled && credentialPresent` — so it reports the SAME
+ * `allowed` the runtime will actually honor, not a stale raw membership
+ * check (a real gap: it used to report "blocked" for a preset the runtime
+ * would in fact connect). Known unmodeled edge case: if the user ALSO
+ * hand-declares the same server name in `~/.muse/mcp.json`, the runtime
+ * skips the auto-add (the manual entry wins) and a strict allowlist could
+ * genuinely block it — this env-only, no-file-I/O view can't see that
+ * mcp.json declaration, matching its documented pure-from-env scope.
  */
 export function describeOfficialMcpPosture(env: MuseEnvironment): readonly OfficialMcpPresetPosture[] {
   const allowlist = parseCsv(env.MUSE_MCP_ALLOWED_SERVERS);
@@ -50,7 +60,8 @@ export function describeOfficialMcpPosture(env: MuseEnvironment): readonly Offic
   return Object.values(OFFICIAL_MCP_PRESETS).map((preset): OfficialMcpPresetPosture => {
     const enabled = parseBoolean(env[`MUSE_${preset.name.toUpperCase()}_MCP_ENABLED`], false);
     const credentialPresent = resolveOfficialMcpToken(env, preset.name) !== undefined;
-    const allowed = allowlistStrict ? allowlist.includes(preset.name) : true;
+    const turnkeyAutoAdded = enabled && credentialPresent;
+    const allowed = allowlistStrict ? (allowlist.includes(preset.name) || turnkeyAutoAdded) : true;
     const { status, detail } = classifyPosture({ allowed, allowlistStrict, credentialPresent, enabled });
     return {
       allowed,
