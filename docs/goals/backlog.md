@@ -88,6 +88,24 @@ realistic partial hedge. Deeper veracity needs a human/product call, not an auto
 
 - ◦ packages/stores 54개 테스트 파일이 vitest 병렷 워커로 동시 실행될 때 consent/objectives/veto/proposed-action-concurrency의 50-병렬-writer 테스트가 간헐적으로 `EEXIST .lock` + 이어지는 `ENOTEMPTY rmdir`로 실패 (격리 실행 시 16/16 그린 — 로드 유발, 로직 버그 아님). encrypted-file.js의 락 재시도 backoff/횟수가 시스템 부하 하 50-writer 경합을 못 버팀. FIX 후보: 재시도 횟수/backoff 상한 상향 또는 지수 백오프 jitter 추가, mkdir으로 잔여 락 디렉토리 정리 로직 점검.
 
+## ★ 2026-07-03 delta-scout ROUND 2 (7/2 이후 신규 251+104 커밋, 3독립 스카우트) — Tier 1 5건 즉시착수, 내부품질 렌즈가 "이 방향 소진" 명시적 신호
+
+Tier 1 (자체 코드 실버그, 고신뢰, 근거 확보):
+- ★ (DS-16) MCP 죽은 세션이 영구 재사용됨 — `SdkMcpConnection`(transport.ts)에 onclose/onerror 미배선, `healthCheckAll` 호출자 0(존재하지만 아무도 안 부름), McpManager는 부팅시 1회 생성 후 프로세스 수명 내내 유지. stdio 서버 크래시 시 이후 모든 런이 인간이 수동 재연결할 때까지 계속 같은 방식으로 실패 (openclaw agent-bundle-mcp-runtime.ts requireConnectedSession 패턴 참조).
+- ★ (DS-17) 자식 프로세스 stdout/stderr의 청크별 UTF-8 디코드가 멀티바이트 문자를 청크 경계에서 깨뜨림 — 8개 지점 확인(macos-exec.ts, muse-tools-skills.ts, macos/linux 알림 provider, commands-import/export/glance.ts, voice-playback.ts). `packages/tools/src/runner.ts`는 이미 Buffer.concat 후 1회 디코드로 올바르게 처리 중 — 나머지를 그 패턴에 맞추면 됨 (openclaw windows-encoding.ts TextDecoder 참조).
+- ★ (DS-18) aux 요약기가 단발 실패에도 즉시 10분 쿨다운 — 진짜 일시적 blip(네트워크 hiccup)까지 10분간 요약 포기. hermes auxiliary_client.py가 오늘 고친 것과 동일 클래스: 쿨다운 열기 전에 지수백오프로 N회(기본 3) 재시도 필요. **DS-5(오늘 배송)의 직속 후속.**
+- ★ (DS-19) MoA reference 호출이 acting 호출과 동일한 maxOutputTokens 사용 — hermes 측정: advisor 출력 토큰이 턴 지연과 0.88 상관, reference만 별도 캡(`referenceMaxOutputTokens`) 걸면 59s→33s(44%) 개선, 최종답변 불변. **DS-15(오늘 배송)의 직속 후속.**
+- ★ (DS-20) 스키마버전 스토어(feeds/episode-index/notes-index)가 버전 불일치 시 백업 없이 즉시 discard-on-mismatch — 현재는 전부 v1이라 잠복 상태지만, 다음 v2 스키마 변경 시 사용자의 feeds.json(재생성 불가한 구독목록) 등이 조용히 증발. 최소수정: 덮어쓰기 대신 `.bak-v{n}-{ts}` 리네임 + 로그 (hermes config.py 버전 마이그레이션 프레임워크 참조, 풀버전은 과함).
+
+Tier 2 (참고, 낮은 우선순위):
+- ◦ (DS-21) 로컬 모델 컨텍스트윈도우 정적 카탈로그(128K 하드코딩) 대신 라이브 서버 프로브 — num_ctx가 실제보다 작으면 조용한 truncation 위험 (hermes model_metadata.py)
+- ◦ (DS-22) OpenAI-호환 provider에 커스텀 헤더(extraHeaders) 지원 부재 — 리버스프록시/게이트웨이 뒤 자가호스팅 LLM 시나리오에 필요 (hermes extra_headers)
+- ◦ (DS-23) `/compress --preview` — 자동 트리밍이 뭘 버릴지 사전 미리보기 (hermes partial_compress.py; "shows its work" 정체성에 부합하는 저비용 UX)
+
+기각(액션 없음, 사유 명확): 멀티에이전트 fan-out 동시성 캡(약한 신호, 미확인 버그) · CLI config 미지 키 검증(파일 config 표면 2필드뿐이라 blast radius 작음) · Node-side exec의 부모 env 상속(runner.rs가 이미 env_clear+allowlist로 모델주도 명령 케이스 커버, 잔여는 고정 1st-party 바이너리라 노출 작음).
+
+**내부품질 렌즈 명시 권고**: "이 방향(openclaw/hermes 내부엔지니어링 비교) 스카우트는 이제 소진 — 남은 경쟁사 투자(Docker 멀티테넌트 샌드박스, YAML config 툴링, 학습데이터 trajectory 압축)는 제품/배포 형태라 single-user 로컬 Muse에 매핑 안 됨." 다음 스카우트는 다른 축(신규 논문, 사용자 프로브, 회귀)으로 전환 권장.
+
 ## ★ 2026-07-02 fresh delta-scout — openclaw/hermes 최신 9일(1.3k/1.5k 커밋) + 내부품질 크로스 렌즈 (3 독립 스카우트, 전부 Muse-부재 grep 검증)
 
 Tier S (safety/correctness, 당장):
