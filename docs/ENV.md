@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **479** variables.
+Total: **480** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -225,7 +225,7 @@ Total: **479** variables.
 | `MUSE_MASCOT_ROWS` | apps/cli |
 | `MUSE_MASCOT_WIDTH` | apps/cli |
 | `MUSE_MATH_ENABLED` | packages/autoconfigure |
-| `MUSE_MAX_TOOL_OUTPUT_CHARS` | packages/autoconfigure |
+| `MUSE_MAX_TOOL_OUTPUT_CHARS` | apps/cli, packages/autoconfigure |
 | `MUSE_MCP_ALLOWED_SERVERS` | packages/autoconfigure |
 | `MUSE_MCP_ALLOWED_STDIO_COMMANDS` | packages/autoconfigure |
 | `MUSE_MCP_ALLOW_PRIVATE_ADDRESSES` | packages/autoconfigure |
@@ -334,11 +334,12 @@ Total: **479** variables.
 | `MUSE_PROACTIVE_PRESENCE_FILE` | apps/api |
 | `MUSE_PROACTIVE_PROVIDER` | apps/api, apps/cli, packages/autoconfigure |
 | `MUSE_PROACTIVE_QUIET_HOURS` | apps/api, apps/cli, packages/autoconfigure, packages/proactivity |
-| `MUSE_PROACTIVE_SIDECAR_FILE` | apps/api, apps/cli, packages/autoconfigure |
+| `MUSE_PROACTIVE_SIDECAR_FILE` | apps/api, apps/cli, packages/autoconfigure, packages/stores |
 | `MUSE_PROACTIVE_TICK_MS` | apps/api, packages/autoconfigure |
 | `MUSE_PROACTIVE_TRUST_FILE` | apps/api, apps/cli |
 | `MUSE_PROMPT_TOKEN_BUDGET` | packages/autoconfigure |
 | `MUSE_PROPOSED_ACTIONS_FILE` | apps/cli |
+| `MUSE_PRUNE_META_FILE` | apps/cli |
 | `MUSE_QUORUM_HEDGE` | apps/cli |
 | `MUSE_RATE_LIMIT_CHAT_DISABLED` | apps/api |
 | `MUSE_RATE_LIMIT_CHAT_PER_MINUTE` | apps/api |
@@ -398,7 +399,7 @@ Total: **479** variables.
 | `MUSE_SECRET_` | apps/cli, packages/calendar, packages/secrets |
 | `MUSE_SECRET_TELEGRAM_BOT_TOKEN` | packages/secrets |
 | `MUSE_SECTION_MARKER` | packages/agent-core |
-| `MUSE_SELFLEARN` | apps/cli |
+| `MUSE_SELFLEARN` | apps/cli, packages/stores |
 | `MUSE_SELFLEARN_CONSOLIDATE_INTERVAL_MS` | apps/cli |
 | `MUSE_SELFLEARN_DECAY_INTERVAL_MS` | apps/cli |
 | `MUSE_SELFLEARN_ENABLED` | apps/cli |
