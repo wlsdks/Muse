@@ -8,6 +8,56 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-03
+
+Runtime resilience and safety hardening, closing every finding from a
+source-level scout of the fastest-moving open agents (openclaw, hermes) and a
+config drift-guard. Early / experimental, macOS only.
+
+### Added
+
+- **Faster startup**: a V8 compile cache shaves ~12% off `muse`'s warm
+  cold-start on every invocation.
+- **`muse doctor` state-integrity checks**: flags `~/.muse` sitting inside a
+  cloud-sync folder (iCloud/Dropbox/Drive/OneDrive — multi-device sync can
+  corrupt the local file locks), permission drift on any of 8 sensitive
+  stores, and an aggressively-low tool-output cap that would silently starve
+  grounding evidence.
+- **Local multi-model advisory pass**: a new opt-in mechanism lets several
+  local models answer a question in parallel and one model synthesize the
+  final answer having seen all of them — distinct from the existing
+  multi-agent council debate.
+- **Background-job finish notices**: `muse bg run` jobs now send a one-shot
+  heads-up when they exit, even across a crash/restart.
+- **Daemon health surfacing**: `muse doctor`/`status` can now tell "the
+  background daemon is running but failing every tick" apart from "it isn't
+  running at all."
+- External MCP servers get an additional live malware-advisory check before
+  connecting (on top of the existing static audit), and the skill curator now
+  snapshots before pruning and won't archive a skill a scheduled job still
+  depends on.
+- Local state (run logs, checkpoints, the audit log, the learn queue) is now
+  pruned by age automatically instead of growing forever.
+- A new `MUSE_*` environment-variable inventory (479 vars) is drift-guarded
+  in CI so an env var can't silently go undocumented or stop being read.
+
+### Fixed
+
+- **A hung local model can no longer freeze a whole daemon tick.** Every
+  model call in the batch now runs with independent timing, and read-only
+  tool calls in the same turn now execute in parallel instead of one at a
+  time.
+- **A failing background-compaction summarizer stops retrying itself into a
+  freeze** — it now backs off after repeated failures or after two rounds
+  that didn't meaningfully shrink the context.
+- **An MCP reconnect batch no longer aborts entirely because one server
+  failed** — each server's reconnect is now isolated.
+- Interactive chat (`muse chat`) turns now write the same outcome-labelled
+  run-log trace that `muse ask` always has, closing a blind spot in
+  `muse trace`/`muse doctor`'s failure-rate view.
+- A reflection-guard registry drift (two surfaces moved without updating
+  their pinned paths) is fixed and now caught by its own guard.
+
 ## [0.2.3] - 2026-07-03
 
 The grounded-recall engine is now a shared package, and the API server can
