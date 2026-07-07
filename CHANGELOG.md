@@ -8,8 +8,23 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.18] - 2026-07-07
+
+Muse has a face now — meet the bluebird. Plus focused compaction, a
+stricter citation gate, and Muse itself as an MCP server. Early /
+experimental, macOS only.
+
 ### Added
 
+- **Muse's mascot: a pixel bluebird lives on the chat input.** Drawn
+  entirely in code (no image assets — even the favicon is generated
+  from the same pixel data), it hops along the composer edge, blinks,
+  tilts, pecks, preens, occasionally flaps or sings to itself, dozes
+  off with a quiet zzz when you've been away, perks up while Muse is
+  thinking, chirps when your answer arrives, and shivers-then-droops
+  if a request fails. Static under reduced-motion, provably zero
+  layout impact, never blocks a click. Design showroom:
+  `docs/design/mascot-showroom.html`.
 - **`muse mcp serve`** exposes Muse itself as a local, read-only MCP
   server over stdio — so another agent (Claude Code, Cursor, Codex, …)
   can call `muse_recall` (cited grounded Q&A over your notes),
@@ -19,6 +34,24 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   vetoed/forgotten entries). No write/outbound tools, no network
   listener; running the command is your explicit consent to expose
   these read tools to the connecting client.
+- **`/compact <topic>` in chat performs a real, focused compaction** —
+  compress the conversation around what matters now, behind a
+  fail-close quality gate so a bad summary never silently replaces
+  your history.
+- **Recall receipts now always state whether a claim is single-source
+  or corroborated**, so you can weigh an answer's footing at a glance.
+
+### Changed
+
+- **Playbook distillation and skill authoring are now on by default** —
+  Muse learns reusable strategies from its own successful runs without
+  an opt-in flag.
+
+### Fixed
+
+- **The citation gate now drops the entire fabricated clause, not just
+  its citation marker** — previously an ungroundable claim could lose
+  its bracket but keep its words.
 
 ## [0.2.17] - 2026-07-07
 
