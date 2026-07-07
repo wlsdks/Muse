@@ -97,6 +97,7 @@ import { registerSchedulerCommands, registerSetupCommands } from "./commands-sch
 import { registerSetupCloudCommand } from "./commands-setup-cloud.js";
 import { registerSetupLocalCommand } from "./commands-setup-local.js";
 import { registerSetupVoiceCommand } from "./commands-setup-voice.js";
+import { registerSetupDataCommand } from "./commands-setup-data.js";
 import { registerBriefCommand } from "./commands-brief.js";
 import { registerRecapCommand } from "./commands-recap.js";
 import { registerApprovalCommands } from "./commands-approval.js";
@@ -580,6 +581,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   registerSetupLocalCommand(program, io, { readConfigStore, writeConfigStore });
   registerSetupCloudCommand(program, io, { readConfigStore, writeConfigStore });
   registerSetupVoiceCommand(program, io);
+  registerSetupDataCommand(program, io);
   registerStatusCommand(program, io);
   registerBackgroundCommand(program, io);
   registerBriefCommand(program, io);

@@ -28,6 +28,10 @@ export interface OnboardingState {
   readonly notesDir: string;
   readonly noteFileCount: number;
   readonly indexBuilt: boolean;
+  /** People in the local contacts graph — 0 means Apple Contacts never imported. */
+  readonly contactsCount?: number;
+  /** Visits in the local browsing archive — 0 means browsing never synced. */
+  readonly browsingVisitCount?: number;
 }
 
 interface OnboardStep {
@@ -44,6 +48,12 @@ export interface OnboardReport {
   /** The single next command the user should run (the first unmet step), or the ask example when ready. */
   readonly nextCommand: string;
   readonly nextTitle: string;
+  /**
+   * A non-blocking nudge shown when the personal sensors are still empty
+   * (no contacts, no browsing) — it points at `muse setup data` without
+   * gating readiness, since a cited answer from notes needs neither.
+   */
+  readonly dataHint?: { readonly detail: string; readonly command: string };
 }
 
 function modelInstalled(installed: readonly string[], name: string): boolean {
@@ -86,11 +96,15 @@ export function computeOnboarding(state: OnboardingState): OnboardReport {
 
   const firstAction = steps.find((s) => s.status === "action");
   const ready = firstAction === undefined;
+  const noPersonalData = (state.contactsCount ?? 0) === 0 && (state.browsingVisitCount ?? 0) === 0;
   return {
     nextCommand: firstAction?.command ?? ASK_EXAMPLE,
     nextTitle: ready ? "Ask your own machine" : firstAction.title,
     ready,
-    steps
+    steps,
+    ...(noPersonalData
+      ? { dataHint: { command: "muse setup data", detail: "Connect your data (Apple Contacts, browsing, mirrors) so Muse can learn you — every source is opt-in." } }
+      : {})
   };
 }
 
@@ -139,7 +153,34 @@ async function gatherState(io: ProgramIO): Promise<OnboardingState> {
   const notesDir = resolveNotesDir(env as Record<string, string | undefined>);
   const noteFileCount = countCorpusFiles(notesDir);
   const indexFile = env.MUSE_NOTES_INDEX_FILE?.trim() || join(homedir(), ".muse", "notes-index.json");
-  return { chatModel, embedModel, indexBuilt: existsSync(indexFile), installedModels, notesDir, noteFileCount, ollamaReachable };
+  const { browsingVisitCount, contactsCount } = await countPersonalData(env as Record<string, string | undefined>);
+  return { browsingVisitCount, chatModel, contactsCount, embedModel, indexBuilt: existsSync(indexFile), installedModels, notesDir, noteFileCount, ollamaReachable };
+}
+
+/**
+ * Best-effort count of the personal sensors' stores (contacts, browsing) for
+ * the connect-your-data nudge. Any read failure counts as 0 (empty ⇒ nudge),
+ * never throws — the readiness report must not depend on these stores existing.
+ */
+async function countPersonalData(env: Record<string, string | undefined>): Promise<{ contactsCount: number; browsingVisitCount: number }> {
+  const contactsCount = await safeCount(async () => {
+    const { resolveContactsFile } = await import("@muse/autoconfigure");
+    const { queryContacts } = await import("@muse/stores");
+    return (await queryContacts(resolveContactsFile(env))).length;
+  });
+  const browsingVisitCount = await safeCount(async () => {
+    const { defaultBrowsingFile, readBrowsingStore } = await import("@muse/recall");
+    return (await readBrowsingStore(defaultBrowsingFile())).visits.length;
+  });
+  return { browsingVisitCount, contactsCount };
+}
+
+async function safeCount(read: () => Promise<number>): Promise<number> {
+  try {
+    return await read();
+  } catch {
+    return 0;
+  }
 }
 
 export function registerOnboardCommand(program: Command, io: ProgramIO): void {
@@ -161,6 +202,9 @@ export function registerOnboardCommand(program: Command, io: ProgramIO): void {
       io.stdout(report.ready
         ? `\n✅ Ready. Ask your own machine:\n   $ ${report.nextCommand}\n`
         : `\n👉 Next: ${report.nextTitle}\n   $ ${report.nextCommand}\n`);
+      if (report.dataHint) {
+        io.stdout(`\n💡 ${report.dataHint.detail}\n   $ ${report.dataHint.command}\n`);
+      }
       io.stdout("\nVerify your setup any time (models, local-only posture, index):\n   $ muse doctor --local\n");
     });
 }

@@ -51,4 +51,20 @@ describe("computeOnboarding — the single next step to the first cited answer",
     expect(r.nextCommand).toBe("ollama pull llama3.2:3b");
     expect(r.steps.find((s) => s.id === "chat-model")?.title).toContain("llama3.2:3b");
   });
+
+  it("empty personal sensors (no contacts, no browsing) → connect-data hint points at `muse setup data`", () => {
+    const r = next({ ...base, browsingVisitCount: 0, contactsCount: 0 });
+    expect(r.dataHint?.command).toBe("muse setup data");
+  });
+
+  it("any personal data present → no connect-data hint (they've already started)", () => {
+    expect(next({ ...base, contactsCount: 12 }).dataHint).toBeUndefined();
+    expect(next({ ...base, browsingVisitCount: 5 }).dataHint).toBeUndefined();
+  });
+
+  it("does not gate readiness on personal data — a ready notes setup stays ready with empty sensors", () => {
+    const r = next({ ...base, browsingVisitCount: 0, contactsCount: 0, indexBuilt: true, installedModels: ["qwen3:8b", "nomic-embed-text"], noteFileCount: 12, ollamaReachable: true });
+    expect(r.ready).toBe(true);
+    expect(r.dataHint?.command).toBe("muse setup data");
+  });
 });

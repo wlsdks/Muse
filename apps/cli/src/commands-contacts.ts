@@ -107,32 +107,56 @@ export function formatOverdue(overdue: readonly OverdueContact[]): string {
   return `${lines.join("\n")}\n`;
 }
 
+export interface AppleContactsImportResult {
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly imported: number;
+  readonly updated: number;
+  readonly skipped: number;
+  /** Total records read from Apple Contacts (0 on a failed read). */
+  readonly total: number;
+}
+
 /**
- * `muse contacts import --apple` — read the whole Apple Contacts.app address
- * book and merge it additively into the local people graph. Fail-soft: a
- * permission denial / read failure leaves the store byte-identical.
+ * Read the whole Apple Contacts.app address book and merge it additively into
+ * the local people graph, returning a structured count. Fail-soft: a permission
+ * denial / read failure returns `{ ok: false, error }` and leaves the store
+ * byte-identical. Shared by `muse contacts import --apple` and the
+ * `muse setup data` connect-your-data wizard so both do the identical merge.
  */
-async function importFromAppleContacts(io: ProgramIO, json: boolean): Promise<void> {
+export async function importAppleContacts(): Promise<AppleContactsImportResult> {
   const { readAppleContacts } = await import("@muse/macos");
   const read = await readAppleContacts();
   if (!read.ok) {
-    io.stderr(`muse contacts import --apple: ${read.error ?? "could not read Apple Contacts"}\n`);
-    process.exitCode = 1;
-    return;
+    return { error: read.error ?? "could not read Apple Contacts", imported: 0, ok: false, skipped: 0, total: 0, updated: 0 };
   }
   const { mergeAppleContacts } = await import("./apple-contacts-merge.js");
   const file = contactsFile();
   const existing = await queryContacts(file);
   const result = mergeAppleContacts(existing, read.contacts, () => createRunId("contact"));
   await writeContacts(file, result.contacts);
+  return { imported: result.imported, ok: true, skipped: result.skipped, total: read.contacts.length, updated: result.updated };
+}
+
+/**
+ * `muse contacts import --apple` — the CLI wrapper over `importAppleContacts`
+ * that renders the human / JSON line and sets the exit code on failure.
+ */
+async function importFromAppleContacts(io: ProgramIO, json: boolean): Promise<void> {
+  const result = await importAppleContacts();
+  if (!result.ok) {
+    io.stderr(`muse contacts import --apple: ${result.error}\n`);
+    process.exitCode = 1;
+    return;
+  }
   if (json) {
-    io.stdout(`${JSON.stringify({ imported: result.imported, updated: result.updated, skipped: result.skipped, total: read.contacts.length })}\n`);
+    io.stdout(`${JSON.stringify({ imported: result.imported, skipped: result.skipped, total: result.total, updated: result.updated })}\n`);
     return;
   }
   io.stdout(
     `Imported ${result.imported.toString()} new, updated ${result.updated.toString()}, ` +
       `skipped ${result.skipped.toString()} (already present or no name+phone/email/birthday) ` +
-      `from Apple Contacts (${read.contacts.length.toString()} read).\n`
+      `from Apple Contacts (${result.total.toString()} read).\n`
   );
 }
 
