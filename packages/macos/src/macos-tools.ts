@@ -69,6 +69,8 @@ export type MacMessageApprovalGate = (draft: MacMessageDraft) => Promise<MacAppr
 
 export {
   createMacShortcutRunTool,
+  defaultShortcutsRunner,
+  listShortcutNames,
   type MacShortcutRunToolDeps,
   type ShortcutsRunner
 } from "./macos-shortcut-tool.js";
@@ -91,6 +93,10 @@ export {
 
 export {
   createMacSystemSetTool,
+  DEFAULT_FOCUS_OFF_SHORTCUT,
+  DEFAULT_FOCUS_ON_SHORTCUT,
+  focusShortcutSetupMessage,
+  isMissingShortcutError,
   type MacSystemSetToolDeps
 } from "./macos-system-set-tool.js";
 

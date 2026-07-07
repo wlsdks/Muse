@@ -1331,6 +1331,10 @@ async function buildMacActuatorScenario() {
       { prompt: "지금 실행 중인 앱 뭐 있어?", expectTool: "mac_app_read", requireArgs: ["app"], note: "KO running apps → mac_app_read(running_apps), user's language" },
       { prompt: "와이파이 꺼줘.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "KO turn Wi-Fi off → mac_system_set(wifi_off) NOT mac_app_read" },
       { prompt: "Put my Mac to sleep.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "EN system sleep → mac_system_set(sleep)" },
+      { prompt: "방해금지 모드 켜줘.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "KO turn on Do Not Disturb → mac_system_set(focus_on) NOT mac_shortcut_run" },
+      { prompt: "집중모드 꺼줘.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "KO turn off Focus → mac_system_set(focus_off), user's language" },
+      { prompt: "Turn on do not disturb.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "EN enable DND → mac_system_set(focus_on) NOT mac_shortcut_run" },
+      { prompt: "볼륨 꺼줘.", expectTool: "mac_system_set", requireArgs: ["setting"], note: "KO mute volume → mac_system_set(mute), confusable with focus_off — must NOT read as 집중 off" },
       { prompt: "Read this out loud: the build passed.", expectTool: "mac_say", requireArgs: ["text"], note: "EN speak aloud → mac_say" },
       // knowledge_search must still win for a RECALL question even with spotlight present.
       { prompt: "What did I note about the Q3 roadmap?", expectTool: "knowledge_search", requireArgs: ["query"], note: "EN recall over notes → knowledge_search, NOT mac_spotlight_search" },

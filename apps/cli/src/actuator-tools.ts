@@ -416,7 +416,10 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
       createMacAppReadTool(),
       createMacAppOpenTool(),
       createMacMediaControlTool(),
-      createMacSystemSetTool(),
+      createMacSystemSetTool({
+        ...(env.MUSE_FOCUS_ON_SHORTCUT?.trim() ? { focusOnShortcut: env.MUSE_FOCUS_ON_SHORTCUT.trim() } : {}),
+        ...(env.MUSE_FOCUS_OFF_SHORTCUT?.trim() ? { focusOffShortcut: env.MUSE_FOCUS_OFF_SHORTCUT.trim() } : {})
+      }),
       createMacScreenshotTool(),
       createMacClipboardSetTool(),
       createMacSpotlightSearchTool(),

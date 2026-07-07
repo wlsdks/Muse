@@ -11,8 +11,25 @@ const SHORTCUTS_TIMEOUT_MS = 120_000;
 /** Runs the `shortcuts` CLI with argv + optional stdin input. Injected in tests. */
 export type ShortcutsRunner = (args: readonly string[], input?: string) => Promise<MacCommandResult>;
 
-const defaultShortcutsRunner: ShortcutsRunner = (args, input) =>
+export const defaultShortcutsRunner: ShortcutsRunner = (args, input) =>
   runChild(SHORTCUTS_PATH, args, input, SHORTCUTS_TIMEOUT_MS);
+
+/**
+ * Lists the names of the user's installed Shortcuts (`shortcuts list`), one per
+ * line. Returns `undefined` when the CLI is unavailable / errors (e.g. no
+ * Shortcuts access) so a caller can distinguish "can't tell" from "none". Used
+ * by `muse doctor` to report whether the Muse Focus shortcuts exist.
+ */
+export async function listShortcutNames(runner: ShortcutsRunner = defaultShortcutsRunner): Promise<readonly string[] | undefined> {
+  let result: MacCommandResult;
+  try {
+    result = await runner(["list"]);
+  } catch {
+    return undefined;
+  }
+  if (result.timedOut || result.exitCode !== 0) return undefined;
+  return result.stdout.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line.length > 0);
+}
 
 // ── Tier 1: mac_shortcut_run ──────────────────────────────────────────
 
