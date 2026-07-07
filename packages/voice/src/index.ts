@@ -30,6 +30,11 @@ export {
 export {
   WhisperCppSttProvider,
   createWhisperCppRunner,
+  resolveDefaultWhisperModelPath,
+  resetWhisperModelAdvisory,
+  MULTILINGUAL_DEFAULT_MODEL_FILE,
+  LEGACY_ENGLISH_DEFAULT_MODEL_FILE,
+  type ResolveWhisperModelDeps,
   type WhisperCppRunResult,
   type WhisperCppRunner,
   type WhisperCppSttProviderOptions

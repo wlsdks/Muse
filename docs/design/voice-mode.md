@@ -272,10 +272,13 @@ Below details each.
 - Binary discovery: `MUSE_WHISPER_CPP_PATH` (default `whisper-cpp`,
   found via PATH). Missing → fail-fast at construction with a
   "install whisper-cpp: brew install whisper-cpp" message.
-- Model discovery: `MUSE_WHISPER_CPP_MODEL` (default
-  `~/.muse/whisper-models/ggml-base.en.bin`). First call lazy-downloads
-  via `MUSE_WHISPER_CPP_MODEL_URL` (default Hugging Face Whisper-base
-  URL) into the model dir if absent.
+- Model discovery: `MUSE_WHISPER_CPP_MODEL` (default resolves to the
+  MULTILINGUAL `~/.muse/whisper-models/ggml-base.bin` — 99 languages
+  incl. Korean, detected via `-l auto`). Backward-compat: if that file
+  is absent but the legacy English-only `ggml-base.en.bin` exists, the
+  default falls back to it with a one-time stderr advisory (fail-soft).
+  First call lazy-downloads via `MUSE_WHISPER_CPP_MODEL_URL` (default
+  Hugging Face Whisper-base URL) into the model dir if absent.
 - Transcribe flow: write the input WAV to a tmp file, spawn
   `whisper-cpp -f tmp.wav -m model.bin -nt -l auto -otxt -of out`,
   read `out.txt`, delete temp files. ~3-10 s first call (model load),

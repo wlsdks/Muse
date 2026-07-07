@@ -83,15 +83,31 @@ async function probeWhisperBinary(): Promise<ProbeResult> {
 }
 
 async function probeWhisperModel(): Promise<ProbeResult> {
-  const defaultPath = pathJoin(homedir(), ".muse", "whisper-models", "ggml-base.en.bin");
-  if (await fileExists(defaultPath)) {
-    return { detail: defaultPath, label: "whisper ggml model", status: "ok" };
+  const modelsDir = pathJoin(homedir(), ".muse", "whisper-models");
+  const multilingualPath = pathJoin(modelsDir, "ggml-base.bin");
+  const legacyEnglishPath = pathJoin(modelsDir, "ggml-base.en.bin");
+  if (await fileExists(multilingualPath)) {
+    return { detail: `${multilingualPath} (multilingual — Korean OK)`, label: "whisper ggml model", status: "ok" };
+  }
+  // Fail-soft: an existing install may still carry the old English-only
+  // default. Report it as present but flag that Korean won't transcribe.
+  if (await fileExists(legacyEnglishPath)) {
+    return {
+      detail: `${legacyEnglishPath} (English-ONLY — Korean will NOT transcribe)`,
+      fix:
+        "Download the MULTILINGUAL model so Korean works: mkdir -p ~/.muse/whisper-models && " +
+        "curl -L -o ~/.muse/whisper-models/ggml-base.bin " +
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+      label: "whisper ggml model",
+      status: "todo"
+    };
   }
   return {
-    detail: `${defaultPath} not found`,
+    detail: `${multilingualPath} not found`,
     fix:
-      "mkdir -p ~/.muse/whisper-models && curl -L -o ~/.muse/whisper-models/ggml-base.en.bin " +
-      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+      "mkdir -p ~/.muse/whisper-models && curl -L -o ~/.muse/whisper-models/ggml-base.bin " +
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin " +
+      "  # multilingual (99 langs incl. Korean); ggml-base.en.bin is English-only",
     label: "whisper ggml model",
     status: "todo"
   };

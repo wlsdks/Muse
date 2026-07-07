@@ -201,7 +201,7 @@ describe("OpenAITtsProvider", () => {
 });
 
 describe("WhisperCppSttProvider", () => {
-  it("works with no options (defaults to whisper-cpp binary + ~/.muse/whisper-models/ggml-base.en.bin)", () => {
+  it("works with no options (defaults to whisper-cpp binary + ~/.muse/whisper-models/ggml-base.bin)", () => {
     const provider = new WhisperCppSttProvider();
     expect(provider.id).toBe("whisper-cpp");
     expect(provider.describe().local).toBe(true);

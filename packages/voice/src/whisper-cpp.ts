@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
@@ -49,11 +50,15 @@ export interface WhisperCppSttProviderOptions {
    */
   readonly binaryPath?: string;
   /**
-   * Absolute path to the GGML model file. Default
-   * `~/.muse/whisper-models/ggml-base.en.bin`. Operators bring their
-   * own model — Phase F first cut does NOT lazy-download. A future
-   * pass can wire `MUSE_WHISPER_CPP_MODEL_URL` into a one-shot
-   * download on `whisper-cpp setup`.
+   * Absolute path to the GGML model file. Default resolves to the
+   * MULTILINGUAL `~/.muse/whisper-models/ggml-base.bin` (99 languages
+   * incl. Korean; `-l auto` detects the spoken language). For
+   * backward-compat, if that file is absent but the legacy
+   * English-only `ggml-base.en.bin` exists, the default falls back to
+   * it (fail-soft, with a one-time stderr advisory) so an existing
+   * install keeps working. Operators bring their own model — Phase F
+   * does NOT lazy-download. `MUSE_WHISPER_CPP_MODEL` (registry) always
+   * wins over this default.
    */
   readonly modelPath?: string;
   /** Test seam. Defaults to `node:child_process.spawn`. */
@@ -90,7 +95,7 @@ export class WhisperCppSttProvider implements SpeechToTextProvider {
   constructor(options: WhisperCppSttProviderOptions = {}) {
     this.id = options.id ?? "whisper-cpp";
     this.binaryPath = options.binaryPath ?? "whisper-cpp";
-    this.modelPath = options.modelPath ?? defaultModelPath();
+    this.modelPath = options.modelPath ?? resolveDefaultWhisperModelPath();
     const timeoutMs =
       typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
         ? options.timeoutMs
@@ -179,8 +184,63 @@ export class WhisperCppSttProvider implements SpeechToTextProvider {
   }
 }
 
-function defaultModelPath(): string {
-  return pathJoin(homedir(), ".muse", "whisper-models", "ggml-base.en.bin");
+/**
+ * Filename of the shipped default whisper model — the MULTILINGUAL
+ * `ggml-base` (99 languages incl. Korean), same size class as the old
+ * English-only build. `-l auto` detects the spoken language.
+ */
+export const MULTILINGUAL_DEFAULT_MODEL_FILE = "ggml-base.bin";
+/** The pre-multilingual default — English-ONLY, kept only for fallback. */
+export const LEGACY_ENGLISH_DEFAULT_MODEL_FILE = "ggml-base.en.bin";
+
+export interface ResolveWhisperModelDeps {
+  /** Existence probe (default `existsSync`). Injectable for tests. */
+  readonly exists?: (path: string) => boolean;
+  /** Advisory sink for the fallback note (default one-shot stderr). */
+  readonly warn?: (message: string) => void;
+  /** Home directory (default `os.homedir()`). Injectable for tests. */
+  readonly home?: string;
+}
+
+let englishFallbackAdvisoryFired = false;
+
+/** Test seam — clears the one-time fallback-advisory latch. */
+export function resetWhisperModelAdvisory(): void {
+  englishFallbackAdvisoryFired = false;
+}
+
+/**
+ * Resolve the default whisper model path. Prefers the multilingual
+ * `ggml-base.bin`; only if it's absent AND the legacy English-only
+ * `ggml-base.en.bin` is present on disk does it fall back to the old
+ * file (so a user who downloaded the old default before this change
+ * isn't silently broken), emitting a one-time stderr note recommending
+ * the multilingual model. When neither exists it returns the
+ * multilingual path — the one the setup guidance tells you to download.
+ */
+export function resolveDefaultWhisperModelPath(deps: ResolveWhisperModelDeps = {}): string {
+  const home = deps.home ?? homedir();
+  const dir = pathJoin(home, ".muse", "whisper-models");
+  const multilingual = pathJoin(dir, MULTILINGUAL_DEFAULT_MODEL_FILE);
+  const legacyEnglish = pathJoin(dir, LEGACY_ENGLISH_DEFAULT_MODEL_FILE);
+  const exists = deps.exists ?? existsSync;
+
+  if (exists(multilingual)) {
+    return multilingual;
+  }
+  if (exists(legacyEnglish)) {
+    if (!englishFallbackAdvisoryFired) {
+      englishFallbackAdvisoryFired = true;
+      const message =
+        `[muse voice] whisper default: multilingual ${MULTILINGUAL_DEFAULT_MODEL_FILE} not found; ` +
+        `using the English-ONLY ${LEGACY_ENGLISH_DEFAULT_MODEL_FILE} already on disk. ` +
+        `Korean (and other non-English) speech will NOT transcribe. To fix, download the multilingual model: ` +
+        `curl -L -o ${multilingual} https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MULTILINGUAL_DEFAULT_MODEL_FILE}`;
+      (deps.warn ?? ((m: string) => process.stderr.write(`${m}\n`)))(message);
+    }
+    return legacyEnglish;
+  }
+  return multilingual;
 }
 
 function extensionForMime(mime: string): string {

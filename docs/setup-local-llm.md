@@ -274,11 +274,14 @@ pipx install piper-tts
 # 2. model files
 mkdir -p ~/.muse/whisper-models ~/.muse/piper-voices
 
-# Whisper base.en — 140 MB, English STT (multilingual `base` adds Korean / Japanese / ...)
-curl -L -o ~/.muse/whisper-models/ggml-base.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+# Whisper base — 140 MB, MULTILINGUAL STT (99 languages incl. Korean/Japanese; `-l auto` detects it).
+# This is Muse's default model. ggml-base.en.bin is English-ONLY — use it only if you never speak another language.
+curl -L -o ~/.muse/whisper-models/ggml-base.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
 
-# Piper lessac medium — 63 MB, US English TTS (KSS for Korean voice)
+# Piper lessac medium — 63 MB, US English TTS.
+# For a KOREAN voice, use KSS (https://huggingface.co/neurlang/piper-onnx-kss-korean) —
+# NOTE its license is CC-BY-NC-SA 4.0 (non-commercial, share-alike): personal use only.
 cd ~/.muse/piper-voices
 curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
 curl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
@@ -292,7 +295,7 @@ Measured roundtrip on this machine after the install above:
   | Stage | Command | Time |
   | --- | --- | --- |
   | TTS  | `echo "Hello Stark..." \| piper --model ...` | ~200 ms (Metal-accelerated) |
-  | STT  | `whisper-cli -f greeting.wav -m ggml-base.en.bin` | **525 ms total** |
+  | STT  | `whisper-cli -f greeting.wav -m ggml-base.bin` | **525 ms total** |
   | Roundtrip | piper → whisper-cli | < 1 s |
 
 Whisper-cpp's Metal backend (Apple-Silicon GPU) is what makes 525 ms
@@ -305,8 +308,8 @@ Sample first-run output:
 Muse voice toolchain:
   [todo] whisper-cpp binary — not on PATH
          → macOS: brew install whisper-cpp
-  [todo] whisper ggml model — ~/.muse/whisper-models/ggml-base.en.bin not found
-         → mkdir -p ~/.muse/whisper-models && curl -L -o … ggml-base.en.bin
+  [todo] whisper ggml model — ~/.muse/whisper-models/ggml-base.bin not found
+         → mkdir -p ~/.muse/whisper-models && curl -L -o … ggml-base.bin
   [todo] piper binary — not on PATH
          → pipx install piper-tts
   [todo] piper voice (.onnx) — ~/.muse/piper-voices/*.onnx not found

@@ -1,9 +1,17 @@
 import { writeFile } from "node:fs/promises";
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VoiceProviderError } from "../src/errors.js";
-import { WhisperCppSttProvider, type WhisperCppRunResult, type WhisperCppRunner } from "../src/whisper-cpp.js";
+import {
+  LEGACY_ENGLISH_DEFAULT_MODEL_FILE,
+  MULTILINGUAL_DEFAULT_MODEL_FILE,
+  resetWhisperModelAdvisory,
+  resolveDefaultWhisperModelPath,
+  WhisperCppSttProvider,
+  type WhisperCppRunResult,
+  type WhisperCppRunner
+} from "../src/whisper-cpp.js";
 
 // Direct coverage for the local whisper.cpp STT adapter (untested module,
 // symmetric to the Piper TTS one). The injected `runner` seam drives the whole
@@ -79,5 +87,50 @@ describe("WhisperCppSttProvider", () => {
     const err = await exit.transcribe({ audio, mimeType: "audio/wav" }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(VoiceProviderError);
     await expect(noFile.transcribe({ audio, mimeType: "audio/wav" })).rejects.toMatchObject({ code: "OUTPUT_MISSING" });
+  });
+});
+
+describe("resolveDefaultWhisperModelPath (multilingual default + backward-compat)", () => {
+  beforeEach(() => {
+    resetWhisperModelAdvisory();
+  });
+
+  it("no env + NEITHER file on disk → the MULTILINGUAL default path (no advisory)", () => {
+    const warn = vi.fn();
+    const resolved = resolveDefaultWhisperModelPath({ exists: () => false, home: "/home/u", warn });
+    expect(resolved).toBe(`/home/u/.muse/whisper-models/${MULTILINGUAL_DEFAULT_MODEL_FILE}`);
+    expect(resolved.endsWith("ggml-base.bin")).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("multilingual present → uses it and IGNORES a legacy .en file", () => {
+    const warn = vi.fn();
+    const resolved = resolveDefaultWhisperModelPath({
+      exists: (p) => p.endsWith(MULTILINGUAL_DEFAULT_MODEL_FILE) || p.endsWith(LEGACY_ENGLISH_DEFAULT_MODEL_FILE),
+      home: "/home/u",
+      warn
+    });
+    expect(resolved.endsWith(MULTILINGUAL_DEFAULT_MODEL_FILE)).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("only the OLD .en file present → falls back to it + fires the advisory ONCE", () => {
+    const warn = vi.fn();
+    const onlyLegacy = (p: string): boolean => p.endsWith(LEGACY_ENGLISH_DEFAULT_MODEL_FILE);
+
+    const first = resolveDefaultWhisperModelPath({ exists: onlyLegacy, home: "/home/u", warn });
+    expect(first).toBe(`/home/u/.muse/whisper-models/${LEGACY_ENGLISH_DEFAULT_MODEL_FILE}`);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain(MULTILINGUAL_DEFAULT_MODEL_FILE); // recommends the multilingual model
+
+    // A second resolve still falls back, but the advisory does NOT repeat.
+    const second = resolveDefaultWhisperModelPath({ exists: onlyLegacy, home: "/home/u", warn });
+    expect(second).toBe(first);
+    expect(warn).toHaveBeenCalledTimes(1); // still once
+  });
+
+  it("an explicit modelPath option ALWAYS wins over the default resolver", () => {
+    const provider = new WhisperCppSttProvider({ modelPath: "/custom/my-model.bin", runner: fakeRunner() });
+    expect(provider.describe().description).toContain("/custom/my-model.bin");
   });
 });
