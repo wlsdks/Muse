@@ -773,6 +773,15 @@ button {
 
 /* ── Chat ────────────────────────────────────────────────── */
 
+/* The chat view fills the content viewport so .chat-scroll (flex:1) is the
+   bounded messages scroller. .view only sets min-height:100% (indefinite), so
+   the chat's `height: calc(100% + 48px)` percentage cannot resolve and the
+   scroller overgrows; a definite height here is what restores it. Scoped to
+   the chat view so the other (naturally growing) views are untouched. */
+.view:has(> .chat) {
+  height: 100%;
+  min-height: 0;
+}
 .chat {
   display: flex;
   flex-direction: column;
@@ -827,7 +836,10 @@ button {
 .chat-composer {
   flex: none;
   border-top: 1px solid var(--hairline);
-  padding: var(--s-md) var(--s-lg);
+  /* Extra top room reserves a clear perch band above the composer for the
+     desk pet: its 33px body plus the overlays (chirp/zzz/note/heart) that
+     rise above its head must clear the messages scroller's content. */
+  padding: var(--s-xl) var(--s-lg) var(--s-md);
   background: var(--canvas);
 }
 .composer-wrap {
