@@ -8,6 +8,25 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-07-07
+
+The browsing and feed recall shipped this week are now permanently
+guarded: two new live batteries in the fabrication-zero release gate
+mean a future change that breaks them fails CI numerically. Early /
+experimental, macOS only.
+
+### Added
+
+- **Browsing recall and cross-language feed rescue are now regression-
+  gated.** Two live batteries (real local model, real embeddings, the
+  real citation gate) continuously prove: a visited page is cited, a
+  Korean question still reaches an English title, a fabricated
+  browsing/feed citation is stripped, an empty archive stays silent,
+  and the embedding-powered rescue is genuinely load-bearing (its
+  negative control must fail). The grounded-surface ratchet rises
+  30→32 — if either surface ever drops out of the gate, `self-eval`
+  fails the build.
+
 ## [0.2.10] - 2026-07-07
 
 Cross-language recall now covers your RSS feeds too. Early /
