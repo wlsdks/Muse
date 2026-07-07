@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { citedSourcesIn, enforceAnswerCitations, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations } from "../src/index.js";
+import { citedSourcesIn, enforceAnswerCitations, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, UNGROUNDABLE_ANSWER_NOTICE, withUngroundableFallback } from "../src/index.js";
 
 describe("normalizeMemoryCitations — repair `[from <memory-key>]` (the model's note-verb mis-form, common in Korean)", () => {
   const keys = ["car_license_plate", "allergy_penicillin"];
@@ -48,9 +48,9 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.stripped).toEqual([]);
   });
 
-  it("strips a note citation to a source the user does NOT have, and reports it", () => {
+  it("DROPS the whole claim for a note citation to a source the user does NOT have — no bare uncited assertion survives (the clause-leak fix)", () => {
     const out = enforceAnswerCitations("Your flight is at 9am [from trips/itinerary.md].", { notes: ["notes/vpn.md"] });
-    expect(out.text).toBe("Your flight is at 9am.");
+    expect(out.text).toBe(""); // NOT "Your flight is at 9am." — that would leak the fabricated claim un-cited
     expect(out.stripped).toEqual(["trips/itinerary.md"]);
   });
 
@@ -171,15 +171,15 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.text).toBe(""); // the whole fabricated claim is dropped, not left as an un-cited "X."
   });
 
-  describe("hybrid drop — a certainly-fabricated OVERLAP claim is DROPPED; an EXACT (notes/feeds) false-strip-risk one only loses its marker", () => {
+  describe("clause-leak fix — a claim resting SOLELY on a non-resolving citation is dropped, never left as a bare uncited assertion", () => {
     it("drops the sentence whose only citation is a fabricated task, keeps the conversational neighbour", () => {
       const out = enforceAnswerCitations("The deadline is March 3 [task: ghost task]. I can help with that.", { tasks: [] });
       expect(out.text).toBe("I can help with that.");
       expect(out.stripped).toEqual(["ghost task"]);
     });
-    it("does NOT drop a fabricated NOTES citation — only strips the marker (a real note mis-cited by path must not delete a true claim)", () => {
+    it("DROPS a fabricated NOTES citation (the clause-leak fix) — a real note mis-formatted still resolves via `resolvesExact`'s normalisation, so this is a genuine non-match", () => {
       const out = enforceAnswerCitations("The deadline is March 3 [from ghost.md]. Bye.", { notes: ["real.md"] });
-      expect(out.text).toBe("The deadline is March 3. Bye."); // claim survives un-cited (conservative)
+      expect(out.text).toBe("Bye."); // the fabricated claim is gone, not left as a bare "The deadline is March 3."
       expect(out.stripped).toEqual(["ghost.md"]);
     });
     it("keeps a validly-cited sentence and drops a separate fabricated-overlap sentence", () => {
@@ -201,11 +201,16 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
 
   it("cleans up the whitespace a stripped citation leaves (no ' .' or double space in the user-facing answer)", () => {
     // A removed citation must not leave a space-before-punctuation or a double
-    // space — the answer is shown to the user, so the gate tidies the prose.
-    const trailing = enforceAnswerCitations("Your flight is at 9am [from trips/itinerary.md].", { notes: ["notes/vpn.md"] });
-    expect(trailing.text).toBe("Your flight is at 9am."); // not "9am ." and no double space
-    const midline = enforceAnswerCitations("First [from invented.md]  then second.", { notes: [] });
-    expect(midline.text).toBe("First then second."); // collapsed, not "First   then second."
+    // space — the answer is shown to the user, so the gate tidies the prose. Here the
+    // fabricated marker sits alongside a REAL one in the same sentence, so the sentence
+    // survives (marker-only strip) and the whitespace tidy is what's under test.
+    const trailing = enforceAnswerCitations(
+      "Your flight is at 9am [from trips/itinerary.md] and MTU is 1380 [from notes/vpn.md].",
+      { notes: ["notes/vpn.md"] }
+    );
+    expect(trailing.text).toBe("Your flight is at 9am and MTU is 1380 [from notes/vpn.md]."); // not "9am ." and no double space
+    const midline = enforceAnswerCitations("First [from invented.md]  then second [from real.md].", { notes: ["real.md"] });
+    expect(midline.text).toBe("First then second [from real.md]."); // collapsed, not "First   then second."
   });
 
   it("an answer with no citations is returned unchanged", () => {
@@ -221,10 +226,16 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.text).toBe(answer);
   });
 
-  it("stripping a citation tidies the leftover seam whitespace (regression: stripping path unchanged)", () => {
-    const out = enforceAnswerCitations("The value is 42 [from nope.md] .", { notes: [] });
+  it("stripping a citation tidies the leftover seam whitespace, in a sentence a real citation also rescues (regression: stripping path unchanged)", () => {
+    const out = enforceAnswerCitations("The value is 42 [from nope.md] and 7 [from real.md] .", { notes: ["real.md"] });
     expect(out.stripped).toEqual(["nope.md"]);
-    expect(out.text).toBe("The value is 42.");
+    expect(out.text).toBe("The value is 42 and 7 [from real.md].");
+  });
+
+  it("DROPS the whole answer to empty when its only citation resolves to nothing (no rescuing valid citation anywhere)", () => {
+    const out = enforceAnswerCitations("The value is 42 [from nope.md].", { notes: [] });
+    expect(out.stripped).toEqual(["nope.md"]);
+    expect(out.text).toBe("");
   });
 
   it("valid citation kept + code block whitespace preserved (kept-citation path is verbatim)", () => {
@@ -232,6 +243,47 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     const out = enforceAnswerCitations(answer, { notes: ["real.md"] });
     expect(out.stripped).toEqual([]);
     expect(out.text).toBe(answer);
+  });
+});
+
+describe("citation-gate clause-leak fix — acceptance battery (a)-(d)", () => {
+  it("(a) a fabricated-citation sentence is dropped; the surrounding grounded sentences survive intact", () => {
+    const out = enforceAnswerCitations(
+      "MTU is 1380 [from notes/vpn.md]. Your flight is at 9am [from trips/itinerary.md]. Dentist is Tuesday [from cal/2026.md].",
+      { notes: ["notes/vpn.md", "cal/2026.md"] }
+    );
+    expect(out.text).toBe("MTU is 1380 [from notes/vpn.md]. Dentist is Tuesday [from cal/2026.md].");
+    expect(out.stripped).toEqual(["trips/itinerary.md"]);
+  });
+
+  it("(b) when every sentence is fabricated, the gate returns an EMPTY answer — never an uncited confident claim — and the withUngroundableFallback wrapper turns it into an honest 'I'm not sure'", () => {
+    const answer = "Your flight is at 9am [from trips/itinerary.md]. Your dentist is Tuesday [from cal/2026.md].";
+    const out = enforceAnswerCitations(answer, { notes: ["real-unrelated.md"] });
+    expect(out.text).toBe(""); // no bare confident claim rides through
+    expect(out.stripped).toEqual(["trips/itinerary.md", "cal/2026.md"]);
+    const shown = withUngroundableFallback(out);
+    expect(shown).toBe(UNGROUNDABLE_ANSWER_NOTICE);
+    expect(shown.toLowerCase()).toContain("i'm not sure"); // classifies as an honest refusal downstream
+  });
+
+  it("(b) withUngroundableFallback is a no-op when the answer already carries no citations, or when something grounded survives", () => {
+    expect(withUngroundableFallback({ stripped: [], text: "" })).toBe("");
+    expect(withUngroundableFallback({ stripped: ["x"], text: "Kept claim." })).toBe("Kept claim.");
+  });
+
+  it("(d) Korean text — sentence segmentation on Korean punctuation drops only the fabricated clause, keeping the grounded neighbour", () => {
+    const out = enforceAnswerCitations(
+      "VPN 설정은 완료됐습니다 [from vpn.md]. 다음 회의는 화요일입니다 [from ghost.md].",
+      { notes: ["vpn.md"] }
+    );
+    expect(out.text).toBe("VPN 설정은 완료됐습니다 [from vpn.md].");
+    expect(out.stripped).toEqual(["ghost.md"]);
+  });
+
+  it("(d) Korean text — an all-fabricated Korean answer drops to empty (never a bare confident KO claim)", () => {
+    const out = enforceAnswerCitations("여권 갱신일은 다음 달입니다 [from ghost.md].", { notes: ["vpn.md"] });
+    expect(out.text).toBe("");
+    expect(out.stripped).toEqual(["ghost.md"]);
   });
 });
 

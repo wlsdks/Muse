@@ -14,7 +14,7 @@
  * itself never resolves credentials or vendors.
  */
 
-import { citedSourcesIn, detectEvidenceContradictions, enforceAnswerCitations } from "@muse/agent-core";
+import { citedSourcesIn, detectEvidenceContradictions, enforceAnswerCitations, withUngroundableFallback } from "@muse/agent-core";
 
 import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
@@ -182,7 +182,10 @@ async function prepareRecall(input: GroundedRecallInput): Promise<PreparedRecall
 /** The deterministic gates over the full raw answer — shared by both entry points. */
 function finalizeRecall(raw: string, prepared: PreparedRecall, input: GroundedRecallInput): GroundedRecallResult {
   const enforced = enforceAnswerCitations(stripEchoedCiteAs(raw), { notes: [...prepared.allowedNotes] });
-  let answer = enforced.text.trim();
+  // Every sentence can be dropped as un-groundable (the citation-gate clause-leak
+  // fix) — an empty string there would read as a silent bug, not an honest
+  // abstention, so surface the SAME fixed hedge every other refusal uses.
+  let answer = withUngroundableFallback(enforced).trim();
   const strippedCitations = [...enforced.stripped];
 
   // An honest abstention must not carry a citation — a model that says
@@ -191,7 +194,7 @@ function finalizeRecall(raw: string, prepared: PreparedRecall, input: GroundedRe
   if (refusal && citedSourcesIn(answer).length > 0) {
     const strippedRefusal = enforceAnswerCitations(answer, { notes: [] });
     strippedCitations.push(...strippedRefusal.stripped);
-    answer = strippedRefusal.text.trim();
+    answer = withUngroundableFallback(strippedRefusal).trim();
   }
 
   const citations = [...new Set(citedSourcesIn(answer))];

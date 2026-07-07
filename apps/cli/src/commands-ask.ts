@@ -25,7 +25,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
-import { detectEvidenceContradictions, enforceAnswerCitations, isInjectableStrategy, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, renderPlaybookSection, reorderForLongContext, type ContradictionPair } from "@muse/agent-core";
+import { detectEvidenceContradictions, enforceAnswerCitations, isInjectableStrategy, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, renderPlaybookSection, reorderForLongContext, withUngroundableFallback, type ContradictionPair } from "@muse/agent-core";
 import { describeImage } from "@muse/agent-core";
 import { classifyActionRequest, classifyCorpusOverview, isMemoryInjection } from "@muse/agent-core";
 import { contestedFactKeys, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys, staleFactKeys } from "@muse/memory";
@@ -1290,7 +1290,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // recall scaffolding must never surface in the persisted/displayed answer.
       collectedAnswer = stripGroundingFences(collectedAnswer);
       const citationGate = enforceAnswerCitations(collectedAnswer, citationAllowed);
-      collectedAnswer = citationGate.text;
+      // Every sentence can be dropped as un-groundable (the citation-gate
+      // clause-leak fix) — an empty string there would read as a silent bug, not
+      // an honest abstention, so surface the SAME fixed hedge every other refusal
+      // uses instead of a blank answer.
+      collectedAnswer = withUngroundableFallback(citationGate);
       const refusalAnswer = answerIsRefusal(collectedAnswer);
       // The stripping always runs; the WARNING is suppressed for (a) an action
       // request, where the model citing the tool name (`muse.reminders.add`) as a
@@ -1311,9 +1315,9 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         await releaseOllamaLease(leaseFile, process.pid);
       } catch { /* best-effort */ }
       if (refusalAnswer) {
-        collectedAnswer = enforceAnswerCitations(collectedAnswer, {
+        collectedAnswer = withUngroundableFallback(enforceAnswerCitations(collectedAnswer, {
           events: [], feeds: [], notes: [], reminders: [], sessions: [], tasks: []
-        }).text;
+        }));
       }
       // The --with-tools answer was buffered (not streamed), so it prints HERE
       // — after the gate — so a fabricated citation is stripped before display.

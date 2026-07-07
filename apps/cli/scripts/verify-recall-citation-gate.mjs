@@ -10,7 +10,14 @@
  * Asserts the invariant on REAL local-model output:
  *   1. every citation that SURVIVES the gate resolves to a real source;
  *   2. a fabricated `[from secrets/…]` citation injected into that real answer
- *      is deterministically stripped (and reported).
+ *      is deterministically stripped (and reported);
+ *   3. (clause-leak fix, positive) a clean grounded multi-sentence answer
+ *      survives the gate byte-for-byte — the fix must not over-drop a real answer;
+ *   4. (clause-leak fix, negative) the FABRICATED CLAUSE itself — not just its
+ *      citation marker — is gone from the gated text: a bare, uncited "Also your
+ *      SSN is on file." surviving the strip would be the exact leak this closes.
+ *      Deterministic (not live-elicited) per the loop-engineering guidance that a
+ *      reliable in-battery gate-function assertion beats a flaky elicitation.
  *
  *   node apps/cli/scripts/verify-recall-citation-gate.mjs   (ollama/qwen3:8b)
  *
@@ -88,6 +95,25 @@ const stripped = gatedTampered.stripped.includes("secrets/ssn.md") && !gatedTamp
 stripped
   ? pass("a fabricated [from secrets/ssn.md] citation is deterministically stripped + reported")
   : fail(`the fabricated citation survived: stripped=${JSON.stringify(gatedTampered.stripped)} text="${gatedTampered.text.slice(-80)}"`);
+
+// 3) Clause-leak fix, POSITIVE: a clean answer whose every sentence resolves to a
+// real source must survive the gate untouched (the fix only drops SENTENCES with
+// NO valid citation — it must never over-drop a genuinely grounded answer).
+const cleanMultiSentence = "The office VPN needs MTU 1380 [from notes/vpn.md]. I fixed it on 2026-05-12 [from journal/2026-05-12.md].";
+const gatedClean = enforceAnswerCitations(cleanMultiSentence, { notes: realSources });
+gatedClean.text === cleanMultiSentence && gatedClean.stripped.length === 0
+  ? pass("a clean grounded multi-sentence answer passes the gate byte-for-byte (no over-drop)")
+  : fail(`a clean answer was altered: "${gatedClean.text}" stripped=${JSON.stringify(gatedClean.stripped)}`);
+
+// 4) Clause-leak fix, NEGATIVE (deterministic — the leak this slice closes): the
+// injected fabricated-citation sentence must be gone WHOLESALE, not merely stripped
+// of its marker. Before the fix, `enforceAnswerCitations` left "Also your SSN is on
+// file." behind as a bare, uncited assertion — a confident-looking fabrication. The
+// fix drops the whole clause; only the grounded neighbour sentences remain.
+const leakClosed = !gatedTampered.text.includes("SSN is on file") && !gatedTampered.text.includes("secrets/ssn.md");
+leakClosed
+  ? pass("the clause-leak fix holds: the fabricated CLAUSE is gone, not just its citation marker")
+  : fail(`the fabricated clause survived un-cited (the leak this slice closes): text="${gatedTampered.text}"`);
 
 console.log(failures === 0 ? "\nverify-recall-citation-gate: ALL PASS" : `\nverify-recall-citation-gate: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

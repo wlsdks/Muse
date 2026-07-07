@@ -180,6 +180,8 @@ export {
   edgeLoadByRelevance,
   enforceAnswerCitations,
   explainGroundingVerdict,
+  UNGROUNDABLE_ANSWER_NOTICE,
+  withUngroundableFallback,
   fuseByReciprocalRank,
   lexicalOverlap,
   lexicalTokens,

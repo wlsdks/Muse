@@ -190,6 +190,17 @@ describe("gateChatAnswer (deterministic anti-fabrication gate)", () => {
     expect(out).toBe(chatAbstention("내 생일 언제야?"));
   });
 
+  it("(c) ask/chat clause-leak PARITY — a claim citing a source with no supporting evidence never survives as a bare confident answer on EITHER surface", () => {
+    // The ask-path fix (enforceAnswerCitations) drops a SENTENCE whose only
+    // citation is fabricated. Chat has no note evidence for this claim at all, so
+    // its whole-turn verdict (gateChatAnswer) must abstain rather than let the
+    // citation-decorated claim through unqualified — the same "no bare fabricated
+    // assertion reaches the user" invariant, enforced by a different (whole-answer)
+    // mechanism.
+    const out = gateChatAnswer("내 여권 갱신일이 언제야?", "여권 갱신일은 다음 달입니다 [from passport.md].", []);
+    expect(out).toBe(chatAbstention("내 여권 갱신일이 언제야?"));
+  });
+
   // Wrong-VALUE drift: every word but the number overlaps the note, so the
   // holistic coverage / noteGroundedAnswer shortcuts read "grounded" — only the
   // deterministic number check catches the fabricated value (parity with the

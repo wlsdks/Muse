@@ -198,32 +198,35 @@ export function normalizeSlotCitations(
  * `[session: …]`, matched against the retrieved past-session summaries.
  */
 /**
- * The citation classes the gate validates. `certainOnStrip` marks the classes
- * resolved by lexical OVERLAP (free-text titles): a non-resolving overlap citation
- * shares ZERO content token with anything the user has = a CERTAIN invention, so the
- * whole claim it grounds is dropped. The EXACT classes (notes/feeds — matched by
- * path/name) carry a false-strip risk (a real note cited with a formatting mismatch),
- * so a non-resolving one only loses its marker (+ a downstream "unverified" warning),
- * never the claim — dropping there could delete a TRUE but mis-cited fact.
+ * The citation classes the gate validates, keyed by `AllowedCitations` field.
+ * Every class now drops the WHOLE claim (sentence) when its citation fails to
+ * resolve and no other citation in the sentence is valid — a fabricated CLAUSE
+ * must never survive the gate as a bare, uncited assertion (the citation-gate
+ * clause leak this closes: the EXACT classes — notes/feeds/browsing, matched by
+ * path/name/hostname — used to only lose their marker on a non-resolving hit,
+ * leaving the claim behind un-cited). `resolvesExact` already tolerates the
+ * normalisation a real source can legitimately vary on (case, NFC, full-width,
+ * surrounding whitespace — see `resolvesExact`), so anything that still fails to
+ * resolve is either a genuine invention or a citation form no real source can
+ * take; either way the safe (fail-close) outcome is to drop the claim, not keep it.
  */
 const CITATION_CLASSES: readonly {
   readonly re: RegExp;
   readonly key: keyof AllowedCitations;
   readonly resolves: (value: string, allowed: readonly string[]) => boolean;
-  readonly certainOnStrip: boolean;
 }[] = [
-  { certainOnStrip: false, key: "notes", re: CITATION_RE, resolves: resolvesExact },
-  { certainOnStrip: false, key: "feeds", re: /\[feed:\s*([^\]]+?)\s*\]/giu, resolves: resolvesExact },
-  { certainOnStrip: false, key: "browsing", re: /\[browsing:\s*([^\]]+?)\s*\]/giu, resolves: resolvesExact },
-  { certainOnStrip: true, key: "tasks", re: /\[task:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "events", re: /\[event:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "reminders", re: /\[reminder:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "sessions", re: /\[session:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "contacts", re: /\[contact:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "commands", re: /\[command:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "commits", re: /\[commit:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "memories", re: /\[memory:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
-  { certainOnStrip: true, key: "actions", re: /\[action:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap }
+  { key: "notes", re: CITATION_RE, resolves: resolvesExact },
+  { key: "feeds", re: /\[feed:\s*([^\]]+?)\s*\]/giu, resolves: resolvesExact },
+  { key: "browsing", re: /\[browsing:\s*([^\]]+?)\s*\]/giu, resolves: resolvesExact },
+  { key: "tasks", re: /\[task:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "events", re: /\[event:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "reminders", re: /\[reminder:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "sessions", re: /\[session:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "contacts", re: /\[contact:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "commands", re: /\[command:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "commits", re: /\[commit:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "memories", re: /\[memory:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
+  { key: "actions", re: /\[action:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap }
 ];
 
 /**
@@ -258,19 +261,20 @@ export function enforceAnswerCitations(answer: string, allowed: AllowedCitations
   const kept: string[] = [];
   for (const sentence of splitCitationSentences(answer)) {
     let hasValid = false;
-    let hasCertainFabrication = false;
+    let hasInvalid = false;
     for (const c of CITATION_CLASSES) {
       for (const m of sentence.matchAll(c.re)) {
-        if (c.resolves(m[1]!.trim(), allowed[c.key] ?? [])) hasValid = true;
-        else if (c.certainOnStrip) hasCertainFabrication = true;
+        const value = m[1]!.trim();
+        const allowedList = allowed[c.key] ?? [];
+        if (c.resolves(value, allowedList)) hasValid = true;
+        else hasInvalid = true;
       }
     }
-    // DROP a sentence grounded ONLY on a certainly-fabricated overlap citation (no
-    // surviving valid source of any class) — an un-groundable claim removed by code,
-    // not laundered into an un-cited assertion. A sentence with ANY valid citation, or
-    // whose only bad citation is an EXACT class (notes/feeds, false-strip risk), is
-    // kept and merely loses the bad marker below.
-    if (hasCertainFabrication && !hasValid) {
+    // DROP a sentence grounded ONLY on a citation that fails to resolve — an
+    // un-groundable claim removed by code, not laundered into an un-cited
+    // assertion. A sentence with ANY valid citation is kept and merely loses the
+    // bad marker below (a real source elsewhere in the sentence rescues it).
+    if (hasInvalid && !hasValid) {
       for (const c of CITATION_CLASSES) {
         for (const m of sentence.matchAll(c.re)) {
           if (!c.resolves(m[1]!.trim(), allowed[c.key] ?? [])) stripped.push(m[1]!.trim());
@@ -302,4 +306,31 @@ export function enforceAnswerCitations(answer: string, allowed: AllowedCitations
       .replace(/[ \t]+$/u, ""); // a DROPPED trailing sentence leaves the prior one's trailing space
   }
   return { stripped, text };
+}
+
+/**
+ * The fixed hedge shown when {@link enforceAnswerCitations} drops EVERY sentence
+ * of an answer as un-groundable — an empty string reads as a silent bug, not an
+ * honest abstention. Deliberately opens with "I'm not sure" so it is itself a
+ * `REFUSAL_MARKERS` hit (`@muse/recall/text.ts`): downstream refusal detection
+ * (citation stripping, the "Removed N citation(s)" warning suppression, run-log
+ * outcome labelling) classifies it exactly like any other honest refusal.
+ */
+export const UNGROUNDABLE_ANSWER_NOTICE = "I'm not sure — none of that checks out against a real source.";
+
+/**
+ * Apply the weak-framing fallback for a caller that shows the gate's result
+ * directly to the user: when stripping fabricated citations gutted the WHOLE
+ * answer, surface the fixed hedge instead of a blank response. A no-op when
+ * anything survived, or when nothing was stripped in the first place.
+ *
+ * NEVER call this from the live streaming filter (`createCitationStreamFilter`'s
+ * `clean` callback) — that gate runs per isolated `[…]` SPAN, not per sentence,
+ * so an empty result there is the correct "drop this span" outcome, not a gutted
+ * answer; substituting the hedge mid-stream would inject prose into running text.
+ */
+export function withUngroundableFallback(enforced: CitationEnforcement): string {
+  return enforced.stripped.length > 0 && enforced.text.trim().length === 0
+    ? UNGROUNDABLE_ANSWER_NOTICE
+    : enforced.text;
 }
