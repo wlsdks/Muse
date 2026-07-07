@@ -114,7 +114,7 @@ describe("muse remind — API-unreachable falls back to the local store (local-f
   });
 
   const unreachable: RemindCommandHelpers["apiRequest"] = async () => {
-    throw new Error("muse: Muse API not reachable at http://127.0.0.1:3030");
+    throw new Error("muse: Muse API server is not running (tried http://127.0.0.1:3030)");
   };
 
   it("add: an unreachable API writes the reminder LOCALLY instead of hard-erroring", async () => {

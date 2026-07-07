@@ -483,7 +483,7 @@ export function isApiUnreachable(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
-  return error.message.includes("Muse API not reachable") || error.message.includes("Muse API host unresolved");
+  return error.message.includes("Muse API server is not running") || error.message.includes("Muse API host unresolved");
 }
 
 /**

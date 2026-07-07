@@ -10,7 +10,7 @@ import { registerRemindCommands, type RemindCommandHelpers } from "./commands-re
 import { registerTasksCommands, type TasksCommandHelpers } from "./commands-tasks.js";
 
 const UNREACHABLE = (): never => {
-  throw new Error("Muse API not reachable at http://127.0.0.1:3030 — start it with `pnpm --filter @muse/api dev`.");
+  throw new Error("Muse API server is not running (tried http://127.0.0.1:3030) — start it with `pnpm --filter @muse/api dev`.");
 };
 
 function captureIo(): { io: { stdout: (m: string) => void; stderr: (m: string) => void }; out: string[]; err: string[] } {

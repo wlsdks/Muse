@@ -447,7 +447,7 @@ describe("muse calendar add — create a local event from the terminal", () => {
 
   it("events: an unreachable API falls back to the LOCAL calendar (you can list what you added)", async () => {
     await runAdd(["Dentist", "--at", "2026-05-30T15:00:00"]); // add is local-by-design
-    const unreachable: CalendarCommandHelpers["apiRequest"] = async () => { throw new Error("muse: Muse API not reachable at http://127.0.0.1:3030"); };
+    const unreachable: CalendarCommandHelpers["apiRequest"] = async () => { throw new Error("muse: Muse API server is not running (tried http://127.0.0.1:3030)"); };
     const r = await runEvents(["--from", "2026-05-30T00:00:00", "--to", "2026-05-31T00:00:00"], unreachable);
     expect(r.error).toBeUndefined();
     expect(r.stdout).toContain("Dentist");
