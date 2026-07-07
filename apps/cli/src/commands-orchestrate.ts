@@ -16,6 +16,14 @@ import type { ProgramIO } from "./program.js";
 
 const ORCHESTRATE_MODES: readonly string[] = ["sequential", "parallel", "race"];
 
+// `race` is accepted for wire compat but currently resolves to `sequential`
+// (MultiAgentOrchestrator.run) — a single local GPU serializes the workers
+// anyway, so "first useful answer wins" concurrency is not real yet. Honest
+// > silent: the CLI tells the user what actually happens instead of letting
+// them believe they got true concurrency.
+const RACE_RESOLVES_TO_SEQUENTIAL_NOTICE =
+  "(note: --mode race resolves to sequential on a single local GPU — there is no true concurrent-worker race yet)";
+
 export interface OrchestrateHelpers {
   readonly apiRequest: (
     io: ProgramIO,
@@ -35,7 +43,7 @@ export function registerOrchestrateCommands(program: Command, io: ProgramIO, hel
     .command("run")
     .description("POST /api/multi-agent/orchestrate — run a multi-agent orchestration")
     .argument("<message...>", "User prompt to dispatch")
-    .option("--mode <mode>", "Orchestration mode: sequential | parallel | race", "sequential")
+    .option("--mode <mode>", "Orchestration mode: sequential | parallel | race (race currently resolves to sequential — single local GPU)", "sequential")
     .option("--workers <ids>", "Comma-separated worker IDs to constrain")
     .option("--max-workers <n>", "Maximum number of workers to engage")
     .option("--model <model>", "Model name override")
@@ -62,6 +70,9 @@ export function registerOrchestrateCommands(program: Command, io: ProgramIO, hel
         const suggestion = closestCommandName(mode, ORCHESTRATE_MODES);
         const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
         throw new Error(`--mode must be 'sequential', 'parallel', or 'race' (got '${options.mode}')${hint}`);
+      }
+      if (mode === "race") {
+        io.stderr(`${RACE_RESOLVES_TO_SEQUENTIAL_NOTICE}\n`);
       }
       const workerIds = options.workers
         ? options.workers.split(",").map((id) => id.trim()).filter((id) => id.length > 0)

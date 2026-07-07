@@ -25,7 +25,14 @@ function harness(): { run: (args: string[]) => Promise<unknown>; captured: Captu
   program.exitOverride();
   registerOrchestrateCommands(program, io, helpers);
   return {
-    captured: { requests, stderr: stderr.join(""), stdout: stdout.join("") } as never as Captured,
+    // Live getters, not a joined snapshot — `captured` is read back AFTER
+    // `run()` resolves, so a snapshot taken here (before any output exists)
+    // would always read back empty.
+    captured: {
+      get requests() { return requests; },
+      get stderr() { return stderr.join(""); },
+      get stdout() { return stdout.join(""); }
+    } as unknown as Captured,
     run: (args) => program.parseAsync(["node", "muse", "orchestrate", ...args])
   };
 }
@@ -62,6 +69,22 @@ describe("muse orchestrate run — mode validation", () => {
     await h.run(["run", "hello", "--workers", "  alpha , beta , "]);
     expect(h.captured.requests).toHaveLength(1);
     expect(h.captured.requests[0]!.body).toMatchObject({ workerIds: ["alpha", "beta"] });
+  });
+
+  it("--mode race prints a one-line honest notice (single-GPU resolves to sequential) but still runs the request unchanged", async () => {
+    const h = harness();
+    await h.run(["run", "hello", "--mode", "race"]);
+    expect(h.captured.stderr).toMatch(/race resolves to sequential/u);
+    expect(h.captured.requests).toHaveLength(1);
+    expect(h.captured.requests[0]!.body).toMatchObject({ mode: "race" });
+  });
+
+  it("sequential/parallel print NO race notice", async () => {
+    for (const mode of ["sequential", "parallel"]) {
+      const h = harness();
+      await h.run(["run", "hello", "--mode", mode]);
+      expect(h.captured.stderr).not.toMatch(/race resolves to sequential/u);
+    }
   });
 
   it("--tiered sends tiered: true; omitting it sends no tiered field", async () => {
