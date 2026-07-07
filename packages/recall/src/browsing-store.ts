@@ -26,6 +26,38 @@ export interface BrowsingVisit {
   readonly title: string;
   /** ISO 8601 timestamp of the visit. */
   readonly visitedAt: string;
+  /**
+   * OPTIONAL title embedding (nomic-embed-text-v2-moe, 768-dim), computed at
+   * SYNC time so query-time cross-lingual recall ("지난주 본 러스트 블로그" → an
+   * EN title) never full-scan-embeds. Additive + backward-compatible: the schema
+   * stays v1, a pre-3b entry simply lacks it and remains lexically matchable.
+   */
+  readonly embedding?: readonly number[];
+}
+
+/**
+ * nomic-embed-text-v2-moe is task-prefixed: a KO query and a semantically-equal
+ * EN title score ~0.29 vs ~0.31 (no separating floor) WITHOUT these prefixes,
+ * but land 0.21–0.35 vs ≤0.12 WITH them (measured live) — so the STORED title is
+ * the `search_document:` side and the query the `search_query:` side. Mirrors the
+ * memory/action cross-lingual rescue's convention exactly.
+ */
+export function browsingDocEmbedText(visit: Pick<BrowsingVisit, "title">): string {
+  return `search_document: ${visit.title}`;
+}
+
+export function browsingQueryEmbedText(query: string): string {
+  return `search_query: ${query}`;
+}
+
+/**
+ * Round each component to 5 significant digits before persisting. A raw 768-float
+ * vector serializes to ~19KB/visit; rounded it is ~10.5KB, roughly halving the
+ * on-disk archive (worst-case ~53MB at the 5000-visit cap) with cosine fidelity
+ * untouched at this precision. Mirrors the store-size mitigation the task requires.
+ */
+export function roundVectorForStore(vec: readonly number[]): number[] {
+  return vec.map((n) => Number(n.toPrecision(5)));
 }
 
 export interface BrowsingStore {
@@ -89,15 +121,27 @@ export async function readBrowsingStore(file: string): Promise<BrowsingStore> {
     await backupVersionMismatchedStore(file, candidate.version);
     return emptyStore();
   }
-  const visits = (candidate.visits ?? []).filter(
-    (v): v is BrowsingVisit =>
-      Boolean(v) &&
-      typeof v === "object" &&
-      typeof (v as BrowsingVisit).id === "string" &&
-      typeof (v as BrowsingVisit).url === "string" &&
-      typeof (v as BrowsingVisit).title === "string" &&
-      typeof (v as BrowsingVisit).visitedAt === "string"
-  );
+  const visits: BrowsingVisit[] = [];
+  for (const v of candidate.visits ?? []) {
+    if (!v || typeof v !== "object") continue;
+    const c = v as Partial<BrowsingVisit>;
+    if (
+      typeof c.id !== "string" ||
+      typeof c.url !== "string" ||
+      typeof c.title !== "string" ||
+      typeof c.visitedAt !== "string"
+    ) {
+      continue;
+    }
+    const base: BrowsingVisit = { id: c.id, url: c.url, title: c.title, visitedAt: c.visitedAt };
+    // Tolerate BOTH shapes: a valid embedding is preserved; a v1 entry without one
+    // (or with a malformed one) keeps every other field and stays lexically matchable.
+    const hasValidEmbedding =
+      Array.isArray(c.embedding) &&
+      c.embedding.length > 0 &&
+      c.embedding.every((n) => typeof n === "number" && Number.isFinite(n));
+    visits.push(hasValidEmbedding ? { ...base, embedding: c.embedding } : base);
+  }
   const cursor =
     typeof candidate.lastVisitTimeCursor === "number" && Number.isFinite(candidate.lastVisitTimeCursor)
       ? candidate.lastVisitTimeCursor

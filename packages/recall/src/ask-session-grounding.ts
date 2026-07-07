@@ -15,7 +15,7 @@ import { readEpisodes, readReflections, selectReflectionsForRecall } from "@muse
 import { filterLiveEpisodeEntries } from "./live-files.js";
 import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpisodeIndex, saveEpisodeIndex } from "./episode-index.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
-import { readBrowsingStore } from "./browsing-store.js";
+import { browsingQueryEmbedText, readBrowsingStore } from "./browsing-store.js";
 
 export interface SessionFeedReflectionGrounding {
   readonly episodeHits: Array<{ id: string; summary: string; score: number }>;
@@ -111,13 +111,26 @@ export async function buildSessionFeedReflectionGrounding(params: {
   }
   const feedBlock = buildFeedContextBlock(feedHeadlines);
 
-  // Stage 2: the user's LOCAL Chrome browsing history ("that rust blog I read last
-  // week"). Unlike feeds (pure recency), the archive can hold thousands of visits,
-  // so selection is query-relevant + Korean-safe (lexical overlap). Optional + fail-soft.
+  // Stage 2/3b: the user's LOCAL Chrome browsing history ("that rust blog I read last
+  // week"). Unlike feeds (pure recency), the archive can hold thousands of visits, so
+  // selection is query-relevant: lexical overlap (Korean-safe) UNIONed with a
+  // cross-lingual cosine arm when titles were embedded at sync time — so a KO query
+  // reaches an EN-titled page. The query embed is PREFIXED (`search_query:`) and fires
+  // ONLY when the archive actually holds embedded visits (the notes `queryVec` is the
+  // unprefixed RAG space — unusable here — so this mirrors the memory/action rescue's
+  // fresh prefixed embed), fail-soft to lexical-only. Optional + fail-soft throughout.
   let browsingHits: BrowsingHit[] = [];
   try {
     const store = await readBrowsingStore(browsingFile);
-    browsingHits = selectBrowsingVisitsForQuery(store.visits, queryText, 6);
+    let browsingQueryVec: readonly number[] | undefined;
+    if (store.visits.some((v) => v.embedding && v.embedding.length > 0)) {
+      try {
+        browsingQueryVec = await embedFn(browsingQueryEmbedText(queryText), embedModel);
+      } catch {
+        // embedder down — cross-lingual arm off, lexical selection still runs
+      }
+    }
+    browsingHits = selectBrowsingVisitsForQuery(store.visits, queryText, 6, browsingQueryVec);
   } catch {
     // browsing store missing / unreadable — grounding still works
   }

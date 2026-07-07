@@ -24,6 +24,8 @@ import {
 } from "@muse/recall";
 import type { Command } from "commander";
 
+import { defaultEmbedModel } from "./council-corpus.js";
+import { embed } from "./embed.js";
 import type { ProgramIO } from "./program.js";
 
 export { BROWSING_SYNC_LIMIT };
@@ -78,6 +80,9 @@ export function registerBrowsingCommand(program: Command, io: ProgramIO): void {
         return;
       }
       const { synced, total } = await syncBrowsingHistory({
+        // Embed titles at ingest so cross-lingual recall works later; localhost-only,
+        // per-visit fail-soft (Ollama down ⇒ visits still ingest, just unembedded).
+        embed: (text) => embed(text, defaultEmbedModel(process.env)),
         historyFile,
         limit: BROWSING_SYNC_LIMIT,
         storeFile: defaultBrowsingFile()

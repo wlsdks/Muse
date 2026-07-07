@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 
-import { citedSourcesIn, independentWitnessCount, lexicalOverlap, lexicalTokens, neutralizeInjectionSpans, quorumVerdict, type ContradictionPair } from "@muse/agent-core";
+import { citedSourcesIn, cosineSimilarity, independentWitnessCount, lexicalOverlap, lexicalTokens, neutralizeInjectionSpans, quorumVerdict, type ContradictionPair } from "@muse/agent-core";
 import { escapeSystemPromptMarkers } from "./prompt-escape.js";
 import type { BrowsingVisit } from "./browsing-store.js";
 import { formatDueLocal } from "@muse/mcp-shared";
@@ -51,31 +51,63 @@ export interface BrowsingHit {
 }
 
 /**
- * The browsing visits most RELEVANT to `query`, for the ask grounding block:
- * visits whose title/URL share a content token with the query, ranked by overlap
- * then newest-first, capped at `limit`. Query tokens come from `lexicalTokens`
- * (NFC + CJK-aware), so a Korean query ("러스트 블로그") matches a Korean title,
- * not only ASCII. Unlike feeds (pure recency), the browsing archive can hold
- * thousands of visits, so a relevance filter is required or the block is noise.
- * Zero query tokens or no overlap → []. Pure (no IO, no Date.now) so a unit test
- * pins matching + ordering.
+ * Cosine floor above which a browsing visit counts as a cross-lingual match to
+ * the (prefixed) query embedding. Reuses the memory/action cross-lingual floor
+ * exactly — same model (nomic-embed-text-v2-moe), same `search_query:`/
+ * `search_document:` prefixes — validated live for THIS surface: a KO query vs
+ * related EN titles scored 0.21 / 0.35, unrelated ≤0.12, so 0.18 separates the
+ * real matches from noise (margin ~0.09). Below it a visit is a genuine miss, not
+ * a language artifact.
+ */
+const BROWSING_COSINE_FLOOR = 0.18;
+
+/**
+ * The browsing visits most RELEVANT to `query`, for the ask grounding block. Two
+ * arms, UNIONED then capped at `limit`:
+ *
+ * - LEXICAL: visits whose title/URL share a content token with the query. Query
+ *   tokens come from `lexicalTokens` (NFC + CJK-aware), so a Korean query
+ *   ("러스트 블로그") matches a Korean title, not only ASCII.
+ * - SEMANTIC (only when `queryEmbedding` is supplied): a visit whose stored title
+ *   embedding is ≥ the cosine floor — this is what lets a KO query reach an
+ *   EN-titled page the lexical arm can't (the archive is mostly English).
+ *
+ * Lexical hits ALWAYS outrank semantic-only hits (an exact keyword match is never
+ * displaced by a weak cosine hit); within each arm, stronger score wins, newest
+ * breaks ties. A visit matched by BOTH arms is a single entry scored in the
+ * lexical tier (no double-listing). NO `queryEmbedding` ⇒ byte-identical to the
+ * prior lexical-only behaviour (regression-pinned). Pure (no IO, no Date.now).
  */
 export function selectBrowsingVisitsForQuery(
   visits: readonly BrowsingVisit[],
   query: string,
-  limit: number
+  limit: number,
+  queryEmbedding?: readonly number[]
 ): BrowsingHit[] {
   if (limit <= 0) {
     return [];
   }
   const queryTokens = lexicalTokens(query);
-  if (queryTokens.size === 0) {
-    return [];
-  }
-  return visits
-    .map((v) => ({ overlap: lexicalOverlap(queryTokens, `${v.title} ${v.url}`), v }))
-    .filter((e) => e.overlap > 0)
-    .sort((a, b) => b.overlap - a.overlap || (Date.parse(b.v.visitedAt) || 0) - (Date.parse(a.v.visitedAt) || 0))
+  const scored = visits
+    .map((v) => {
+      const overlap = queryTokens.size > 0 ? lexicalOverlap(queryTokens, `${v.title} ${v.url}`) : 0;
+      const cosine =
+        queryEmbedding && v.embedding && v.embedding.length > 0
+          ? cosineSimilarity(queryEmbedding, v.embedding)
+          : 0;
+      return { cosine, overlap, v };
+    })
+    .filter((e) => e.overlap > 0 || e.cosine >= BROWSING_COSINE_FLOOR);
+  scored.sort((a, b) => {
+    const aLex = a.overlap > 0 ? 1 : 0;
+    const bLex = b.overlap > 0 ? 1 : 0;
+    if (aLex !== bLex) {
+      return bLex - aLex;
+    }
+    const recency = (Date.parse(b.v.visitedAt) || 0) - (Date.parse(a.v.visitedAt) || 0);
+    return aLex === 1 ? b.overlap - a.overlap || recency : b.cosine - a.cosine || recency;
+  });
+  return scored
     .slice(0, limit)
     .map((e) => ({ host: browsingHostname(e.v.url), title: e.v.title, url: e.v.url, visitedAt: e.v.visitedAt }));
 }

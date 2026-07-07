@@ -5,11 +5,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  browsingDocEmbedText,
+  browsingQueryEmbedText,
   BROWSING_STORE_SCHEMA_VERSION,
   compareBrowsingVisitsNewestFirst,
   isoToWebkitTime,
   mergeBrowsingVisits,
   readBrowsingStore,
+  roundVectorForStore,
   searchBrowsingVisits,
   webkitTimeToIso,
   writeBrowsingStore,
@@ -21,7 +24,8 @@ const visit = (over: Partial<BrowsingVisit> = {}): BrowsingVisit => ({
   id: over.id ?? "1-abc",
   url: over.url ?? "https://example.com/a",
   title: over.title ?? "A",
-  visitedAt: over.visitedAt ?? "2026-05-19T09:00:00.000Z"
+  visitedAt: over.visitedAt ?? "2026-05-19T09:00:00.000Z",
+  ...(over.embedding ? { embedding: over.embedding } : {})
 });
 
 describe("webkitTimeToIso — known answer", () => {
@@ -137,5 +141,48 @@ describe("readBrowsingStore / writeBrowsingStore", () => {
     // The original content survives at a sibling .bak-* path.
     const backup = (await readFile(file, "utf8").catch(() => "")) === "";
     expect(backup).toBe(true);
+  });
+
+  it("round-trips a visit WITH an embedding (additive, schema stays v1)", async () => {
+    const store: BrowsingStore = {
+      version: BROWSING_STORE_SCHEMA_VERSION,
+      visits: [visit({ embedding: [0.12345, -0.6789, 0.0001] })],
+      lastVisitTimeCursor: 0
+    };
+    await writeBrowsingStore(file, store);
+    const back = await readBrowsingStore(file);
+    expect(back.visits[0]!.embedding).toEqual([0.12345, -0.6789, 0.0001]);
+  });
+
+  it("reads a v1 entry WITHOUT an embedding fine (backward compat), and drops a malformed embedding but keeps the visit", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: BROWSING_STORE_SCHEMA_VERSION,
+        visits: [
+          { id: "no-embed", url: "https://x", title: "legacy", visitedAt: "2026-05-19T00:00:00Z" },
+          { id: "bad-embed", url: "https://y", title: "t", visitedAt: "2026-05-19T00:00:00Z", embedding: [1, "nope", null] }
+        ]
+      }),
+      "utf8"
+    );
+    const store = await readBrowsingStore(file);
+    expect(store.visits).toHaveLength(2);
+    expect(store.visits.find((v) => v.id === "no-embed")!.embedding).toBeUndefined();
+    // malformed embedding is stripped, the rest of the visit survives (still lexically matchable)
+    const bad = store.visits.find((v) => v.id === "bad-embed")!;
+    expect(bad).toMatchObject({ id: "bad-embed", title: "t" });
+    expect(bad.embedding).toBeUndefined();
+  });
+});
+
+describe("embedding helpers", () => {
+  it("browsingDocEmbedText / browsingQueryEmbedText apply the nomic-v2-moe task prefixes", () => {
+    expect(browsingDocEmbedText({ title: "Announcing Rust 1.80" })).toBe("search_document: Announcing Rust 1.80");
+    expect(browsingQueryEmbedText("지난주에 본 러스트 블로그")).toBe("search_query: 지난주에 본 러스트 블로그");
+  });
+
+  it("roundVectorForStore rounds each component to 5 significant digits", () => {
+    expect(roundVectorForStore([0.123456789, -0.000987654, 12.34567])).toEqual([0.12346, -0.00098765, 12.346]);
   });
 });

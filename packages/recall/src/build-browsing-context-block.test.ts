@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { browsingHostname, buildBrowsingContextBlock, selectBrowsingVisitsForQuery } from "./present.js";
 import type { BrowsingVisit } from "./browsing-store.js";
 
-const visit = (id: string, title: string, url: string, visitedAt: string): BrowsingVisit => ({ id, title, url, visitedAt });
+const visit = (id: string, title: string, url: string, visitedAt: string, embedding?: readonly number[]): BrowsingVisit => embedding ? ({ id, title, url, visitedAt, embedding }) : ({ id, title, url, visitedAt });
 
 describe("browsingHostname — the citation identifier a visit is grounded/cited by", () => {
   it("returns the registrable hostname, lowercased, with a leading www. dropped", () => {
@@ -45,6 +45,52 @@ describe("selectBrowsingVisitsForQuery — query-relevant, Korean-safe visit sel
     expect(selectBrowsingVisitsForQuery(visits, "   ", 5)).toEqual([]);
     expect(selectBrowsingVisitsForQuery(visits, "quantum chromodynamics", 5)).toEqual([]);
     expect(selectBrowsingVisitsForQuery(visits, "rust", 0)).toEqual([]);
+  });
+});
+
+describe("selectBrowsingVisitsForQuery — cross-lingual cosine arm (KO query → EN title)", () => {
+  // A KO query that shares NO token with any EN title (lexical arm returns nothing).
+  const koQuery = "지난주에 본 러스트 블로그";
+  // Fake unit vectors: the KO query is "close" to the Rust title, "far" from pasta.
+  // cosine(q, rust) = 1.0 (identical) → above floor 0.18; cosine(q, pasta) = 0 → below.
+  const qVec = [1, 0, 0];
+  const rustVec = [1, 0, 0]; // cosine 1.0 with qVec
+  const pastaVec = [0, 1, 0]; // cosine 0 with qVec
+  const enVisits: readonly BrowsingVisit[] = [
+    visit("en1", "Announcing Rust 1.80.0", "https://blog.rust-lang.org/rust-1.80", "2026-06-20T00:00:00.000Z", rustVec),
+    visit("en2", "Best weeknight pasta recipes", "https://cooking.example.com/pasta", "2026-06-25T00:00:00.000Z", pastaVec)
+  ];
+
+  it("selects an EN-titled visit the lexical arm alone MISSED, and excludes the below-floor unrelated one", () => {
+    const lexicalOnly = selectBrowsingVisitsForQuery(enVisits, koQuery, 6);
+    expect(lexicalOnly).toEqual([]); // no shared tokens → lexical finds nothing
+
+    const hybrid = selectBrowsingVisitsForQuery(enVisits, koQuery, 6, qVec);
+    expect(hybrid.map((h) => h.title)).toEqual(["Announcing Rust 1.80.0"]); // cosine rescued the Rust page; pasta excluded (below floor)
+  });
+
+  it("no query embedding ⇒ byte-identical to lexical-only (regression pin)", () => {
+    const lexVisits: readonly BrowsingVisit[] = [
+      visit("1", "Rust ownership deep dive", "https://blog.rust-lang.org/ownership", "2026-06-20T00:00:00.000Z"),
+      visit("2", "Weeknight pasta recipe", "https://cooking.example.com/pasta", "2026-06-25T00:00:00.000Z"),
+      visit("3", "Rust async runtime notes", "https://tokio.rs/blog/async", "2026-06-10T00:00:00.000Z")
+    ];
+    const withoutVec = selectBrowsingVisitsForQuery(lexVisits, "rust blog", 5);
+    const withUndefinedVec = selectBrowsingVisitsForQuery(lexVisits, "rust blog", 5, undefined);
+    expect(withUndefinedVec).toEqual(withoutVec);
+    expect(withoutVec.map((h) => h.title)).toEqual(["Rust ownership deep dive", "Rust async runtime notes"]);
+  });
+
+  it("a lexical hit ranks ABOVE a stronger-cosine semantic-only hit (exact keyword never displaced)", () => {
+    // "rust" lexically matches the (weak-cosine) rust page; the pasta page is a
+    // strong-cosine-only hit. The lexical hit must come first regardless of cosine.
+    const mixed: readonly BrowsingVisit[] = [
+      visit("lex", "Rust ownership", "https://rust-lang.org/own", "2026-06-01T00:00:00.000Z", pastaVec), // lexical on "rust", cosine 0
+      visit("sem", "완전히 다른 주제", "https://ko.example.com/x", "2026-06-30T00:00:00.000Z", rustVec) // no lexical, cosine 1.0
+    ];
+    const hits = selectBrowsingVisitsForQuery(mixed, "rust", 6, qVec);
+    expect(hits[0]?.title).toBe("Rust ownership"); // lexical tier first
+    expect(hits.map((h) => h.title)).toEqual(["Rust ownership", "완전히 다른 주제"]);
   });
 });
 

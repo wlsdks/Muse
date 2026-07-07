@@ -68,6 +68,8 @@ import { randomUUID } from "node:crypto";
 import { DaemonStopSignal, runDaemonLoop } from "./commands-daemon-loop.js";
 import { defaultChromeConnection, defaultFollowupModel, defaultKnowledgeEnrich, type FollowupModel } from "./commands-daemon-connections.js";
 import { maybeAutoPrune } from "./local-state-retention.js";
+import { defaultEmbedModel } from "./council-corpus.js";
+import { embed } from "./embed.js";
 
 export interface DaemonHelpers {
   /** Test seam — defaults to `process.env`. */
@@ -1050,7 +1052,15 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const defaultBrowsingSync = async (args: { env: NodeJS.ProcessEnv; storeFile: string; limit: number }): Promise<{ synced: number; total: number }> => {
         const historyFile = await locateChromeHistoryFile({ env: args.env });
         if (!historyFile) return { synced: 0, total: 0 };
-        return syncBrowsingHistory({ historyFile, limit: args.limit, storeFile: args.storeFile });
+        // Embed titles at ingest so cross-lingual recall works later. Localhost-only
+        // + per-visit fail-soft: a down embedder never breaks the tick (visits still
+        // ingest, unembedded, and backfill on a later tick once Ollama is back).
+        return syncBrowsingHistory({
+          embed: (text) => embed(text, defaultEmbedModel(args.env)),
+          historyFile,
+          limit: args.limit,
+          storeFile: args.storeFile
+        });
       };
       let lastBrowsingSyncMs: number | undefined;
       const browsingAutoSyncTick = async (): Promise<void> => {
