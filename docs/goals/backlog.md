@@ -93,7 +93,8 @@ realistic partial hedge. Deeper veracity needs a human/product call, not an auto
 - ✓ (b28511d6) Stage 4: feeds cross-lingual — 인제스트 시 타이틀 임베딩 + recency 베이스 위 rescue 암(렉시컬∪코사인≥0.18, no-vec ⇒ 바이트 동일 회귀핀), 쿼리 임베딩 ask당 1회 feeds/browsing 공유. RSS 특유 merge-clobber(매 refresh 동일 id 재수신 → 임베딩 전멸 위험)를 title-동일 캐리포워드로 해소(5×-refresh 안정성 핀, 뮤테이션 RED 확인). KO질의→윈도우 밖 EN 헤드라인 `[feed:]` 인용 라이브 STABLE 2/2 + negative A/B. 독립평가 8/8 PASS.
 - ✓ (644fc899) Stage 5: verify-browsing-recall(4케이스) + verify-feed-crosslingual(3케이스, negative A/B 영구화) 라이브 배터리 — 실제 파이프라인(진짜 builder/normalizer/게이트) 구동, pass^4(빌더 3/3 + 평가자 1회), groundedSurfaces 래칫 30→32. 독립평가 7/7 PASS.
 - ◦ 잔여 후보: 스토어 sidecar 분리 검토(browsing ~21MB@2000 — 커지면); `--json` grounded 블록 패리티(feeds/browsing 둘 다 빠짐) ⏳진안 결정; 브라우징/피드 테마 → proactive/recap 연결("요즘 X 많이 보시네요").
-- ★ NEXT-THEME 후보 (2026-07-07 갭스카우트+멀티모달 평가, 상세는 세션 보고): ① vision 기본값 qwen3-vl:8b 교체 + 한글 픽스처(M — 현 픽스처 전부 영문, 한글 미검증이 실측 발견); ② iMessage chat.db 인제스천(S-M, 로컬 모트 최대치, browsing-sync 패턴 재사용, FDA 권한 UX 포함); ③ 한국어 voice 기본값(S — whisper 다국어 GGML + Piper KSS, 스택은 이미 완비); ④ macOS 연락처 임포트 + 온보딩 임포트 위저드(S); ⑤ 캘린더 쓰기 draft-first(M).
+- ✓ (50b0a319) ① vision 한글 커버리지 — 측정이 가설을 뒤집음: gemma4 6/6+5/5(한글 전승) vs qwen3-vl 4/6(이벤트 스키마 빈출력, 한영 공통 3/3) → **기본값 유지**, 한글 픽스처 2종 영구 게이트화 + MUSE_VISION_MODEL 노브(fail-soft) 배송. 생태계 리서치도 수렴(openclaw 로컬 기본값=gemma4, /v1 경로 툴콜링 열화 경고 → Ollama 네이티브 유지 확정). qwen3.5는 Ollama mmproj/툴콜 템플릿 성숙 시 재평가.
+- ★ NEXT-THEME 후보 (2026-07-07 갭스카우트, 상세는 세션 보고): ② iMessage chat.db 인제스천(S-M, 로컬 모트 최대치, browsing-sync 패턴 재사용, FDA 권한 UX 포함); ③ 한국어 voice 기본값(S — whisper 다국어 GGML + Piper KSS(CC-BY-NC-SA 주의), 스택은 이미 완비); ④ macOS 연락처 임포트 + 온보딩 임포트 위저드(S); ⑤ 캘린더 쓰기 draft-first(M); ⑥ 프라이버시-계층 클라우드 라우팅(개인 컨텍스트 주입 ask는 무조건 로컬, 무주입 일반 질문만 옵트인 클라우드 — 진안 독푸딩 고민의 Muse다운 해법, ask-tier-models 인프라 재사용).
 
 ## ★ 2026-07-03 found-during-DS-7: withFileLock 재시도 경합이 풀 스위트 병렬 부하에서 flaky (pre-existing, DS-3와 무관)
 
