@@ -705,6 +705,38 @@ export async function chatRepeatWeaknessNudge(message: string, deps: ChatRepeatN
 }
 
 /**
+ * Whetstone weakness-ledger parity for a chat turn run OUTSIDE `runLocalChat`
+ * (the interactive Ink surface, `cli.ink`, drives its own turn loop and never
+ * called the classify→persist→nudge sequence above — the MOST-USED chat
+ * surface silently skipped the same self-knowledge `runLocalChat` already
+ * records). Same detect→classify→persist→nudge steps `runLocalChat` runs
+ * inline, extracted so both surfaces share ONE implementation. Returns the
+ * repeat-weakness nudge suffix to append to the DISPLAYED answer, or
+ * `undefined` when there is nothing to record/nudge. Best-effort: every step
+ * it calls already swallows its own errors.
+ */
+export async function recordChatTurnWeakness(args: {
+  readonly question: string;
+  readonly answer: string;
+  readonly matches: readonly KnowledgeMatch[];
+  readonly toolsUsed?: readonly string[];
+}): Promise<string | undefined> {
+  const isCasual = classifyCasualPrompt(args.question) !== null;
+  const refusal = isChatAbstention(args.answer) || looksLikeRefusal(args.answer);
+  const unbackedAction = isUnbackedActionClaim({ answer: args.answer, query: args.question, toolNames: args.toolsUsed ?? [] });
+  if (unbackedAction) {
+    await recordChatWeaknessForTurn({ answer: args.answer, matches: args.matches, message: args.question, refusal, unbackedAction });
+    return undefined;
+  }
+  if (isCasual) return undefined;
+  await recordChatWeaknessForTurn({ answer: args.answer, matches: args.matches, message: args.question, refusal, unbackedAction });
+  if (isChatGroundedSuccess({ answer: args.answer, matches: args.matches, refusal, unbackedAction })) {
+    await chatResolveWeakness(args.question);
+  }
+  return chatRepeatWeaknessNudge(args.question);
+}
+
+/**
  * Mark the single open task a completion report names as done (reversible).
  * Returns the completed task's title, or null when nothing matched or it was
  * ambiguous. The @muse/mcp store is a HEAVY async-init module, so it is loaded

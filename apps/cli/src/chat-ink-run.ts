@@ -44,7 +44,7 @@ import { selectPersonaEpisodes } from "./episode-selection.js";
 import { MuseChatApp, OUTBOUND_ACTUATORS, PROACTIVE_LEAD_MS, type RunChatInkOptions } from "./chat-ink.js";
 import { renderMuseBanner } from "./muse-banner.js";
 import { loadAgents, resolveAgentsDir, type AgentDef } from "./commands-agents.js";
-import { recordChatTurnTrace } from "./chat-repl.js";
+import { recordChatTurnTrace, recordChatTurnWeakness } from "./chat-repl.js";
 import {
   buildQueryRewritePrompt,
   defaultChatConflictEmbedder,
@@ -679,7 +679,16 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
         question: args.question,
         source: "cli.ink"
       });
-      return finalized;
+      // Whetstone weakness-ledger parity with `runLocalChat`: the interactive Ink
+      // surface (the MOST-USED chat path) previously never classified/persisted/
+      // resolved a turn's failure signal or surfaced the repeat-weakness nudge.
+      const nudge = await recordChatTurnWeakness({
+        answer: finalized.forHistory,
+        matches: args.matches,
+        question: args.question,
+        ...(args.toolsUsed ? { toolsUsed: args.toolsUsed } : {})
+      });
+      return nudge ? { ...finalized, display: `${finalized.display}${nudge}` } : finalized;
     },
     groundingFor: groundingForTurn,
     historyWindow: resolveChatHistoryWindow(process.env),

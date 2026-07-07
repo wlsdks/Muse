@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Command } from "commander";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { readWeaknesses, recordWeakness } from "@muse/stores";
 import type { KnowledgeMatch } from "@muse/agent-core";
 
-import { createTuiChatSubmitter, emptyAnswerFallback, filterFactsToKeys, formatNotesOverview, formatReminderList, formatTaskList, parseAgentMode, recordChatWeaknessForTurn } from "./chat-repl.js";
+import { createTuiChatSubmitter, emptyAnswerFallback, filterFactsToKeys, formatNotesOverview, formatReminderList, formatTaskList, parseAgentMode, recordChatTurnWeakness, recordChatWeaknessForTurn } from "./chat-repl.js";
 import { chatMisgroundingFraction, chatWeaknessAxis } from "./chat-grounding.js";
 import type { ProgramIO } from "./program.js";
 
@@ -175,6 +175,53 @@ describe("chat misgrounding weakness fuel (GROUNDED != TRUE parity with ASK)", (
 
   it("PRECEDENCE — an unbacked action outranks a misgrounding", () => {
     expect(chatWeaknessAxis({ refusal: false, unbackedAction: true, answer: misgroundedAnswer, matches })).toBe("unbacked-action");
+  });
+});
+
+describe("recordChatTurnWeakness — Ink-chat parity with runLocalChat's inline classify→persist→resolve→nudge sequence (the interactive Ink surface never ran this before)", () => {
+  const savedWeaknessesFile = process.env.MUSE_WEAKNESSES_FILE;
+
+  afterEach(() => {
+    if (savedWeaknessesFile === undefined) delete process.env.MUSE_WEAKNESSES_FILE;
+    else process.env.MUSE_WEAKNESSES_FILE = savedWeaknessesFile;
+  });
+
+  function tempWeaknessesFile(): string {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-chat-turn-weakness-")), "weaknesses.json");
+    process.env.MUSE_WEAKNESSES_FILE = file;
+    return file;
+  }
+
+  it("records a `grounding-gap` row for a refused personal-fact turn", async () => {
+    const file = tempWeaknessesFile();
+    await recordChatTurnWeakness({ answer: "잘 모르겠어요.", matches: [], question: "내 여권 갱신일이 언제야?" });
+    const ledger = await readWeaknesses(file);
+    expect(ledger.some((entry) => entry.axis === "grounding-gap")).toBe(true);
+  });
+
+  it("records an `unbacked-action` row when the answer claims a done action no tool actually ran", async () => {
+    const file = tempWeaknessesFile();
+    await recordChatTurnWeakness({ answer: "I fixed the bug.", matches: [], question: "fix the bug in add.ts", toolsUsed: [] });
+    const ledger = await readWeaknesses(file);
+    expect(ledger.some((entry) => entry.axis === "unbacked-action")).toBe(true);
+  });
+
+  it("writes NOTHING and returns no nudge for a casual turn with no failure signal", async () => {
+    const file = tempWeaknessesFile();
+    const nudge = await recordChatTurnWeakness({ answer: "Hey! Not much, just here to help.", matches: [], question: "hey, what's up?" });
+    expect(nudge).toBeUndefined();
+    const ledger = await readWeaknesses(file).catch(() => []);
+    expect(ledger).toHaveLength(0);
+  });
+
+  it("PARITY NEGATIVE — a fully-supported grounded answer writes NOTHING (mirrors recordChatWeaknessForTurn)", async () => {
+    const file = tempWeaknessesFile();
+    const supportingMatches: readonly KnowledgeMatch[] = [
+      { cosine: 0.9, score: 0.9, source: "office_vpn.md", text: "the office vpn mtu is 1500 bytes for the seoul gateway" }
+    ];
+    await recordChatTurnWeakness({ answer: "The office vpn mtu is 1500 bytes.", matches: supportingMatches, question: "what is the office vpn mtu?" });
+    const ledger = await readWeaknesses(file).catch(() => []);
+    expect(ledger).toHaveLength(0);
   });
 });
 
