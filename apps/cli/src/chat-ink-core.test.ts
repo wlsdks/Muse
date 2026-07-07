@@ -35,6 +35,7 @@ import {
   parseSlashCommand,
   reduceInput,
   resolveForgetKey,
+  runFocusedCompaction,
   summarizeToolArgs,
   type InputState
 } from "./chat-ink-core.js";
@@ -525,6 +526,69 @@ describe("formatCompactPreview", () => {
     expect(result.removedCount).toBeGreaterThan(0);
     const out = formatCompactPreview(messages.length, result);
     expect(out).not.toContain(ESC);
+  });
+});
+
+describe("runFocusedCompaction — /compact <topic> pipeline (stub summarizer, no real model)", () => {
+  // A realistically large hard cap (matching production defaults) so the
+  // FORCED working-budget target (computed from the tail) is what actually
+  // drives the trim, not an accidentally-small hard cap.
+  const trimOptions = { maxContextWindowTokens: 128_000, outputReserveTokens: 4_096 };
+
+  function longHistory(): ChatTurnMessage[] {
+    const history: ChatTurnMessage[] = [];
+    for (let i = 0; i < 12; i++) {
+      history.push({ content: `old filler turn ${i.toString()} `.repeat(10), role: i % 2 === 0 ? "user" : "assistant" });
+    }
+    history.push({ content: 'the vacation budget is "Ironclad Resort" for $3,000', role: "user" });
+    history.push({ content: "we'll go with Ironclad Resort, noted.", role: "assistant" });
+    history.push({ content: "what's next on the itinerary?", role: "user" });
+    history.push({ content: "let's check flights next.", role: "assistant" });
+    return history;
+  }
+
+  it("does nothing (and reports so) when the conversation is still too short to compact", async () => {
+    const history: ChatTurnMessage[] = [{ content: "hi", role: "user" }, { content: "hello!", role: "assistant" }];
+    const result = await runFocusedCompaction("vacation", history, trimOptions, undefined);
+    expect(result.messages).toEqual(history);
+    expect(result.note).toContain("Nothing to compact yet");
+  });
+
+  it("compacts NOW (unlike bare /compact, which only previews) and forwards the topic to the summarizer", async () => {
+    let seenTopic: string | undefined;
+    const summarizer = async (_msgs: unknown, options?: { focusTopic?: string }) => {
+      seenTopic = options?.focusTopic;
+      return 'The vacation budget is "Ironclad Resort" for $3,000.';
+    };
+
+    const history = longHistory();
+    const result = await runFocusedCompaction("vacation budget", history, trimOptions, summarizer);
+
+    expect(seenTopic).toBe("vacation budget");
+    expect(result.messages.length).toBeLessThan(history.length); // an actual compaction happened, not a preview
+    const summary = result.messages.find((m) => m.role === "system");
+    expect(summary).toBeDefined();
+    expect(result.note).toContain("Added a topic-focused recap");
+    expect(result.note).toContain("vacation budget");
+  });
+
+  it("fails closed: a lossy recap missing the user's own hard anchors is rejected, deterministic summary still lands", async () => {
+    const summarizer = async () => "we chatted about some stuff"; // drops the amount/name entirely
+    const history = longHistory();
+    const result = await runFocusedCompaction("vacation budget", history, trimOptions, summarizer);
+
+    const summary = result.messages.find((m) => m.role === "system");
+    expect(summary).toBeDefined(); // deterministic floor still inserted
+    expect(result.note).toContain("didn't preserve enough");
+    expect(result.note).not.toContain("Added a topic-focused recap");
+  });
+
+  it("still compacts (deterministic-only) when no summarizer is configured", async () => {
+    const history = longHistory();
+    const result = await runFocusedCompaction("vacation budget", history, trimOptions, undefined);
+    expect(result.messages.length).toBeLessThan(history.length);
+    expect(result.messages.some((m) => m.role === "system")).toBe(true);
+    expect(result.note).not.toContain("Added a topic-focused recap");
   });
 });
 

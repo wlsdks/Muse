@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import React from "react";
 
-import { detectUserCommitments } from "@muse/agent-core";
+import { createModelDroppedContextSummarizer, detectUserCommitments } from "@muse/agent-core";
 
 import { appendActivity, appendLastChatTurn, appendSessionBoundary, clearLastChatHistory, maybeCompactLastChatHistory, readLastChatHistory } from "./chat-history.js";
 import {
@@ -651,6 +651,10 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     groundingFor: (prompt: string) => retrieveChatGrounding(prompt),
     historyWindow: resolveChatHistoryWindow(process.env),
     contextWindow: buildContextWindowOptions(process.env),
+    // `/compact <topic>` (a real, focused compaction) uses the SAME model
+    // the chat already runs, via the CMP-2 aux summarizer — no separate
+    // provider/key needed.
+    contextSummarizer: createModelDroppedContextSummarizer(provider, model),
     stream,
     streamWithTools,
     memorySnapshot,

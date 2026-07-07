@@ -8,7 +8,19 @@
 import { readFile as fsReadFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
-import { normalizeMemoryKey, type ConversationTrimResult } from "@muse/memory";
+import { augmentCompactionSummary } from "@muse/agent-core";
+import {
+  createApproximateTokenEstimator,
+  DEFAULT_MESSAGE_STRUCTURE_OVERHEAD,
+  estimateConversationTokens,
+  normalizeMemoryKey,
+  summarizeDroppedContext,
+  trimConversationMessages,
+  verifyCompactionSummaryQuality,
+  type ConversationTrimOptions,
+  type ConversationTrimResult,
+  type DroppedContextSummarizer
+} from "@muse/memory";
 import { clamp, redactSecretsInText, stripUntrustedTerminalChars } from "@muse/shared";
 
 import { MUSE_TAGLINE } from "./muse-identity.js";
@@ -786,6 +798,98 @@ export function formatCompactPreview(totalMessages: number, result: Conversation
   }
   if (result.summaryInserted) lines.push("  a conversation summary would be inserted in their place.");
   return lines.join("\n");
+}
+
+export interface FocusedCompactionResult {
+  readonly messages: readonly ChatTurnMessage[];
+  readonly note: string;
+}
+
+function findLastIndexBy<T>(items: readonly T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index--) {
+    if (predicate(items[index] as T)) return index;
+  }
+  return -1;
+}
+
+function toChatTurnMessages(messages: Parameters<typeof augmentCompactionSummary>[0]): readonly ChatTurnMessage[] {
+  return messages
+    .filter((message): message is typeof message & { role: "system" | "user" | "assistant" } => message.role !== "tool")
+    .map((message) => {
+      const attachments = (message.attachments ?? []).filter(
+        (attachment): attachment is { readonly mimeType: string; readonly dataBase64: string } =>
+          typeof attachment.dataBase64 === "string"
+      );
+      return {
+        content: message.content,
+        role: message.role,
+        ...(attachments.length > 0 ? { attachments } : {})
+      };
+    });
+}
+
+/**
+ * `/compact <topic>` — unlike bare `/compact` (a read-only preview), this
+ * actually compacts the in-session history NOW: force-trims everything
+ * OLDER than the most recent exchange down to a deterministic summary (the
+ * SAME `trimConversationMessages` pipeline the live runtime uses), then
+ * asks the aux summarizer for a topic-FOCUSED recap of what was dropped
+ * (hermes' `/compact <focus>` pattern). The recap is gated
+ * (`verifyCompactionSummaryQuality`, deterministic, no LLM) before it's
+ * appended — a lossy recap is dropped, not shipped; the deterministic
+ * `[Key details]` summary (always inserted) is the floor either way.
+ *
+ * The "force" target is EXACTLY the token cost of the most recent exchange
+ * (the last user turn through the end of history) — not a near-zero
+ * budget, and not a loose one either: `trimToolHistory` (part of the
+ * standard trim pipeline) keeps trimming past the last-user boundary for
+ * as long as the target is unreachable, so an unreachably-low target would
+ * eat into the very exchange this command means to keep intact; a loose
+ * target would stop early and leave some older turns un-compacted. Using
+ * the SAME estimator + overhead for both the tail measurement and the
+ * forced trim keeps the two numbers exactly comparable.
+ */
+export async function runFocusedCompaction(
+  topic: string,
+  history: readonly ChatTurnMessage[],
+  trimOptions: ConversationTrimOptions,
+  summarizer: DroppedContextSummarizer | undefined
+): Promise<FocusedCompactionResult> {
+  const estimator = trimOptions.estimator ?? createApproximateTokenEstimator();
+  const messageStructureOverhead = trimOptions.messageStructureOverhead ?? DEFAULT_MESSAGE_STRUCTURE_OVERHEAD;
+  const lastUserIndex = findLastIndexBy(history, (message) => message.role === "user");
+  const tail = lastUserIndex >= 0 ? history.slice(lastUserIndex) : history;
+  const tailTokens = estimateConversationTokens(tail, { estimator, messageStructureOverhead });
+
+  const forcedOptions: ConversationTrimOptions = {
+    ...trimOptions,
+    compactionThreshold: 1,
+    estimator,
+    messageStructureOverhead,
+    workingBudgetTokens: tailTokens
+  };
+  const result = trimConversationMessages(history, forcedOptions);
+
+  if (result.dropped.length === 0) {
+    return { messages: history, note: "Nothing to compact yet — the conversation is still short." };
+  }
+
+  const droppedCount = result.dropped.length.toString();
+  let note = `Compacted ${droppedCount} message(s), focused on "${topic}" — kept the most recent exchange and a deterministic summary.`;
+  let messages: Parameters<typeof augmentCompactionSummary>[0] = result.messages;
+
+  const auxSummary = await summarizeDroppedContext(result.dropped, summarizer, { fallback: "", focusTopic: topic });
+  if (auxSummary.length > 0) {
+    const gate = verifyCompactionSummaryQuality(result.dropped, auxSummary);
+    if (gate.passed) {
+      messages = augmentCompactionSummary(messages, auxSummary);
+      note += ` Added a topic-focused recap on "${topic}".`;
+    } else {
+      note += " (a topic-focused recap was generated but didn't preserve enough of the dropped detail, so it was skipped.)";
+    }
+  }
+
+  return { messages: toChatTurnMessages(messages), note };
 }
 
 export type ForgetResolution =

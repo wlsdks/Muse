@@ -12,7 +12,7 @@
 import { Box, Static, Text, useApp, useCursor, useInput } from "ink";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { trimConversationMessages, type ConversationTrimOptions } from "@muse/memory";
+import { trimConversationMessages, type ConversationTrimOptions, type DroppedContextSummarizer } from "@muse/memory";
 
 import {
   buildTurnMessages,
@@ -35,6 +35,7 @@ import {
   parseSlashCommand,
   reduceInput,
   resolveForgetKey,
+  runFocusedCompaction,
   type ChatTurnMessage,
   type InkKeyEvent,
   type InputState,
@@ -72,7 +73,7 @@ const SLASH_COMMANDS: readonly { readonly cmd: string; readonly desc: string }[]
   { cmd: "trust", desc: "show this user's trusted + blocked tools" },
   { cmd: "persona", desc: "show the active persona slot" },
   { cmd: "history", desc: "how many turns are in context" },
-  { cmd: "compact", desc: "preview what compaction would drop from context (read-only)" },
+  { cmd: "compact", desc: "preview compaction (no arg), or /compact <topic> to compact now, focused on that topic" },
   { cmd: "save", desc: "save the last reply to a note file" },
   { cmd: "copy", desc: "copy the last reply to the clipboard" },
   { cmd: "cost", desc: "show this session's token usage" },
@@ -173,6 +174,11 @@ export function MuseChatApp(props: {
   /** The live runtime's trim budget (`buildContextWindowOptions(process.env)`), so
    *  `/compact` previews against the SAME config the real compaction would use. */
   readonly contextWindow?: ConversationTrimOptions;
+  /** Aux-model summarizer for `/compact <topic>` — a focused, real (non-preview)
+   *  compaction of the in-session history. Absent ⇒ `/compact <topic>` still
+   *  compacts (the deterministic `[Key details]` summary is unconditional) but
+   *  skips the topic-focused LLM recap. */
+  readonly contextSummarizer?: DroppedContextSummarizer;
   readonly personaPrompt: () => string | undefined;
   readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; grounding?: { source: string; text: string }; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly streamWithTools: (messages: readonly ChatTurnMessage[], model: string, requestApproval: (toolName: string, detail: string, kind: "outbound" | "tool") => Promise<boolean>) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; grounding?: { source: string; text: string }; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
@@ -444,18 +450,30 @@ export function MuseChatApp(props: {
         return;
       }
       if (slash.cmd === "compact") {
-        // Dry run only — reads historyRef.current, never writes it. Approximates
-        // the system prompt with the persona/base line; the per-turn additions
-        // (active-agent prefix, retrieval grounding block, matched skills) depend
-        // on the NEXT message and can't be known ahead of a real turn, so this
-        // slightly UNDER-counts the system-prompt token cost. The trim DECISION
-        // itself is the exact function + budget config the live runtime uses.
         const trimOptions: ConversationTrimOptions = {
           ...(props.contextWindow ?? DEFAULT_CONTEXT_WINDOW),
           systemPrompt: props.personaPrompt() ?? formatCurrentContextLine()
         };
-        const result = trimConversationMessages(historyRef.current, trimOptions);
-        note(formatCompactPreview(historyRef.current.length, result));
+        const topic = slash.arg.trim();
+        if (topic.length === 0) {
+          // Dry run only — reads historyRef.current, never writes it. Approximates
+          // the system prompt with the persona/base line; the per-turn additions
+          // (active-agent prefix, retrieval grounding block, matched skills) depend
+          // on the NEXT message and can't be known ahead of a real turn, so this
+          // slightly UNDER-counts the system-prompt token cost. The trim DECISION
+          // itself is the exact function + budget config the live runtime uses.
+          const result = trimConversationMessages(historyRef.current, trimOptions);
+          note(formatCompactPreview(historyRef.current.length, result));
+          return;
+        }
+        // `/compact <topic>` — a REAL, focused compaction now (not a preview):
+        // force-compacts everything before the latest exchange, asks for a
+        // topic-focused recap, and gates it before writing historyRef.current.
+        progress(`Compacting, focused on "${topic}"…`);
+        const { messages, note: outcome } = await runFocusedCompaction(topic, historyRef.current, trimOptions, props.contextSummarizer);
+        historyRef.current = [...messages];
+        note(outcome);
+        setCommandNotice(undefined);
         return;
       }
       if (slash.cmd === "recall") {
