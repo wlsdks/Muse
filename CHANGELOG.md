@@ -8,6 +8,18 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+### Added
+
+- **`muse mcp serve`** exposes Muse itself as a local, read-only MCP
+  server over stdio — so another agent (Claude Code, Cursor, Codex, …)
+  can call `muse_recall` (cited grounded Q&A over your notes),
+  `knowledge_search` (deterministic ranked search over your notes +
+  remembered facts/preferences, no model required), and
+  `user_model_read` (your facts/preferences with confidence; never
+  vetoed/forgotten entries). No write/outbound tools, no network
+  listener; running the command is your explicit consent to expose
+  these read tools to the connecting client.
+
 ## [0.2.17] - 2026-07-07
 
 Connecting your Mac's data to Muse is now one guided command. Early /

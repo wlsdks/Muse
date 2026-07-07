@@ -1,6 +1,22 @@
+import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { MCP_PRESETS } from "./commands-mcp.js";
+import { MCP_PRESETS, registerMcpCommands } from "./commands-mcp.js";
+
+describe("registerMcpCommands — serve subcommand", () => {
+  it("registers 'muse mcp serve' with consent-bearing help text", () => {
+    const program = new Command("muse");
+    registerMcpCommands(program, { stderr: () => undefined, stdout: () => undefined }, {
+      apiRequest: async () => undefined,
+      writeOutput: () => undefined
+    });
+    const mcp = program.commands.find((command) => command.name() === "mcp");
+    const serve = mcp?.commands.find((command) => command.name() === "serve");
+    expect(serve).toBeDefined();
+    expect(serve?.description()).toMatch(/explicit consent/iu);
+    expect(serve?.description()).toMatch(/muse_recall/u);
+  });
+});
 
 describe("MCP_PRESETS.filesystem.build — refuses to default to filesystem root", () => {
   function withEnv(home: string | undefined, fn: () => void): void {

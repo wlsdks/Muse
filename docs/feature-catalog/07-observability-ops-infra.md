@@ -62,6 +62,7 @@ CLI base used: `node /Users/jinan/.nvm/.../v24.16.0/bin/node apps/cli/dist/index
 
 ### mcp — MCP server management ✅ help ⬜ live (server-only for list/status)
 - Subcmds: `config-path`, `config-show`, `config-doctor` (validate every `~/.muse/mcp.json` entry, per-entry no-bail), `config-add`, `use <preset>`, `list`, `status` (per-server health + reconnect schedule), `add`, `connect`, `disconnect`, `tools`, `call`. ⚠️ `mcp list` needs server (no `--local`). Allowlist enforcement two-layered (register + connect) per architecture.md `McpSecurityPolicy`.
+- `serve` (✅ ran live) — the REVERSE direction: runs Muse itself as a local, read-only MCP stdio server for another agent (Claude Code / Cursor / Codex) to connect to. Exactly 3 tools: `muse_recall` (cited grounded Q&A over notes, requires Ollama), `knowledge_search` (deterministic ranked search over notes + remembered facts/preferences, no model required), `user_model_read` (facts/preferences with confidence, never vetoed/forgotten entries). No `--local` needed — self-contained, doesn't need the API server. Live-verified via `apps/cli/scripts/verify-mcp-serve-grounding.mjs`: seeded-note question answered with citation `[from vpn.md]`, absent-info question honestly refused with zero citations.
 
 ### config / config-path — CLI config ✅ ran
 - `config-path` → `/Users/jinan/.config/muse/config.json`. `config show` → `apiUrl=` + `defaultModel=ollama/qwen3:8b`. Subcmds: `show / set / unset`.

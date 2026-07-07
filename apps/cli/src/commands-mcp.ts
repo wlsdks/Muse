@@ -194,6 +194,20 @@ export function registerMcpCommands(program: Command, io: ProgramIO, helpers: Mc
     });
 
   mcp
+    .command("serve")
+    .description(
+      "Run Muse itself as a local read-only MCP server over stdio, for another agent (Claude Code, Cursor, Codex, ...) " +
+      "to connect to — muse_recall (cited grounded Q&A), knowledge_search (ranked search over your notes + remembered " +
+      "facts/preferences), and user_model_read (your facts/preferences with confidence). Local-only, no network listener; " +
+      "nothing here writes or changes anything. Running this command is your explicit consent to expose these read tools " +
+      "to the connecting client. Add to Claude Code: `claude mcp add muse -- muse mcp serve`."
+    )
+    .action(async () => {
+      const { runMcpServeCommand } = await import("./commands-mcp-serve.js");
+      await runMcpServeCommand(io);
+    });
+
+  mcp
     .command("list")
     .description("List MCP servers")
     .action(async (_options, command) => {

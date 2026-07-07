@@ -375,6 +375,9 @@ export {
   type LoopbackMcpToolDefinition
 } from "./loopback.js";
 
+// Server-side (Muse AS an MCP server) transport bridge lives in `./serve.ts`.
+export { createMuseToolsMcpServer, runStdioMcpServer, type MuseToolsMcpServerOptions } from "./serve.js";
+
 export {
   CHROME_DEVTOOLS_MCP_SERVER_NAME,
   chromeDevToolsToolRisk,

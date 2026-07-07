@@ -154,7 +154,10 @@ for a single call; it remembers you and shapes every future turn *and* every pro
   levels, approval gates, and deterministic loop limits. 25 in-process `muse.*` servers ship
   built-in (eight pure-utility: `time` / `text` / `math` / `json` / `url` / `crypto` / `diff` /
   `regex`, plus the personal-domain set); external servers connect over stdio / SSE /
-  streamable-HTTP.
+  streamable-HTTP. `muse mcp serve` runs the reverse direction — Muse itself AS a local,
+  read-only MCP server (`muse_recall` cited grounded Q&A, `knowledge_search` ranked search,
+  `user_model_read` your facts/preferences with confidence) another agent can connect to;
+  see [MCP server mode](#mcp-server-mode-muse-mcp-serve) below.
 - **Personal-domain primitives.** Markdown notes, a todo list, reminders, and calendar events
   across 5 providers (Local file, Local-ICS, Google Calendar, CalDAV, macOS Calendar.app) — all
   stored locally by default, queryable by the agent, editable from CLI / Web UI.
@@ -258,6 +261,28 @@ See [`docs/setup-local-llm.md`](docs/setup-local-llm.md) for the four tiers
 `smoke:live` auto-skips when Ollama is unreachable — a skip means the local runtime
 isn't up, not that anything is broken.
 </details>
+
+### MCP server mode (`muse mcp serve`)
+
+Expose Muse itself as a local MCP server so another agent (Claude Code, Cursor, Codex, …)
+can call it: your grounded, cited notes recall and the facts/preferences Muse has learned
+about you, available as local tools to every agent you use — nothing leaves your machine.
+
+```bash
+claude mcp add muse -- muse mcp serve
+```
+
+Three read-only tools, no write/outbound access, no network listener (stdio only):
+
+| Tool | What it does |
+| --- | --- |
+| `muse_recall` | Cited, gated Q&A over your notes — a weak match answers "I'm not sure", never a guess (requires Ollama) |
+| `knowledge_search` | Deterministic ranked search over your notes + remembered facts/preferences (works even with no model running) |
+| `user_model_read` | Your facts/preferences with a confidence score; never returns anything vetoed or forgotten |
+
+Running `muse mcp serve` is your explicit consent to expose these read tools to the
+connecting client. See `.claude/rules/outbound-safety.md` for why write/outbound tools
+aren't in scope here.
 
 **Cloud + API server (BYOK)** — opt out of local-only to reach any provider:
 
