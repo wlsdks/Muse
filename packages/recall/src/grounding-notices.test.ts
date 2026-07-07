@@ -1,7 +1,7 @@
 import { type KnowledgeMatch } from "@muse/agent-core";
 import { describe, expect, it } from "vitest";
 
-import { citationPrecisionNotice, citationRecallNotice, sourceCheckSignals, untrustedEpisodeMatch, untrustedFeedMatch, untrustedOnlyGroundingNotice } from "./grounding-notices.js";
+import { citationPrecisionNotice, citationRecallNotice, sourceCheckSignals, untrustedBrowsingMatch, untrustedEpisodeMatch, untrustedFeedMatch, untrustedOnlyGroundingNotice } from "./grounding-notices.js";
 
 const match = (source: string, text: string, cosine: number, trusted?: boolean): KnowledgeMatch => ({
   cosine,
@@ -90,6 +90,25 @@ describe("untrustedFeedMatch — external feed evidence is tagged trusted:false 
       untrustedFeedMatch("TechBlog", "Acme acquired Beta for $1B")
     ];
     expect(untrustedOnlyGroundingNotice("Acme acquired Beta for $1B [from notes/deals.md].", matches)).toBeUndefined();
+  });
+});
+
+describe("untrustedBrowsingMatch — a visited page's title is third-party text, tagged trusted:false (grounded≠true)", () => {
+  it("tags the browsing match trusted:false with the canonical `browsing: <host>` source + title+url text", () => {
+    expect(untrustedBrowsingMatch("blog.rust-lang.org", "Announcing Rust 1.80", "https://blog.rust-lang.org/2024/rust-1.80")).toEqual({
+      cosine: 1,
+      score: 1,
+      source: "browsing: blog.rust-lang.org",
+      text: "Announcing Rust 1.80 https://blog.rust-lang.org/2024/rust-1.80",
+      trusted: false
+    });
+  });
+
+  it("makes a faithful answer resting ONLY on a visited page trip the untrusted-only source-check cue", () => {
+    const matches = [untrustedBrowsingMatch("blog.rust-lang.org", "Announcing Rust 1.80 ownership guide", "https://blog.rust-lang.org/rust-1.80")];
+    const notice = untrustedOnlyGroundingNotice("You read the Rust 1.80 ownership guide [from browsing: blog.rust-lang.org].", matches);
+    expect(notice).toBeDefined();
+    expect(notice).toContain("tool-fetched"); // the untrusted-only cue
   });
 });
 

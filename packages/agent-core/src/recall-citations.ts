@@ -154,7 +154,7 @@ export function normalizeMemoryCitations(answer: string, memoryKeys: readonly st
  */
 export function normalizeFromPrefixedCitations(answer: string): string {
   return answer.replace(
-    /\[from\s+(task|event|reminder|session|feed|contact|command|commit|memory|action)\s*:/giu,
+    /\[from\s+(task|event|reminder|session|feed|browsing|contact|command|commit|memory|action)\s*:/giu,
     "[$1:"
   );
 }
@@ -177,7 +177,7 @@ export function normalizeSlotCitations(
     // slot-numbered markers `<<feed N — name>>`), or `[from session 1 — ep_001]`
     // when it echoes the marker whole — the optional "from " and trailing "— <id>"
     // are both ignored.
-    /\[(?:from\s+)?(task|event|reminder|session|feed|contact|command|commit|memory|action)\s+(\d+)(?:\s*[—–-]\s*[^\]]*)?\s*\]/giu,
+    /\[(?:from\s+)?(task|event|reminder|session|feed|browsing|contact|command|commit|memory|action)\s+(\d+)(?:\s*[—–-]\s*[^\]]*)?\s*\]/giu,
     (match: string, cls: string, num: string) => {
       const list = slotsByClass[cls.toLowerCase()];
       const content = list?.[Number.parseInt(num, 10) - 1];
@@ -214,6 +214,7 @@ const CITATION_CLASSES: readonly {
 }[] = [
   { certainOnStrip: false, key: "notes", re: CITATION_RE, resolves: resolvesExact },
   { certainOnStrip: false, key: "feeds", re: /\[feed:\s*([^\]]+?)\s*\]/giu, resolves: resolvesExact },
+  { certainOnStrip: false, key: "browsing", re: /\[browsing:\s*([^\]]+?)\s*\]/giu, resolves: resolvesExact },
   { certainOnStrip: true, key: "tasks", re: /\[task:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
   { certainOnStrip: true, key: "events", re: /\[event:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },
   { certainOnStrip: true, key: "reminders", re: /\[reminder:\s*([^\]]+?)\s*\]/giu, resolves: resolvesByOverlap },

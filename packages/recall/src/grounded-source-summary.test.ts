@@ -13,7 +13,8 @@ const noneMatched: GroundedSourceCounts = {
   gitCommits: 0,
   loggedActions: 0,
   pastSessions: 0,
-  feedHeadlines: 0
+  feedHeadlines: 0,
+  browsingVisits: 0
 };
 
 describe("groundedSourceSummary", () => {
@@ -49,7 +50,8 @@ describe("groundedSourceSummary", () => {
         gitCommits: 1,
         loggedActions: 1,
         pastSessions: 1,
-        feedHeadlines: 1
+        feedHeadlines: 1,
+        browsingVisits: 1
       })
     ).toEqual([
       "1 open task(s)",
@@ -61,7 +63,8 @@ describe("groundedSourceSummary", () => {
       "1 git commit(s)",
       "1 logged action(s)",
       "1 past session(s)",
-      "1 feed headline(s)"
+      "1 feed headline(s)",
+      "1 page(s) you visited"
     ]);
   });
 });

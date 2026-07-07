@@ -33,7 +33,7 @@ export const DEFAULT_CITATION_RECALL_FLOOR = 0.5;
  * "carries no citation" warning on the flagship recall path.
  */
 export const CITATION_MARKER_RE =
-  /\[(?:from\s+|(?:feed|task|event|reminder|session|contact|command|commit|memory|action):\s*)([^\]]+?)\s*\]/giu;
+  /\[(?:from\s+|(?:feed|browsing|task|event|reminder|session|contact|command|commit|memory|action):\s*)([^\]]+?)\s*\]/giu;
 // Private-use sentinel so a `[from x.md]` marker's internal "." can't split a
 // sentence; its presence in a masked sentence marks "this sentence was cited".
 const SENTINEL = "\u{E000}";

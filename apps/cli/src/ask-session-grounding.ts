@@ -6,7 +6,7 @@
  * (tests, `muse setup`) stay effective.
  */
 
-import { resolveEpisodesFile, resolveReflectionsFile } from "@muse/autoconfigure";
+import { resolveBrowsingFile, resolveEpisodesFile, resolveReflectionsFile } from "@muse/autoconfigure";
 import {
   buildSessionFeedReflectionGrounding as buildSessionFeedReflectionGroundingCore,
   type SessionFeedReflectionGrounding
@@ -19,13 +19,14 @@ export type { SessionFeedReflectionGrounding } from "@muse/recall";
 type CoreParams = Parameters<typeof buildSessionFeedReflectionGroundingCore>[0];
 
 export async function buildSessionFeedReflectionGrounding(
-  params: Omit<CoreParams, "episodesFile" | "reflectionsFile" | "embedFn">
+  params: Omit<CoreParams, "episodesFile" | "reflectionsFile" | "browsingFile" | "embedFn">
 ): Promise<SessionFeedReflectionGrounding> {
   const env = process.env as Record<string, string | undefined>;
   return buildSessionFeedReflectionGroundingCore({
     ...params,
     embedFn: embed,
     episodesFile: resolveEpisodesFile(env),
-    reflectionsFile: resolveReflectionsFile(env)
+    reflectionsFile: resolveReflectionsFile(env),
+    browsingFile: resolveBrowsingFile(env)
   });
 }

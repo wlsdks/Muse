@@ -13,6 +13,7 @@ const allAbsent: OptionalGroundingSources = {
   actions: { body: "", present: false },
   episodes: { body: "", present: false },
   feeds: { body: "", present: false },
+  browsing: { body: "", present: false },
   reflection: { body: "", present: false }
 };
 

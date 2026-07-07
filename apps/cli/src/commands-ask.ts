@@ -577,12 +577,13 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // Second-brain grounding: past-session episodes (auto-refreshed + untrusted-
       // tagged), recent feed headlines, and the user's own reflections. Each store
       // is optional + fail-soft. See ask-session-grounding.ts.
-      const { episodeBlock, episodeHits, feedBlock, feedHeadlines, reflectionBlock, reflectionLines, untrustedEpisodeIds } =
+      const { browsingBlock, browsingHits, episodeBlock, episodeHits, feedBlock, feedHeadlines, reflectionBlock, reflectionLines, untrustedEpisodeIds } =
         await buildSessionFeedReflectionGrounding({
           autoReindex: options.autoReindex !== false,
           embedModel,
           onStderr: (text) => { io.stderr(text); },
           queryVec,
+          queryText: query,
           topK
         });
 
@@ -943,6 +944,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         calendarBlock,
         contactBlock,
         contextBlock,
+        browsingBlock,
+        browsingHits,
         episodeBlock,
         episodeHits,
         feedBlock,
@@ -982,7 +985,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         gitCommits: matchedCommits.length,
         loggedActions: matchedActions.length,
         pastSessions: episodeHits.length,
-        feedHeadlines: feedHeadlines.length
+        feedHeadlines: feedHeadlines.length,
+        browsingVisits: browsingHits.length
       });
       // Grounding diagnostic goes to stderr so `muse ask "?" > answer.txt`
       // and `| jq` style pipelines get a clean stdout. Same convention
@@ -1149,6 +1153,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // gate, over the sources shown to this (chat-only) path.
         const streamAllowed = {
           actions: matchedActions.map((a) => a.what),
+          browsing: browsingHits.map((h) => h.host),
           commands: matchedCommands,
           commits: matchedCommits.map((c) => c.subject),
           contacts: matchedContacts.map((c) => c.name),
@@ -1234,6 +1239,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // the markers were built from + the gate validates against.
       collectedAnswer = normalizeSlotCitations(collectedAnswer, {
         action: matchedActions.map((a) => a.what),
+        browsing: browsingHits.map((h) => h.host),
         command: matchedCommands,
         commit: matchedCommits.map((c) => c.subject),
         contact: matchedContacts.map((c) => c.name),
@@ -1260,6 +1266,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       askStages.mark("generationMs");
       const citationAllowed = {
         actions: matchedActions.map((a) => a.what),
+        browsing: browsingHits.map((h) => h.host),
         commands: matchedCommands,
         commits: matchedCommits.map((c) => c.subject),
         contacts: matchedContacts.map((c) => c.name),
@@ -1332,6 +1339,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         agentGroundingSources,
         allMemoryFacts,
         allowedNotes,
+        browsingHits,
         citationAllowed,
         collectedAnswer,
         embedModel,

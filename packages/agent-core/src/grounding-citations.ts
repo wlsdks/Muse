@@ -103,6 +103,8 @@ export interface AllowedCitations {
   readonly notes?: readonly string[];
   /** `[feed: <name>]` — subscribed feeds; exact match. */
   readonly feeds?: readonly string[];
+  /** `[browsing: <site>]` — local Chrome browsing-history visits; exact match on hostname (an identifier). */
+  readonly browsing?: readonly string[];
   /** `[task: <title>]` — open tasks; content-token overlap (the model may reword the title). */
   readonly tasks?: readonly string[];
   /** `[event: <title>]` — upcoming events; content-token overlap. */

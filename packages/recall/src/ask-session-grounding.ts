@@ -8,13 +8,14 @@
  * the trust signals, and the run-log.
  */
 
-import { buildEpisodeContextBlock, buildFeedContextBlock, recentFeedHeadlines } from "./present.js";
+import { buildBrowsingContextBlock, buildEpisodeContextBlock, buildFeedContextBlock, recentFeedHeadlines, selectBrowsingVisitsForQuery, type BrowsingHit } from "./present.js";
 import { rankEpisodeHits } from "./select.js";
 import { readEpisodes, readReflections, selectReflectionsForRecall } from "@muse/stores";
 
 import { filterLiveEpisodeEntries } from "./live-files.js";
 import { buildEpisodeIndex, defaultEpisodeIndexFile, episodeIndexStale, loadEpisodeIndex, saveEpisodeIndex } from "./episode-index.js";
 import { defaultFeedsFile, readFeedsStore } from "./feeds-store.js";
+import { readBrowsingStore } from "./browsing-store.js";
 
 export interface SessionFeedReflectionGrounding {
   readonly episodeHits: Array<{ id: string; summary: string; score: number }>;
@@ -22,6 +23,8 @@ export interface SessionFeedReflectionGrounding {
   readonly episodeBlock: string;
   readonly feedHeadlines: Array<{ feedName: string; title: string; publishedAt: string; summary: string }>;
   readonly feedBlock: string;
+  readonly browsingHits: BrowsingHit[];
+  readonly browsingBlock: string;
   readonly reflectionLines: string[];
   readonly reflectionBlock: string;
 }
@@ -33,6 +36,8 @@ export interface SessionFeedReflectionGrounding {
  */
 export async function buildSessionFeedReflectionGrounding(params: {
   readonly queryVec: number[] | undefined;
+  /** Raw query text — browsing selection is LEXICAL (relevance over a large archive), not embedding-based. */
+  readonly queryText: string;
   readonly embedModel: string;
   readonly topK: number;
   readonly autoReindex: boolean;
@@ -41,10 +46,12 @@ export async function buildSessionFeedReflectionGrounding(params: {
   readonly episodesFile: string;
   /** Resolved reflections-store path. */
   readonly reflectionsFile: string;
+  /** Resolved browsing-history store path. */
+  readonly browsingFile: string;
   /** Embed via the caller's resolved endpoint (the CLI binds the models.json merge). */
   readonly embedFn: (text: string, model: string) => Promise<number[]>;
 }): Promise<SessionFeedReflectionGrounding> {
-  const { queryVec, embedModel, topK, autoReindex, onStderr, episodesFile, reflectionsFile, embedFn } = params;
+  const { queryVec, queryText, embedModel, topK, autoReindex, onStderr, episodesFile, reflectionsFile, browsingFile, embedFn } = params;
 
   // Auto-refresh the episode index (mirrors the notes auto-reindex) so past
   // sessions stay groundable without a manual `muse episode reindex` —
@@ -104,6 +111,18 @@ export async function buildSessionFeedReflectionGrounding(params: {
   }
   const feedBlock = buildFeedContextBlock(feedHeadlines);
 
+  // Stage 2: the user's LOCAL Chrome browsing history ("that rust blog I read last
+  // week"). Unlike feeds (pure recency), the archive can hold thousands of visits,
+  // so selection is query-relevant + Korean-safe (lexical overlap). Optional + fail-soft.
+  let browsingHits: BrowsingHit[] = [];
+  try {
+    const store = await readBrowsingStore(browsingFile);
+    browsingHits = selectBrowsingVisitsForQuery(store.visits, queryText, 6);
+  } catch {
+    // browsing store missing / unreadable — grounding still works
+  }
+  const browsingBlock = buildBrowsingContextBlock(browsingHits);
+
   // Dreaming closes the loop: the user's own grounded reflections inform the
   // answer. Insight text only (already grounded); no-op when none. Fail-soft.
   let reflectionLines: string[] = [];
@@ -112,5 +131,5 @@ export async function buildSessionFeedReflectionGrounding(params: {
   } catch { /* no reflections — grounding still works */ }
   const reflectionBlock = reflectionLines.length === 0 ? "(none yet)" : reflectionLines.join("\n");
 
-  return { episodeBlock, episodeHits, feedBlock, feedHeadlines, reflectionBlock, reflectionLines, untrustedEpisodeIds };
+  return { browsingBlock, browsingHits, episodeBlock, episodeHits, feedBlock, feedHeadlines, reflectionBlock, reflectionLines, untrustedEpisodeIds };
 }

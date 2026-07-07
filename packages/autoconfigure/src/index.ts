@@ -35,6 +35,7 @@ export {
   buildToolFilter,
   buildVoiceRegistry,
   mergeModelKeysFromFile,
+  resolveBrowsingFile,
   resolveContactsFile,
   resolveEpisodesFile,
   resolveNoteProvenanceFile,

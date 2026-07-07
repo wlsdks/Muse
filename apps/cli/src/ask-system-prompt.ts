@@ -39,6 +39,8 @@ export function buildAskSystemPrompt(params: {
   readonly episodeHits: readonly { readonly score: number }[];
   readonly feedBlock: string;
   readonly feedHeadlines: readonly unknown[];
+  readonly browsingBlock: string;
+  readonly browsingHits: readonly unknown[];
   readonly reflectionBlock: string;
   readonly reflectionLines: readonly unknown[];
 }): string {
@@ -47,7 +49,7 @@ export function buildAskSystemPrompt(params: {
     taskBlock, openTasks, calendarBlock, upcomingEvents, reminderBlock, pendingReminders,
     contactBlock, matchedContacts, memoryBlock, matchedMemories, shellBlock, matchedCommands,
     gitBlock, matchedCommits, actionBlock, matchedActions, episodeBlock, episodeHits,
-    feedBlock, feedHeadlines, reflectionBlock, reflectionLines
+    feedBlock, feedHeadlines, browsingBlock, browsingHits, reflectionBlock, reflectionLines
   } = params;
 
   return [
@@ -71,7 +73,7 @@ export function buildAskSystemPrompt(params: {
               "If neither the provided context nor a tool result contains enough information, say so directly — do not invent facts."
             ]
           : [
-              "Answer the user's question USING ONLY the notes, open tasks, upcoming events, pending reminders, matching contacts, past session summaries, and recent feed headlines provided below as context.",
+              "Answer the user's question USING ONLY the notes, open tasks, upcoming events, pending reminders, matching contacts, past session summaries, recent feed headlines, and pages you've visited provided below as context.",
               "If none of the provided context contains enough information, say so directly — do not invent facts."
             ]),
         "Reply in the user's preferred language (from persona prefs).",
@@ -129,6 +131,7 @@ export function buildAskSystemPrompt(params: {
               : undefined
           },
           feeds: { body: feedBlock, present: feedHeadlines.length > 0 },
+          browsing: { body: browsingBlock, present: browsingHits.length > 0 },
           reflection: { body: reflectionBlock, present: reflectionLines.length > 0 }
         }))
       ].join("\n").trimEnd();

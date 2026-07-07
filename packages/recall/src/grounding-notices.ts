@@ -60,6 +60,20 @@ export function untrustedFeedMatch(feedName: string, title: string, summary?: st
 }
 
 /**
+ * Build a grounding-evidence match for a LOCAL browsing-history visit, tagged
+ * `trusted:false`. A visited page's title is THIRD-PARTY-controlled text (the site
+ * author wrote it, not the user) — exactly like a feed headline — so an answer
+ * resting SOLELY on a page title must trip the untrusted-only source-check cue.
+ * That the archive lives on the user's disk does NOT make its CONTENT the user's
+ * own trusted data. `source` mirrors the `[browsing: <host>]` citation identifier
+ * so the trust map keys line up; `text` carries title + url so coverage scores the
+ * same evidence the model saw. Pure.
+ */
+export function untrustedBrowsingMatch(host: string, title: string, url: string): KnowledgeMatch {
+  return { cosine: 1, score: 1, source: `browsing: ${host}`, text: `${title} ${url}`, trusted: false };
+}
+
+/**
  * Build grounding evidence for a PAST-SESSION episode whose source-trust verdict is
  * `trusted:false` — the session it summarises rested on untrusted (tool/web/MCP/feed)
  * sources (PersistedEpisode.trusted === false). Recalled later, an answer resting

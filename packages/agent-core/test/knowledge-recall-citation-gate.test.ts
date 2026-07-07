@@ -73,6 +73,15 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.stripped).toEqual(["TechCrunch"]);
   });
 
+  it("gates browsing by exact hostname — an invented site is stripped, a real visited site kept", () => {
+    const out = enforceAnswerCitations(
+      "You read the ownership guide [browsing: blog.rust-lang.org] and a leak [browsing: evil.phishing.io].",
+      { browsing: ["blog.rust-lang.org", "news.ycombinator.com"] }
+    );
+    expect(out.text).toBe("You read the ownership guide [browsing: blog.rust-lang.org] and a leak.");
+    expect(out.stripped).toEqual(["evil.phishing.io"]);
+  });
+
   it("gates tasks/events by content-token overlap — a paraphrased-but-real title survives, a fabricated one is stripped", () => {
     const out = enforceAnswerCitations(
       "Pay the rent [task: pay the rent] and see the dentist [event: lunch with Bob].",

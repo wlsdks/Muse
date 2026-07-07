@@ -13,7 +13,7 @@
  */
 
 import { buildAttributedRepairPrompt, buildGroundingReverifyPrompt, citedSourcesIn, enforceAnswerCitations, explainGroundingVerdict, parseGroundingReverifyJson, repairToEvidence, REPAIR_SYSTEM_PROMPT, resolveRecallConfidentAt, REVERIFY_RESPONSE_FORMAT, REVERIFY_SYSTEM_PROMPT, screenClaimsBySemanticSupport, segmentClaims, selectBestGroundedDraft, verifyGrounding, verifyGroundingPerClaim, verifyGroundingWithReverify, type GroundingReverify } from "@muse/agent-core";
-import { augmentNoteEvidenceWithCited, answerIsRefusal, buildDiskContents, citationPrecisionNotice, citationRecallNotice, collectCitedNoteAges, composeChatSystemContent, contactGroundingEvidence, drawBestGroundedRedraft, formatNonNoteReceipts, formatSourceReceipts, formatStalenessWarning, groundingVerdictNotice, relativizeNoteSource, renderMemoryFact, shouldSuggestRepair, sourceCheckSignals, stripEchoedCiteAs, untrustedEpisodeMatch, untrustedFeedMatch, untrustedOnlyGroundingNotice, type FileEntry, type IndexChunk, type SourceCheckSignals } from "@muse/recall";
+import { augmentNoteEvidenceWithCited, answerIsRefusal, buildDiskContents, citationPrecisionNotice, citationRecallNotice, collectCitedNoteAges, composeChatSystemContent, contactGroundingEvidence, drawBestGroundedRedraft, formatNonNoteReceipts, formatSourceReceipts, formatStalenessWarning, groundingVerdictNotice, relativizeNoteSource, renderMemoryFact, shouldSuggestRepair, sourceCheckSignals, stripEchoedCiteAs, untrustedBrowsingMatch, untrustedEpisodeMatch, untrustedFeedMatch, untrustedOnlyGroundingNotice, type FileEntry, type IndexChunk, type SourceCheckSignals } from "@muse/recall";
 import { allUserMemoryFacts } from "@muse/recall";
 import { resolveAnswerTemperature, type MuseEnvironment } from "@muse/autoconfigure";
 import { existsSync } from "node:fs";
@@ -63,6 +63,7 @@ export async function runGroundingVerdict(params: {
   readonly episodeHits: SessionFeedReflectionGrounding["episodeHits"];
   readonly untrustedEpisodeIds: SessionFeedReflectionGrounding["untrustedEpisodeIds"];
   readonly feedHeadlines: SessionFeedReflectionGrounding["feedHeadlines"];
+  readonly browsingHits: SessionFeedReflectionGrounding["browsingHits"];
   readonly matchedActions: ActivityGrounding["matchedActions"];
   readonly matchedCommands: ActivityGrounding["matchedCommands"];
   readonly matchedCommits: ActivityGrounding["matchedCommits"];
@@ -81,7 +82,7 @@ export async function runGroundingVerdict(params: {
     untrustedNoteSources, index, imageAttachments, adHocVerifyTargets, systemPrompt,
     playbookSection, citationAllowed, allowedNotes, agentGroundingSources, allMemoryFacts,
     matchedContacts, openTasks, upcomingEvents, pendingReminders, episodeHits,
-    untrustedEpisodeIds, feedHeadlines, matchedActions, matchedCommands, matchedCommits,
+    untrustedEpisodeIds, feedHeadlines, browsingHits, matchedActions, matchedCommands, matchedCommits,
     options, io
   } = params;
   let collectedAnswer = params.collectedAnswer;
@@ -173,6 +174,11 @@ export async function runGroundingVerdict(params: {
           // poisonable feed headline must trip the untrusted-only source-check
           // cue (grounded≠true), exactly like a web/MCP tool result below.
           ...feedHeadlines.map((h) => untrustedFeedMatch(h.feedName, h.title, h.summary)),
+          // Local browsing-history visits: the page TITLE is third-party-controlled
+          // text (the site author's, not the user's), so tag trusted:false exactly
+          // like a feed headline — an answer resting SOLELY on a visited page trips
+          // the untrusted-only source-check cue (grounded≠true).
+          ...browsingHits.map((h) => untrustedBrowsingMatch(h.host, h.title, h.url)),
           // The --with-tools agent's OWN read-tool outputs (web fetches,
           // knowledge_search, …): the evidence it was shown. Without these a
           // correctly web-grounded answer scores ~zero coverage against the
@@ -193,7 +199,7 @@ export async function runGroundingVerdict(params: {
         // construction and is present in `scoredMatches`. `[from …]` note
         // provenance is left alone (it carries no claim).
         const expandContentCitations = (answer: string): string => answer.replace(
-          /\[(?:task|event|reminder|contact|session|feed|command|commit|memory|action):\s*([^\]]*)\]/giu,
+          /\[(?:task|event|reminder|contact|session|feed|browsing|command|commit|memory|action):\s*([^\]]*)\]/giu,
           " $1 "
         );
         let verdictAnswer = expandContentCitations(collectedAnswer);
@@ -400,6 +406,7 @@ export async function runGroundingVerdict(params: {
             contacts: matchedContacts.map((c) => c.name),
             events: upcomingEvents.map((e) => e.title),
             feeds: feedHeadlines.map((h) => h.feedName),
+            browsing: browsingHits.map((h) => h.host),
             memories: allMemoryFacts.map(renderMemoryFact),
             reminders: pendingReminders.map((r) => r.text),
             sessions: episodeHits.map((e) => e.summary),

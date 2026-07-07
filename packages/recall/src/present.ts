@@ -3,6 +3,7 @@ import { isAbsolute, join, relative } from "node:path";
 
 import { citedSourcesIn, independentWitnessCount, lexicalOverlap, lexicalTokens, neutralizeInjectionSpans, quorumVerdict, type ContradictionPair } from "@muse/agent-core";
 import { escapeSystemPromptMarkers } from "./prompt-escape.js";
+import type { BrowsingVisit } from "./browsing-store.js";
 import { formatDueLocal } from "@muse/mcp-shared";
 import { type PersistedReminder, type PersistedTask } from "@muse/stores";
 
@@ -23,6 +24,60 @@ export function recentFeedHeadlines(
     .flatMap((feed) => feed.entries.map((e) => ({ feedName: feed.name, publishedAt: e.publishedAt, summary: e.summary, title: e.title })))
     .sort((a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0))
     .slice(0, limit);
+}
+
+/**
+ * The registrable hostname a browsing visit is grounded/cited by —
+ * `https://news.ycombinator.com/item?id=1` → `news.ycombinator.com`, leading
+ * `www.` dropped so the same site cites stably. An unparseable URL falls back to
+ * its trimmed-lowercased self (never throws). The citation IDENTIFIER (like a feed
+ * name), matched EXACTLY by the gate. Pure.
+ */
+export function browsingHostname(url: string): string {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.startsWith("www.") ? host.slice(4) : host;
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
+/** A browsing-history visit selected for grounding: its citation host + the visit fields. */
+export interface BrowsingHit {
+  readonly host: string;
+  readonly title: string;
+  readonly url: string;
+  readonly visitedAt: string;
+}
+
+/**
+ * The browsing visits most RELEVANT to `query`, for the ask grounding block:
+ * visits whose title/URL share a content token with the query, ranked by overlap
+ * then newest-first, capped at `limit`. Query tokens come from `lexicalTokens`
+ * (NFC + CJK-aware), so a Korean query ("러스트 블로그") matches a Korean title,
+ * not only ASCII. Unlike feeds (pure recency), the browsing archive can hold
+ * thousands of visits, so a relevance filter is required or the block is noise.
+ * Zero query tokens or no overlap → []. Pure (no IO, no Date.now) so a unit test
+ * pins matching + ordering.
+ */
+export function selectBrowsingVisitsForQuery(
+  visits: readonly BrowsingVisit[],
+  query: string,
+  limit: number
+): BrowsingHit[] {
+  if (limit <= 0) {
+    return [];
+  }
+  const queryTokens = lexicalTokens(query);
+  if (queryTokens.size === 0) {
+    return [];
+  }
+  return visits
+    .map((v) => ({ overlap: lexicalOverlap(queryTokens, `${v.title} ${v.url}`), v }))
+    .filter((e) => e.overlap > 0)
+    .sort((a, b) => b.overlap - a.overlap || (Date.parse(b.v.visitedAt) || 0) - (Date.parse(a.v.visitedAt) || 0))
+    .slice(0, limit)
+    .map((e) => ({ host: browsingHostname(e.v.url), title: e.v.title, url: e.v.url, visitedAt: e.v.visitedAt }));
 }
 
 /**
@@ -320,6 +375,7 @@ export interface OptionalGroundingSources {
   readonly actions: OptionalGroundingSource;
   readonly episodes: OptionalGroundingSource;
   readonly feeds: OptionalGroundingSource;
+  readonly browsing: OptionalGroundingSource;
   readonly reflection: OptionalGroundingSource;
 }
 
@@ -344,6 +400,7 @@ export const OPTIONAL_GROUNDING_TIER: Readonly<Record<keyof OptionalGroundingSou
   shell: 50,
   episodes: 40,
   feeds: 30,
+  browsing: 35,
   reflection: 20
 };
 
@@ -425,6 +482,7 @@ export function optionalGroundingSections(
     { kind: "actions", source: sources.actions, spec: { body: sources.actions.body, footer: "=== END ACTIONS ===", header: "=== ACTIONS MUSE HAS TAKEN ON YOUR BEHALF (your audit log) ===", present: sources.actions.present } },
     { kind: "episodes", source: sources.episodes, spec: { body: sources.episodes.body, footer: "=== END PAST SESSIONS ===", header: "=== PAST SESSION SUMMARIES (your prior conversations) ===", present: sources.episodes.present } },
     { kind: "feeds", source: sources.feeds, spec: { body: sources.feeds.body, footer: "=== END FEED HEADLINES ===", header: "=== RECENT FEED HEADLINES (your watched RSS/Atom feeds, newest first) ===", present: sources.feeds.present } },
+    { kind: "browsing", source: sources.browsing, spec: { body: sources.browsing.body, footer: "=== END BROWSING HISTORY ===", header: "=== PAGES YOU VISITED (your local Chrome browsing history matching this question) ===", present: sources.browsing.present } },
     { kind: "reflection", source: sources.reflection, spec: { body: sources.reflection.body, footer: "=== END NOTICED ===", header: "=== WHAT MUSE HAS NOTICED ABOUT YOU (high-level, from past sessions) ===", present: sources.reflection.present } }
   ];
   // `present` is set by the caller from a match-COUNT (e.g. matchedContacts.length > 0)
@@ -455,6 +513,7 @@ export interface GroundedSourceCounts {
   readonly loggedActions: number;
   readonly pastSessions: number;
   readonly feedHeadlines: number;
+  readonly browsingVisits: number;
 }
 
 /**
@@ -498,6 +557,9 @@ export function groundedSourceSummary(counts: GroundedSourceCounts): string[] {
   if (counts.feedHeadlines > 0) {
     parts.push(`${counts.feedHeadlines.toString()} feed headline(s)`);
   }
+  if (counts.browsingVisits > 0) {
+    parts.push(`${counts.browsingVisits.toString()} page(s) you visited`);
+  }
   return parts;
 }
 
@@ -521,6 +583,7 @@ export function formatNonNoteReceipts(
     readonly memories?: readonly string[];
     readonly actions?: readonly string[];
     readonly feeds?: readonly string[];
+    readonly browsing?: readonly string[];
     readonly sessions?: readonly string[];
   }
 ): string | undefined {
@@ -549,6 +612,7 @@ export function formatNonNoteReceipts(
   grab("🧠 from what you told me:", /\[memory:\s*([^\]]+?)\s*\]/giu, sources.memories);
   grab("🤖 from your action log:", /\[action:\s*([^\]]+?)\s*\]/giu, sources.actions);
   grab("📰 from your feeds:", /\[feed:\s*([^\]]+?)\s*\]/giu, sources.feeds);
+  grab("🌐 from pages you visited:", /\[browsing:\s*([^\]]+?)\s*\]/giu, sources.browsing);
   grab("💬 from a past session:", /\[session:\s*([^\]]+?)\s*\]/giu, sources.sessions);
   if (lines.length === 0) {
     return undefined;
@@ -746,6 +810,20 @@ export function buildFeedContextBlock(headlines: readonly { readonly feedName: s
   }
   return headlines
     .map((h, i) => { const safeName = safeField(h.feedName); return `<<feed ${(i + 1).toString()} — ${safeName} (${h.publishedAt})>>\n${safeField(h.title)}${h.summary ? `\n${safeField(h.summary)}` : ""}\n[feed: ${safeName}]\n<<end>>`; })
+    .join("\n\n");
+}
+
+/**
+ * Build the <<browsing N>> grounding block from selected local browsing-history
+ * visits (untrusted third-party title/URL escaped, exactly like feed headlines).
+ * The host is the citation identifier (`[browsing: <site>]`). Pure.
+ */
+export function buildBrowsingContextBlock(hits: readonly BrowsingHit[]): string {
+  if (hits.length === 0) {
+    return "(no matching browsing history)";
+  }
+  return hits
+    .map((h, i) => { const safeHost = safeField(h.host); return `<<browsing ${(i + 1).toString()} — ${safeHost} (${h.visitedAt.slice(0, 10)})>>\n${safeField(h.title)}\n${safeField(h.url)}\n[browsing: ${safeHost}]\n<<end>>`; })
     .join("\n\n");
 }
 
