@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **491** variables.
+Total: **492** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -62,6 +62,9 @@ Total: **491** variables.
 | `MUSE_BACKGROUND_REVIEW_SKILL_ITERS` | packages/autoconfigure |
 | `MUSE_BELIEF_PROVENANCE` | packages/autoconfigure |
 | `MUSE_BELIEF_PROVENANCE_FILE` | apps/cli, packages/memory |
+| `MUSE_BIRD_ANSI` | apps/cli |
+| `MUSE_BIRD_BLINK_ANSI` | apps/cli |
+| `MUSE_BIRD_ROWS` | apps/cli |
 | `MUSE_BOARD_FILE` | packages/multi-agent |
 | `MUSE_BOARD_STALE_MS` | apps/cli |
 | `MUSE_BRIEFING_BIRTHDAY_DAYS` | apps/api |
@@ -230,9 +233,6 @@ Total: **491** variables.
 | `MUSE_LOOPBACK_MCP_ENABLED` | packages/autoconfigure |
 | `MUSE_MACOS_ACTUATORS` | apps/cli |
 | `MUSE_MACOS_CALENDAR_NAME` | packages/autoconfigure |
-| `MUSE_MASCOT_ANSI` | apps/cli |
-| `MUSE_MASCOT_ROWS` | apps/cli |
-| `MUSE_MASCOT_WIDTH` | apps/cli |
 | `MUSE_MATH_ENABLED` | packages/autoconfigure |
 | `MUSE_MAX_TOOL_OUTPUT_CHARS` | apps/cli, packages/autoconfigure |
 | `MUSE_MCP_ALLOWED_SERVERS` | packages/autoconfigure |
@@ -501,4 +501,5 @@ Total: **491** variables.
 | `MUSE_WEB_WATCH_TICK_MS` | apps/api |
 | `MUSE_WHISPER_CPP_MODEL` | apps/cli, packages/autoconfigure, packages/voice |
 | `MUSE_WHISPER_CPP_PATH` | apps/cli, packages/autoconfigure, packages/voice |
+| `MUSE_WORDMARK` | apps/cli |
 | `MUSE_WORKSPACE_SKILLS_DIR` | packages/autoconfigure |
