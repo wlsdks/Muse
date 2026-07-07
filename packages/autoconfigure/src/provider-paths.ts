@@ -108,6 +108,10 @@ export function resolveFeedsFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_FEEDS_FILE", "feeds.json");
 }
 
+export function resolveBrowsingFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_BROWSING_FILE", "browsing.json");
+}
+
 export function resolveFollowupLlmBudgetFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_FOLLOWUP_LLM_BUDGET_FILE", "followup-llm-budget.json");
 }

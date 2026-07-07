@@ -15,6 +15,8 @@ export { createEmailForwardTool, createEmailReadMessageTool, createEmailReadTool
 export { removeRemindersForEvent, rescheduleRemindersForEvent, syncRemindersOnEventDelete } from "./event-reminder-link.js";
 export { createFeedsSearchTool } from "./feeds-search-tool.js";
 export type { FeedEntryLike } from "./feeds-search-tool.js";
+export { createBrowsingSearchTool } from "./browsing-search-tool.js";
+export type { BrowsingVisitLike } from "./browsing-search-tool.js";
 export { fetchReadableUrl, isPdfContentType, isReadableContentType } from "./fetch-readable-url.js";
 export { homeWatchesFromConfig } from "./home-watch.js";
 export { createCalendarMcpServer, resolveEventByRef } from "./loopback-calendar.js";

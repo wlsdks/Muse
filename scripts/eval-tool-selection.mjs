@@ -945,6 +945,34 @@ async function buildFeedsScenario() {
   }
 }
 
+// Local browsing-history search (browsing_search) vs its closest confusables:
+// a fresh public web search and the RSS feed archive. "that page I visited /
+// read before" must route to browsing_search (the user's own Chrome history),
+// NOT web_search (the open internet) or feeds_search (their subscriptions).
+async function buildBrowsingScenario() {
+  try {
+    const mcp = await importMuseToolPackages();
+    const instances = [
+      mcp.createBrowsingSearchTool({ browsingVisits: () => [] }),
+      mcp.createFeedsSearchTool({ feedEntries: () => [] })
+    ];
+    const tools = [
+      ...instances.map((t) => ({ name: t.definition.name, description: t.definition.description, inputSchema: t.definition.inputSchema })),
+      SYNTHETIC_TOOLS.find((t) => t.name === "web_search")
+    ].filter(Boolean);
+    const byName = new Set(tools.map((t) => t.name));
+    const cases = [
+      { prompt: "Find that blog about rust ownership I read last week.", expectTool: "browsing_search", requireArgs: ["query"], note: "EN local history search → browsing_search (NOT web_search/feeds_search)" },
+      { prompt: "지난주에 본 러스트 블로그 찾아줘", expectTool: "browsing_search", requireArgs: ["query"], note: "KO local history search → browsing_search" },
+      { prompt: "Search the web for the latest TypeScript release notes.", expectTool: "web_search", requireArgs: ["query"], note: "fresh public web → web_search (NOT browsing_search)" },
+      { prompt: "Any news about the Mars mission in the feeds I follow?", expectTool: "feeds_search", requireArgs: ["query"], note: "subscriptions → feeds_search (NOT browsing_search)" }
+    ];
+    return { label: "browsing (local history vs web/feeds)", tools, cases: cases.filter((c) => c.expectNoTool || byName.has(c.expectTool)) };
+  } catch (error) {
+    return { label: "browsing", skip: `@muse/mcp not built (${error instanceof Error ? error.message : String(error)})`, tools: [], cases: [] };
+  }
+}
+
 // Followup tools (muse.followup.*) vs their closest confusables: tasks and
 // reminders. A followup is an agent-auto-captured "circle back" thread — the
 // model must route viewing/managing those to followup.list/cancel/snooze and
@@ -1507,6 +1535,7 @@ async function main() {
     await buildOverdueScenario(),
     await buildOnThisDayScenario(),
     await buildFeedsScenario(),
+    await buildBrowsingScenario(),
     await buildNotesScenario(),
     await buildFollowupScenario(),
     await buildRecallVsCrudScenario(),

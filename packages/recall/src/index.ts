@@ -20,6 +20,8 @@ export * from "./notes-links.js";
 export * from "./live-files.js";
 export * from "./episode-index.js";
 export * from "./feeds-store.js";
+export * from "./browsing-store.js";
+export * from "./chrome-history.js";
 export * from "./git-reflog.js";
 export * from "./shell-history.js";
 export * from "./ask-cross-lingual.js";

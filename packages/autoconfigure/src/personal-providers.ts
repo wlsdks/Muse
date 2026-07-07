@@ -60,6 +60,7 @@ export {
   resolveNoteProvenanceFile,
   resolveFadedMemoriesFile,
   resolveFeedsFile,
+  resolveBrowsingFile,
   resolveFollowupLlmBudgetFile,
   resolveFollowupsFile,
   resolveInboxInjectionCursorFile,

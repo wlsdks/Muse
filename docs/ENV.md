@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **482** variables.
+Total: **485** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -74,6 +74,7 @@ Total: **482** variables.
 | `MUSE_BRIEFING_TASK_DUE_DAYS` | apps/api |
 | `MUSE_BRIEFING_TICK_MS` | apps/api |
 | `MUSE_BRIEFING_WINDOW_MS` | apps/api |
+| `MUSE_BROWSING_FILE` | packages/autoconfigure, packages/recall |
 | `MUSE_BUDGET_MONTHLY_LIMIT_USD` | packages/autoconfigure |
 | `MUSE_BUDGET_WARNING_PERCENT` | packages/autoconfigure |
 | `MUSE_CACHE_BOUNDARY` | packages/prompts |
@@ -98,7 +99,9 @@ Total: **482** variables.
 | `MUSE_CHECKPOINTS_DIR` | packages/autoconfigure |
 | `MUSE_CHROME_DEVTOOLS_BROWSER_URL` | packages/autoconfigure |
 | `MUSE_CHROME_DEVTOOLS_ENABLED` | apps/cli, packages/autoconfigure |
+| `MUSE_CHROME_HISTORY_FILE` | apps/cli, packages/recall |
 | `MUSE_CHROME_PATH` | packages/browser |
+| `MUSE_CHROME_PROFILE` | apps/cli, packages/recall |
 | `MUSE_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | packages/autoconfigure |
 | `MUSE_CIRCUIT_BREAKER_RESET_TIMEOUT_MS` | packages/autoconfigure |
 | `MUSE_CLI_VERSION` | apps/cli |
