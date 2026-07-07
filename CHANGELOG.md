@@ -8,6 +8,33 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.15] - 2026-07-07
+
+Korean voice input works out of the (opt-in) box, and "방해금지 켜줘"
+now actually turns on Do Not Disturb. Early / experimental, macOS only.
+
+### Added
+
+- **Focus / Do-Not-Disturb control from chat.** "방해금지 켜줘" /
+  "집중모드 꺼줘" toggles Focus via Apple's own Shortcuts "Set Focus"
+  action (you create two small shortcuts once — Muse tells you exactly
+  how if they're missing, and `muse doctor` checks they exist).
+  Verified live on the local model: correct tool choice 48/48 including
+  the "볼륨 꺼줘" confusable.
+- **`muse doctor` now guides voice setup.** It reports STT/TTS state
+  and, when off, the exact steps to enable local voice — including the
+  Korean TTS voice option (with its non-commercial license caveat
+  stated plainly).
+
+### Changed
+
+- **The default speech-recognition model is now multilingual, so
+  Korean voice input just works.** Previously the shipped default was
+  an English-only model that failed silently on Korean speech. If you
+  already downloaded the old English model, it keeps working (with a
+  one-time hint about the multilingual upgrade); an explicit
+  `MUSE_WHISPER_CPP_MODEL` is always respected.
+
 ## [0.2.14] - 2026-07-07
 
 Muse notes can now follow you into Apple Notes. Early / experimental,
