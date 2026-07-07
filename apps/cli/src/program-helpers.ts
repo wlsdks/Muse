@@ -344,15 +344,22 @@ function extractApiErrorEnvelope(
  * Translate node-fetch / undici network errors into a single-line message
  * the user can act on. Without this, `ECONNREFUSED` surfaces as a raw
  * undici stack trace whenever the API server isn't running — which for a
- * personal-mode CLI is the most common state.
+ * personal-mode CLI is the most common state. A handful of admin-only
+ * commands (cost/traces/telemetry/analytics/tools stats/mcp list/settings/
+ * scheduler list) have NO local mode at all, so the previous wording ("most
+ * commands support --local") actively misled exactly those users into
+ * trying a flag their command doesn't have; this version never claims a
+ * command-specific fallback exists and instead gives the one thing that's
+ * ALWAYS true — how to start the server, or point at a different one.
  */
 function friendlyFetchError(baseUrl: string, error: unknown): Error {
   const cause = isRecord(error) && isRecord(error.cause) ? error.cause : undefined;
   const code = cause && typeof cause.code === "string" ? cause.code : undefined;
   if (code === "ECONNREFUSED") {
     return new Error(
-      `Muse API not reachable at ${baseUrl}. Re-run with --local to run on your machine ` +
-      `(no server needed — most commands support it), or start the Muse API server, or set --api-url.`
+      `Muse API server is not running (tried ${baseUrl}) — this command needs it. ` +
+      `Start it with \`pnpm --filter @muse/api dev\`, point at a running one with --api-url, ` +
+      `or check \`--help\` for this command in case it has a --local (no-server) mode.`
     );
   }
   if (code === "ENOTFOUND") {

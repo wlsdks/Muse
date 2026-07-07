@@ -1,6 +1,12 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildAskRunLog, chatTurnPersistText, defaultConfigPath, firstNonEmpty, readResponseGrounded, readResponseSuccess, setConfigValue, summarizeRetrieval, unsetConfigValue } from "./program-helpers.js";
+import { apiRequest, buildAskRunLog, chatTurnPersistText, defaultConfigPath, firstNonEmpty, readResponseGrounded, readResponseSuccess, setConfigValue, summarizeRetrieval, unsetConfigValue } from "./program-helpers.js";
+import type { ProgramIO } from "./program.js";
 
 describe("summarizeRetrieval + buildAskRunLog retrieval — 'why this answer' trace (P1.2)", () => {
   it("summarizeRetrieval keeps ASSEMBLY order (notes lead), top-K, prefers cosine, rounds", () => {
@@ -293,6 +299,41 @@ describe("pruneRunLogDir — bound the unbounded run-log (retention)", () => {
       expect(await pruneRunLogDir(dir, 0)).toBe(0); // invalid cap → no-op
     } finally {
       rmSync(dir, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("apiRequest — connection-refused hint (admin commands with no local mode: cost/traces/telemetry/analytics/tools stats/mcp list/settings/scheduler list)", () => {
+  function connectionRefused(): Promise<Response> {
+    const err = new Error("fetch failed") as Error & { cause?: unknown };
+    err.cause = { code: "ECONNREFUSED" };
+    return Promise.reject(err);
+  }
+
+  function freshIo(): ProgramIO {
+    return {
+      configDir: mkdtempSync(join(tmpdir(), "muse-apireq-")),
+      fetch: connectionRefused as unknown as typeof fetch,
+      stderr: () => undefined,
+      stdout: () => undefined
+    };
+  }
+
+  it("rejects with an actionable message (not a raw connection-refused stack) and never resolves", async () => {
+    const io = freshIo();
+    await expect(apiRequest(io, new Command(), "/api/admin/token-cost/daily")).rejects.toThrow(
+      /Muse API server is not running.*pnpm --filter @muse\/api dev/su
+    );
+  });
+
+  it("the hint never claims a --local fallback exists (misleading for commands that have none)", async () => {
+    const io = freshIo();
+    await expect(apiRequest(io, new Command(), "/api/admin/traces")).rejects.toThrowError();
+    try {
+      await apiRequest(io, new Command(), "/api/admin/traces");
+      throw new Error("expected apiRequest to reject");
+    } catch (error) {
+      expect((error as Error).message).not.toMatch(/most commands support/iu);
     }
   });
 });
