@@ -98,4 +98,25 @@ describe("applyStoredConversationSummary", () => {
     const result = await applyStoredConversationSummary(context(messages, { sessionId: "sess-1" }), store(undefined, () => { throw new Error("db down"); }));
     expect(result.messages).toHaveLength(1);
   });
+
+  it("inserts AFTER a real leading system prompt, never displacing it (stable prefix)", async () => {
+    const withRealSystemPrompt = [{ role: "system" as const, content: "You are Muse." }, ...messages];
+    const result = await applyStoredConversationSummary(
+      context(withRealSystemPrompt, { sessionId: "sess-1" }),
+      store(summary("prior chat"))
+    );
+    expect(result.messages[0]).toEqual({ role: "system", content: "You are Muse." });
+    expect(result.messages[1]).toEqual({ role: "system", content: `${COMPACTION_SUMMARY_PREFIX}: prior chat]` });
+  });
+
+  it("does not re-insert when a compaction summary already sits right after the real system prompt", async () => {
+    const withBoth = [
+      { role: "system" as const, content: "You are Muse." },
+      { role: "system" as const, content: `${COMPACTION_SUMMARY_PREFIX}: existing]` },
+      ...messages
+    ];
+    const result = await applyStoredConversationSummary(context(withBoth, { sessionId: "sess-1" }), store(summary("new")));
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[0]).toEqual({ role: "system", content: "You are Muse." });
+  });
 });

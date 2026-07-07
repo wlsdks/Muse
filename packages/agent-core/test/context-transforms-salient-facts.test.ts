@@ -106,7 +106,7 @@ describe("persistConversationSummaryFromRequest — persist no-wipe", () => {
     expect(savedNarrative).toContain(COMPACTION_SUMMARY_PREFIX);
   });
 
-  it("is a no-op when the head message is not a compaction summary", async () => {
+  it("is a no-op when there is no compaction summary anywhere in the messages", async () => {
     const store = new InMemoryConversationSummaryStore();
     const msgs = [m("user", "hello")];
     const ctx = makeContext("sess-noop", msgs);
@@ -115,6 +115,21 @@ describe("persistConversationSummaryFromRequest — persist no-wipe", () => {
 
     const saved = await store.get("sess-noop");
     expect(saved).toBeUndefined();
+  });
+
+  it("finds the compaction summary AFTER a real leading system prompt (not just at index 0)", async () => {
+    const store = new InMemoryConversationSummaryStore();
+    const msgs = [
+      m("system", "You are a helpful assistant."),
+      m("system", `${COMPACTION_SUMMARY_PREFIX}: 3 messages compacted]\n[Key details]\n• [NUMERIC] budget: 1,250만원`)
+    ];
+    const ctx = makeContext("sess-after-prompt", msgs);
+
+    await persistConversationSummaryFromRequest(ctx, { messages: msgs }, 3, store);
+
+    const saved = await store.get("sess-after-prompt");
+    expect(saved).toBeDefined();
+    expect(saved!.narrative).toContain("1,250만원");
   });
 });
 

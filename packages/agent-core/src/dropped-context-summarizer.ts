@@ -45,6 +45,14 @@ import type { ModelProvider } from "@muse/model";
 const SUMMARIZER_SYSTEM_PROMPT =
   "You compress dropped conversation turns into a short factual recap that preserves names, decisions, and open questions. Output ONLY the recap — no preamble, no headings — in 2 to 4 sentences.";
 
+// hermes' `/compact <focus>` pattern, adapted: when the caller names a
+// topic (e.g. a chat `/compact <topic>` request), ask for full fidelity on
+// that topic specifically while everything else still gets the terse
+// treatment — rather than compressing the whole window uniformly.
+function focusDirective(focusTopic: string): string {
+  return ` Preserve FULL detail about anything related to "${focusTopic}" — do not compress or drop it; everything else can stay terse.`;
+}
+
 const DEFAULT_COOLDOWN_MS = 10 * 60_000;
 const DEFAULT_INEFFECTIVENESS_THRESHOLD = 0.1;
 const DEFAULT_INEFFECTIVENESS_STREAK_LIMIT = 2;
@@ -118,7 +126,7 @@ export function createModelDroppedContextSummarizer(
   let cooldownUntilMs = 0;
   let ineffectiveStreak = 0;
 
-  return async (messages) => {
+  return async (messages, callOptions) => {
     if (now().getTime() < cooldownUntilMs) {
       return "";
     }
@@ -126,6 +134,8 @@ export function createModelDroppedContextSummarizer(
     const transcript = messages
       .map((message) => `${message.role}: ${typeof message.content === "string" ? message.content : ""}`)
       .join("\n");
+    const focusTopic = callOptions?.focusTopic?.trim();
+    const systemPrompt = focusTopic ? `${SUMMARIZER_SYSTEM_PROMPT}${focusDirective(focusTopic)}` : SUMMARIZER_SYSTEM_PROMPT;
 
     let response;
     try {
@@ -133,7 +143,7 @@ export function createModelDroppedContextSummarizer(
         () =>
           provider.generate({
             messages: [
-              { content: SUMMARIZER_SYSTEM_PROMPT, role: "system" },
+              { content: systemPrompt, role: "system" },
               { content: transcript, role: "user" }
             ],
             model,

@@ -35,6 +35,7 @@ import {
   COMPACTION_SUMMARY_PREFIX,
   summarizeDroppedContext,
   trimConversationMessages,
+  verifyCompactionSummaryQuality,
   type ContextReferenceStore,
   type ConversationSummaryStore,
   type ConversationTrimOptions,
@@ -565,13 +566,26 @@ export class AgentRuntime {
     if (this.contextSummarizer && preparedRequest.contextWindow?.summaryInserted && preparedRequest.dropped && preparedRequest.dropped.length > 0) {
       const auxSummary = await summarizeDroppedContext(preparedRequest.dropped, this.contextSummarizer, {
         fallback: "",
-        maxChars: this.contextSummaryMaxChars
+        maxChars: this.contextSummaryMaxChars,
+        ...(this.contextWindow?.focusTopic ? { focusTopic: this.contextWindow.focusTopic } : {})
       });
       if (auxSummary.length > 0) {
-        preparedRequest = {
-          ...preparedRequest,
-          request: { ...preparedRequest.request, messages: augmentCompactionSummary(preparedRequest.request.messages, auxSummary) }
-        };
+        // Fail-close quality gate (deterministic, no LLM): a generated aux
+        // summary that drops too many hard anchors — or ANY anchor the user
+        // themselves asserted — is never shipped. The deterministic
+        // `[Key details]` block (already inserted, unconditionally) remains
+        // the floor; a rejected aux summary just isn't appended on top of it.
+        const qualityGate = verifyCompactionSummaryQuality(preparedRequest.dropped, auxSummary);
+        if (qualityGate.passed) {
+          preparedRequest = {
+            ...preparedRequest,
+            request: { ...preparedRequest.request, messages: augmentCompactionSummary(preparedRequest.request.messages, auxSummary) }
+          };
+          runSpan.setAttribute("ctx.compaction.aux_quality_gate", "passed");
+        } else {
+          runSpan.setAttribute("ctx.compaction.aux_quality_gate", "rejected");
+          runSpan.setAttribute("ctx.compaction.aux_quality_coverage", qualityGate.coverageRatio);
+        }
       }
     }
     // Budget ENFORCEMENT (opt-in): the meter alone never stopped an

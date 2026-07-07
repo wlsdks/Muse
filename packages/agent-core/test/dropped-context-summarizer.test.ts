@@ -92,6 +92,29 @@ describe("createModelDroppedContextSummarizer (CMP-2 production summarizer)", ()
     expect(seen?.messages.some((m) => m.role === "system")).toBe(true);
   });
 
+  describe("focus-topic directive (hermes' /compact <focus>, adapted)", () => {
+    it("includes a focus directive naming the topic when focusTopic is set", async () => {
+      let seen: ModelRequest | undefined;
+      const summarize = createModelDroppedContextSummarizer(fakeProvider("ok", (r) => { seen = r; }), "ollama/gemma4:12b");
+      await summarize(dropped, { focusTopic: "the migration" });
+      const system = seen?.messages.find((m) => m.role === "system")?.content ?? "";
+      expect(system).toContain("the migration");
+    });
+
+    it("omits the focus directive when focusTopic is unset (byte-identical prompt)", async () => {
+      let seenUnset: ModelRequest | undefined;
+      let seenExplicitEmpty: ModelRequest | undefined;
+      const summarizeUnset = createModelDroppedContextSummarizer(fakeProvider("ok", (r) => { seenUnset = r; }), "ollama/gemma4:12b");
+      const summarizeEmpty = createModelDroppedContextSummarizer(fakeProvider("ok", (r) => { seenExplicitEmpty = r; }), "ollama/gemma4:12b");
+      await summarizeUnset(dropped);
+      await summarizeEmpty(dropped, { focusTopic: "   " });
+      const systemUnset = seenUnset?.messages.find((m) => m.role === "system")?.content ?? "";
+      const systemEmpty = seenExplicitEmpty?.messages.find((m) => m.role === "system")?.content ?? "";
+      expect(systemUnset).toBe(systemEmpty);
+      expect(systemUnset).not.toContain("Preserve FULL detail");
+    });
+  });
+
   it("propagates a provider error after exhausting all retry attempts (fail-open handled upstream by summarizeDroppedContext)", async () => {
     const { sleep } = fakeSleep();
     const { provider, calls } = scriptedProvider(() => { throw new Error("ollama down"); });

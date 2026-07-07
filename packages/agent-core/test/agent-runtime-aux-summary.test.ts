@@ -78,3 +78,53 @@ describe("CMP-2 runtime wiring", () => {
     expect(sent.some((m) => typeof m.content === "string" && m.content.includes("[Dropped-context summary:"))).toBe(false);
   });
 });
+
+describe("CMP-2 fail-close aux-summary quality gate", () => {
+  function messagesWithHardAnchor(): ConversationMessage[] {
+    const msgs: ConversationMessage[] = [];
+    msgs.push({ content: 'the invoice for "Ironclad" is $12,345, due 2026-07-07', role: "user" });
+    for (let i = 0; i < 14; i += 1) {
+      msgs.push({ content: `older turn content number ${(i + 1).toString()} with some length`, role: i % 2 === 0 ? "assistant" : "user" });
+    }
+    msgs.push({ content: "the latest question", role: "user" });
+    return msgs;
+  }
+
+  it("does NOT append an aux summary that drops the user's own hard anchors (fail-close)", async () => {
+    const provider = new CapturingDiagnostic({ defaultModel: "diagnostic/smoke" });
+    const runtime = new AgentRuntime({
+      contextWindow: { maxContextWindowTokens: 60, outputReserveTokens: 10 },
+      // A lossy aux summary that drops the invoice name/amount/date entirely.
+      contextSummarizer: async () => "we discussed some old turns",
+      modelProvider: provider
+    });
+
+    const result = await runtime.run({ messages: messagesWithHardAnchor(), metadata: { sessionId: "s3", userId: "u1" }, model: "diagnostic/smoke" });
+
+    expect(result.contextWindow?.summaryInserted).toBe(true);
+    const sent = provider.captured[0] ?? [];
+    // the deterministic [Key details] floor is still there…
+    const summary = sent.find((m) => typeof m.content === "string" && m.content.startsWith(COMPACTION_SUMMARY_PREFIX));
+    expect(summary).toBeDefined();
+    // …but the lossy aux recap was rejected, not appended on top of it.
+    expect(summary!.content).not.toContain("[Dropped-context summary:");
+  });
+
+  it("DOES append an aux summary that preserves the hard anchors", async () => {
+    const provider = new CapturingDiagnostic({ defaultModel: "diagnostic/smoke" });
+    const runtime = new AgentRuntime({
+      contextWindow: { maxContextWindowTokens: 60, outputReserveTokens: 10 },
+      contextSummarizer: async () => 'discussed the "Ironclad" invoice: $12,345, due 2026-07-07.',
+      modelProvider: provider
+    });
+
+    const result = await runtime.run({ messages: messagesWithHardAnchor(), metadata: { sessionId: "s4", userId: "u1" }, model: "diagnostic/smoke" });
+
+    expect(result.contextWindow?.summaryInserted).toBe(true);
+    const sent = provider.captured[0] ?? [];
+    const summary = sent.find((m) => typeof m.content === "string" && m.content.startsWith(COMPACTION_SUMMARY_PREFIX));
+    expect(summary).toBeDefined();
+    expect(summary!.content).toContain("[Dropped-context summary:");
+    expect(summary!.content).toContain("Ironclad");
+  });
+});

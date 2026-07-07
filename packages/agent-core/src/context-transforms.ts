@@ -344,13 +344,31 @@ export async function applyUserMemory(
   };
 }
 
+// Leading system messages that are NOT a compaction summary — mirrors
+// `leadingRealSystemCount` in @muse/memory's trimmer, so a real (persona/
+// tool/memory) system prompt already at the front of the array is never
+// displaced by the re-injected summary; the summary always lands right
+// after it, keeping the stable prefix a caching provider relies on.
+function leadingNonSummarySystemCount(messages: readonly ModelMessage[]): number {
+  let index = 0;
+  while (
+    index < messages.length &&
+    messages[index]?.role === "system" &&
+    !messages[index]!.content.startsWith(COMPACTION_SUMMARY_PREFIX)
+  ) {
+    index++;
+  }
+  return index;
+}
+
 /**
  * If a conversation summary is persisted for the current `metadata.sessionId`,
- * prepend it as a system message carrying the COMPACTION_SUMMARY_PREFIX so
+ * insert it as a system message carrying the COMPACTION_SUMMARY_PREFIX —
+ * right after any real leading system message(s), never before them — so
  * `trimConversationMessages` recognises it on the next compaction round and
  * extends rather than duplicates it. Skips silently when no store, no
  * sessionId, no stored summary, or the inbound messages already carry a
- * compaction-summary system message at index 0.
+ * compaction-summary system message in that slot.
  */
 export async function applyStoredConversationSummary(
   context: AgentRunContext,
@@ -364,8 +382,9 @@ export async function applyStoredConversationSummary(
     return context.input;
   }
   const messages = context.input.messages;
-  const firstSystem = messages.find((message) => message.role === "system");
-  if (firstSystem && firstSystem.content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
+  const insertIndex = leadingNonSummarySystemCount(messages);
+  const existing = messages[insertIndex];
+  if (existing?.role === "system" && existing.content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
     return context.input;
   }
   let stored: ConversationSummary | undefined;
@@ -385,16 +404,17 @@ export async function applyStoredConversationSummary(
   };
   return {
     ...context.input,
-    messages: [summaryMessage, ...messages]
+    messages: [...messages.slice(0, insertIndex), summaryMessage, ...messages.slice(insertIndex)]
   };
 }
 
 /**
  * Persists the trimmed compaction summary back to the store keyed by
- * `metadata.sessionId`. Looks at the system message at index 0 of the
- * already-trimmed `request.messages`; only writes when it carries the
- * COMPACTION_SUMMARY_PREFIX. Errors are swallowed so observability writes
- * never block run completion.
+ * `metadata.sessionId`. Finds the compaction-summary system message
+ * anywhere in the already-trimmed `request.messages` (it may sit after a
+ * real leading system prompt, not necessarily at index 0); only writes
+ * when one is found. Errors are swallowed so observability writes never
+ * block run completion.
  */
 export async function persistConversationSummaryFromRequest(
   context: AgentRunContext,
@@ -409,8 +429,10 @@ export async function persistConversationSummaryFromRequest(
   if (!sessionId) {
     return;
   }
-  const head = request.messages[0];
-  if (!head || head.role !== "system" || !head.content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
+  const head = request.messages.find(
+    (message) => message.role === "system" && message.content.startsWith(COMPACTION_SUMMARY_PREFIX)
+  );
+  if (!head) {
     return;
   }
   const userId = metadataString(context.input.metadata, "userId");
