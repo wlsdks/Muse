@@ -8,6 +8,25 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.28] - 2026-07-09
+
+Onboarding nudge + a big test-coverage pass.
+
+### Added
+
+- **First-run points you at real first value.** After setup, the wizard now suggests
+  `muse browsing sync` (seed answers from your Chrome history) and `muse demo` (a cited
+  example) as next steps — a bilingual, opt-in suggestion (never auto-run), and it drops
+  the browsing hint if you already connected it.
+
+### Changed
+
+- **~100 new tests** locking in behavior with no source changes: local tasks/notes
+  providers and the weather tool (round-trips, corrupt-store degrade, write-atomicity,
+  injected-fetch degrade paths that never fabricate), plus the memory user-store Kysely
+  runtime, file-lock exhaustion, and pattern-detector boundaries. Each mutation-checked
+  for teeth.
+
 ## [0.2.27] - 2026-07-09
 
 Two headline additions — bring your own ChatGPT-subscription model via Codex, and
