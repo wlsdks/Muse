@@ -48,6 +48,51 @@ public enum MuseBridge {
         MuseInvocation(executable: bin, arguments: ["chat", "--local", "-c", "--json", query])
     }
 
+    /// One self-generated opener for the idle bubble. `muse companion-line`
+    /// composes it DETERMINISTICALLY from the user's real stores (next event, a
+    /// due reminder/task, today's birthday, an owed follow-up, a recent note) or —
+    /// when nothing grounded is relevant — a varied content-free greeting. Cheap
+    /// (file reads, no model round-trip), so it's fast enough to drift every ~45s
+    /// and, unlike a generic chat prompt, it VARIES and stays grounded.
+    public static func openerInvocation(lang: String, bin: String) -> MuseInvocation {
+        MuseInvocation(executable: bin, arguments: ["companion-line", "--lang", lang])
+    }
+
+    /// One opener line + whether it was grounded in the user's real data.
+    public struct OpenerLine: Equatable, Sendable {
+        public let line: String
+        public let grounded: Bool
+        public init(line: String, grounded: Bool) {
+            self.line = line
+            self.grounded = grounded
+        }
+    }
+
+    private struct OpenerJSON: Decodable { let line: String?; let grounded: Bool? }
+
+    /// Parse `muse companion-line`'s `{ line, grounded }` stdout. Returns nil when
+    /// the output isn't the expected JSON or carries no line — so a CLI hiccup
+    /// leaves the canned placeholder in place rather than showing garbage.
+    public static func parseOpener(_ raw: String) -> OpenerLine? {
+        guard let data = raw.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(OpenerJSON.self, from: data) else {
+            return nil
+        }
+        let line = (decoded.line ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return nil }
+        return OpenerLine(line: line, grounded: decoded.grounded ?? false)
+    }
+
+    /// Run `muse companion-line` and return the parsed opener (nil on failure /
+    /// empty). A non-zero CLI exit throws from `run`, which the caller treats as
+    /// "keep the canned line".
+    public static func opener(
+        lang: String,
+        bin: String = MuseBridge.defaultBin()
+    ) async throws -> OpenerLine? {
+        parseOpener(try run(openerInvocation(lang: lang, bin: bin)))
+    }
+
     private struct ChatJSON: Decodable { let response: String?; let answer: String? }
 
     /// Extract the reply from `muse chat --json` (`response`) — or `ask --json`

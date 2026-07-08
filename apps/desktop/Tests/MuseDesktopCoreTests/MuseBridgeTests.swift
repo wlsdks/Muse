@@ -78,4 +78,29 @@ final class MuseBridgeTests: XCTestCase {
         XCTAssertEqual(env["MUSE_OLLAMA_KEEP_ALIVE"], "-1")
         XCTAssertEqual(env["PATH"], "/usr/bin") // inherits the rest of the environment
     }
+
+    func testOpenerInvocationIsCompanionLineWithLang() {
+        let invocation = MuseBridge.openerInvocation(lang: "ko", bin: "muse")
+        XCTAssertEqual(invocation.executable, "muse")
+        XCTAssertEqual(invocation.arguments, ["companion-line", "--lang", "ko"])
+    }
+
+    func testParseOpenerExtractsLineAndGroundedFlag() {
+        let grounded = MuseBridge.parseOpener(##"{"grounded":true,"line":"  \"Q3 memo\" 마감이 지났어요  "}"##)
+        XCTAssertEqual(grounded?.line, "\"Q3 memo\" 마감이 지났어요")
+        XCTAssertEqual(grounded?.grounded, true)
+
+        let greeting = MuseBridge.parseOpener(##"{"grounded":false,"line":"좋은 아침이에요 ☀️"}"##)
+        XCTAssertEqual(greeting?.line, "좋은 아침이에요 ☀️")
+        XCTAssertEqual(greeting?.grounded, false)
+    }
+
+    func testParseOpenerReturnsNilForEmptyOrNonJSON() {
+        // Empty line → nil so the canned placeholder stays put (never a blank swap).
+        XCTAssertNil(MuseBridge.parseOpener(##"{"grounded":false,"line":"  "}"##))
+        XCTAssertNil(MuseBridge.parseOpener(##"{"grounded":true}"##))
+        XCTAssertNil(MuseBridge.parseOpener("not json at all"))
+        // Missing `grounded` still yields the line, defaulting grounded to false.
+        XCTAssertEqual(MuseBridge.parseOpener(##"{"line":"hi"}"##), MuseBridge.OpenerLine(line: "hi", grounded: false))
+    }
 }

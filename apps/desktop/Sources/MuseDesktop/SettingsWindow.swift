@@ -84,7 +84,7 @@ private struct SettingsView: View {
         self.onOpenFull = onOpenFull
         self.onQuit = onQuit
         let prefs = PrefsStore.load()
-        _character = State(initialValue: prefs.look ?? "goddess")
+        _character = State(initialValue: prefs.look ?? "bird")
         _language = State(initialValue: AppLanguage.fromPersisted(prefs.language))
         _muted = State(initialValue: initialMuted)
         _museURL = State(initialValue: prefs.museURL ?? "")
@@ -119,8 +119,8 @@ private struct SettingsView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            if let g = MuseAssets.goddess {
-                Image(nsImage: g).resizable().scaledToFit().frame(height: 120)
+            if let g = MuseAssets.bird {
+                Image(nsImage: g).resizable().interpolation(.none).scaledToFit().frame(height: 120)
                     .shadow(color: violet.opacity(0.45), radius: 18)
             }
             Text("Muse").font(.system(size: 26, weight: .bold)).foregroundStyle(ink)
@@ -150,7 +150,7 @@ private struct SettingsView: View {
         card(s.sectionAppearance) {
             row(s.rowCharacter) {
                 Picker("", selection: $character) {
-                    Text(s.characterGoddess).tag("goddess")
+                    Text(s.characterBird).tag("bird")
                     Text(s.characterOrb).tag("orb")
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 190)

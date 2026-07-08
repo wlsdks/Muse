@@ -98,11 +98,6 @@ enum VectorMuse {
         // a little laurel/gold sparkle on the band — a nod to the Muse
         oval(95, 24, 10, 10, fill: gold)
 
-        // music note when she's listening or speaking
-        if state == .listening || state == .speaking {
-            drawNote(x: 158, y: 60)
-        }
-
         ctx.restoreGState()
     }
 
@@ -147,13 +142,4 @@ enum VectorMuse {
         ctx.strokePath()
     }
 
-    private static func drawNote(x: CGFloat, y: CGFloat) {
-        oval(x, y + 16, 12, 9, fill: gold)
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        ctx.saveGState()
-        ctx.setLineWidth(3); ctx.setStrokeColor(gold.cgColor)
-        ctx.move(to: CGPoint(x: x + 11, y: y + 20)); ctx.addLine(to: CGPoint(x: x + 11, y: y))
-        ctx.strokePath()
-        ctx.restoreGState()
-    }
 }

@@ -22,11 +22,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$EXE"
 
 # Copy SwiftPM resource bundles (e.g. MuseDesktop_MuseDesktop.bundle carrying the
-# goddess mascot image) into the app so Bundle.module resolves them at runtime.
+# bluebird mascot image) into the app so Bundle.module resolves them at runtime.
 BIN_DIR="$(swift build -c release --show-bin-path)"
 for b in "$BIN_DIR"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$APP/Contents/Resources/"; done
 
-# The goddess app icon (Dock / Finder / ⌘-Tab).
+# The bluebird app icon (Dock / Finder / ⌘-Tab).
 [ -f AppIcon.icns ] || { echo "AppIcon.icns missing — run scripts/make-icon.sh first" >&2; exit 1; }
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
@@ -73,17 +73,35 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Muse listens to your voice so you can ask about your notes hands-free. Audio is transcribed on-device and never leaves your Mac.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Muse turns your spoken question into text on-device. Your speech never leaves your Mac.</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>Muse reads a document only when you explicitly ask it to open or summarize a file in your Documents folder.</string>
+  <key>NSDesktopFolderUsageDescription</key><string>Muse reads a file on your Desktop only when you explicitly ask it to open or summarize that file.</string>
+  <key>NSDownloadsFolderUsageDescription</key><string>Muse reads a file in Downloads only when you explicitly ask it to open or summarize that file.</string>
   <key>NSHumanReadableCopyright</key><string>(c) 2026</string>
 </dict>
 </plist>
 PLIST
 
-# Ad-hoc sign so TCC has a code identity to attribute the grant to (a Developer
-# ID signature is better for a stable grant across rebuilds; ad-hoc is fine for
-# local personal use). Validate the signature — an unsigned bundle still runs
-# but mic/speech (TCC) won't work, so surface that loudly rather than silently.
-if codesign --force --sign - "$APP" >/dev/null 2>&1 && codesign --verify --deep "$APP" >/dev/null 2>&1; then
-  echo "code-signed (ad-hoc) — mic/speech permission can be granted"
+# TCC (mic/speech/Documents…) keys a granted permission to the bundle's code
+# signature. An AD-HOC signature ("-") has NO stable Designated Requirement, so
+# macOS may re-prompt on EVERY rebuild — and, for some folders, on every launch.
+# A STABLE self-signed identity fixes that: its Designated Requirement is
+# constant across rebuilds, so a grant ("Allow") persists. So prefer a local
+# code-signing identity named "Muse Local Signing" (create it once with
+# scripts/make-signing-cert.sh) and fall back to ad-hoc when it's absent.
+SIGN_ID="Muse Local Signing"
+if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$SIGN_ID"; then
+  if codesign --force --options runtime --sign "$SIGN_ID" "$APP" >/dev/null 2>&1 \
+      && codesign --verify --deep "$APP" >/dev/null 2>&1; then
+    echo "code-signed with stable local identity '$SIGN_ID' — TCC grants persist across rebuilds"
+  else
+    echo "WARNING: signing with '$SIGN_ID' failed — falling back to ad-hoc" >&2
+    codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+  fi
+elif codesign --force --sign - "$APP" >/dev/null 2>&1 && codesign --verify --deep "$APP" >/dev/null 2>&1; then
+  echo "code-signed (ad-hoc) — mic/speech permission can be granted."
+  echo "  NOTE: ad-hoc has no stable identity, so macOS may re-prompt for permissions"
+  echo "  on rebuilds. To make grants persist, run scripts/make-signing-cert.sh ONCE"
+  echo "  (creates a local '$SIGN_ID' cert), then rebuild."
 else
   echo "WARNING: codesign failed — the bundle runs, but mic/speech (voice input) won't work until it's signed" >&2
 fi

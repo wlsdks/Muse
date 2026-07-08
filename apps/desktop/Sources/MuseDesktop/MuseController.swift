@@ -53,16 +53,10 @@ final class MuseController: NSObject, NSMenuDelegate {
 
     private func installMenuBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // A clean music note — Muse, the goddess of song — reads crisply at
-        // menu-bar size (a detailed portrait turns to mud that small). Template
-        // image so it adapts to light/dark menu bars.
-        // A cluster of notes (a lyre/harp would be ideal but isn't an SF Symbol)
-        // — bolder + more legible than a single note at menu-bar size.
-        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .bold)
-        let note = NSImage(systemSymbolName: "music.quarternote.3", accessibilityDescription: "Muse")?
-            .withSymbolConfiguration(config)
-        note?.isTemplate = true
-        item.button?.image = note
+        // The canonical bluebird as a monochrome silhouette (template image so it
+        // adapts to light/dark menu bars + vibrancy). Single-sourced from
+        // MascotFrames — the SAME bird as the app icon and web DeskPet.
+        item.button?.image = MenuBarBird.templateImage()
         item.button?.toolTip = "Muse — click for options (⌃⌥Space to show/hide)"
 
         let s = UIStrings.current()
@@ -84,8 +78,8 @@ final class MuseController: NSObject, NSMenuDelegate {
         let characterItem = NSMenuItem(title: s.menuCharacter, action: nil, keyEquivalent: "")
         characterItem.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
         let characterMenu = NSMenu()
-        let names = [("goddess", s.characterGoddess), ("orb", s.characterOrb)]
-        let currentLook = PrefsStore.load().look ?? "goddess"
+        let names = [("bird", s.characterBird), ("orb", s.characterOrb)]
+        let currentLook = PrefsStore.load().look ?? "bird"
         for (name, title) in names {
             let mi = NSMenuItem(title: title, action: #selector(pickCharacter(_:)), keyEquivalent: "")
             mi.representedObject = name

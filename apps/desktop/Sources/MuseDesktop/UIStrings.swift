@@ -33,7 +33,7 @@ struct UIStrings {
     var onboardReady: String { t("로컬 AI 준비 완료 — 시작해요!", "Your local AI is ready — let's go!") }
     var onboardOpenFull: String { t("Muse 시작하기", "Start using Muse") }
     var onboardStart: String { t("나중에", "Later") }
-    var characterGoddess: String { t("여신", "Goddess") }
+    var characterBird: String { t("파랑새", "Bluebird") }
     var characterOrb: String { t("오브", "Orb") }
 
     // Menu-bar status line

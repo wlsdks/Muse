@@ -107,14 +107,17 @@ final class CompanionModel: ObservableObject {
         if recentIdle.count > 4 { recentIdle.removeFirst(recentIdle.count - 4) }
     }
 
-    /// Ask the local model for a short, genuine one-liner — so Muse speaks her own
-    /// thought, not only a fixed phrase. Replaces the canned line if still idle.
+    /// Draw a genuine opener from Muse's GROUNDED stores — the next event, a due
+    /// reminder/task, today's birthday, an owed follow-up, a recent note — phrased
+    /// warmly, or a varied content-free greeting when nothing grounded is relevant.
+    /// So Muse speaks her own (true) thought instead of the same generic phrase.
+    /// The command already rotates + avoids immediate repeats and honours the
+    /// veto / quiet-hours gates; `acceptThought` is a second, local dedup+length
+    /// guard. Replaces the canned line only if still idle.
     private func generateIdleThought() async {
-        let prompt = language == .korean
-            ? "사용자에게 건넬 짧고 따뜻한 한마디를 한 문장으로만 말해줘. 가벼운 인사나 도움 제안이면 좋아. 설명 없이 그 문장만."
-            : "Say one short, warm sentence to your user — a light greeting or gentle offer to help. Just the sentence, nothing else."
-        guard let thought = try? await MuseBridge.ask(query: prompt) else { return }
-        guard let clean = IdleChatter.acceptThought(thought, recent: recentIdle) else { return }
+        let lang = language == .korean ? "ko" : "en"
+        guard let opener = try? await MuseBridge.opener(lang: lang) else { return }
+        guard let clean = IdleChatter.acceptThought(opener.line, recent: recentIdle) else { return }
         if showingIdleLine, bubble == lastIdleText { setIdle(clean) }
     }
 

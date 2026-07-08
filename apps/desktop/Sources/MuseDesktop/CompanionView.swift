@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The modern, glassmorphic companion UI (SwiftUI). Idle = just the orb (gently
@@ -9,16 +10,18 @@ struct CompanionView: View {
     @State private var drift = false
     @FocusState private var inputFocused: Bool
 
-    private let accent = Color(red: 0.62, green: 0.91, blue: 1.0)
     private let violet = Color(red: 0.55, green: 0.45, blue: 0.95)
+    // Brand palette (packages/mascot): indigo #5e6ad2 / bright #828fff.
+    private let brandIndigo = Color(red: 0.369, green: 0.416, blue: 0.824)
+    private let brandIndigoLt = Color(red: 0.510, green: 0.561, blue: 1.0)
 
     var body: some View {
         VStack(spacing: 10) {
             Spacer(minLength: 0)
-            answerCard          // sits directly above the goddess (speech bubble)
             orb
+                .overlay(alignment: .top) { bubbleOverlay }   // FLOATS above the bird; zero layout effect → the bird never moves
             if model.inputVisible { inputBar }
-            Spacer(minLength: 0)
+            Spacer(minLength: 0).frame(maxHeight: 60)          // bias the bird toward the lower half → headroom for the bubble
         }
         .padding(18)
         .frame(width: 360, height: 440)
@@ -39,47 +42,82 @@ struct CompanionView: View {
             .animation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true), value: drift)
     }
 
-    @ViewBuilder private var answerCard: some View {
-        if !model.bubble.isEmpty {
-            VStack(spacing: 0) {
-                card {
-                    // Hugs its text: wraps up to a max width, grows vertically to
-                    // fit — no fixed box. Scrolls only when an answer is very long.
-                    ScrollView {
-                        Text(model.bubble)
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: 280, alignment: .leading)
-                            .textSelection(.enabled)
-                            .lineSpacing(2.5)
-                    }
-                    .frame(maxHeight: 220)
-                    .fixedSize(horizontal: true, vertical: true)
-                }
-                DownTriangle().fill(.ultraThinMaterial).frame(width: 22, height: 11).offset(y: -1)
+    /// The speech bubble (or the thinking indicator) FLOATS above the bird as an
+    /// overlay, so it has zero effect on the bird's layout — the character never
+    /// moves down when a bubble shows/hides. The `alignmentGuide` lifts the whole
+    /// overlay up so its BOTTOM sits a small gap above the bird's top, centred.
+    @ViewBuilder private var bubbleOverlay: some View {
+        Group {
+            if !model.bubble.isEmpty {
+                bubbleCard
+            } else if model.orbState == .thinking {
+                card { HStack { TypingIndicator(color: brandIndigoLt); Spacer() } }
             }
-            .frame(maxWidth: .infinity)            // center the content-sized bubble
-            .contentShape(Rectangle())
-            .onTapGesture { model.clickOrb() }      // tap Muse's message to reply
-        } else if model.orbState == .thinking {
-            card { HStack { TypingIndicator(color: violet); Spacer() } }
         }
+        .alignmentGuide(.top) { d in d.height + 12 }   // float fully above the bird, 12px gap
     }
 
-    /// The shared frosted-glass card style.
+    private var bubbleCard: some View {
+        card {
+            // Hugs its text: wraps up to a max width, grows vertically to fit —
+            // no fixed box. Scrolls only when an answer is very long.
+            ScrollView {
+                Text(model.bubble)
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 280, alignment: .leading)
+                    .textSelection(.enabled)
+                    .lineSpacing(3)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: 150)
+            .fixedSize(horizontal: true, vertical: true)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { model.clickOrb() }             // tap Muse's message to reply
+    }
+
+    /// The shared bubble style — a self-contained crafted "chip" that reads as
+    /// premium on ANY background, DARK included (it does not rely on colourful
+    /// content behind it to refract). A lifted indigo-tinted vertical gradient
+    /// fill (never flat-black) carried over a whisper of native Liquid Glass, an
+    /// elegant double rim (bright top light-catch + faint full-perimeter
+    /// hairline), a faint indigo inner glow, and a triple floating shadow (indigo
+    /// bloom + wide soft halo pooling below + tight black contact). Under Reduce
+    /// Transparency the glass drops and the same solid gradient card carries the
+    /// look, so the fallback is visually indistinguishable.
     @ViewBuilder private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
         content()
-            .padding(16)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .modifier(BubbleMaterial(shape: shape, reduce: reduce, tint: brandIndigo))
+            // Top-third luminous sheen — light entering the surface.
+            .overlay {
+                if !reduce {
+                    shape
+                        .fill(LinearGradient(colors: [.white.opacity(0.10), .clear], startPoint: .top, endPoint: .center))
+                        .blendMode(.plusLighter)
+                        .allowsHitTesting(false)
+                }
+            }
+            // Two rims: a faint full-perimeter hairline keeps the squircle crisp
+            // on near-black; a brighter top-edge one is the light catching the rim.
+            .overlay(shape.strokeBorder(.white.opacity(0.17), lineWidth: 0.6))
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(colors: [violet.opacity(0.55), accent.opacity(0.45)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 1
-                    )
+                shape.strokeBorder(
+                    LinearGradient(colors: [.white.opacity(reduce ? 0.30 : 0.55), .clear], startPoint: .top, endPoint: .center),
+                    lineWidth: 1
+                )
             )
-            .shadow(color: violet.opacity(0.22), radius: 18, x: 0, y: 8)
+            // Triple shadow: an on-brand indigo bloom + a wider soft halo pooling
+            // below for float + a tight black contact shadow — this is what gives
+            // the chip lift on a dark desktop where glass has nothing to refract.
+            .shadow(color: brandIndigo.opacity(reduce ? 0 : 0.32), radius: 22, x: 0, y: 5)
+            .shadow(color: brandIndigoLt.opacity(reduce ? 0 : 0.16), radius: 40, x: 0, y: 8)
+            .shadow(color: .black.opacity(0.42), radius: 12, x: 0, y: 7)
             .transition(.move(edge: .top).combined(with: .opacity))
     }
 
@@ -145,70 +183,76 @@ private struct TypingIndicator: View {
     }
 }
 
-/// Musical notes drifting up around the orb — a clear "I'm listening" signal.
-private struct ListeningNotes: View {
-    let accent: Color
-    @State private var animate = false
-    var body: some View {
-        ZStack {
-            ForEach(0..<3, id: \.self) { i in
-                Image(systemName: "music.note")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(accent)
-                    .offset(x: [-20, 4, 24][i], y: animate ? -52 : -6)
-                    .opacity(animate ? 0 : 0.95)
-                    .animation(.easeOut(duration: 1.7).repeatForever(autoreverses: false).delay(Double(i) * 0.55), value: animate)
-            }
-        }
-        .onAppear { animate = true }
-    }
-}
-
-/// Mini musical notes drifting freely around the avatar — always on, since Muse
-/// is the goddess of music. Each note bobs along its own slow looping path.
-private struct AmbientNotes: View {
+/// The bubble's self-contained fill — a lifted indigo-tinted vertical gradient
+/// (never flat-black) so the chip reads as a raised object even against
+/// near-black, carried over a whisper of translucency: native SwiftUI Liquid
+/// Glass on macOS 26+, an `NSVisualEffectView` behind-window blur on macOS
+/// 14–25, and nothing (just the gradient) under Reduce Transparency. A faint
+/// indigo radial glow near the top adds brand warmth. All clipped to the SAME
+/// continuous shape so the rims, sheen and shadow layered on top read
+/// identically. The gradient/rim/shadow — NOT the glass — carry the look, so it
+/// stays premium on a dark desktop where the glass has nothing to refract.
+private struct BubbleMaterial: ViewModifier {
+    let shape: RoundedRectangle
+    let reduce: Bool
     let tint: Color
-    @State private var float = false
 
-    private struct Note {
-        let glyph: String, x: CGFloat, y: CGFloat, dx: CGFloat, dy: CGFloat
-        let size: CGFloat, delay: Double, dur: Double, maxOpacity: Double
-    }
-    private let notes: [Note] = [
-        .init(glyph: "\u{266A}", x: -88, y: -16, dx: -10, dy: -28, size: 15, delay: 0.0, dur: 4.4, maxOpacity: 0.55),
-        .init(glyph: "\u{266B}", x: 82, y: -42, dx: 14, dy: -22, size: 18, delay: 0.8, dur: 5.2, maxOpacity: 0.60),
-        .init(glyph: "\u{2669}", x: -66, y: 48, dx: -12, dy: 22, size: 13, delay: 1.7, dur: 4.8, maxOpacity: 0.45),
-        .init(glyph: "\u{266C}", x: 94, y: 26, dx: 12, dy: 24, size: 16, delay: 0.4, dur: 5.6, maxOpacity: 0.50),
-        .init(glyph: "\u{266A}", x: 22, y: -80, dx: 8, dy: -18, size: 14, delay: 2.3, dur: 4.2, maxOpacity: 0.50),
-        .init(glyph: "\u{266B}", x: -28, y: 76, dx: -8, dy: 18, size: 15, delay: 1.2, dur: 5.0, maxOpacity: 0.45)
-    ]
+    // Lifted indigo-tinted top → deeper bottom.
+    private let fillTop = Color(red: 0.137, green: 0.145, blue: 0.212)
+    private let fillBot = Color(red: 0.082, green: 0.086, blue: 0.129)
 
-    var body: some View {
-        ZStack {
-            ForEach(0..<notes.count, id: \.self) { i in
-                let n = notes[i]
-                Text(n.glyph)
-                    .font(.system(size: n.size, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .shadow(color: tint.opacity(0.5), radius: 4)
-                    .offset(x: float ? n.x + n.dx : n.x, y: float ? n.y + n.dy : n.y)
-                    .rotationEffect(.degrees(float ? 10 : -10))
-                    .opacity(float ? n.maxOpacity : n.maxOpacity * 0.25)
-                    .animation(.easeInOut(duration: n.dur).repeatForever(autoreverses: true).delay(n.delay), value: float)
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if reduce {
+                    shape.fill(LinearGradient(colors: [fillTop, fillBot], startPoint: .top, endPoint: .bottom))
+                } else {
+                    ZStack {
+                        glassBase
+                        shape.fill(LinearGradient(colors: [fillTop.opacity(0.92), fillBot.opacity(0.95)], startPoint: .top, endPoint: .bottom))
+                        shape.fill(
+                            RadialGradient(colors: [tint.opacity(0.26), .clear], center: .top, startRadius: 2, endRadius: 150)
+                        )
+                        .blendMode(.plusLighter)
+                    }
+                }
             }
+            .clipShape(shape)
+    }
+
+    @ViewBuilder private var glassBase: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            LiquidGlass(cornerRadius: 20)
         }
-        .onAppear { float = true }
     }
 }
 
-/// A downward triangle — the tail of Muse's speech bubble.
-private struct DownTriangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        p.closeSubpath()
-        return p
+/// Apple "Liquid Glass": a real `NSVisualEffectView` behind the bubble content.
+/// `.behindWindow` blending samples the desktop behind the transparent companion
+/// window (the window is borderless + `.clear`), giving true translucent depth
+/// rather than a flat fill. Corners are masked to the continuous (squircle) curve;
+/// the hairline border + drop shadow are applied by the SwiftUI card OUTSIDE this
+/// clip. Under Reduce Transparency `NSVisualEffectView` becomes opaque, and the
+/// card additionally swaps to a solid dark panel — so the fallback is guaranteed.
+private struct LiquidGlass: NSViewRepresentable {
+    var cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.isEmphasized = true
+        view.wantsLayer = true
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.cornerCurve = .continuous
+        view.layer?.masksToBounds = true
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.layer?.cornerRadius = cornerRadius
     }
 }

@@ -17,7 +17,9 @@ final class OnboardingWindowController {
     func show() {
         if window == nil { build() }
         NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        guard let win = window else { return }
+        win.makeKeyAndOrderFront(nil)
+        Self.centerOnActiveScreen(win)
     }
 
     private func build() {
@@ -26,15 +28,27 @@ final class OnboardingWindowController {
             onFinish: { [weak self] in self?.finish() }
         )
         let host = NSHostingController(rootView: view)
+        // Size the window to the SwiftUI content's ideal size (no empty void); the
+        // content declares a fixed width + natural height, so the window wraps it.
+        host.sizingOptions = .preferredContentSize
         let win = NSWindow(contentViewController: host)
         win.title = "Muse"
         win.styleMask = [.titled, .closable, .fullSizeContentView]
         win.titlebarAppearsTransparent = true
         win.isReleasedWhenClosed = false
         win.appearance = NSAppearance(named: .darkAqua)
-        win.setContentSize(NSSize(width: 480, height: 600))
-        win.center()
         window = win
+    }
+
+    /// Center on the screen the user is actually looking at (the one under the
+    /// cursor), falling back to the main screen — not always the menu-bar screen
+    /// that `NSWindow.center()` assumes on a multi-display setup.
+    private static func centerOnActiveScreen(_ win: NSWindow) {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { win.center(); return }
+        let size = win.frame.size
+        win.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2))
     }
 
     private func finish() {
@@ -57,9 +71,9 @@ private struct OnboardingView: View {
     private let dim = Color.white.opacity(0.62)
 
     var body: some View {
-        VStack(spacing: 22) {
-            if let g = MuseAssets.goddess {
-                Image(nsImage: g).resizable().scaledToFit().frame(height: 150)
+        VStack(spacing: 18) {
+            if let g = MuseAssets.bird {
+                Image(nsImage: g).resizable().interpolation(.none).scaledToFit().frame(height: 120)
                     .shadow(color: violet.opacity(0.45), radius: 18)
             }
             Text(s.onboardWelcome).font(.system(size: 24, weight: .bold)).foregroundStyle(ink)
@@ -67,8 +81,6 @@ private struct OnboardingView: View {
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
 
             statusCard
-
-            Spacer(minLength: 0)
 
             Button(action: onOpenFull) {
                 Text(s.onboardOpenFull).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
@@ -80,7 +92,7 @@ private struct OnboardingView: View {
                 .buttonStyle(.bordered).controlSize(.large)
         }
         .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: 460)
         .background(LinearGradient(colors: [Color(red: 0.10, green: 0.09, blue: 0.16),
                                             Color(red: 0.05, green: 0.04, blue: 0.09)],
                                    startPoint: .top, endPoint: .bottom).ignoresSafeArea())

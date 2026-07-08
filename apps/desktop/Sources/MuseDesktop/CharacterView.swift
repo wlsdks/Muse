@@ -1,43 +1,25 @@
 import AppKit
 import MuseDesktopCore
 
-/// The on-screen avatar. The default look is the glowing **voice orb** (the
-/// modern AI-assistant visual); a clean vector mascot and the pixel sprites
-/// (aria / celestial) are selectable alternates. All are pure-code original art.
-/// It breathes/pulses, blinks, mouths the words / ripples while speaking, and
-/// shows activity when listening.
+/// The on-screen avatar. The default look is the **bluebird** — Muse's mascot,
+/// rendered LIVE (Core Graphics) from the canonical `@muse/mascot` pose matrices
+/// (`MascotFrames`, codegen'd — the same bird the CLI banner, README SVG, and web
+/// DeskPet draw). It runs a gentle "alive" idle loop (slow bob, blink, occasional
+/// tilt/peck/preen/flap) and swaps to the matching pose while listening / thinking
+/// / speaking. The glowing voice orb, a clean vector mascot, and the pixel sprites
+/// (aria / celestial) are selectable alternates. All are original art.
 final class CharacterView: NSView {
     enum State { case idle, listening, thinking, speaking }
-    enum Look { case goddess, orb, vector, pixel, harp }
-
-    /// Pick the frame that matches Muse's current behaviour. Every non-neutral
-    /// frame is optional and falls back to the neutral portrait, so blink / wink
-    /// / talk / emotion behaviours appear as those PNGs are added to Resources.
-    private func currentGoddessFrame() -> NSImage? {
-        let neutral = MuseAssets.frame()
-        switch state {
-        case .speaking:
-            return (mouthOpen ? MuseAssets.frame("talk") : nil) ?? neutral   // lip-sync
-        case .listening:
-            return MuseAssets.frame("happy") ?? neutral
-        case .thinking:
-            return MuseAssets.frame("think") ?? neutral
-        case .idle:
-            if tick % 250 < 5, let wink = MuseAssets.frame("wink") { return wink }   // playful wink ~every 10s
-            if blinking, let blink = MuseAssets.frame("blink") { return blink }
-            return neutral
-        }
-    }
+    enum Look { case bird, orb, vector, pixel, harp }
 
     var state: State = .idle { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
     var sprite: Sprite = SpriteLibrary.default {
         didSet { rebuildColorCache(); tick = 0; blinking = false; mouthOpen = false; needsDisplay = true }
     }
-    private var look: Look = .goddess
+    private var look: Look = .bird
 
-    /// The goddess mascot is the default look; explicit alternates stay
-    /// selectable for dev. (The harp/lyre look was retired.)
+    /// The bluebird is the default look; explicit alternates stay selectable.
     func setCharacterNamed(_ name: String?) {
         switch (name ?? "").lowercased() {
         case "orb":
@@ -47,7 +29,7 @@ final class CharacterView: NSView {
         case "pixel":
             look = .pixel
         default:
-            look = .goddess
+            look = .bird
         }
         tick = 0; needsDisplay = true
     }
@@ -58,9 +40,18 @@ final class CharacterView: NSView {
     private var timer: Timer?
     private var colorCache: [Character: NSColor] = [:]
 
+    // The bluebird's live idle loop (canonical MascotFrames rendered via CG).
+    private var birdColorCache: [Character: NSColor] = [:]
+    private var birdFrame = "stand"
+    private var birdHold = 0        // frame-ticks left in the current variation
+    private var birdStandFor = 14   // frame-ticks to stand before the next one
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         rebuildColorCache()
+        for (ch, hex) in MascotFrames.palette {
+            if let color = HexColor.parse(hex) { birdColorCache[ch] = color }
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unused") }
 
@@ -89,7 +80,63 @@ final class CharacterView: NSView {
         tick += 1
         blinking = (tick % 75 < 4)                                    // a ~160ms blink every ~3s
         mouthOpen = (state == .speaking) && ((tick / 6) % 2 == 0)     // flap while speaking
+        // The bird's pixel poses hard-cut on a slower ~160ms frame clock.
+        if look == .bird, tick % 4 == 0 { advanceBird() }
         needsDisplay = true
+    }
+
+    // (frame, holdTicks, weight) — blink is by far the most common (the ~3–5s
+    // eye-blink); the rest are rarer flourishes. Mirrors the web DeskPet's set.
+    private static let birdVariations: [(frame: String, hold: Int, weight: Double)] = [
+        ("blink", 2, 5), ("tilt", 4, 4), ("peck", 4, 4), ("preen", 6, 2),
+        ("tail", 3, 2), ("flapA", 4, 1), ("stretch", 5, 1), ("ruffleA", 3, 1), ("sing", 12, 0.5)
+    ]
+
+    private static func pickBirdVariation() -> (frame: String, hold: Int) {
+        let total = birdVariations.reduce(0.0) { $0 + $1.weight }
+        var target = Double.random(in: 0..<total)
+        for v in birdVariations {
+            if target < v.weight { return (v.frame, v.hold) }
+            target -= v.weight
+        }
+        return (birdVariations[0].frame, birdVariations[0].hold)
+    }
+
+    /// Gentle "alive" idle loop for the bluebird: mostly stand, a blink every few
+    /// seconds, and an occasional idle variation picked with sensible rarity —
+    /// hard-cut frame swaps for the pixel-art feel. When Muse is actually
+    /// listening / thinking / speaking we hold the matching canonical pose
+    /// (attend / tilt / open-beak) instead of the idle loop. No-op under
+    /// reduced-motion (the draw path pins it to a static stand).
+    private func advanceBird() {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return }
+
+        switch state {
+        case .listening: birdFrame = "attend"; birdHold = 0; birdStandFor = 6; return
+        case .thinking:  birdFrame = "tilt";   birdHold = 0; birdStandFor = 6; return
+        case .speaking:  birdFrame = (birdFrame == "sing") ? "stand" : "sing"  // beak flap
+                         birdHold = 0; birdStandFor = 6; return
+        case .idle: break
+        }
+
+        if birdHold > 0 {
+            birdHold -= 1
+            switch birdFrame {                        // flutter: alternate the paired frames
+            case "flapA": birdFrame = "flapB"
+            case "flapB": birdFrame = "flapA"
+            case "ruffleA": birdFrame = "ruffleB"
+            case "ruffleB": birdFrame = "ruffleA"
+            default: break
+            }
+            if birdHold == 0 { birdFrame = "stand" }
+            return
+        }
+        if birdStandFor > 0 { birdStandFor -= 1; return }
+
+        let pick = Self.pickBirdVariation()
+        birdFrame = pick.frame
+        birdHold = pick.hold
+        birdStandFor = Int.random(in: 10...26)        // ~1.6s–4.2s standing between variations
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -97,12 +144,8 @@ final class CharacterView: NSView {
         let phase = CGFloat(tick) * 0.08
 
         switch look {
-        case .goddess:
-            if let img = currentGoddessFrame() {
-                drawGoddess(img, in: bounds)
-            } else {
-                VoiceOrb.draw(in: bounds, state: state, phase: phase) // fallback if no goddess art
-            }
+        case .bird:
+            drawBirdPixels(in: bounds, ctx: ctx)
             return
         case .orb:
             VoiceOrb.draw(in: bounds, state: state, phase: phase)
@@ -145,23 +188,36 @@ final class CharacterView: NSView {
 
     }
 
-    /// Draw the goddess alive: a smooth floating bob, a gentle side-to-side
-    /// sway, and a subtle breathing scale — more animated while she's listening /
-    /// speaking. The transparent PNG composites over the desktop.
-    private func drawGoddess(_ img: NSImage, in rect: NSRect) {
-        let t = Double(tick) * 0.04
-        let lively = (state == .listening || state == .speaking) ? 1.7 : 1.0
-        let bob = CGFloat(sin(t * 1.1)) * 5 * CGFloat(lively)
-        let sway = CGFloat(sin(t * 0.7)) * 3
-        let breathe = 1 + CGFloat(sin(t * 1.6)) * 0.012
+    /// Draw the bluebird alive: the current canonical pose rendered as crisp
+    /// nearest-neighbour pixels (filled cells, no image interpolation) with a
+    /// slow ~1–2px vertical bob. Under reduced-motion it's a static stand pose,
+    /// no bob. `birdFrame` is driven by `advanceBird()`.
+    private func drawBirdPixels(in rect: NSRect, ctx: CGContext) {
+        ctx.setShouldAntialias(false)
+        let cols = MascotFrames.width
+        let rowsN = MascotFrames.height
+        guard cols > 0, rowsN > 0 else { return }
 
-        let aspect = img.size.height > 0 ? img.size.width / img.size.height : 1
-        var w = rect.width * breathe
-        var h = w / aspect
-        if h > rect.height * breathe { h = rect.height * breathe; w = h * aspect }
-        let x = (rect.width - w) / 2 + sway
-        let y = (rect.height - h) / 2 - bob
-        img.draw(in: NSRect(x: x, y: y, width: w, height: h), from: .zero, operation: .sourceOver, fraction: 1)
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let name = reduce ? "stand" : birdFrame
+        let rows = MascotFrames.frames[name] ?? MascotFrames.frames["stand"] ?? []
+
+        let cell = min(rect.width / CGFloat(cols), rect.height / CGFloat(rowsN))
+        let artW = cell * CGFloat(cols)
+        let artH = cell * CGFloat(rowsN)
+        let originX = (rect.width - artW) / 2
+        let bob = reduce ? 0 : CGFloat(sin(Double(tick) * 0.045)) * cell * 0.16   // slow ~5s bob
+        let originY = (rect.height - artH) / 2 + bob
+
+        for (r, row) in rows.enumerated() {
+            // row 0 is the TOP of the sprite; in non-flipped coords that is high y.
+            let y = originY + CGFloat(rowsN - 1 - r) * cell
+            for (c, ch) in row.enumerated() {
+                guard let color = birdColorCache[ch] else { continue }
+                color.setFill()
+                ctx.fill(CGRect(x: originX + CGFloat(c) * cell, y: y, width: cell, height: cell))
+            }
+        }
     }
 
     // Tap → onClick (open input); drag → move the window. (SwiftUI's hosting view
