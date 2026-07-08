@@ -16,7 +16,8 @@
  * the chat REPL itself stays in program.ts.
  */
 
-import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -168,6 +169,33 @@ export function chatTurnPersistText(body: unknown): string | undefined {
   if (typeof rec["responseForHistory"] === "string") return rec["responseForHistory"];
   if (typeof rec["response"] === "string") return rec["response"];
   return undefined;
+}
+
+/**
+ * Guard against an oversized `process.argv` BEFORE the heavy dynamic
+ * `import("./program.js")` runs. A single ~950k-char argv sits near V8's
+ * synchronous stack ceiling and tips the ESM module-graph linking over
+ * program.js's ~100-module graph into a raw `RangeError: Maximum call
+ * stack size exceeded`. The threshold (800k) is safely below the observed
+ * ~900k cliff, and this check itself pulls no heavy graph so it can't be
+ * the thing that overflows. Returns the actionable one-line message when
+ * over limit, or `null` when the argv is within bounds. Pure + exported
+ * for unit tests.
+ */
+export const ARGV_MAX_CHARS = 800_000;
+
+export function assertArgvWithinLimit(argv: readonly string[], maxChars = ARGV_MAX_CHARS): string | null {
+  let total = 0;
+  for (const arg of argv) {
+    total += typeof arg === "string" ? arg.length : 0;
+  }
+  if (total <= maxChars) {
+    return null;
+  }
+  return (
+    `muse: input too large (${total.toString()} chars) — pass large content via stdin ` +
+    "(e.g. `muse ask \"$(cat file)\"` → `cat file | muse ask`) instead of a command-line argument."
+  );
 }
 
 export function defaultConfigPath(home?: string): string {
@@ -422,6 +450,13 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
       return {};
     }
 
+    if (isNodeError(error) && (error.code === "EISDIR" || error.code === "EACCES" || error.code === "EPERM")) {
+      throw new Error(
+        `config at ${file} is not a readable file (${error.code}) — remove or replace it (a fresh one is written on next \`muse setup\`)`,
+        { cause: error }
+      );
+    }
+
     throw error;
   }
 }
@@ -429,8 +464,17 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
 export async function writeConfigStore(io: ProgramIO, config: MuseCliConfig): Promise<void> {
   const filePath = configPath(io);
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-  await chmod(filePath, 0o600);
+  // Atomic tmp+rename (same pattern as credential-store / jwt-rotation-store):
+  // a crash mid-write must never truncate the user's config.json to 0 bytes.
+  const tmp = `${filePath}.tmp-${process.pid.toString()}-${randomBytes(8).toString("hex")}`;
+  try {
+    await writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+    await rename(tmp, filePath);
+  } catch (error) {
+    await rm(tmp, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  await chmod(filePath, 0o600).catch(() => undefined);
 }
 
 const SUPPORTED_CONFIG_KEYS = ["apiUrl", "defaultModel"] as const;

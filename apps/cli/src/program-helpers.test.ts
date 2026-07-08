@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiRequest, buildAskRunLog, chatTurnPersistText, defaultConfigPath, firstNonEmpty, readResponseGrounded, readResponseSuccess, setConfigValue, summarizeRetrieval, unsetConfigValue } from "./program-helpers.js";
+import { apiRequest, ARGV_MAX_CHARS, assertArgvWithinLimit, buildAskRunLog, chatTurnPersistText, defaultConfigPath, firstNonEmpty, readConfigStore, readResponseGrounded, readResponseSuccess, setConfigValue, summarizeRetrieval, unsetConfigValue, writeConfigStore } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 
 describe("summarizeRetrieval + buildAskRunLog retrieval — 'why this answer' trace (P1.2)", () => {
@@ -334,6 +334,102 @@ describe("apiRequest — connection-refused hint (admin commands with no local m
       throw new Error("expected apiRequest to reject");
     } catch (error) {
       expect((error as Error).message).not.toMatch(/most commands support/iu);
+    }
+  });
+});
+
+describe("assertArgvWithinLimit — oversized-argv guard (Bug 1: a ~950k arg overflows Node's ESM entry into a raw 'Maximum call stack')", () => {
+  it("returns the clean, actionable message (no stack trace) when the total argv length exceeds the limit", () => {
+    const big = "a".repeat(ARGV_MAX_CHARS + 1);
+    const msg = assertArgvWithinLimit(["node", "muse", "note", big]);
+    expect(msg).not.toBeNull();
+    expect(msg).toMatch(/^muse: input too large \(\d+ chars\)/u);
+    expect(msg).toMatch(/pass large content via stdin/u);
+    // The whole point: the user must NEVER see the raw V8 overflow.
+    expect(msg).not.toMatch(/Maximum call stack/iu);
+  });
+
+  it("reports the accurate TOTAL char count across all argv entries, not just the trigger arg", () => {
+    const half = "a".repeat(ARGV_MAX_CHARS);
+    const msg = assertArgvWithinLimit([half, half]); // 2 * ARGV_MAX_CHARS exactly
+    expect(msg).toContain(`(${(ARGV_MAX_CHARS * 2).toString()} chars)`);
+  });
+
+  it("returns null (proceed) for an ordinary argv well under the limit", () => {
+    expect(assertArgvWithinLimit(["node", "muse", "note", "buy milk"])).toBeNull();
+    expect(assertArgvWithinLimit([])).toBeNull();
+  });
+
+  it("is boundary-exact: == limit passes, limit+1 is rejected", () => {
+    expect(assertArgvWithinLimit(["x".repeat(ARGV_MAX_CHARS)])).toBeNull();
+    expect(assertArgvWithinLimit(["x".repeat(ARGV_MAX_CHARS + 1)])).not.toBeNull();
+  });
+
+  it("honours a custom maxChars (the injected threshold)", () => {
+    expect(assertArgvWithinLimit(["abc"], 2)).toMatch(/input too large \(3 chars\)/u);
+    expect(assertArgvWithinLimit(["ab"], 2)).toBeNull();
+  });
+});
+
+describe("readConfigStore / writeConfigStore — atomic write + unreadable-path mapping (Bugs 2 & 3)", () => {
+  function ioFor(configDir: string): ProgramIO {
+    return { configDir, stderr: () => undefined, stdout: () => undefined } as unknown as ProgramIO;
+  }
+
+  it("writeConfigStore persists valid JSON at mode 0o600 that round-trips, leaving no .tmp litter (atomic tmp+rename)", async () => {
+    const { mkdtempSync, rmSync, readdirSync, statSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "muse-cfgwrite-"));
+    try {
+      const io = ioFor(dir);
+      await writeConfigStore(io, { apiUrl: "http://127.0.0.1:9999", defaultModel: "ollama/gemma4:12b" });
+      const roundTripped = await readConfigStore(io);
+      expect(roundTripped).toEqual({ apiUrl: "http://127.0.0.1:9999", defaultModel: "ollama/gemma4:12b" });
+
+      expect(readdirSync(dir).some((n) => n.includes(".tmp-"))).toBe(false); // temp file renamed away, not left behind
+      const mode = statSync(join(dir, "config.json")).mode & 0o777;
+      expect(mode).toBe(0o600);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("writeConfigStore cleans up its temp file when the rename target is unwritable (no partial litter left behind)", async () => {
+    const { mkdtempSync, rmSync, mkdirSync, readdirSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "muse-cfgfail-"));
+    try {
+      // Make the destination a DIRECTORY so `rename(tmp, config.json)` fails: the write
+      // must throw AND remove the tmp file it created (no partial-state litter).
+      mkdirSync(join(dir, "config.json"), { recursive: true });
+      const io = ioFor(dir);
+      await expect(writeConfigStore(io, { apiUrl: "http://x" })).rejects.toThrow();
+      expect(readdirSync(dir).some((n) => n.includes(".tmp-"))).toBe(false); // temp cleaned up on failure
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("readConfigStore maps EISDIR (config path is a directory) to a clean message naming the path — not a raw errno", async () => {
+    const { mkdtempSync, rmSync, mkdirSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "muse-cfgdir-"));
+    try {
+      mkdirSync(join(dir, "config.json"), { recursive: true });
+      const io = ioFor(dir);
+      await expect(readConfigStore(io)).rejects.toThrow(/is not a readable file \(EISDIR\)/u);
+      await expect(readConfigStore(io)).rejects.toThrow(/config\.json/u); // names the offending path
+      // Never leaks the raw Node errno phrasing.
+      await expect(readConfigStore(io)).rejects.not.toThrow(/illegal operation on a directory/u);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("readConfigStore still treats a missing file as an empty config (ENOENT unchanged)", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "muse-cfgnone-"));
+    try {
+      expect(await readConfigStore(ioFor(dir))).toEqual({});
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
     }
   });
 });
