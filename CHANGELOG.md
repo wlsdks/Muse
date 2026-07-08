@@ -8,6 +8,35 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-07-08
+
+A second, deeper pre-release CLI audit (four independent expert passes — no
+blockers found) turned up a handful of real rough edges in the setup/onboarding
+posture, help output, branding, and input robustness. This fixes them.
+
+### Fixed
+
+- **`muse setup` no longer tells a local-first user their model is "not
+  configured".** On a fresh box it now credits the resolved local default
+  (`ollama/gemma4:12b`) exactly like `muse doctor` — the two surfaces finally
+  agree — and the next-step nudge is a soft "customize with `muse setup local`",
+  not a push toward cloud providers you don't need.
+- **`muse setup local` credits the model you already have.** It recommends the
+  pinned local default instead of a 17 GB power-tier download, and persists your
+  choice to config so the setup checklist actually clears.
+- **The "New here?" banner stays on the top-level help.** It was leaking onto
+  every one of 300+ subcommand `--help` outputs (and into piped stdout).
+- **Off-brand "JARVIS" wording removed** from the `remember`, `brief`, and
+  `status` help text and the briefing prompt — Muse is Muse.
+- **A giant command-line argument no longer crashes with a raw stack trace.**
+  Pasting ~1 MB of text as an argument (e.g. `muse note "$(pbpaste)"`) now prints
+  a clean "input too large — pipe via stdin instead" message and exits 1.
+- **Config writes are atomic.** `config.json` is written via a temp file + rename,
+  so a crash mid-write can't truncate your settings.
+- **Clean message when a store path is unreadable.** A config file that's actually
+  a directory (or lacks read permission) now explains the problem instead of
+  leaking a raw `EISDIR`/`EACCES` errno.
+
 ## [0.2.24] - 2026-07-08
 
 A CLI-quality follow-up to 0.2.23: an expert audit turned up ten rough edges in
