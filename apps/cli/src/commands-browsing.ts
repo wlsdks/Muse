@@ -49,6 +49,41 @@ export function formatBrowsingVisitLines(visit: {
 }
 
 /**
+ * One matched visit reshaped as a citation, in the SAME field shape `muse
+ * ask --json`'s `grounded.noteChunks` uses (`score` alongside the source
+ * identity) — parity across surfaces so a script consuming either JSON
+ * output can treat a "grounded source" uniformly. `score` is always `1`:
+ * unlike ask's cosine-ranked notes, a browsing-search hit is a literal
+ * substring match against the user's own local archive, not an LLM claim
+ * that could be partially supported — every citation returned here is
+ * verifiably real, hence full confidence.
+ */
+export interface BrowsingCitation {
+  readonly url: string;
+  readonly title: string;
+  readonly visitedAt: string;
+  readonly score: 1;
+}
+
+/**
+ * `ask --json`'s `groundedVerdict` is the rubric's judgment on a GENERATED
+ * answer ("grounded" | "ungrounded" | "abstain" | ...). `browsing search`
+ * never generates an answer — it returns literal archive matches — so only
+ * two of those labels apply honestly: `"grounded"` when at least one real
+ * citation backs the query, `"abstain"` when the local archive has nothing
+ * (there is no claim to fabricate, so "ungrounded" cannot occur here).
+ */
+export function browsingGroundedVerdict(hitCount: number): "grounded" | "abstain" {
+  return hitCount > 0 ? "grounded" : "abstain";
+}
+
+export function toBrowsingCitations(
+  hits: readonly { readonly url: string; readonly title: string; readonly visitedAt: string }[]
+): readonly BrowsingCitation[] {
+  return hits.map((h) => ({ url: h.url, title: h.title, visitedAt: h.visitedAt, score: 1 }));
+}
+
+/**
  * Strict `--limit` parse: absent → fallback; a non-numeric / unit-slip /
  * non-positive value rejects rather than silently defaulting; a genuine
  * number truncates + clamps to `cap`.
@@ -107,7 +142,16 @@ export function registerBrowsingCommand(program: Command, io: ProgramIO): void {
       const store = await readBrowsingStore(defaultBrowsingFile());
       const hits = searchBrowsingVisits(store.visits, query, limit);
       if (options.json) {
-        io.stdout(`${JSON.stringify({ query, total: hits.length, visits: hits }, null, 2)}\n`);
+        // `visits` stays for existing consumers (additive, not a breaking
+        // change); `groundedVerdict` + `grounded.citations` are new and match
+        // `muse ask --json`'s grounded-block contract (see BrowsingCitation).
+        io.stdout(`${JSON.stringify({
+          query,
+          total: hits.length,
+          visits: hits,
+          groundedVerdict: browsingGroundedVerdict(hits.length),
+          grounded: { citations: toBrowsingCitations(hits) }
+        }, null, 2)}\n`);
         return;
       }
       if (hits.length === 0) {
