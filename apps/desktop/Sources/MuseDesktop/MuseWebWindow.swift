@@ -18,6 +18,7 @@ final class MuseWebWindowController: NSObject, WKNavigationDelegate, NSWindowDel
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        if let window { WindowPlacer.place(window) }
 
         // Manual override (advanced): a URL set in Settings loads directly.
         let override = PrefsStore.load().museURL?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -45,7 +46,6 @@ final class MuseWebWindowController: NSObject, WKNavigationDelegate, NSWindowDel
         win.titleVisibility = .hidden
         win.isReleasedWhenClosed = false
         win.minSize = NSSize(width: 720, height: 520)
-        win.center()
         win.delegate = self
 
         let web = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())

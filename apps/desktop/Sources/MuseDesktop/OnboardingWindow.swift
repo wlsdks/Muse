@@ -11,7 +11,11 @@ final class OnboardingWindowController {
     private var resizeObserver: NSObjectProtocol?
     private static let seenKey = "didOnboard"
 
-    static var hasOnboarded: Bool { UserDefaults.standard.bool(forKey: seenKey) }
+    static var hasOnboarded: Bool {
+        // Test mode always re-shows first-run so it can be captured repeatedly.
+        if WindowPlacer.isTestMode { return false }
+        return UserDefaults.standard.bool(forKey: seenKey)
+    }
 
     func showIfFirstRun() { if !Self.hasOnboarded { show() } }
 
@@ -20,14 +24,14 @@ final class OnboardingWindowController {
         NSApp.activate(ignoringOtherApps: true)
         guard let win = window else { return }
         win.makeKeyAndOrderFront(nil)
-        Self.centerOnActiveScreen(win)
+        WindowPlacer.place(win)
         // The SwiftUI content's preferredContentSize can finalize one runloop
-        // tick AFTER the window first orders front, so a single center() runs
+        // tick AFTER the window first orders front, so a single placement runs
         // against a stale (default) size and the window lands off-center. Re-
-        // center once the final size has settled so it reliably sits dead-center.
+        // place once the final size has settled so it reliably sits dead-center.
         DispatchQueue.main.async { [weak win] in
             guard let win else { return }
-            Self.centerOnActiveScreen(win)
+            WindowPlacer.place(win)
         }
     }
 
@@ -56,19 +60,8 @@ final class OnboardingWindowController {
             forName: NSWindow.didResizeNotification, object: win, queue: .main
         ) { [weak win] _ in
             guard let win else { return }
-            OnboardingWindowController.centerOnActiveScreen(win)
+            WindowPlacer.place(win)
         }
-    }
-
-    /// Center on the screen the user is actually looking at (the one under the
-    /// cursor), falling back to the main screen — not always the menu-bar screen
-    /// that `NSWindow.center()` assumes on a multi-display setup.
-    private static func centerOnActiveScreen(_ win: NSWindow) {
-        let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { win.center(); return }
-        let size = win.frame.size
-        win.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2))
     }
 
     private func finish() {

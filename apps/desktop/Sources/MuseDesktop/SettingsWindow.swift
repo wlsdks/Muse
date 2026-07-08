@@ -18,6 +18,7 @@ final class SettingsWindowController {
     func show() {
         if window == nil { build() }
         window?.makeKeyAndOrderFront(nil)
+        if let window { WindowPlacer.place(window) }
     }
 
     private func build() {
@@ -38,7 +39,6 @@ final class SettingsWindowController {
         win.appearance = NSAppearance(named: .darkAqua)   // readable on the dark UI
         win.setContentSize(NSSize(width: 560, height: 780))
         win.minSize = NSSize(width: 480, height: 600)
-        win.center()
         window = win
     }
 }
