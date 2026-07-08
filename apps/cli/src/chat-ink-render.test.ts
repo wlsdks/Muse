@@ -471,8 +471,29 @@ describe("MuseChatApp HUD — local-only privacy posture", () => {
     expect(frame).not.toContain("⚠ cloud");
   });
 
-  it("warns ⚠ cloud in the HUD when local-only is off (cloud egress possible)", async () => {
-    const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({ localOnly: false })));
+  it("keeps 🔒 local for a LOCAL model even when local-only is off (no false ⚠ cloud)", async () => {
+    // The old bug: any MUSE_LOCAL_ONLY=off (now the default) forced ⚠ cloud —
+    // a lie about a local Ollama model. Locality now reflects the real provider.
+    const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({ cloudKeyPresent: false, localOnly: false, model: "ollama/qwen3:8b" })));
+    await tick();
+    const frame = lastFrame() ?? "";
+    unmount();
+    expect(frame).toContain("🔒 local");
+    expect(frame).not.toContain("cloud");
+  });
+
+  it("warns for a local model when local-only is off AND a cloud key is present (egress possible)", async () => {
+    const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({ cloudKeyPresent: true, localOnly: false, model: "ollama/qwen3:8b" })));
+    await tick();
+    const frame = lastFrame() ?? "";
+    unmount();
+    expect(frame).toContain("⚠ local"); // still truthfully LOCAL, but a posture caution
+    expect(frame).not.toContain("🔒");
+    expect(frame).not.toContain("cloud");
+  });
+
+  it("shows ⚠ cloud for an actual cloud model", async () => {
+    const { lastFrame, unmount } = render(React.createElement(MuseChatApp, makeProps({ localOnly: false, model: "openai/gpt-4o", modelProviderId: "openai" })));
     await tick();
     const frame = lastFrame() ?? "";
     unmount();

@@ -11,8 +11,14 @@ import {
   buildTurnMessages,
   createContextualGroundingLookup,
   type ChatTurnMessage,
+  type DisplayTurnRole,
   HUD_SEGMENTS_DEFAULT,
   resolveHudSegments,
+  resolveHudLocality,
+  hasCloudCredential,
+  providerIdFromModel,
+  formatContextUsage,
+  turnSeparator,
   resolveChatHistoryWindow,
   chatHelp,
   cursorCoords,
@@ -857,7 +863,7 @@ describe("birdColorEnabled / birdAnimationEnabled — reduced-motion + NO_COLOR 
 describe("resolveHudSegments — customizable status bar", () => {
   it("defaults to the full ordered segment list when nothing is set", () => {
     expect(resolveHudSegments({})).toEqual(HUD_SEGMENTS_DEFAULT);
-    expect(resolveHudSegments({})).toEqual(["model", "locality", "proactive", "agent", "tools", "skills", "tokens"]);
+    expect(resolveHudSegments({})).toEqual(["model", "locality", "proactive", "agent", "tools", "skills", "ctx", "tokens"]);
   });
 
   it("MUSE_HUD_SEGMENTS picks AND orders the listed segments", () => {
@@ -898,5 +904,145 @@ describe("resolveHudSegments — customizable status bar", () => {
     expect(resolveHudSegments({}, { preset: "minimal" })).toEqual(["model", "locality"]);
     // env wins over config
     expect(resolveHudSegments({ MUSE_HUD_SEGMENTS: "skills" }, { segments: "model" })).toEqual(["skills"]);
+  });
+});
+
+describe("providerIdFromModel — provider prefix of a model string", () => {
+  it("extracts the provider before the slash", () => {
+    expect(providerIdFromModel("ollama/gemma4:12b")).toBe("ollama");
+    expect(providerIdFromModel("openai/gpt-4o")).toBe("openai");
+    expect(providerIdFromModel("anthropic/claude-haiku-4-5")).toBe("anthropic");
+  });
+
+  it("lower-cases and trims", () => {
+    expect(providerIdFromModel("  Ollama/Gemma4  ")).toBe("ollama");
+  });
+
+  it("falls back to the whole string when there's no provider prefix", () => {
+    expect(providerIdFromModel("gemma4:12b")).toBe("gemma4:12b");
+    expect(providerIdFromModel("default")).toBe("default");
+  });
+});
+
+describe("hasCloudCredential — any cloud LLM key present", () => {
+  it("true when a cloud key is set", () => {
+    expect(hasCloudCredential({ OPENAI_API_KEY: "sk-x" })).toBe(true);
+    expect(hasCloudCredential({ GEMINI_API_KEY: "g" })).toBe(true);
+    expect(hasCloudCredential({ ANTHROPIC_API_KEY: "a" })).toBe(true);
+    expect(hasCloudCredential({ OPENROUTER_API_KEY: "o" })).toBe(true);
+  });
+
+  it("false when none are set (or only blank)", () => {
+    expect(hasCloudCredential({})).toBe(false);
+    expect(hasCloudCredential({ OPENAI_API_KEY: "   " })).toBe(false);
+    expect(hasCloudCredential({ MUSE_MODEL: "ollama/gemma4:12b" })).toBe(false);
+  });
+});
+
+describe("resolveHudLocality — truthful cloud/local badge", () => {
+  it("a LOCAL provider reads 🔒 local even when local-only is OFF (the fixed bug)", () => {
+    const loc = resolveHudLocality({ cloudKeyPresent: false, localOnly: false, providerId: "ollama" });
+    expect(loc.locality).toBe("local");
+    expect(loc.warn).toBe(false);
+    expect(loc.text).toBe("🔒 local");
+    expect(loc.tone).toBe("green");
+  });
+
+  it("a LOCAL provider stays 🔒 local when local-only is ON", () => {
+    const loc = resolveHudLocality({ cloudKeyPresent: true, localOnly: true, providerId: "ollama" });
+    expect(loc.text).toBe("🔒 local");
+    expect(loc.warn).toBe(false);
+  });
+
+  it("a LOCAL provider warns ⚠ local when local-only is OFF and a cloud key is present (egress possible)", () => {
+    const loc = resolveHudLocality({ cloudKeyPresent: true, localOnly: false, providerId: "ollama" });
+    expect(loc.locality).toBe("local"); // still truthfully local
+    expect(loc.warn).toBe(true);
+    expect(loc.text).toBe("⚠ local");
+    expect(loc.tone).toBe("yellow");
+  });
+
+  it("a CLOUD provider reads ⚠ cloud regardless of the flag or keys", () => {
+    for (const providerId of ["openai", "anthropic", "gemini", "openrouter"]) {
+      const loc = resolveHudLocality({ cloudKeyPresent: false, localOnly: false, providerId });
+      expect(loc.locality, providerId).toBe("cloud");
+      expect(loc.text, providerId).toBe("⚠ cloud");
+      expect(loc.tone, providerId).toBe("yellow");
+    }
+  });
+
+  it("a remote local-inference HOST counts as cloud egress", () => {
+    const loc = resolveHudLocality({ baseUrl: "http://192.168.1.9:11434", cloudKeyPresent: false, localOnly: false, providerId: "ollama" });
+    expect(loc.locality).toBe("cloud");
+    expect(loc.text).toBe("⚠ cloud");
+  });
+
+  it("a loopback openai-compatible endpoint is local", () => {
+    const loc = resolveHudLocality({ baseUrl: "http://localhost:8000/v1", cloudKeyPresent: false, localOnly: false, providerId: "openai-compatible" });
+    expect(loc.locality).toBe("local");
+    expect(loc.text).toBe("🔒 local");
+  });
+});
+
+describe("formatContextUsage — ctx window fill indicator", () => {
+  it("renders a rounded percentage of the budget", () => {
+    expect(formatContextUsage(12_800, 128_000)).toBe("ctx 10%");
+    expect(formatContextUsage(64_000, 128_000)).toBe("ctx 50%");
+  });
+
+  it("shows <1% instead of a misleading 0% for a tiny fill", () => {
+    expect(formatContextUsage(100, 128_000)).toBe("ctx <1%");
+  });
+
+  it("clamps an over-budget fill to 100%", () => {
+    expect(formatContextUsage(200_000, 128_000)).toBe("ctx 100%");
+  });
+
+  it("self-omits (undefined) when the budget or usage is unknown/zero", () => {
+    expect(formatContextUsage(0, 128_000)).toBeUndefined();
+    expect(formatContextUsage(5_000, undefined)).toBeUndefined();
+    expect(formatContextUsage(5_000, 0)).toBeUndefined();
+  });
+});
+
+describe("turnSeparator — per-exchange scannable rule", () => {
+  const U: DisplayTurnRole = "user";
+  const A: DisplayTurnRole = "assistant";
+
+  it("draws NO separator for the first turn overall", () => {
+    expect(turnSeparator([U, A], 0, { plain: false, width: 40 })).toBe("");
+  });
+
+  it("draws NO separator for a non-user turn (assistant/system/sub-line)", () => {
+    expect(turnSeparator([U, A, U, A], 1, { plain: false, width: 40 })).toBe("");
+    expect(turnSeparator([U, A, U, A], 3, { plain: false, width: 40 })).toBe("");
+  });
+
+  it("draws a rule with the exchange number above a subsequent user turn", () => {
+    const sep = turnSeparator([U, A, U, A], 2, { plain: false, width: 40 });
+    expect(sep).toContain("#2");
+    expect(sep.startsWith("──")).toBe(true);
+    expect(displayWidth(sep)).toBe(40);
+  });
+
+  it("numbers exchanges by counting user turns, ignoring interleaved system notes", () => {
+    // [system recap, user, assistant, user] → the 2nd user is exchange #2
+    const roles: DisplayTurnRole[] = ["system", U, A, U];
+    expect(turnSeparator(roles, 3, { plain: false, width: 30 })).toContain("#2");
+    // a rule ALSO sits above the first user turn when a note precedes it (#1)
+    expect(turnSeparator(roles, 1, { plain: false, width: 30 })).toContain("#1");
+  });
+
+  it("uses ASCII dashes and no box-drawing under NO_COLOR / non-TTY (plain)", () => {
+    const sep = turnSeparator([U, A, U], 2, { plain: true, width: 24 });
+    expect(sep).toContain("#2");
+    expect(sep).toMatch(/^-+ #2 -+$/u);
+    expect(sep).not.toContain("─");
+    expect(sep.length).toBe(24); // all ASCII → 1 col each
+  });
+
+  it("clamps the rule width to a sane band for tiny / huge terminals", () => {
+    expect(displayWidth(turnSeparator([U, A, U], 2, { plain: false, width: 4 }))).toBe(12);
+    expect(displayWidth(turnSeparator([U, A, U], 2, { plain: false, width: 500 }))).toBe(120);
   });
 });

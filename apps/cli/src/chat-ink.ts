@@ -24,8 +24,13 @@ import {
   chatHelp,
   cursorCoords,
   emptyInput,
+  formatContextUsage,
   homeInputCursorY,
+  providerIdFromModel,
+  resolveHudLocality,
   resolveHudSegments,
+  turnSeparator,
+  type DisplayTurnRole,
   type HudSegmentId,
   extractAttachmentPaths,
   imageMimeForPath,
@@ -162,6 +167,16 @@ export function MuseChatApp(props: {
   readonly proactiveOn: boolean;
   /** Whether the local-only posture is ON (cloud egress refused) — shown in the HUD. */
   readonly localOnly: boolean;
+  /** The ACTIVE model's provider id (e.g. `ollama`), for the truthful HUD
+   *  locality badge. Omit ⇒ derived from the `model` string's `provider/…`
+   *  prefix. */
+  readonly modelProviderId?: string;
+  /** The provider's effective base URL, so a remote local-inference host reads
+   *  as cloud egress. Omit ⇒ the provider's own default (loopback). */
+  readonly modelBaseUrl?: string;
+  /** Whether a cloud-LLM credential is present — drives the HUD's "egress
+   *  possible" caution when local-only is off. Defaults to false. */
+  readonly cloudKeyPresent?: boolean;
   readonly skills: readonly SkillInfo[];
   readonly skillsDir: string;
   readonly skillsPromptFor: (prompt: string) => string;
@@ -264,6 +279,9 @@ export function MuseChatApp(props: {
   const [commandNotice, setCommandNotice] = useState<string | undefined>(undefined);
   const [histPos, setHistPos] = useState(-1);
   const [sessionTokens, setSessionTokens] = useState(0);
+  // The most recent turn's INPUT tokens — the live context-window fill, shown
+  // as `ctx NN%` in the HUD (distinct from the cumulative session token count).
+  const [lastContextTokens, setLastContextTokens] = useState(0);
   const [spinTick, setSpinTick] = useState(0);
   const [pendingApproval, setPendingApproval] = useState<{ readonly name: string; readonly detail: string; readonly kind: "outbound" | "tool"; readonly resolve: (ok: boolean) => void } | undefined>(undefined);
   const inputHistoryRef = useRef<string[]>([...(props.inputHistorySeed ?? [])]);
@@ -586,6 +604,7 @@ export function MuseChatApp(props: {
     const messages = buildTurnMessages(system, historyRef.current, message + attachmentBlock, props.historyWindow, imageAttachments);
     let accumulated = "";
     let turnTokens = 0;
+    let lastInputTokens = 0;
     const toolsRan: string[] = [];
     const toolGrounding: { source: string; text: string }[] = [];
     const iter = toolsOn
@@ -612,12 +631,14 @@ export function MuseChatApp(props: {
         if (event.type === "done") {
           const u = event.response?.usage;
           turnTokens = (u?.inputTokens ?? 0) + (u?.outputTokens ?? 0) + (u?.reasoningTokens ?? 0);
+          lastInputTokens = u?.inputTokens ?? 0;
         }
       }
     } catch (error) {
       accumulated = `⚠ ${friendlyError(error instanceof Error ? error.message : String(error))}`;
     }
     if (turnTokens > 0) setSessionTokens((t) => t + turnTokens);
+    if (lastInputTokens > 0) setLastContextTokens(lastInputTokens);
     // The same deterministic gate every other chat surface runs — post-hoc on
     // the streamed bubble (ask warns post-hoc too); fail-open keeps the raw
     // answer only if the finalizer itself crashes, never on a gate verdict.
@@ -790,16 +811,26 @@ export function MuseChatApp(props: {
     : 1 + caret.line;
   setCursorPosition(busy || exiting ? undefined : { x: INPUT_COL_OFFSET + caret.col, y: cursorY });
 
+  // Roles + width feed the pure per-exchange separator; plain (NO_COLOR /
+  // non-TTY) swaps the box-rule for ASCII dashes and skips color.
+  const transcriptRoles: readonly DisplayTurnRole[] = turns.map((t) => t.role);
+  const transcriptPlain = !birdColorEnabled(process.env, stdout?.isTTY === true);
+  const separatorWidth = (stdout?.columns ?? 80) - 2;
   const transcript = h(Static, {
     children: (item: unknown, index: number) => {
       if (index === 0) return h(Box, { key: "banner", marginBottom: 1 }, h(Text, null, props.banner));
       const turn = item as DisplayTurn;
       if (turn.role === "user") {
-        // The user's message stays as a snapshot — the same `› ` prompt
-        // they typed it into (codex / claude style), not a "you:" label.
-        return h(Box, { key: index, marginBottom: 1, marginTop: 1 },
-          h(Text, { color: "cyan" }, "› "),
-          h(Text, { color: "cyan" }, turn.text));
+        // The user's message stays as a snapshot — the same `› ` prompt they
+        // typed it into (codex / claude style), now a BOLD header so each Q→A
+        // exchange reads as its own unit, with a dim rule + `#N` above it (item
+        // index 0 is the banner, so the turn's position in `turns` is index-1).
+        const sep = turnSeparator(transcriptRoles, index - 1, { plain: transcriptPlain, width: separatorWidth });
+        return h(Box, { flexDirection: "column", key: index, marginBottom: 1, marginTop: 1 },
+          sep.length > 0 ? h(Text, { dimColor: true }, sep) : null,
+          h(Box, sep.length > 0 ? { marginTop: 1 } : null,
+            h(Text, { bold: true, color: "cyan" }, "› "),
+            h(Text, { bold: true, color: "cyan" }, turn.text)));
       }
       if (turn.role === "proactive") {
         // Muse opening the conversation — stands out from normal answers.
@@ -884,14 +915,27 @@ export function MuseChatApp(props: {
   // or a `MUSE_HUD` preset); unset ⇒ the full default order below. The render is
   // a pure map from segment id → the existing colored <Text>, joined with the
   // ` · ` separator, so nothing about the DEFAULT appearance changes.
+  // Truthful locality: the ACTIVE model's provider decides local vs cloud (a
+  // local Ollama model reads 🔒 local even with local-only off — the old code
+  // false-alarmed ⚠ cloud on that). ⚠ only when data can egress.
+  const locality = resolveHudLocality({
+    baseUrl: props.modelBaseUrl,
+    cloudKeyPresent: props.cloudKeyPresent ?? false,
+    localOnly: props.localOnly,
+    providerId: props.modelProviderId ?? providerIdFromModel(currentModel)
+  });
   const hudSegment = (id: HudSegmentId): { readonly label: string; readonly value: React.ReactNode | null } | null => {
     switch (id) {
       case "model": return { label: "", value: h(Text, { color: "cyan", key: "hud-v-model" }, currentModel) };
-      case "locality": return { label: "", value: h(Text, { color: props.localOnly ? "green" : "yellow", key: "hud-v-loc" }, props.localOnly ? "🔒 local" : "⚠ cloud") };
+      case "locality": return { label: "", value: h(Text, { color: locality.tone, key: "hud-v-loc" }, locality.text) };
       case "proactive": return { label: "proactive ", value: h(Text, { color: props.proactiveOn ? "green" : "gray", key: "hud-v-pro" }, props.proactiveOn ? "on" : "off") };
       case "agent": return { label: "agent ", value: h(Text, { color: activeAgent ? "yellow" : "gray", key: "hud-v-agent" }, activeAgent ? activeAgent.name : "default") };
       case "tools": return { label: "tools ", value: h(Text, { color: toolsOn ? "green" : "gray", key: "hud-v-tools" }, toolsOn ? "on" : "off") };
       case "skills": return { label: `skills ${props.skills.length.toString()}`, value: null };
+      case "ctx": {
+        const usage = formatContextUsage(lastContextTokens, props.contextWindow?.maxContextWindowTokens);
+        return usage ? { label: usage, value: null } : null;
+      }
       case "tokens": return sessionTokens > 0 ? { label: `${formatTokens(sessionTokens)} tok`, value: null } : null;
     }
   };

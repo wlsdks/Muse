@@ -22,6 +22,7 @@ import {
   type DroppedContextSummarizer
 } from "@muse/memory";
 import { type FrameName } from "@muse/mascot";
+import { classifyProviderLocality, type ProviderLocality } from "@muse/model";
 import { clamp, redactSecretsInText, stripUntrustedTerminalChars } from "@muse/shared";
 
 import { needsContextualRewrite, type ChatGrounding } from "./chat-grounding.js";
@@ -1051,10 +1052,10 @@ export function birdAnimationEnabled(env: Record<string, string | undefined>, is
 }
 
 /** The HUD status-bar segments, in their canonical default order. */
-export type HudSegmentId = "model" | "locality" | "proactive" | "agent" | "tools" | "skills" | "tokens";
+export type HudSegmentId = "model" | "locality" | "proactive" | "agent" | "tools" | "skills" | "ctx" | "tokens";
 
 export const HUD_SEGMENTS_DEFAULT: readonly HudSegmentId[] = [
-  "model", "locality", "proactive", "agent", "tools", "skills", "tokens"
+  "model", "locality", "proactive", "agent", "tools", "skills", "ctx", "tokens"
 ];
 
 const HUD_SEGMENT_SET: ReadonlySet<string> = new Set(HUD_SEGMENTS_DEFAULT);
@@ -1104,4 +1105,109 @@ export function resolveHudSegments(
     if (preset && preset.length > 0) return preset;
   }
   return HUD_SEGMENTS_DEFAULT;
+}
+
+/** Cloud-LLM credential env keys — mirrors autoconfigure's `CLOUD_CREDENTIAL_ENV_KEYS`
+ *  so the HUD's egress-possible warning agrees with `muse doctor`/`muse status`. */
+const HUD_CLOUD_CREDENTIAL_ENV_KEYS: readonly string[] = [
+  "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"
+];
+
+/** True when any cloud-LLM credential is present in the environment — the input
+ *  the HUD uses to decide whether cloud egress is *possible* (posture warning). */
+export function hasCloudCredential(env: Record<string, string | undefined>): boolean {
+  return HUD_CLOUD_CREDENTIAL_ENV_KEYS.some((k) => (env[k] ?? "").trim().length > 0);
+}
+
+/** The provider id encoded as a `provider/model` prefix (e.g. `ollama/gemma4:12b`
+ *  → `ollama`); falls back to the whole trimmed, lower-cased string when there's
+ *  no slash. Used to classify the ACTIVE model's locality for the HUD. */
+export function providerIdFromModel(model: string): string {
+  const trimmed = model.trim().toLowerCase();
+  const slash = trimmed.indexOf("/");
+  return slash > 0 ? trimmed.slice(0, slash) : trimmed;
+}
+
+export interface HudLocality {
+  /** Where the ACTIVE model runs — never a lie about a local model. */
+  readonly locality: ProviderLocality;
+  /** Show the ⚠ warn glyph: data egresses now (cloud) OR egress is possible
+   *  (a local model with local-only off AND a cloud credential present). */
+  readonly warn: boolean;
+  /** The lock (private local) or warn glyph. */
+  readonly glyph: string;
+  /** `local` / `cloud` — the truthful model locality, independent of the flag. */
+  readonly label: string;
+  /** The single rendered string, e.g. `🔒 local`, `⚠ cloud`, `⚠ local`. */
+  readonly text: string;
+  /** `green` = private/guaranteed; `yellow` = egress happening or possible. */
+  readonly tone: "green" | "yellow";
+}
+
+/**
+ * Truthful HUD locality badge for the ACTIVE model — replaces the old "any
+ * MUSE_LOCAL_ONLY=off ⇒ ⚠ cloud" alarm, which lied about a local Ollama model
+ * whenever the (now-default-off) flag was off. Rules:
+ *  - a cloud provider (openai/anthropic/gemini/openrouter, or an off-box host)
+ *    → `⚠ cloud` — data is actually leaving the machine.
+ *  - a local provider (ollama/lmstudio/loopback) → `🔒 local` REGARDLESS of the
+ *    local-only flag — the model runs on-box, so the lock is honest.
+ *  - a local provider where egress is *possible* (local-only explicitly off AND
+ *    a cloud credential is set) → `⚠ local` — still truthfully local, but a
+ *    caution that the posture would permit a cloud switch. Not alarmist: the
+ *    label stays `local` and the lock only drops to a warn when a key exists.
+ */
+export function resolveHudLocality(input: {
+  readonly providerId: string;
+  readonly baseUrl?: string;
+  readonly localOnly: boolean;
+  readonly cloudKeyPresent: boolean;
+}): HudLocality {
+  const locality = classifyProviderLocality(input.providerId, input.baseUrl);
+  const warn = locality === "cloud" || (!input.localOnly && input.cloudKeyPresent);
+  const glyph = warn ? "⚠" : "🔒";
+  const label = locality;
+  return { glyph, label, locality, text: `${glyph} ${label}`, tone: warn ? "yellow" : "green", warn };
+}
+
+/**
+ * The `ctx NN%` HUD segment — how full the model's context window is, from the
+ * most recent turn's INPUT tokens (the live working-set size) over the window
+ * budget. Self-omits (returns undefined) when either number is unknown/zero so
+ * the segment disappears until a real round-trip reports usage. A sub-1% fill
+ * shows `<1%` rather than a misleading `0%`.
+ */
+export function formatContextUsage(usedTokens: number, budgetTokens: number | undefined): string | undefined {
+  if (budgetTokens === undefined || budgetTokens <= 0 || usedTokens <= 0) return undefined;
+  const pct = Math.round((usedTokens / budgetTokens) * 100);
+  const clamped = Math.max(0, Math.min(100, pct));
+  return `ctx ${clamped === 0 ? "<1" : clamped.toString()}%`;
+}
+
+export type DisplayTurnRole = "user" | "assistant" | "system" | "proactive" | "command";
+
+/**
+ * The dim separator rule to draw ABOVE the turn at `index` in the transcript,
+ * so a long conversation reads as scannable Q→A units instead of one stack.
+ * Returns a rule ONLY at the start of a NEW exchange — a `user` turn that isn't
+ * the first item — carrying a compact `#N` exchange number for scanning back;
+ * every other turn (assistant answer, system note, sub-line) returns `""`, so
+ * there's one separator per exchange, never between every line.
+ *
+ * `plain` (NO_COLOR / non-TTY) swaps the box-drawing `─` for an ASCII `-`; the
+ * width is clamped to a sane band so a tiny or enormous terminal still reads.
+ */
+export function turnSeparator(
+  roles: readonly DisplayTurnRole[],
+  index: number,
+  opts: { readonly width: number; readonly plain: boolean }
+): string {
+  if (index <= 0 || roles[index] !== "user") return "";
+  let exchange = 0;
+  for (let i = 0; i <= index; i++) if (roles[i] === "user") exchange += 1;
+  const dash = opts.plain ? "-" : "─";
+  const width = Math.max(12, Math.min(Math.trunc(opts.width) || 0, 120));
+  const tag = `${dash}${dash} #${exchange.toString()} `;
+  const fill = Math.max(0, width - displayWidth(tag));
+  return tag + dash.repeat(fill);
 }
