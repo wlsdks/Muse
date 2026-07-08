@@ -16,8 +16,13 @@ export type ProviderLocality = "local" | "cloud";
  */
 const LOCAL_INFERENCE_PROVIDER_IDS: ReadonlySet<string> = new Set(["ollama", "lmstudio", "diagnostic"]);
 
-/** Provider ids that ALWAYS reach a third-party cloud LLM API. */
-const CLOUD_PROVIDER_IDS: ReadonlySet<string> = new Set(["openai", "anthropic", "gemini", "openrouter"]);
+/**
+ * Provider ids that ALWAYS reach a third-party cloud LLM API. `codex` shells to
+ * the official codex CLI which egresses to OpenAI via the user's ChatGPT
+ * subscription — cloud regardless of any base URL, so it is fail-closed under
+ * `MUSE_LOCAL_ONLY=true` before the adapter is constructed.
+ */
+const CLOUD_PROVIDER_IDS: ReadonlySet<string> = new Set(["openai", "anthropic", "gemini", "openrouter", "codex"]);
 
 /**
  * True when `raw` points at the local loopback interface (localhost,

@@ -1,6 +1,8 @@
 import {
   AnthropicProvider,
   classifyProviderLocality,
+  CodexCliProvider,
+  CODEX_DEFAULT_MODEL_ID,
   DEFAULT_OLLAMA_NUM_CTX,
   DiagnosticModelProvider,
   GeminiProvider,
@@ -239,6 +241,18 @@ export function createModelProvider(env: MuseEnvironment): ModelProvider | undef
         defaultModel,
         models
       });
+    case "codex": {
+      // Opt-in ChatGPT-subscription delegation via the official codex CLI. NEVER
+      // the default — only reached when the effective model is `codex/<model>`
+      // (or MUSE_MODEL_PROVIDER_ID=codex). Cloud, so the local-only gate above
+      // already refused it under MUSE_LOCAL_ONLY. Muse holds no ChatGPT token —
+      // the codex CLI owns auth; this adapter only shells out to it.
+      const codexModel = parseModelName(defaultModel).modelId;
+      return new CodexCliProvider({
+        models,
+        ...(codexModel && codexModel !== CODEX_DEFAULT_MODEL_ID ? { model: codexModel } : {})
+      });
+    }
     case "anthropic":
       return new AnthropicProvider({
         apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.ANTHROPIC_API_KEY),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createModelProvider, LOCAL_FIRST_DEFAULT_MODEL, LOCAL_FIRST_VISION_MODEL, resolveVisionModel } from "./autoconfigure-model-provider.js";
+import { createModelProvider, LOCAL_FIRST_DEFAULT_MODEL, LOCAL_FIRST_VISION_MODEL, resolveDefaultModel, resolveVisionModel } from "./autoconfigure-model-provider.js";
 
 // The vision-model knob (MUSE_VISION_MODEL) + measured local default. Pure so the
 // swap policy AND the fail-soft path (optional model not pulled → fall back to the
@@ -48,6 +48,27 @@ describe("createModelProvider — cloud BYO-key routing + local-only fail-close"
   it("a local Ollama model needs no key and no opt-out", () => {
     const p = createModelProvider({ MUSE_MODEL: "ollama/gemma4:12b" } as never);
     expect(p?.id).toBe("ollama");
+  });
+});
+
+// Codex delegation (opt-in ChatGPT-subscription route via the official codex CLI).
+// It is CLOUD, must NEVER be the default, and must fail-close under local-only.
+describe("createModelProvider — codex delegation routing", () => {
+  it("MUSE_MODEL=codex/<model> → a CodexCliProvider (id 'codex')", () => {
+    const p = createModelProvider({ MUSE_MODEL: "codex/gpt-5.1" } as never);
+    expect(p?.id).toBe("codex");
+  });
+  it("MUSE_MODEL_PROVIDER_ID=codex also selects codex", () => {
+    const p = createModelProvider({ MUSE_MODEL: "codex/gpt-5.1", MUSE_MODEL_PROVIDER_ID: "codex" } as never);
+    expect(p?.id).toBe("codex");
+  });
+  it("local-only (MUSE_LOCAL_ONLY=true) + a codex model → throws LocalOnlyViolationError (fail-close)", () => {
+    expect(() => createModelProvider({ MUSE_LOCAL_ONLY: "true", MUSE_MODEL: "codex/gpt-5.1" } as never))
+      .toThrowError(/LocalOnly|local-only|local only/i);
+  });
+  it("resolveDefaultModel NEVER returns codex when unconfigured (local stays the default)", () => {
+    expect(resolveDefaultModel({} as never)).toBe(LOCAL_FIRST_DEFAULT_MODEL);
+    expect(resolveDefaultModel({ MUSE_LOCAL_ONLY: "true" } as never)).toBe(LOCAL_FIRST_DEFAULT_MODEL);
   });
 });
 

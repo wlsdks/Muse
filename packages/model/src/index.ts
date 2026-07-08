@@ -281,6 +281,7 @@ export interface DiagnosticModelProviderOptions {
 export { DEFAULT_MODEL_CALL_TIMEOUT_MS, fetchOrThrowAsProviderError, isRetryableHttpStatus, modelCallSignal, ModelProviderError, OpenAICompatibleProvider, resolveModelCallTimeoutMs } from "./provider-base.js";
 export { createLeadingThinkStripper, recoverToolArgsJson, sanitizeLoneSurrogates, sanitizeToolCallName, stripLeadingThinkBlock } from "./provider-shared.js";
 export { DiagnosticModelProvider } from "./adapter-diagnostic.js";
+export { buildCodexExecArgs, codexModelCapabilities, CodexCliProvider, CODEX_DEFAULT_MODEL_ID, CODEX_PROVIDER_ID, flattenCodexPrompt, runCodexExecSafe, type CodexCliProviderOptions, type CodexInvocationDeps, type CodexInvocationResult, type CodexSpawnLike } from "./adapter-codex-cli.js";
 export { OpenAIProvider, OpenRouterProvider } from "./adapter-openai.js";
 export { DEFAULT_CONTEXT_PROBE_TIMEOUT_MS, DEFAULT_OLLAMA_NUM_CTX, OllamaProvider, extractOllamaContextLength, probeOllamaContextWindow, sanitizeOllamaToolSchema } from "./adapter-ollama.js";
 export { isWellFormedBase64 } from "./base64-image.js";

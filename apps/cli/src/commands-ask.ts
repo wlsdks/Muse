@@ -61,6 +61,8 @@ export { buildAskConnections };
 import type { FileEntry } from "@muse/recall";
 
 
+import { CODEX_PROVIDER_ID, parseModelName } from "@muse/model";
+import { applyCodexModelToEnv, resolveCodexActivation } from "./codex-cli.js";
 import { routeAskTierModel } from "./ask-tier-models.js";
 import { shouldDecompose } from "@muse/multi-agent";
 import { decomposedAnswerOrRefusal, runDecomposedAgentAsk } from "./ask-decompose.js";
@@ -723,6 +725,22 @@ Examples:
           io
         });
       }
+      // Codex delegation routing (opt-in, OFF by default). An explicit
+      // `--model codex/...` pins codex for THIS ask; otherwise a recorded AND
+      // ready delegation choice (~/.muse/codex.json + `codex login`) routes the
+      // effective model to codex. Not ready ⇒ fall back to the local default and
+      // surface the setup steps. Must run BEFORE the assembly (which reads env).
+      if (options.model && parseModelName(options.model).providerId === CODEX_PROVIDER_ID) {
+        process.env.MUSE_MODEL = options.model;
+        process.env.MUSE_MODEL_PROVIDER_ID = CODEX_PROVIDER_ID;
+      } else if (options.model === undefined) {
+        const activation = await resolveCodexActivation().catch(() => undefined);
+        if (activation?.active && activation.model) {
+          applyCodexModelToEnv(process.env, activation.model);
+        } else if (activation && !activation.active && activation.setupSteps) {
+          io.stderr(`(codex delegation is configured but not ready — using the local default)\n${activation.setupSteps}\n`);
+        }
+      }
       const assembly = createMuseRuntimeAssembly({
         ...(extraTools ? { extraTools } : {}),
         ...(messagingApprovalGate ? { messagingApprovalGate } : {})
@@ -1059,7 +1077,15 @@ Examples:
       // names the actual local-model step, invents nothing).
       askStages.mark("retrievalMs");
       if (!options.json) {
-        io.stderr("💭 generating your answer on the local model…\n");
+        // Name the ACTUAL backend — a privacy-first user must never read "local
+        // model" while the answer is being generated on a cloud provider.
+        const providerId = assembly.modelProvider?.id;
+        const where = providerId === "codex"
+          ? "via Codex (your ChatGPT subscription)"
+          : providerId === "ollama" || providerId === "lmstudio" || providerId === "diagnostic"
+            ? "on the local model"
+            : "on the cloud model";
+        io.stderr(`💭 generating your answer ${where}…\n`);
       }
       // Hold the Ollama lease while we use the local model so the background
       // self-learning daemon defers instead of contending for it. Best-effort

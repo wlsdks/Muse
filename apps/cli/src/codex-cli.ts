@@ -7,15 +7,17 @@
  * session under `~/.codex/auth.json`. Muse never sees or stores the ChatGPT
  * credential — that is the whole point of delegating to the vendor's own CLI.
  *
- * Two halves live here:
+ * The pieces:
  *   1. `detectCodexReadiness` — is the official CLI installed AND logged in?
  *      Deterministic, injectable (no live account needed to unit-test).
- *   2. `runCodexExec` — the subprocess bridge SCAFFOLD. It spawns
- *      `codex exec <prompt>` and returns stdout. The spawn is injectable so
- *      the contract (args, stdout capture, exit handling) is unit-tested with
- *      a fake child. The REAL end-to-end round-trip needs the owner's live
- *      ChatGPT subscription — that path is NOT verified here and is gated by
- *      `CodexDelegationConfig.live === false` until it is.
+ *   2. `runCodexExec` — the subprocess bridge. Delegates to the SINGLE shared
+ *      safe-invocation helper (`runCodexExecSafe` in `@muse/model`, which the
+ *      `CodexCliProvider` also uses) so the CLI and the model adapter never
+ *      drift on argv / sandbox flags / output extraction.
+ *   3. `resolveCodexActivation` / `applyCodexModelToEnv` — OFF-by-default
+ *      opt-in routing: when the user recorded a delegation choice AND the CLI
+ *      is ready, pin the effective model to `codex/<model>`; otherwise leave
+ *      the local default. Readiness (not a frozen `live` flag) is the truth.
  */
 
 import { spawn } from "node:child_process";
@@ -23,6 +25,8 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+
+import { CODEX_DEFAULT_MODEL_ID, CODEX_PROVIDER_ID, runCodexExecSafe } from "@muse/model";
 
 export interface CodexReadiness {
   /** `codex` resolves on PATH. */
@@ -108,57 +112,47 @@ export type SpawnLike = typeof spawn;
 
 export interface CodexExecDeps {
   readonly spawn?: SpawnLike;
-  readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
+  /** Model id to pass via `-m` (e.g. `"gpt-5.1"`); omitted ⇒ codex default. */
+  readonly model?: string;
 }
 
 /**
- * Subprocess bridge SCAFFOLD: run one non-interactive completion through the
- * official `codex exec` command and return its stdout. `spawn` is injectable
- * so the arg contract + stdout capture + exit handling are unit-tested with a
- * fake child (no live subscription). The live round-trip and any richer
- * stdout parsing (`codex exec --json`) are the flagged TODO — do not treat a
- * green unit test here as proof the live path works.
+ * Subprocess bridge: run one non-interactive completion through the official
+ * `codex exec` and return the final assistant message. Delegates to the SINGLE
+ * shared safe-invocation helper (`runCodexExecSafe` in `@muse/model`) so the CLI
+ * and the `CodexCliProvider` never drift on argv / sandbox flags / extraction —
+ * `--skip-git-repo-check --ephemeral -s read-only -C <neutral tmp> -o <out>`. A
+ * failure (missing CLI, not-logged-in, non-zero exit) surfaces as `ok:false`
+ * with the helper's diagnostic message in `stderr`.
  */
 export async function runCodexExec(prompt: string, deps: CodexExecDeps = {}): Promise<CodexExecResult> {
-  const spawnImpl = deps.spawn ?? spawn;
-  return new Promise((resolve) => {
-    const child = spawnImpl("codex", ["exec", prompt], {
-      cwd: deps.cwd,
-      env: deps.env ?? process.env,
-      stdio: ["ignore", "pipe", "pipe"]
+  try {
+    const result = await runCodexExecSafe(prompt, {
+      ...(deps.spawn ? { spawn: deps.spawn } : {}),
+      ...(deps.env ? { env: deps.env } : {}),
+      ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
+      ...(deps.model ? { model: deps.model } : {})
     });
-    let stdout = "";
-    let stderr = "";
-    const timer = deps.timeoutMs && deps.timeoutMs > 0
-      ? setTimeout(() => {
-        child.kill("SIGKILL");
-      }, deps.timeoutMs)
-      : undefined;
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on("error", (error: Error) => {
-      if (timer) clearTimeout(timer);
-      resolve({ exitCode: null, ok: false, stderr: String(error.message), text: "" });
-    });
-    child.on("close", (code) => {
-      if (timer) clearTimeout(timer);
-      resolve({ exitCode: code, ok: code === 0, stderr: stderr.trim(), text: stdout.trim() });
-    });
-  });
+    return { exitCode: result.exitCode, ok: true, stderr: result.stderr, text: result.output };
+  } catch (error) {
+    return { exitCode: null, ok: false, stderr: error instanceof Error ? error.message : String(error), text: "" };
+  }
 }
 
 export interface CodexDelegationConfig {
   readonly provider: "codex";
   readonly delegated: true;
-  /** Live routing is NOT verified against a real subscription yet — gate on this. */
-  readonly live: false;
   readonly configuredAt: string;
+  /**
+   * Optional pinned model id (e.g. `"gpt-5.1"`). Absent ⇒ the codex CLI's own
+   * default (no `-m`). Whether delegation is LIVE is NOT frozen in this file —
+   * `detectCodexReadiness().ready` (CLI installed + logged in) is the truth, so
+   * a recorded choice auto-activates the moment the CLI is ready and falls back
+   * to the local default when it is not.
+   */
+  readonly model?: string;
 }
 
 export function codexConfigPath(home: string): string {
@@ -166,18 +160,19 @@ export function codexConfigPath(home: string): string {
 }
 
 /**
- * Mark Muse as codex-delegated. `live: false` is deliberate and honest — the
- * config records the user's CHOICE and readiness, but the runtime model bridge
- * is still preview until verified against a live subscription.
+ * Record the user's CHOICE to delegate to their own codex CLI. Presence of this
+ * file + live readiness (`detectCodexReadiness`) is what activates routing — the
+ * file no longer freezes a `live` flag. Muse never stores the ChatGPT token; the
+ * codex CLI owns auth.
  */
-export async function writeCodexDelegationConfig(home: string, now: Date = new Date()): Promise<string> {
+export async function writeCodexDelegationConfig(home: string, now: Date = new Date(), model?: string): Promise<string> {
   const file = codexConfigPath(home);
   await mkdir(dirname(file), { recursive: true });
   const config: CodexDelegationConfig = {
     configuredAt: now.toISOString(),
     delegated: true,
-    live: false,
-    provider: "codex"
+    provider: "codex",
+    ...(model ? { model } : {})
   };
   await writeFile(file, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   return file;
@@ -191,12 +186,78 @@ export async function readCodexDelegationConfig(home: string): Promise<CodexDele
       return {
         configuredAt: typeof parsed.configuredAt === "string" ? parsed.configuredAt : "",
         delegated: true,
-        live: false,
-        provider: "codex"
+        provider: "codex",
+        ...(typeof parsed.model === "string" && parsed.model.length > 0 ? { model: parsed.model } : {})
       };
     }
   } catch {
     // missing / malformed → not delegated
   }
   return undefined;
+}
+
+export interface CodexActivation {
+  /** Delegation is recorded AND the codex CLI is installed + logged in. */
+  readonly active: boolean;
+  /** Delegation is recorded (regardless of readiness). */
+  readonly configured: boolean;
+  readonly readiness: CodexReadiness;
+  /** The `codex/<model>` id to route the effective model to — only when active. */
+  readonly model?: string;
+  /** Setup guidance to surface when configured but NOT ready. */
+  readonly setupSteps?: string;
+}
+
+export interface CodexActivationDeps {
+  readonly home?: string;
+  readonly readConfig?: (home: string) => Promise<CodexDelegationConfig | undefined>;
+  readonly detect?: (home: string) => Promise<CodexReadiness>;
+}
+
+/**
+ * Resolve whether codex delegation should route THIS session, and to which
+ * model. OFF by default: returns `undefined` when the user never opted in (no
+ * `~/.muse/codex.json`), so the local default is untouched. When configured,
+ * readiness is the truth — `active` iff the official CLI is installed + logged
+ * in; otherwise `active:false` + `setupSteps` and the caller falls back to the
+ * normal default. Pure/injectable so the gating is unit-testable without a live
+ * account.
+ */
+export async function resolveCodexActivation(deps: CodexActivationDeps = {}): Promise<CodexActivation | undefined> {
+  const home = deps.home ?? homedir();
+  const readConfig = deps.readConfig ?? readCodexDelegationConfig;
+  const detect = deps.detect ?? ((h: string) => detectCodexReadiness({ home: h }));
+  const config = await readConfig(home);
+  if (!config) {
+    return undefined;
+  }
+  const readiness = await detect(home);
+  if (!readiness.ready) {
+    return { active: false, configured: true, readiness, setupSteps: codexSetupSteps(readiness) };
+  }
+  return {
+    active: true,
+    configured: true,
+    model: `${CODEX_PROVIDER_ID}/${config.model ?? CODEX_DEFAULT_MODEL_ID}`,
+    readiness
+  };
+}
+
+/**
+ * Apply an active codex routing decision to a mutable env map: pin `MUSE_MODEL`
+ * to the `codex/<model>` id and force the provider id so `createModelProvider`
+ * builds the `CodexCliProvider`. Only mutates when NOT already pinned (an
+ * explicit `MUSE_MODEL` / `--model` wins). Returns the model it routed to, or
+ * `undefined` when it left env unchanged.
+ */
+export function applyCodexModelToEnv(
+  env: { MUSE_MODEL?: string; MUSE_MODEL_PROVIDER_ID?: string },
+  model: string
+): string | undefined {
+  if (typeof env.MUSE_MODEL === "string" && env.MUSE_MODEL.trim().length > 0) {
+    return undefined;
+  }
+  env.MUSE_MODEL = model;
+  env.MUSE_MODEL_PROVIDER_ID = CODEX_PROVIDER_ID;
+  return model;
 }

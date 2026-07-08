@@ -1,15 +1,17 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  applyCodexModelToEnv,
   codexConfigPath,
   codexSetupSteps,
   detectCodexReadiness,
   readCodexDelegationConfig,
+  resolveCodexActivation,
   runCodexExec,
   writeCodexDelegationConfig,
   type SpawnLike
@@ -68,7 +70,12 @@ describe("codexSetupSteps — names the exact missing step", () => {
   });
 });
 
-function fakeSpawn(opts: { stdout?: string; stderr?: string; code?: number; error?: Error }): { spawn: SpawnLike; calls: Array<{ cmd: string; args: readonly string[] }> } {
+/**
+ * Contract-faithful fake for the shared safe invocation: it extracts the `-o
+ * <outfile>` path from the argv and writes the canned answer there (exactly like
+ * the real `codex exec -o`), so the read-from-file extraction path is exercised.
+ */
+function fakeSpawn(opts: { output?: string; stderr?: string; code?: number; error?: Error }): { spawn: SpawnLike; calls: Array<{ cmd: string; args: readonly string[] }> } {
   const calls: Array<{ cmd: string; args: readonly string[] }> = [];
   const spawn = ((cmd: string, args: readonly string[]) => {
     calls.push({ args, cmd });
@@ -77,41 +84,95 @@ function fakeSpawn(opts: { stdout?: string; stderr?: string; code?: number; erro
     child.stderr = new EventEmitter();
     child.kill = () => undefined;
     queueMicrotask(() => {
-      if (opts.error) {
-        child.emit("error", opts.error);
-        return;
-      }
-      if (opts.stdout) child.stdout.emit("data", Buffer.from(opts.stdout));
-      if (opts.stderr) child.stderr.emit("data", Buffer.from(opts.stderr));
-      child.emit("close", opts.code ?? 0);
+      void (async () => {
+        if (opts.error) {
+          child.emit("error", opts.error);
+          return;
+        }
+        if ((opts.code ?? 0) === 0) {
+          const oIdx = args.indexOf("-o");
+          const outFile = oIdx >= 0 ? args[oIdx + 1] : undefined;
+          if (outFile) await writeFile(outFile, opts.output ?? "");
+        }
+        if (opts.stderr) child.stderr.emit("data", Buffer.from(opts.stderr));
+        child.emit("close", opts.code ?? 0);
+      })();
     });
     return child;
   }) as unknown as SpawnLike;
   return { calls, spawn };
 }
 
-describe("runCodexExec — subprocess bridge scaffold (contract-faithful fake)", () => {
-  it("invokes `codex exec <prompt>` and returns trimmed stdout on exit 0", async () => {
-    const { calls, spawn } = fakeSpawn({ code: 0, stdout: "  hello from codex  \n" });
-    const result = await runCodexExec("say hi", { spawn });
-    expect(calls[0]).toEqual({ args: ["exec", "say hi"], cmd: "codex" });
+describe("runCodexExec — shared safe invocation (contract-faithful fake)", () => {
+  it("uses the verified-safe argv and returns the -o file content on exit 0", async () => {
+    const { calls, spawn } = fakeSpawn({ code: 0, output: "  hello from codex  \n" });
+    const result = await runCodexExec("say hi", { spawn, model: "gpt-5.1" });
+    const args = calls[0]!.args;
+    for (const flag of ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-C", "-o", "-m"]) {
+      expect(args, flag).toContain(flag);
+    }
+    expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.1");
+    expect(args[args.length - 1]).toBe("say hi");
     expect(result).toMatchObject({ exitCode: 0, ok: true, text: "hello from codex" });
   });
 
-  it("reports failure (ok=false) with stderr on a non-zero exit", async () => {
+  it("reports failure (ok=false) with a login hint on a non-zero exit", async () => {
     const { spawn } = fakeSpawn({ code: 1, stderr: "not logged in" });
     const result = await runCodexExec("say hi", { spawn });
     expect(result.ok).toBe(false);
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toBe("not logged in");
+    expect(result.stderr).toContain("codex login");
   });
 
   it("resolves ok=false when the process cannot spawn", async () => {
     const { spawn } = fakeSpawn({ error: new Error("ENOENT codex") });
     const result = await runCodexExec("say hi", { spawn });
     expect(result.ok).toBe(false);
-    expect(result.exitCode).toBeNull();
     expect(result.stderr).toContain("ENOENT codex");
+  });
+});
+
+describe("resolveCodexActivation — opt-in, readiness is the truth", () => {
+  it("returns undefined when delegation was never configured (local default untouched)", async () => {
+    const activation = await resolveCodexActivation({
+      home: "/home/u",
+      readConfig: async () => undefined,
+      detect: async () => ({ authFile: "", cliOnPath: true, loggedIn: true, ready: true })
+    });
+    expect(activation).toBeUndefined();
+  });
+
+  it("active with a codex/<model> id when configured AND ready", async () => {
+    const activation = await resolveCodexActivation({
+      home: "/home/u",
+      readConfig: async () => ({ configuredAt: "", delegated: true, model: "gpt-5.1", provider: "codex" }),
+      detect: async () => ({ authFile: "", cliOnPath: true, loggedIn: true, ready: true })
+    });
+    expect(activation).toMatchObject({ active: true, configured: true, model: "codex/gpt-5.1" });
+  });
+
+  it("NOT active (with setup steps) when configured but the CLI is not ready", async () => {
+    const activation = await resolveCodexActivation({
+      home: "/home/u",
+      readConfig: async () => ({ configuredAt: "", delegated: true, provider: "codex" }),
+      detect: async () => ({ authFile: "/h/.codex/auth.json", cliOnPath: true, loggedIn: false, ready: false })
+    });
+    expect(activation?.active).toBe(false);
+    expect(activation?.setupSteps).toContain("codex login");
+    expect(activation?.model).toBeUndefined();
+  });
+});
+
+describe("applyCodexModelToEnv — pins codex only when not already chosen", () => {
+  it("sets MUSE_MODEL + provider id on a fresh env", () => {
+    const env: { MUSE_MODEL?: string; MUSE_MODEL_PROVIDER_ID?: string } = {};
+    expect(applyCodexModelToEnv(env, "codex/gpt-5.1")).toBe("codex/gpt-5.1");
+    expect(env).toEqual({ MUSE_MODEL: "codex/gpt-5.1", MUSE_MODEL_PROVIDER_ID: "codex" });
+  });
+
+  it("leaves an explicitly-pinned MUSE_MODEL untouched", () => {
+    const env = { MUSE_MODEL: "ollama/gemma4:12b" };
+    expect(applyCodexModelToEnv(env, "codex/gpt-5.1")).toBeUndefined();
+    expect(env.MUSE_MODEL).toBe("ollama/gemma4:12b");
   });
 });
 
@@ -124,13 +185,14 @@ describe("codex delegation config — write/read roundtrip", () => {
     await rm(home, { force: true, recursive: true });
   });
 
-  it("writes an honest codex marker (delegated:true, live:false) and reads it back", async () => {
-    const file = await writeCodexDelegationConfig(home, new Date("2026-07-08T00:00:00Z"));
+  it("writes an honest codex marker (delegated:true) with an optional pinned model and reads it back", async () => {
+    const file = await writeCodexDelegationConfig(home, new Date("2026-07-08T00:00:00Z"), "gpt-5.1");
     expect(file).toBe(codexConfigPath(home));
     const raw = JSON.parse(await readFile(file, "utf8"));
-    expect(raw).toMatchObject({ delegated: true, live: false, provider: "codex" });
+    expect(raw).toMatchObject({ delegated: true, model: "gpt-5.1", provider: "codex" });
+    expect(raw.live).toBeUndefined();
     const parsed = await readCodexDelegationConfig(home);
-    expect(parsed).toMatchObject({ delegated: true, live: false, provider: "codex" });
+    expect(parsed).toMatchObject({ delegated: true, model: "gpt-5.1", provider: "codex" });
   });
 
   it("returns undefined when no codex config exists", async () => {

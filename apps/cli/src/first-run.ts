@@ -382,9 +382,10 @@ async function runFirstRunWizardBody(deps: FirstRunWizardDeps, helpers: WizardHe
 
   await writeCodexConfig(deps.home);
   prompts.note?.(
-    "Codex 위임을 저장했어요. codex 라이브 라우팅은 아직 PREVIEW — 지금은 Muse가 로컬 모델로 답하고,\n" +
-    "라이브 구독으로 검증되면 codex 브리지가 활성화돼요. Muse는 ChatGPT 토큰을 저장하지 않아요 — 공식 codex CLI 소유.\n" +
-    "Codex delegation saved. Live routing is in PREVIEW; Muse answers locally until the bridge is verified.",
+    "Codex 위임을 저장했어요. codex CLI가 준비된 동안(설치 + 로그인) Muse는 codex로 라우팅하고,\n" +
+    "준비가 안 되면 자동으로 로컬 기본값으로 돌아가요. Muse는 ChatGPT 토큰을 저장하지 않아요 — 공식 codex CLI 소유.\n" +
+    "Codex delegation saved. Muse routes through codex while the CLI is ready (installed + logged in),\n" +
+    "and falls back to the local default when it isn't. Muse never stores the ChatGPT token.",
     "Codex 설정됨 · configured"
   );
   return finishWithValue(deps, helpers, { choice: "codex", codexReady: true });
