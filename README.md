@@ -2,6 +2,8 @@
   <img src="docs/assets/mascot.svg" alt="Muse — the bluebird mascot" width="120" />
 </p>
 
+<p align="center"><i>Meet Muse — and the bluebird that lives in it: a small companion that watches quietly and chirps when it has something for you.</i></p>
+
 <h1 align="center">Muse</h1>
 
 <p align="center">
@@ -158,9 +160,10 @@ for a single call; it remembers you and shapes every future turn *and* every pro
   read-only MCP server (`muse_recall` cited grounded Q&A, `knowledge_search` ranked search,
   `user_model_read` your facts/preferences with confidence) another agent can connect to;
   see [MCP server mode](#mcp-server-mode-muse-mcp-serve) below.
-- **Personal-domain primitives.** Markdown notes, a todo list, reminders, and calendar events
-  across 5 providers (Local file, Local-ICS, Google Calendar, CalDAV, macOS Calendar.app) — all
-  stored locally by default, queryable by the agent, editable from CLI / Web UI.
+- **Personal-domain primitives.** Markdown notes, a todo list, reminders, contacts, and calendar
+  events across 5 providers (Local file, Local-ICS, Google Calendar, CalDAV, macOS Calendar.app) —
+  plus macOS Reminders / Notes mirrors — all stored locally by default, queryable by the agent,
+  editable from CLI / Web UI.
 - **Multi-agent orchestration.** Sequential or parallel worker fan-out, an in-memory
   cross-agent message bus, per-run history with full conversation snapshots — exposed over
   HTTP and SSE.
@@ -395,6 +398,7 @@ Deep dives: [differentiation](docs/strategy/differentiation.md) ·
 | Why Muse differs from Hermes / OpenClaw | [`docs/strategy/differentiation.md`](docs/strategy/differentiation.md) |
 | The 2026 frontier research it draws on | [`docs/strategy/frontier-research-2026-06.md`](docs/strategy/frontier-research-2026-06.md) |
 | Security posture & reporting | [`SECURITY.md`](SECURITY.md) |
+| The bluebird mascot — concept, states, palette, single-source pixels | [`docs/design/mascot.md`](docs/design/mascot.md) · [showroom](docs/design/mascot-showroom.html) |
 | Korean overview | [`README.ko.md`](README.ko.md) |
 
 ---
