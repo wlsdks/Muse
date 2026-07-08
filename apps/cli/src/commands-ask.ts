@@ -637,6 +637,21 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         // Sandbox overrides: MUSE_FS_ROOTS narrows the allow-root (default home),
         // MUSE_FS_DENY adds deny prefixes on top of the credential defaults.
         const fsSandbox = pathSafetyOptionsFromEnv(process.env);
+        // Opt-in name-fragment search roots. OFF by default: recursively walking
+        // the user's Downloads/Desktop/Documents (macOS TCC-protected) on a
+        // name-only file_read would fire a system permission prompt unprompted.
+        // Set MUSE_FS_DOC_ROOTS to a comma/colon-separated folder list (e.g.
+        // "~/Downloads,~/Documents") to re-enable it. Explicit-path reads never
+        // need this — they go straight through the home sandbox.
+        const fsHome = (await import("node:os")).homedir();
+        const fsDocRootsRaw = process.env.MUSE_FS_DOC_ROOTS?.trim();
+        const fsDocRoots = fsDocRootsRaw
+          ? fsDocRootsRaw
+              .split(/[,:]/)
+              .map((p) => p.trim())
+              .filter((p) => p.length > 0)
+              .map((p) => (p === "~" ? fsHome : p.startsWith("~/") ? `${fsHome}/${p.slice(2)}` : p))
+          : [];
         // web_download saves a file from a public URL into ~/Downloads — the
         // write-side companion to file_read (SSRF-guarded, size-capped,
         // basename-only). file_read can then read/summarize what was saved.
@@ -649,6 +664,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         const fsFullReadPaths = new Set<string>();
         const fsReadTools = createFsReadTools({
           ...fsSandbox,
+          ...(fsDocRoots.length > 0 ? { docRoots: fsDocRoots } : {}),
           // Cap a single file_read to fit the local model's context — the 200K
           // default exceeds a 32K-token window whole, so one max read would
           // overflow it and silently drop the prompt/history. The model pages

@@ -18,7 +18,6 @@ import type { MuseTool } from "@muse/tools";
 
 import { createIgnoreFilter, type IgnoreFilter } from "./fs-gitignore.js";
 import {
-  defaultFileReadRoots,
   extractDocxTextWithMammoth,
   extractPdfTextWithPdfjs,
   imageMimeType,
@@ -142,7 +141,14 @@ function isProbablyBinary(content: string): boolean {
 
 export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromise?: Promise<ResolvedPolicy>): MuseTool {
   const policy = policyPromise ?? resolvePolicy(options);
-  const docRoots = (options.docRoots ?? defaultFileReadRoots()).slice();
+  // Name-fragment search roots. EMPTY BY DEFAULT: proactively enumerating the
+  // user's Downloads/Desktop/Documents (all macOS TCC-protected) fires a system
+  // permission prompt with nothing explicitly asked — a spurious file_read from
+  // a small local model would trigger it. So the recursive name-search over those
+  // folders is opt-in (the CLI wires `docRoots` from MUSE_FS_DOC_ROOTS). Reading
+  // an EXPLICIT path the user names (e.g. ~/Documents/report.pdf) is unaffected —
+  // that path goes through the home-sandbox, not this walk.
+  const docRoots = (options.docRoots ?? []).slice();
   const extractPdf = options.extractPdfText ?? extractPdfTextWithPdfjs;
   const extractDocx = options.extractDocxText ?? extractDocxTextWithMammoth;
   const maxTextChars = options.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
@@ -156,6 +162,15 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
     if (looksLikePath(input)) {
       const safe = await resolveSafePath(input, options, resolved);
       return { ok: true, path: safe };
+    }
+    if (docRoots.length === 0) {
+      return {
+        ok: false,
+        result: {
+          read: false,
+          reason: `give me the file's full path (e.g. ~/Documents/report.pdf) — name-only search across your everyday folders is off (set MUSE_FS_DOC_ROOTS to a folder list to enable it)`
+        }
+      };
     }
     const candidates = await walkCandidates(docRoots);
     const ranked = rankFileCandidates(candidates, input);
