@@ -234,7 +234,9 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   // A one-line getting-started hint renders FIRST (clig.dev: greet a newcomer
   // before the 100-command wall). The quickstart block + a docs/support line
   // render AFTER the grouped command tree.
-  program.addHelpText("beforeAll", `${museGettingStartedHint()}\n`);
+  program.addHelpText("beforeAll", (helpContext) =>
+    helpContext.command === program ? `${museGettingStartedHint()}\n` : ""
+  );
   program.addHelpText("after", () => `\n${museQuickstartHelp()}\n\n${museHelpDocsLine()}`);
 
   program

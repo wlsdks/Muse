@@ -811,7 +811,7 @@ function renderStatus(io: ProgramIO, snap: Awaited<ReturnType<typeof collectStat
 export function registerStatusCommand(program: Command, io: ProgramIO): void {
   program
     .command("status")
-    .description("JARVIS-style at-a-glance dashboard: persona + model + imminent tasks + last notice")
+    .description("At-a-glance dashboard: persona + model + imminent tasks + last notice")
     .option("--user <id>", "User identity (default $MUSE_USER_ID or $USER)")
     .option("--json", "Emit structured JSON instead of the formatted report")
     .option("--suggestions", "Append 'you usually do X around now' hints from patterns-fired")

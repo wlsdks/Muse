@@ -133,7 +133,7 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
   },
   {
     "name": "brief",
-    "description": "One-command morning briefing — JARVIS-style personal summary of tasks + recent notices",
+    "description": "One-command morning briefing — your personal summary of tasks + recent notices",
     "argsTerm": "",
     "hasOptions": true,
     "subcommands": []
@@ -725,7 +725,7 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
   },
   {
     "name": "remember",
-    "description": "Tell JARVIS something in natural language — LLM extracts facts/prefs/vetoes/goals into ~/.muse/user-memory.json",
+    "description": "Tell Muse something in natural language — it extracts facts/prefs/vetoes/goals into ~/.muse/user-memory.json",
     "argsTerm": "<text...>",
     "hasOptions": true,
     "subcommands": []
@@ -875,7 +875,7 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
   },
   {
     "name": "status",
-    "description": "JARVIS-style at-a-glance dashboard: persona + model + imminent tasks + last notice",
+    "description": "At-a-glance dashboard: persona + model + imminent tasks + last notice",
     "argsTerm": "",
     "hasOptions": true,
     "subcommands": []

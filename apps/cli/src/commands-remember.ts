@@ -55,7 +55,7 @@ export function composeKey(user: string | undefined, persona: string | undefined
 export function registerRememberCommands(program: Command, io: ProgramIO): void {
   program
     .command("remember")
-    .description("Tell JARVIS something in natural language — LLM extracts facts/prefs/vetoes/goals into ~/.muse/user-memory.json")
+    .description("Tell Muse something in natural language — it extracts facts/prefs/vetoes/goals into ~/.muse/user-memory.json")
     .addHelpText("after", `
 Examples:
   $ muse remember "I'm vegetarian and I hate 8am meetings"   # extracts facts/prefs/goals

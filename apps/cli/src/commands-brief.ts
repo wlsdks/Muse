@@ -282,7 +282,7 @@ export function selectBriefOverdue(
 export function registerBriefCommand(program: Command, io: ProgramIO): void {
   program
     .command("brief")
-    .description("One-command morning briefing — JARVIS-style personal summary of tasks + recent notices")
+    .description("One-command morning briefing — your personal summary of tasks + recent notices")
     .option("--user <id>", "User identity")
     .option("--persona <slot>", "Persona slot (work / home / hobby)")
     .option("--model <tag>", "Model override")
@@ -455,7 +455,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
 
       const systemPrompt = [
         ...(personaPrompt ? [personaPrompt, ""] : []),
-        "You are Muse, the user's JARVIS-style personal AI conductor.",
+        "You are Muse, the user's personal AI assistant.",
         `It is currently ${greetingHint} (local clock ${hour.toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}).`,
         ...(routineNote ? [routineNote] : []),
         "Compose a brief summary in 2–3 sentences, in the user's preferred language.",

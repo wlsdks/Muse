@@ -103,6 +103,19 @@ describe("root --help polish (getting-started hint + docs line)", () => {
     expect(text.indexOf(museGettingStartedHint())).toBeLessThan(text.indexOf("Quickstart"));
   });
 
+  it("does NOT leak the getting-started hint into a subcommand's --help (root-only banner)", () => {
+    const out: string[] = [];
+    const io: ProgramIO = { stderr: () => undefined, stdout: (s) => { out.push(s); } };
+    const program = createProgram(io);
+    const sub = program.commands.find((c) => c.name() === "spec");
+    if (!sub) throw new Error("expected a `spec` subcommand to exist");
+    sub.outputHelp();
+    const text = out.join("");
+    // the `beforeAll` banner is global in commander; it must be gated to the
+    // root program so it can't pollute 300+ subcommand help outputs / stdout.
+    expect(text).not.toContain(museGettingStartedHint());
+  });
+
   it("exposes the global UX flags on the root help", () => {
     const out: string[] = [];
     const io: ProgramIO = { stderr: () => undefined, stdout: (s) => { out.push(s); } };
