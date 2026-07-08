@@ -8,6 +8,36 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.21] - 2026-07-08
+
+A first-run experience worthy of the app: `muse` now opens a warm, branded setup
+wizard, walks you through connecting your data, and proves its value on the first
+screen — and the app's empty states now guide you to value instead of dead-ending.
+
+### Added
+
+- **A premium first-run setup wizard.** On first `muse` (or `muse setup start`),
+  a brand-new user gets a branded, bilingual (KO·EN) onboarding — the bluebird
+  banner, a designed "how should Muse think?" picker (Local / Cloud API key /
+  Codex), and a bird success moment — instead of being dropped into chat. Shows
+  once; `--no-setup` / `MUSE_SKIP_FIRST_RUN` bypass it; fail-soft into chat.
+- **Connect your data during setup.** After picking a model, the wizard offers a
+  multi-select of the safe, built-in connectors (Apple Contacts, Chrome browsing
+  history, Reminders/Notes mirrors) so setup ends with real data — the "learns
+  you" value starts on day one. Opt-in and skippable.
+- **A proof-of-value moment.** Setup finishes with a personalized, grounded line
+  ("Sam님, 연락처 12명 연결됐어요 — 이제 당신을 배울게요"); an empty install gets a warm
+  content-free welcome. Fabrication = 0 — it can never invent a trait.
+- **Codex (your ChatGPT subscription) as a setup option** — detects your own
+  official `codex` CLI login and delegates to it (Muse never handles the token),
+  with honest copy up front (an unofficial third-party route; the clean path is a
+  Cloud API key). Live routing is a flagged preview.
+- **Starter skills** scaffolded on a fresh install (daily-briefing, quick-capture)
+  when the skills folder is empty.
+- **Actionable empty states in the app.** "No tasks / notes / …" blanks became
+  warm CTAs — add your first task, connect a calendar, "start a chat and Muse
+  will learn" — that move you toward value instead of dead-ending.
+
 ## [0.2.20] - 2026-07-08
 
 Muse gets a face and a fresh coat of paint: the pixel bluebird now lives across
