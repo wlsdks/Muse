@@ -972,6 +972,36 @@ button {
   width: 28px;
   height: 28px;
 }
+.starter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-xs);
+  max-width: 560px;
+  margin-top: var(--s-md);
+}
+.starter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-strong);
+  color: var(--ink-subtle);
+  font-size: var(--text-ui);
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.starter-chip:hover {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  color: var(--primary-hover);
+}
+.starter-chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary-focus) 70%, transparent);
+  outline-offset: 1px;
+}
 .msg {
   display: flex;
   gap: var(--s-sm);

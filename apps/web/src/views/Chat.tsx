@@ -8,6 +8,8 @@ import { Button, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 
 import type { ApiClient } from "../api/client.js";
+import type { StringKey, Translate } from "../i18n/index.js";
+import type { RefObject } from "react";
 
 function readToken(): string {
   try {
@@ -15,6 +17,72 @@ function readToken(): string {
   } catch {
     return "";
   }
+}
+
+/** Starter prompts grounded in Muse's real capabilities (tasks, calendar,
+ * notes, and a meta "what can you do" — see `chat.askSub`). Each entry pairs
+ * a short chip label with the actual prompt text it fills into the composer. */
+export const STARTER_PROMPTS: readonly { labelKey: StringKey; promptKey: StringKey }[] = [
+  { labelKey: "chat.starter.day.label", promptKey: "chat.starter.day.prompt" },
+  { labelKey: "chat.starter.tasks.label", promptKey: "chat.starter.tasks.prompt" },
+  { labelKey: "chat.starter.notes.label", promptKey: "chat.starter.notes.prompt" },
+  { labelKey: "chat.starter.help.label", promptKey: "chat.starter.help.prompt" }
+];
+
+/** Fills the composer with a starter prompt and focuses it — never sends it.
+ * The user stays in control and confirms with Enter, same as any typed draft. */
+export function applyStarterPrompt(
+  prompt: string,
+  setDraft: (value: string) => void,
+  textareaRef: RefObject<HTMLTextAreaElement | null>
+): void {
+  setDraft(prompt);
+  textareaRef.current?.focus();
+}
+
+/** Takes `t` as a prop (not `useI18n()`) so it calls no hooks — a plain
+ * function of its props, callable directly in tests without a React render. */
+export function StarterChips({ onPick, t }: { onPick: (prompt: string) => void; t: Translate }) {
+  return (
+    <div className="starter-chips" role="group" aria-label={t("chat.starter.groupLabel")}>
+      {STARTER_PROMPTS.map((s) => (
+        <button
+          className="starter-chip"
+          key={s.labelKey}
+          onClick={() => onPick(t(s.promptKey))}
+          type="button"
+        >
+          {t(s.labelKey)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The chat empty state: welcome copy + starter chips. Hidden once a
+ * conversation has messages (`hasMessages`), so a returning user with a
+ * transcript never sees onboarding chips. */
+export function ChatEmptyState({
+  hasMessages,
+  onPickStarter
+}: {
+  hasMessages: boolean;
+  onPickStarter: (prompt: string) => void;
+}) {
+  const { t } = useI18n();
+  if (hasMessages) {
+    return null;
+  }
+  return (
+    <div className="empty chat-welcome" style={{ marginTop: 96 }}>
+      <div className="empty-ic chat-welcome-ic" aria-hidden="true">
+        <Icon.chat />
+      </div>
+      <div className="empty-title" style={{ fontSize: "var(--text-xl)" }}>{t("chat.askAnything")}</div>
+      <div className="empty-hint">{t("chat.askSub")}</div>
+      <StarterChips onPick={onPickStarter} t={t} />
+    </div>
+  );
 }
 
 export function ChatView({ client }: { client: ApiClient }) {
@@ -26,6 +94,7 @@ export function ChatView({ client }: { client: ApiClient }) {
   const [autoSpeak, setAutoSpeak] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerWrapRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const spokenRef = useRef<number>(turns.length);
 
   useEffect(() => {
@@ -59,19 +128,13 @@ export function ChatView({ client }: { client: ApiClient }) {
     }
   };
 
+  const pickStarter = (prompt: string) => applyStarterPrompt(prompt, setDraft, textareaRef);
+
   return (
     <div className="chat" style={{ margin: "-24px", height: "calc(100% + 48px)" }}>
       <div className="chat-scroll" ref={scrollRef}>
         <div className="chat-thread">
-          {turns.length === 0 && (
-            <div className="empty chat-welcome" style={{ marginTop: 96 }}>
-              <div className="empty-ic chat-welcome-ic" aria-hidden="true">
-                <Icon.chat />
-              </div>
-              <div className="empty-title" style={{ fontSize: "var(--text-xl)" }}>{t("chat.askAnything")}</div>
-              <div className="empty-hint">{t("chat.askSub")}</div>
-            </div>
-          )}
+          <ChatEmptyState hasMessages={turns.length > 0} onPickStarter={pickStarter} />
           {turns.map((turn, i) => (
             <div className={`msg ${turn.role}`} key={i}>
               <div className="avatar">{turn.role === "user" ? "You" : "M"}</div>
@@ -138,6 +201,7 @@ export function ChatView({ client }: { client: ApiClient }) {
             {voice.transcribing ? <span className="spinner" /> : <Icon.mic className="nav-icon" />}
           </button>
           <textarea
+            ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
