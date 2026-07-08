@@ -8,6 +8,7 @@ import MuseDesktopCore
 final class OnboardingWindowController {
     var onOpenFull: (() -> Void)?
     private var window: NSWindow?
+    private var resizeObserver: NSObjectProtocol?
     private static let seenKey = "didOnboard"
 
     static var hasOnboarded: Bool { UserDefaults.standard.bool(forKey: seenKey) }
@@ -20,6 +21,14 @@ final class OnboardingWindowController {
         guard let win = window else { return }
         win.makeKeyAndOrderFront(nil)
         Self.centerOnActiveScreen(win)
+        // The SwiftUI content's preferredContentSize can finalize one runloop
+        // tick AFTER the window first orders front, so a single center() runs
+        // against a stale (default) size and the window lands off-center. Re-
+        // center once the final size has settled so it reliably sits dead-center.
+        DispatchQueue.main.async { [weak win] in
+            guard let win else { return }
+            Self.centerOnActiveScreen(win)
+        }
     }
 
     private func build() {
@@ -38,6 +47,17 @@ final class OnboardingWindowController {
         win.isReleasedWhenClosed = false
         win.appearance = NSAppearance(named: .darkAqua)
         window = win
+        // The async local-AI health check flips the status card (checking →
+        // ready/error) AFTER the window is shown, which resizes the content. AppKit
+        // keeps the top-left corner fixed on that resize, so a window centered once
+        // at show() drifts down-left. The window isn't user-resizable, so every
+        // resize is content-driven — re-center on each one to keep it dead-center.
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification, object: win, queue: .main
+        ) { [weak win] _ in
+            guard let win else { return }
+            OnboardingWindowController.centerOnActiveScreen(win)
+        }
     }
 
     /// Center on the screen the user is actually looking at (the one under the
@@ -53,6 +73,8 @@ final class OnboardingWindowController {
 
     private func finish() {
         UserDefaults.standard.set(true, forKey: Self.seenKey)
+        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
+        resizeObserver = nil
         window?.close()
     }
 }
@@ -68,31 +90,55 @@ private struct OnboardingView: View {
     private let s = UIStrings.current()
     private let violet = Color(red: 0.62, green: 0.52, blue: 1.0)
     private let ink = Color.white
-    private let dim = Color.white.opacity(0.62)
+    private let dim = Color.white.opacity(0.60)
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 0) {
             if let g = MuseAssets.bird {
-                Image(nsImage: g).resizable().interpolation(.none).scaledToFit().frame(height: 120)
-                    .shadow(color: violet.opacity(0.45), radius: 18)
+                Image(nsImage: g).resizable().interpolation(.none).scaledToFit()
+                    .frame(width: 128, height: 128)
+                    .shadow(color: violet.opacity(0.50), radius: 26, y: 6)
             }
-            Text(s.onboardWelcome).font(.system(size: 24, weight: .bold)).foregroundStyle(ink)
-            Text(s.onboardSubtitle).font(.system(size: 13)).foregroundStyle(dim)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: 10) {
+                Text(s.onboardWelcome)
+                    .font(.system(size: 26, weight: .bold)).foregroundStyle(ink)
+                    .tracking(0.2)
+                Text(s.onboardSubtitle)
+                    .font(.system(size: 13.5)).foregroundStyle(dim)
+                    .multilineTextAlignment(.center).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 22)
 
             statusCard
+                .padding(.top, 32)
 
-            Button(action: onOpenFull) {
-                Text(s.onboardOpenFull).fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 6)
+            VStack(spacing: 10) {
+                Button(action: onOpenFull) {
+                    Text(s.onboardOpenFull)
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 13)
+                        .foregroundStyle(.white)
+                        .background(ready ? violet : violet.opacity(0.35),
+                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!ready)
+
+                Button(action: onFinish) {
+                    Text(s.onboardStart)
+                        .font(.system(size: 13)).foregroundStyle(dim)
+                        .frame(maxWidth: .infinity).padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.borderedProminent).tint(violet).controlSize(.large)
-            .disabled(!ready)
-
-            Button(action: onFinish) { Text(s.onboardStart).frame(maxWidth: .infinity) }
-                .buttonStyle(.bordered).controlSize(.large)
+            .padding(.top, 28)
         }
-        .padding(28)
-        .frame(width: 460)
+        .padding(.horizontal, 34)
+        .padding(.top, 46)
+        .padding(.bottom, 30)
+        .frame(width: 440)
         .background(LinearGradient(colors: [Color(red: 0.10, green: 0.09, blue: 0.16),
                                             Color(red: 0.05, green: 0.04, blue: 0.09)],
                                    startPoint: .top, endPoint: .bottom).ignoresSafeArea())
@@ -113,11 +159,11 @@ private struct OnboardingView: View {
             }
             Spacer()
         }
-        .font(.system(size: 12))
-        .padding(14)
+        .font(.system(size: 12.5))
+        .padding(.horizontal, 16).padding(.vertical, 15)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
     }
 
     private func runCheck() async {
