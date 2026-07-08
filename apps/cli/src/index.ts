@@ -16,7 +16,13 @@ try {
   const { createProgram } = await import("./program.js");
   await createProgram().parseAsync(process.argv);
 } catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`muse: ${message}\n`);
+  const [{ formatCliError, commandFromArgv }, { MUSE_CLI_VERSION }] = await Promise.all([
+    import("./format-cli-error.js"),
+    import("./muse-version.js")
+  ]);
+  process.stderr.write(formatCliError(error, {
+    command: commandFromArgv(process.argv) ?? "",
+    version: MUSE_CLI_VERSION
+  }));
   process.exit(1);
 }

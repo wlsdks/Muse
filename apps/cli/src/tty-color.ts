@@ -4,16 +4,20 @@
  * the surface we need is small (red / yellow / green / bold) and
  * a hand-rolled wrapper keeps the helper auditable.
  *
- * Behaviour matrix:
+ * Precedence (highest first — clig.dev colour discipline):
  *
- *   NO_COLOR set (any value)        → never colour (always wins)
- *   `force: true`                   → colour regardless of TTY (tests)
- *   process.stdout.isTTY === true   → colour
- *   process.stdout.isTTY undefined  → never colour (piped / CI)
+ *   NO_COLOR set (any value)        → never  (https://no-color.org/)
+ *   FORCE_COLOR truthy              → always (https://force-color.org/)
+ *   `force: true`                   → always (test-only force, same tier)
+ *   --no-color requested            → never  (cli-context signal)
+ *   TERM=dumb                       → never  (no ANSI capability)
+ *   else process.stdout.isTTY       → colour when a TTY, plain when piped/CI
  *
  * Returns the wrapped string when colour is active, the raw
  * string otherwise — callers don't have to branch.
  */
+
+import { isColorDisabled } from "./cli-context.js";
 
 export type TerminalBackground = "dark" | "light" | "unknown";
 
@@ -24,6 +28,13 @@ export interface AnsiOptions {
   readonly force?: boolean;
   /** Override the detected terminal background — useful for tests. */
   readonly background?: TerminalBackground;
+  /** Override the environment read — defaults to `process.env`. Pure-test seam. */
+  readonly env?: NodeJS.ProcessEnv;
+  /**
+   * Override the `--no-color` signal — defaults to the shared cli-context.
+   * Lets `colorAllowed` stay a pure function under test.
+   */
+  readonly noColor?: boolean;
 }
 
 /**
@@ -60,14 +71,34 @@ const COLORS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * True when `FORCE_COLOR` is set to a truthy value per force-color.org:
+ * absent / `""` / `"0"` / `"false"` are falsy; `"1"`/`"2"`/`"3"`/`"true"`
+ * (or any other non-falsy string) force colour on.
+ */
+function forceColorRequested(env: NodeJS.ProcessEnv): boolean {
+  const raw = env.FORCE_COLOR;
+  if (raw === undefined) return false;
+  const value = raw.trim().toLowerCase();
+  return value !== "" && value !== "0" && value !== "false";
+}
+
+/**
  * Decide whether colour output is currently allowed. Centralised
  * here so individual formatters call `if (!colorAllowed(...))` at
- * most once per render instead of duplicating the policy.
+ * most once per render instead of duplicating the policy. See the
+ * precedence table at the top of the file.
  */
 export function colorAllowed(options: AnsiOptions = {}): boolean {
-  // NO_COLOR wins unconditionally (https://no-color.org/).
-  if (process.env.NO_COLOR !== undefined) return false;
-  if (options.force) return true;
+  const env = options.env ?? process.env;
+  // 1. NO_COLOR wins unconditionally (https://no-color.org/).
+  if (env.NO_COLOR !== undefined) return false;
+  // 2. FORCE_COLOR (or the test-only `force`) forces colour on.
+  if (forceColorRequested(env) || options.force) return true;
+  // 3. An explicit --no-color request (via cli-context) disables colour.
+  if ((options.noColor ?? isColorDisabled()) === true) return false;
+  // 4. A dumb terminal has no ANSI capability.
+  if ((env.TERM ?? "").toLowerCase() === "dumb") return false;
+  // 5. Otherwise colour only when attached to a TTY.
   return options.isTty ?? process.stdout.isTTY === true;
 }
 

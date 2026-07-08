@@ -16,6 +16,7 @@ import { applyCommandGroups } from "./command-groups.js";
 import { MUSE_TAGLINE } from "./muse-identity.js";
 import { formatSpec } from "./muse-spec.js";
 import { MUSE_CLI_VERSION } from "./muse-version.js";
+import { cliContextFromGlobals, setCliContext } from "./cli-context.js";
 import { attachUnknownSubcommandGuidance } from "./unknown-subcommand.js";
 import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
 import {
@@ -266,6 +267,38 @@ export function museQuickstartHelp(): string {
   ].join("\n");
 }
 
+/**
+ * The one-line getting-started hint shown at the very top of `muse --help`,
+ * before the (100+ command) tree. clig.dev "help": orient a newcomer to the
+ * two fastest on-ramps rather than dropping them into a wall of commands.
+ * Pure string → directly testable. Both named commands are real.
+ */
+export function museGettingStartedHint(): string {
+  return "New here? Run `muse` to start chatting, or `muse setup` to configure a model.";
+}
+
+/**
+ * The docs / support footer line for `muse --help`. clig.dev "help": point to
+ * where to go for more (docs + the local self-check). Pure string.
+ */
+export function museHelpDocsLine(): string {
+  return "Docs & support: https://github.com/wlsdks/Muse  ·  run `muse doctor` to check your setup.";
+}
+
+/**
+ * Examples block for `muse chat --help` (chat is defined here in the hub).
+ * clig.dev: a few real, copy-pasteable examples beat a bare option list.
+ */
+export function museChatExamples(): string {
+  return [
+    "Examples:",
+    "  muse chat \"what's on my plate today?\"      one-shot question via the API",
+    "  muse chat --local \"summarise my notes\"     run on your local model, no server",
+    "  muse chat -i --local                        open an interactive REPL",
+    "  muse chat --local --image receipt.jpg \"정리해줘\"   attach an image (local vision)"
+  ].join("\n");
+}
+
 export function createProgram(io: ProgramIO = defaultIO): Command {
   const program = new Command();
 
@@ -276,10 +309,21 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
     .option("--api-url <url>", "Muse API base URL")
     .option("--token <token>", "Bearer token for authenticated API calls")
     .option("--no-setup", "Skip the first-run setup wizard and start chat directly")
+    .option("--no-color", "Disable ANSI colour output (also honours NO_COLOR / FORCE_COLOR / TERM=dumb)")
+    .option("-q, --quiet", "Suppress non-essential output (tips, spinners); keep primary output + errors")
+    .option("--no-input", "Never prompt — take the safe non-interactive default instead of blocking")
     .configureOutput({
       writeErr: io.stderr,
       writeOut: io.stdout
     });
+
+  // Populate the process-wide CLI UX context from the parsed global flags
+  // BEFORE any command action runs, so every command / spinner / formatter
+  // reads a single consistent signal for --quiet / --no-input / --no-color.
+  // Absent flags → today's behaviour (no regression).
+  program.hook("preAction", () => {
+    setCliContext(cliContextFromGlobals(program.opts()));
+  });
 
   // Muse exposes ~80 commands; insertion order makes `muse --help` an
   // unscannable wall. Sort commands + options alphabetically so a name is
@@ -288,7 +332,11 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 
   program.configureHelp({ sortSubcommands: true, sortOptions: true });
 
-  program.addHelpText("after", () => `\n${museQuickstartHelp()}`);
+  // A one-line getting-started hint renders FIRST (clig.dev: greet a newcomer
+  // before the 100-command wall). The quickstart block + a docs/support line
+  // render AFTER the grouped command tree.
+  program.addHelpText("beforeAll", `${museGettingStartedHint()}\n`);
+  program.addHelpText("after", () => `\n${museQuickstartHelp()}\n\n${museHelpDocsLine()}`);
 
   program
     .command("config-path")
@@ -337,6 +385,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
   program
     .command("chat")
     .description("Run a chat request through the Muse API")
+    .addHelpText("after", () => `\n${museChatExamples()}`)
     .argument("[message...]", "User message")
     .option("--local", "Run through the local shared agent runtime instead of the API")
     .option("--model <model>", "Model name")

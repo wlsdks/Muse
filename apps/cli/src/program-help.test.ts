@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { getCliContext, resetCliContext } from "./cli-context.js";
 import { MUSE_TAGLINE } from "./muse-identity.js";
-import { createProgram, formatUnknownCommand, museQuickstartHelp } from "./program.js";
+import {
+  createProgram,
+  formatUnknownCommand,
+  museChatExamples,
+  museGettingStartedHint,
+  museHelpDocsLine,
+  museQuickstartHelp
+} from "./program.js";
 import type { ProgramIO } from "./program.js";
 
 describe("formatUnknownCommand — typo nudge vs discovery on-ramp", () => {
@@ -78,6 +86,77 @@ describe("muse --help first screen (wiring)", () => {
     const text = out.join("");
     expect(text).toContain("Quickstart (local-first");
     expect(text).toContain("muse setup local");
+  });
+});
+
+describe("root --help polish (getting-started hint + docs line)", () => {
+  it("renders the getting-started hint and the docs/support line", () => {
+    const out: string[] = [];
+    const io: ProgramIO = { stderr: () => undefined, stdout: (s) => { out.push(s); } };
+    const program = createProgram(io);
+    program.outputHelp();
+    const text = out.join("");
+    expect(text).toContain(museGettingStartedHint());
+    expect(text).toContain("Docs & support:");
+    expect(text).toContain("github.com/wlsdks/Muse");
+    // the hint renders before the command tree / quickstart
+    expect(text.indexOf(museGettingStartedHint())).toBeLessThan(text.indexOf("Quickstart"));
+  });
+
+  it("exposes the global UX flags on the root help", () => {
+    const out: string[] = [];
+    const io: ProgramIO = { stderr: () => undefined, stdout: (s) => { out.push(s); } };
+    const program = createProgram(io);
+    program.outputHelp();
+    const text = out.join("");
+    expect(text).toContain("--no-color");
+    expect(text).toContain("--quiet");
+    expect(text).toContain("--no-input");
+  });
+
+  it("museChatExamples lists real chat invocations", () => {
+    const examples = museChatExamples();
+    expect(examples).toContain("muse chat");
+    expect(examples).toContain("--local");
+    expect(examples).toContain("-i");
+  });
+
+  it("museHelpDocsLine points to docs + the local self-check", () => {
+    expect(museHelpDocsLine()).toContain("github.com/wlsdks/Muse");
+    expect(museHelpDocsLine()).toContain("muse doctor");
+  });
+});
+
+describe("global UX flags populate the shared cli-context via the pre-action hook", () => {
+  afterEach(() => {
+    resetCliContext();
+  });
+
+  const runWith = async (...args: string[]): Promise<void> => {
+    const io: ProgramIO = { stderr: () => undefined, stdout: () => undefined };
+    // `config-path` is a real, network-free subcommand with an action, so the
+    // root program's preAction hook fires and populates the context.
+    await createProgram(io).parseAsync(["node", "muse", ...args, "config-path"]);
+  };
+
+  it("default (no flags) leaves the context all-off (no regression)", async () => {
+    await runWith();
+    expect(getCliContext()).toEqual({ noColor: false, noInput: false, quiet: false });
+  });
+
+  it("--no-color sets noColor", async () => {
+    await runWith("--no-color");
+    expect(getCliContext().noColor).toBe(true);
+  });
+
+  it("-q sets quiet", async () => {
+    await runWith("-q");
+    expect(getCliContext().quiet).toBe(true);
+  });
+
+  it("--no-input sets noInput", async () => {
+    await runWith("--no-input");
+    expect(getCliContext().noInput).toBe(true);
   });
 });
 
