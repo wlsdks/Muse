@@ -16,7 +16,6 @@
 import { promises as fs } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 
 import type { BrowsingVisit } from "./browsing-store.js";
 import { webkitTimeToIso } from "./browsing-store.js";
@@ -108,7 +107,7 @@ export async function readChromeHistoryVisits(
     return [];
   }
   try {
-    rows = queryVisits(tempCopy, sinceVisitTime, limit);
+    rows = await queryVisits(tempCopy, sinceVisitTime, limit);
   } catch {
     return [];
   } finally {
@@ -117,7 +116,15 @@ export async function readChromeHistoryVisits(
   return rows.flatMap((row) => toBrowsingVisit(row));
 }
 
-function queryVisits(dbFile: string, sinceVisitTime: number, limit: number): readonly RawVisitRow[] {
+// `node:sqlite` is imported LAZILY (inside the one function that uses it) rather
+// than at module top level. Loaded eagerly it would run on ANY import of this
+// module's package graph — including at process startup for every CLI command —
+// and a runtime WITHOUT node:sqlite (the bun-compiled desktop binary; Bun lacks
+// the built-in) would then hard-crash the entire binary before it ran anything.
+// Deferring it here means only actual Chrome-history ingestion pays that cost,
+// and its failure collapses to the caller's fail-soft `[]`.
+async function queryVisits(dbFile: string, sinceVisitTime: number, limit: number): Promise<readonly RawVisitRow[]> {
+  const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(dbFile, { readOnly: true });
   try {
     const statement = db.prepare(HISTORY_QUERY);
