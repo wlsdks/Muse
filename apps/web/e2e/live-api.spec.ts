@@ -10,7 +10,7 @@ test("console talks to a live diagnostic API", async ({ page }) => {
 
   await page.goto("/");
 
-  await expect(page.getByText("AI Conductor")).toBeVisible();
+  await expect(page.getByText("Learns you, not the world")).toBeVisible();
   await expect(page.getByText("Connected")).toBeVisible();
 
   await page.getByRole("button", { name: "Chat" }).click();

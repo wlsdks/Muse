@@ -20,18 +20,18 @@ test("toggles between English and Korean across the UI", async ({ page }) => {
   await page.goto("/");
 
   // English first.
-  await expect(page.getByText("AI Conductor")).toBeVisible();
+  await expect(page.getByText("Learns you, not the world")).toBeVisible();
   await expect(page.getByRole("button", { name: "Chat" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: /, Stark/ })).toBeVisible();
 
   // Switch to Korean via the sidebar toggle.
   await page.getByRole("button", { name: "한", exact: true }).click();
 
-  await expect(page.getByText("AI 지휘자")).toBeVisible();
+  await expect(page.getByText("세상이 아니라, 당신을 배우는 AI")).toBeVisible();
   await expect(page.getByRole("button", { name: "대화" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: /Stark 님/ })).toBeVisible();
 
   // Choice persists across reload.
   await page.reload();
-  await expect(page.getByText("AI 지휘자")).toBeVisible();
+  await expect(page.getByText("세상이 아니라, 당신을 배우는 AI")).toBeVisible();
 });

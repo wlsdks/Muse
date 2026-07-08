@@ -189,7 +189,7 @@ export function AsyncBlock({
   }
   if (error) {
     return (
-      <Empty tone="err" icon={<Icon.alert />} hint={error instanceof Error ? error.message : undefined}>
+      <Empty tone="err" icon={<Icon.alert />} hint={t("common.loadFailedHint")}>
         {t("common.loadFailed")}
       </Empty>
     );

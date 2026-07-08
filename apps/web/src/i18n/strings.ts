@@ -7,7 +7,7 @@
 export type Lang = "en" | "ko";
 
 const en = {
-  "brand.sub": "AI Conductor",
+  "brand.sub": "Learns you, not the world",
 
   "group.workspace": "Workspace",
   "group.knowledge": "Knowledge",
@@ -49,7 +49,8 @@ const en = {
   "common.save": "Save & reconnect",
   "common.snooze30": "Snooze 30m",
   "common.empty": "Nothing here yet.",
-  "common.loadFailed": "Failed to load",
+  "common.loadFailed": "Couldn't load",
+  "common.loadFailedHint": "Check your connection and try again.",
   "filter.open": "open",
   "filter.done": "done",
   "filter.all": "all",
@@ -259,7 +260,7 @@ export type StringKey = keyof typeof en;
 type Strings = Record<StringKey, string>;
 
 const ko: Strings = {
-  "brand.sub": "AI 지휘자",
+  "brand.sub": "세상이 아니라, 당신을 배우는 AI",
 
   "group.workspace": "워크스페이스",
   "group.knowledge": "지식",
@@ -301,7 +302,8 @@ const ko: Strings = {
   "common.save": "저장 후 재연결",
   "common.snooze30": "30분 미루기",
   "common.empty": "아직 항목이 없습니다.",
-  "common.loadFailed": "불러오기 실패",
+  "common.loadFailed": "불러올 수 없어요",
+  "common.loadFailedHint": "연결 상태를 확인하고 다시 시도해 주세요.",
   "filter.open": "진행",
   "filter.done": "완료",
   "filter.all": "전체",

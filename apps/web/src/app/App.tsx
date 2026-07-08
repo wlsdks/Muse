@@ -143,6 +143,31 @@ export function Brand({ tagline, t }: { readonly tagline?: string; readonly t: T
   );
 }
 
+// Small bilingual dot + label driven by the `/api/health` query — replaces
+// showing the raw API URL as chrome. `title` (typically the API URL) stays
+// available as a tooltip so the address isn't lost, just no longer the
+// primary label. Pure + i18n-injected so state → tone/label is unit-testable
+// via renderToStaticMarkup without mocking the health query itself.
+export function ConnectionBadge({
+  connected,
+  loading,
+  t,
+  title
+}: {
+  readonly connected: boolean;
+  readonly loading: boolean;
+  readonly t: Translate;
+  readonly title?: string;
+}) {
+  const tone = connected ? "ok" : loading ? "neutral" : "err";
+  const label = connected ? t("status.connected") : loading ? t("status.connecting") : t("status.offline");
+  return (
+    <span title={title}>
+      <Badge tone={tone}>{label}</Badge>
+    </span>
+  );
+}
+
 export function App() {
   return (
     <I18nProvider>
@@ -235,9 +260,7 @@ function Console() {
 
         <div className="sidebar-foot">
           <LangToggle lang={lang} onChange={setLang} />
-          <Badge tone={connected ? "ok" : health.isLoading ? "neutral" : "err"}>
-            {connected ? t("status.connected") : health.isLoading ? t("status.connecting") : t("status.offline")}
-          </Badge>
+          <ConnectionBadge connected={connected} loading={health.isLoading} t={t} />
         </div>
       </aside>
 
@@ -249,7 +272,7 @@ function Console() {
             <span>{t("cmd.search")}</span>
             <kbd>⌘K</kbd>
           </button>
-          <span className="mono subtle">{apiUrl.replace(/^https?:\/\//, "")}</span>
+          <ConnectionBadge connected={connected} loading={health.isLoading} t={t} title={apiUrl} />
         </header>
         <section className="content">
           <div className="view" key={view}>

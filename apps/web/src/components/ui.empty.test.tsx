@@ -98,4 +98,15 @@ describe("AsyncBlock — empty state forwards label + action", () => {
     expect(html).toContain("empty err");
     expect(html).not.toContain("CTA");
   });
+
+  it("shows gentle bilingual copy on error, never the raw fetch error message", () => {
+    const html = render(
+      <AsyncBlock loading={false} error={new Error("Failed to fetch")} empty>
+        <div>rows</div>
+      </AsyncBlock>
+    );
+    expect(html).toContain("Couldn&#x27;t load");
+    expect(html).toContain("Check your connection and try again.");
+    expect(html).not.toContain("Failed to fetch");
+  });
 });

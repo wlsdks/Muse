@@ -33,7 +33,7 @@ test("console renders Today, navigates to Chat, and round-trips a message", asyn
 
   await page.goto("/");
 
-  await expect(page.getByText("AI Conductor")).toBeVisible();
+  await expect(page.getByText("Learns you, not the world")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: /Stark/ })).toBeVisible();
   await expect(page.getByText("Ship the rebuild").first()).toBeVisible();
 
