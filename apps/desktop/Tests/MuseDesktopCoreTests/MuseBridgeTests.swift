@@ -86,13 +86,30 @@ final class MuseBridgeTests: XCTestCase {
     }
 
     func testParseOpenerExtractsLineAndGroundedFlag() {
-        let grounded = MuseBridge.parseOpener(##"{"grounded":true,"line":"  \"Q3 memo\" 마감이 지났어요  "}"##)
+        let grounded = MuseBridge.parseOpener(##"{"grounded":true,"mode":"proactive","topic":"Q3 memo","line":"  \"Q3 memo\" 마감이 지났어요  "}"##)
         XCTAssertEqual(grounded?.line, "\"Q3 memo\" 마감이 지났어요")
         XCTAssertEqual(grounded?.grounded, true)
+        XCTAssertEqual(grounded?.mode, "proactive")
+        XCTAssertEqual(grounded?.topic, "Q3 memo")
 
-        let greeting = MuseBridge.parseOpener(##"{"grounded":false,"line":"좋은 아침이에요 ☀️"}"##)
+        let greeting = MuseBridge.parseOpener(##"{"grounded":false,"mode":"greeting","topic":"","line":"좋은 아침이에요 ☀️"}"##)
         XCTAssertEqual(greeting?.line, "좋은 아침이에요 ☀️")
         XCTAssertEqual(greeting?.grounded, false)
+        XCTAssertEqual(greeting?.mode, "greeting")
+        XCTAssertEqual(greeting?.topic, "")
+    }
+
+    func testParseOpenerParsesFunModeWithNoTopic() {
+        let joke = MuseBridge.parseOpener(##"{"grounded":false,"mode":"joke","topic":"","line":"나 방금 픽셀 하나 흘릴 뻔했어요 😳"}"##)
+        XCTAssertEqual(joke?.mode, "joke")
+        XCTAssertEqual(joke?.grounded, false)
+        XCTAssertEqual(joke?.topic, "")
+    }
+
+    func testParseOpenerDefaultsModeAndTopicForOlderCLI() {
+        // A CLI that predates mode/topic still yields the line, defaulting both.
+        let old = MuseBridge.parseOpener(##"{"grounded":false,"line":"hi"}"##)
+        XCTAssertEqual(old, MuseBridge.OpenerLine(line: "hi", grounded: false, mode: "greeting", topic: ""))
     }
 
     func testParseOpenerReturnsNilForEmptyOrNonJSON() {

@@ -58,21 +58,29 @@ public enum MuseBridge {
         MuseInvocation(executable: bin, arguments: ["companion-line", "--lang", lang])
     }
 
-    /// One opener line + whether it was grounded in the user's real data.
+    /// One opener line + whether it was grounded in the user's real data, the
+    /// VOICE it was spoken in (proactive / greeting / joke / tease / musing), and
+    /// an optional grounded `topic` seed for click-to-act (the subject to open
+    /// chat on). `topic` is empty for content-free modes.
     public struct OpenerLine: Equatable, Sendable {
         public let line: String
         public let grounded: Bool
-        public init(line: String, grounded: Bool) {
+        public let mode: String
+        public let topic: String
+        public init(line: String, grounded: Bool, mode: String = "greeting", topic: String = "") {
             self.line = line
             self.grounded = grounded
+            self.mode = mode
+            self.topic = topic
         }
     }
 
-    private struct OpenerJSON: Decodable { let line: String?; let grounded: Bool? }
+    private struct OpenerJSON: Decodable { let line: String?; let grounded: Bool?; let mode: String?; let topic: String? }
 
-    /// Parse `muse companion-line`'s `{ line, grounded }` stdout. Returns nil when
-    /// the output isn't the expected JSON or carries no line — so a CLI hiccup
-    /// leaves the canned placeholder in place rather than showing garbage.
+    /// Parse `muse companion-line`'s `{ line, grounded, mode, topic }` stdout.
+    /// Returns nil when the output isn't the expected JSON or carries no line — so
+    /// a CLI hiccup leaves the canned placeholder in place rather than showing
+    /// garbage. `mode`/`topic` default when absent (older CLI).
     public static func parseOpener(_ raw: String) -> OpenerLine? {
         guard let data = raw.data(using: .utf8),
               let decoded = try? JSONDecoder().decode(OpenerJSON.self, from: data) else {
@@ -80,7 +88,12 @@ public enum MuseBridge {
         }
         let line = (decoded.line ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return nil }
-        return OpenerLine(line: line, grounded: decoded.grounded ?? false)
+        return OpenerLine(
+            line: line,
+            grounded: decoded.grounded ?? false,
+            mode: (decoded.mode ?? "greeting").trimmingCharacters(in: .whitespacesAndNewlines),
+            topic: (decoded.topic ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 
     /// Run `muse companion-line` and return the parsed opener (nil on failure /

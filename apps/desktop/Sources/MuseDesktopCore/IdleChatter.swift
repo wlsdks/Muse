@@ -18,6 +18,22 @@ public enum IdleChatter {
         return min(20, max(6, raw))
     }
 
+    /// The delay before the companion's NEXT idle line, varied so the cadence
+    /// never feels like a mechanical fixed tick. Deterministic in `index` (a
+    /// bounded triangular wave over [floor, ceil]) so it's testable, yet each
+    /// interval differs from the last. The first few gaps are shorter (the
+    /// companion feels present early); later gaps lengthen toward the ceiling so
+    /// a long, untouched session isn't chatty. Clamped to a sane [35s, 75s].
+    public static func nextInterval(index: Int, floor: Double = 35, ceil: Double = 75) -> Double {
+        let span = max(0, ceil - floor)
+        // A 5-step triangular wave (0,1,2,3,4,3,2,1,…) scaled across the span, so
+        // successive values rise and fall rather than repeat a constant.
+        let phase = ((index % 8) + 8) % 8
+        let tri = phase <= 4 ? phase : 8 - phase   // 0..4..0
+        let frac = Double(tri) / 4.0
+        return min(ceil, max(floor, floor + span * frac))
+    }
+
     /// The next canned greeting to show, avoiding an immediate repeat of `last`
     /// (so even a single-step index or a changed line list won't say the same
     /// thing twice in a row). Deterministic — no randomness.

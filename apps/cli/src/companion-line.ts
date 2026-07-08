@@ -1,33 +1,42 @@
 /**
  * `muse companion-line` — ONE short opener for the desktop companion's speech
- * bubble, emitted as JSON `{ line, grounded }`.
+ * bubble, emitted as JSON `{ line, grounded, mode, topic }`.
  *
- * The companion shows a canned placeholder instantly, then swaps in this line
- * when it arrives. The point is variety WITHOUT fabrication:
+ * The companion is a small bluebird with a VOICE: it speaks the user's REAL
+ * context naturally, greets warmly, and — because it gets bored too — tosses out
+ * pointless little jokes and gentle teases. The hard invariant is unchanged:
+ * fabrication = 0. That is upheld per MODE:
  *
- *   - When a genuinely-relevant grounded item exists (the next calendar event,
- *     a due/overdue reminder or task, today's birthday, an owed follow-up /
- *     check-in, a recently-touched note) we phrase ONE of them warmly. The line
- *     is composed DETERMINISTICALLY from the real store fields — no model — so
- *     it can never assert an event/count/name that isn't in the stores
- *     (fabrication = 0 by construction). `grounded: true`.
- *   - When nothing grounded is relevant (or every candidate is vetoed / it's
- *     quiet hours) we fall back to a VARIED, content-free greeting that asserts
- *     nothing. `grounded: false`.
+ *   - `proactive` — a genuinely-relevant GROUNDED item (next event, a due
+ *     reminder/task, today's birthday, an owed follow-up / check-in, a recent
+ *     note). The line is composed DETERMINISTICALLY from the real store fields
+ *     (`phraseCandidate`) and MAY then be re-phrased by the local model for
+ *     warmth — but only survives the swap if `phrasingIsGrounded` proves the
+ *     model introduced no datum absent from the facts. Any violation ⇒ the
+ *     deterministic template stands. `grounded: true`, carries a `topic`.
+ *   - `greeting` — a time-aware, content-free warm opener. Asserts nothing.
+ *   - `joke` / `tease` / `musing` — THE FUN. A short silly one-liner, gentle
+ *     self-aware bird quip, or playful tease. Content-free BY CONSTRUCTION: it
+ *     claims no user fact, so it is fabrication-safe. The only filters are
+ *     `isContentFreeLine` (short, no digits/fact-claims, non-refusal, kind).
  *
- * Gates mirror the proactive loops: a source the user VETOED
- * (`muse proactive veto`) is never surfaced, and during quiet hours grounded
- * items are suppressed in favour of a greeting. A tiny state file tracks the
- * recently-shown keys + a rotation counter so successive calls (the companion
- * drifts one every ~45s) VARY and never immediately repeat.
+ * Mode is chosen by a weighted rotation with no-immediate-repeat (`selectMode`)
+ * — grounded/greeting stay primary (helpful first), fun is a ~25% sprinkle.
+ * Gates from the proactive loops still hold: a VETOED source is never surfaced,
+ * and during quiet hours grounded items are suppressed in favour of a
+ * greeting/quip. A tiny state file tracks recently-shown keys, recent modes, and
+ * a rotation counter so successive calls VARY and never immediately repeat.
  */
 
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 
+import { detectNumericMismatch } from "@muse/agent-core";
 import {
+  createModelProvider,
   resolveContactsFile,
+  resolveDefaultModel,
   resolveFollowupsFile,
   resolveLocalCalendarFile,
   resolveNotesDir,
@@ -53,22 +62,37 @@ import type { ProgramIO } from "./program.js";
 
 export type CompanionLang = "ko" | "en";
 
+/** The companion's five voices. `proactive` is the only grounded (fact-bearing) one. */
+export type CompanionMode = "proactive" | "greeting" | "joke" | "tease" | "musing";
+
 export interface CompanionCandidate {
   /** `${kind}:${id}` — the veto/avoidance unit, shared with the trust ledger. */
   readonly key: string;
   readonly line: string;
+  /** The store kind (event/reminder/…) — drives model re-phrasing. */
+  readonly kind?: string;
+  /** The real store field values this line was built from — the fabrication-check context. */
+  readonly fields?: Readonly<Record<string, string | number>>;
+  /** A short, grounded seed for click-to-act (opens chat on this subject). */
+  readonly topic?: string;
 }
 
 export interface CompanionSelection {
   readonly line: string;
   readonly grounded: boolean;
   readonly key: string;
+  readonly mode: CompanionMode;
+  readonly topic: string;
 }
 
-/** How many recent keys to remember so we never immediately repeat one. */
+/** How many recent keys / modes to remember so we never immediately repeat. */
 const RECENT_WINDOW = 4;
 /** Keep any single field short so the whole line fits the small bubble. */
 const MAX_FIELD_LENGTH = 42;
+/** Hard ceiling on any opener line (grounded or fun) — it must fit the bubble. */
+const MAX_LINE_LENGTH = 90;
+/** A content-free quip is even shorter — a one-liner, not a paragraph. */
+const MAX_FUN_LENGTH = 64;
 
 function truncate(value: string): string {
   const clean = value.replace(/\s+/gu, " ").trim();
@@ -180,43 +204,178 @@ export function buildGreetings(lang: CompanionLang, hour: number): readonly stri
 }
 
 /**
- * Choose the opener. Pure — all IO already happened. A fresh (not-recently-shown,
- * not-vetoed) grounded candidate wins outside quiet hours; otherwise a fresh
- * greeting. Rotation varies the pick across successive calls; when every grounded
- * candidate was recently shown we deliberately fall to a greeting so the bubble
- * never repeats the same grounded line back-to-back.
+ * THE FUN — canned, content-free quip pools per mode. These claim NO user fact
+ * (fabrication-safe by construction), stay short, carry no digits, and are the
+ * deterministic fallback when the local model isn't available or its own quip
+ * fails the content-free filter. The model, when present, generates fresh
+ * variants ON TOP of these for variety.
  */
-export function selectCompanionLine(params: {
-  readonly candidates: readonly CompanionCandidate[];
-  readonly greetings: readonly string[];
-  readonly recent: readonly string[];
-  readonly vetoed: ReadonlySet<string>;
-  readonly quiet: boolean;
+export function buildFunPool(mode: "joke" | "tease" | "musing", lang: CompanionLang): readonly string[] {
+  const ko = lang === "ko";
+  if (mode === "joke") {
+    return ko
+      ? ["나 방금 픽셀 하나 흘릴 뻔했어요 😳", "새가 코딩하면… 버드코딩인가 🐤", "커피는 원래 답이죠 ☕", "방금 창밖 구름이 절 따라 했어요 ☁️", "깃털 정리 좀… 아니 그냥 여기 있을게요 🪶"]
+      : ["I almost dropped a pixel just now 😳", "When a bird debugs, is it a byte? 🐤", "Coffee is always the answer ☕", "That cloud outside just copied my pose ☁️", "Off to preen my feathers… nah, I'll stay 🪶"];
+  }
+  if (mode === "tease") {
+    return ko
+      ? ["또 저 안 부르고 뭐 하세요 👀", "바쁜 척… 다 보여요 😏", "오늘도 저 잊으셨죠, 삐졌어요 (아님) 🫠", "저 여기 있는 거 알죠? 👀"]
+      : ["What are you up to without me, hmm 👀", "Pretending to be busy… I can tell 😏", "Forgot about me again, I'm pouting (not really) 🫠", "You do know I'm right here? 👀"];
+  }
+  return ko
+    ? ["가끔은 아무 생각 안 하는 것도 좋더라고요", "창밖 보는 거 좋아하세요? 저도요", "조용한 오후엔 차 한 잔 어때요 🍵", "좋은 노래 하나면 하루가 달라지죠 🎧"]
+    : ["Sometimes thinking about nothing is nice", "Do you like watching the window? Me too", "A quiet afternoon calls for tea 🍵", "One good song can change a whole day 🎧"];
+}
+
+/**
+ * The single, consistent Muse persona applied to EVERY model-generated line so
+ * the voice is the same across modes: warm, understated, genuinely helpful,
+ * Korean-first, with a playful silly streak — never over-the-top, never cringe,
+ * never mean. A small bluebird companion. One short sentence.
+ */
+export function companionPersona(lang: CompanionLang): string {
+  return lang === "ko"
+    ? "너는 '뮤즈'라는 작은 파랑새 컴패니언이야. 말투는 따뜻하고 담백하며 진심으로 도움이 되려 해. 가끔 쓸데없이 귀여운 농담이나 가벼운 장난도 치지만 과하거나 오글거리거나 무례하진 않아. 항상 한국어로, 딱 한 문장, 짧게 말해."
+    : "You are Muse, a tiny bluebird companion. Warm, understated, genuinely helpful, with a playful silly streak — you toss out pointless little jokes and gentle teases, but never over-the-top, cringe, or mean. Always one short sentence.";
+}
+
+/**
+ * Field keys that are internal FLAGS, not user-facing facts — excluded from both
+ * the model prompt and the fabrication-check evidence so their synthetic value
+ * (e.g. `overdue: 1`) can never license an invented count like "1건" in the
+ * phrasing. Real user-facing numbers (`days`, `time`) are NOT flags and stay.
+ */
+const NON_CONTENT_FIELDS = new Set(["overdue"]);
+
+/** The user-facing field values of a candidate — the phrasing/fabrication-check evidence. */
+export function candidateFacts(fields: Readonly<Record<string, string | number>>): readonly string[] {
+  return Object.entries(fields)
+    .filter(([k, v]) => !NON_CONTENT_FIELDS.has(k) && String(v).trim().length > 0)
+    .map(([, v]) => String(v));
+}
+
+/** Build the system+user prompt that re-phrases a grounded item using ONLY its facts. */
+export function buildGroundedPhrasePrompt(
+  candidate: Pick<Required<CompanionCandidate>, "fields">,
+  lang: CompanionLang
+): { system: string; prompt: string } {
+  const facts = Object.entries(candidate.fields)
+    .filter(([k, v]) => !NON_CONTENT_FIELDS.has(k) && String(v).trim().length > 0)
+    .map(([k, v]) => `${k}: ${String(v)}`)
+    .join("; ");
+  const instr = lang === "ko"
+    ? `아래 사실만으로 한 문장 오프너를 다시 써줘. 사실에 없는 숫자·날짜·이름·개수는 절대 지어내지 마. 사실: ${facts}`
+    : `Rephrase these facts as one short opener sentence. Never invent a number, date, name, or count that isn't in the facts. Facts: ${facts}`;
+  return { prompt: instr, system: companionPersona(lang) };
+}
+
+/** Build the prompt that generates ONE content-free quip/greeting for the given voice. */
+export function buildFunPrompt(mode: "greeting" | "joke" | "tease" | "musing", lang: CompanionLang): { system: string; prompt: string } {
+  const ko = lang === "ko";
+  const kind = ko
+    ? { greeting: "따뜻한 인사", joke: "짧고 실없는 농담이나 말장난", musing: "잔잔한 혼잣말", tease: "가벼운 장난" }[mode]
+    : { greeting: "a warm greeting", joke: "a short silly joke or pun", musing: "a soft little musing", tease: "a light playful tease" }[mode];
+  const instr = ko
+    ? `${kind}를 한 문장만 말해줘. 사용자에 대한 어떤 사실(일정·숫자·이름 등)도 언급하지 말고, 숫자는 쓰지 마. 짧고 상냥하게.`
+    : `Say ${kind} in one sentence. Mention NO fact about the user (no schedule, numbers, or names), and use no digits. Keep it short and kind.`;
+  return { prompt: instr, system: companionPersona(lang) };
+}
+
+/** Normalize for loose substring matching: lowercase + whitespace-collapse. */
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * Every STANDALONE number in the text (thousands separators stripped). Boundary-
+ * aware: a digit embedded in an alphanumeric token ("Q3", "v2") is NOT a number,
+ * so a phrasing's invented count ("3 meetings") isn't excused by an incidental
+ * digit inside a fact word ("Q3 sync").
+ */
+function digitRuns(text: string): string[] {
+  return (text.replace(/,/gu, "").match(/(?<![\p{L}\d])\d+(?:\.\d+)?(?![\p{L}\d])/gu) ?? []);
+}
+
+/**
+ * The HARD gate on model re-phrasing of a grounded line: return true ONLY if the
+ * phrasing introduces no datum absent from the fact context. High-precision so a
+ * faithful rephrase passes, but it rejects the fabrication modes that matter for
+ * these short lines:
+ *
+ *  - length / emptiness — must fit the bubble,
+ *  - a refusal leaking through ("I'm not sure" / "잘 모르"),
+ *  - a NEW number — any digit-run not present verbatim among the facts (an
+ *    invented count/date/time),
+ *  - a unit swap / magnitude error (`detectNumericMismatch`),
+ *  - a NEW quoted entity — a `"…"` / `「…」` segment whose inner text isn't in the
+ *    facts (an invented title/name).
+ */
+export function phrasingIsGrounded(phrased: string, facts: readonly string[]): boolean {
+  const clean = phrased.trim();
+  if (clean.length === 0 || clean.length > MAX_LINE_LENGTH) return false;
+  const lower = clean.toLowerCase();
+  if (lower.includes("i'm not sure") || clean.includes("잘 모르")) return false;
+
+  const factsJoined = facts.join(" ");
+  const factNumbers = new Set(digitRuns(factsJoined));
+  for (const run of digitRuns(clean)) {
+    if (!factNumbers.has(run)) return false;
+  }
+  if (detectNumericMismatch(clean, facts)) return false;
+
+  const factsNorm = normalizeForMatch(factsJoined);
+  for (const match of clean.matchAll(/["“”「『]([^"“”」』]{1,})["“”」』]/gu)) {
+    const inner = normalizeForMatch(match[1] ?? "");
+    if (inner.length > 0 && !factsNorm.includes(inner)) return false;
+  }
+  return true;
+}
+
+/**
+ * The filter on a model-generated CONTENT-FREE line (greeting/joke/tease/musing):
+ * short, non-empty, no refusal, and — the fabrication proof — NO digits at all,
+ * so it can never smuggle in an invented count/date/time about the user. Kind
+ * by construction (the persona), length-bounded here.
+ */
+export function isContentFreeLine(raw: string): boolean {
+  const clean = raw.trim();
+  if (clean.length === 0 || clean.length > MAX_FUN_LENGTH) return false;
+  if (/\d/u.test(clean)) return false;
+  const lower = clean.toLowerCase();
+  if (lower.includes("i'm not sure") || clean.includes("잘 모르")) return false;
+  return true;
+}
+
+/**
+ * Weighted rotation over the five voices with no-immediate-repeat. Grounded
+ * (`proactive`) and `greeting` stay primary so the companion is helpful first;
+ * joke/tease/musing are a ~25% fun sprinkle. When `allowProactive` is false
+ * (quiet hours, or nothing grounded is relevant) `proactive` is removed from the
+ * wheel and the pick falls to a greeting/quip. Deterministic in `rotation`.
+ */
+export function selectMode(params: {
   readonly rotation: number;
-}): CompanionSelection {
-  const { candidates, greetings, recent, vetoed, quiet, rotation } = params;
-  const recentSet = new Set(recent);
-  if (!quiet) {
-    const fresh = candidates.filter((c) => !vetoed.has(c.key) && !recentSet.has(c.key));
-    if (fresh.length > 0) {
-      const chosen = fresh[((rotation % fresh.length) + fresh.length) % fresh.length]!;
-      return { grounded: true, key: chosen.key, line: chosen.line };
-    }
+  readonly recentModes: readonly CompanionMode[];
+  readonly allowProactive: boolean;
+}): CompanionMode {
+  const { rotation, recentModes, allowProactive } = params;
+  const wheel: readonly CompanionMode[] = [
+    "proactive", "greeting", "proactive", "joke", "proactive", "greeting",
+    "proactive", "tease", "proactive", "greeting", "musing", "greeting"
+  ];
+  const eligible = allowProactive ? wheel : wheel.filter((m) => m !== "proactive");
+  const last = recentModes[recentModes.length - 1];
+  const n = eligible.length;
+  for (let i = 0; i < n; i += 1) {
+    const m = eligible[(((rotation + i) % n) + n) % n]!;
+    if (m !== last) return m;
   }
-  const items = greetings
-    .map((g, i) => ({ key: `greeting:${i.toString()}`, line: g }))
-    .filter((it) => it.line.trim().length > 0);
-  if (items.length === 0) {
-    return { grounded: false, key: "greeting:none", line: "" };
-  }
-  const freshG = items.filter((it) => !recentSet.has(it.key));
-  const pool = freshG.length > 0 ? freshG : items;
-  const chosen = pool[((rotation % pool.length) + pool.length) % pool.length]!;
-  return { grounded: false, key: chosen.key, line: chosen.line };
+  return eligible[(((rotation) % n) + n) % n]!;
 }
 
 interface CompanionState {
   readonly recent: readonly string[];
+  readonly recentModes: readonly CompanionMode[];
   readonly rotation: number;
 }
 
@@ -232,10 +391,13 @@ async function readCompanionState(file: string): Promise<CompanionState> {
   try {
     const parsed = JSON.parse(await fs.readFile(file, "utf8")) as Partial<CompanionState>;
     const recent = Array.isArray(parsed.recent) ? parsed.recent.filter((r): r is string => typeof r === "string") : [];
+    const modes = Array.isArray(parsed.recentModes)
+      ? parsed.recentModes.filter((m): m is CompanionMode => typeof m === "string")
+      : [];
     const rotation = Number.isFinite(parsed.rotation) ? Math.trunc(parsed.rotation as number) : 0;
-    return { recent, rotation };
+    return { recent, recentModes: modes, rotation };
   } catch {
-    return { recent: [], rotation: 0 };
+    return { recent: [], recentModes: [], rotation: 0 };
   }
 }
 
@@ -264,8 +426,10 @@ async function mostRecentNoteTitle(notesDir: string): Promise<string | undefined
 
 /**
  * Read every grounded source and phrase one candidate per genuinely-relevant
- * item, in rough priority order. Each reader is independently fail-soft: a
- * missing/unreadable store contributes nothing and never sinks the others.
+ * item, in rough priority order. Each candidate carries its real fields (the
+ * fabrication-check context) and a grounded `topic` seed for click-to-act. Each
+ * reader is independently fail-soft: a missing/unreadable store contributes
+ * nothing and never sinks the others.
  */
 export async function gatherCompanionCandidates(
   env: NodeJS.ProcessEnv,
@@ -277,34 +441,33 @@ export async function gatherCompanionCandidates(
   const horizon12 = new Date(nowMs + 12 * 3_600_000);
   const horizon24 = new Date(nowMs + 24 * 3_600_000);
   const out: CompanionCandidate[] = [];
+  const push = (
+    key: string,
+    kind: string,
+    fields: Readonly<Record<string, string | number>>,
+    topic: string
+  ): void => {
+    out.push({ fields, key, kind, line: phraseCandidate(kind, fields, lang, rotation), topic });
+  };
 
   try {
     const events = await readLocalEvents(resolveLocalCalendarFile(env), now, horizon12);
     for (const e of events.slice(0, 2)) {
-      out.push({
-        key: sourceKey("calendar", e.id),
-        line: phraseCandidate("event", { time: formatLocalTime(e.startsAtIso), title: e.title }, lang, rotation)
-      });
+      push(sourceKey("calendar", e.id), "event", { time: formatLocalTime(e.startsAtIso), title: e.title }, e.title);
     }
   } catch { /* no calendar file */ }
 
   try {
     const contacts = await readContacts(resolveContactsFile(env));
     for (const b of resolveUpcomingBirthdays(contacts, { now, withinDays: 3 })) {
-      out.push({
-        key: sourceKey("birthday", b.contact.name),
-        line: phraseCandidate("birthday", { days: b.daysUntil, name: b.contact.name }, lang, rotation)
-      });
+      push(sourceKey("birthday", b.contact.name), "birthday", { days: b.daysUntil, name: b.contact.name }, b.contact.name);
     }
   } catch { /* no contacts file */ }
 
   try {
     const reminders = await readDueReminders(resolveRemindersFile(env), horizon24);
     for (const r of reminders.slice(0, 3)) {
-      out.push({
-        key: sourceKey("reminder", r.id),
-        line: phraseCandidate("reminder", { overdue: Date.parse(r.dueAt) < nowMs ? 1 : 0, text: r.text }, lang, rotation)
-      });
+      push(sourceKey("reminder", r.id), "reminder", { overdue: Date.parse(r.dueAt) < nowMs ? 1 : 0, text: r.text }, r.text);
     }
   } catch { /* no reminders file */ }
 
@@ -314,41 +477,152 @@ export async function gatherCompanionCandidates(
       .filter((t: PersistedTask) => t.status === "open" && t.dueAt !== undefined && Date.parse(t.dueAt) <= horizon24.getTime())
       .sort((a: PersistedTask, b: PersistedTask) => Date.parse(a.dueAt!) - Date.parse(b.dueAt!));
     for (const t of due.slice(0, 3)) {
-      out.push({
-        key: sourceKey("task", t.id),
-        line: phraseCandidate("task", { overdue: Date.parse(t.dueAt!) < nowMs ? 1 : 0, title: t.title }, lang, rotation)
-      });
+      push(sourceKey("task", t.id), "task", { overdue: Date.parse(t.dueAt!) < nowMs ? 1 : 0, title: t.title }, t.title);
     }
   } catch { /* no tasks file */ }
 
   try {
     const checkins = selectDueCheckins(await readCheckins(checkinsFile(env)), nowMs, 2);
     for (const c of checkins) {
-      out.push({ key: sourceKey("checkin", c.id), line: phraseCandidate("checkin", { commitment: c.commitment }, lang, rotation) });
+      push(sourceKey("checkin", c.id), "checkin", { commitment: c.commitment }, c.commitment);
     }
   } catch { /* no checkins file */ }
 
   try {
     const followups = await readDueFollowups(resolveFollowupsFile(env), horizon24);
     for (const f of followups.slice(0, 2)) {
-      out.push({ key: sourceKey("followup", f.id), line: phraseCandidate("followup", { summary: f.summary }, lang, rotation) });
+      push(sourceKey("followup", f.id), "followup", { summary: f.summary }, f.summary);
     }
   } catch { /* no followups file */ }
 
   try {
     const note = await mostRecentNoteTitle(resolveNotesDir(env));
     if (note) {
-      out.push({ key: sourceKey("note", note), line: phraseCandidate("note", { title: note }, lang, rotation) });
+      push(sourceKey("note", note), "note", { title: note }, note);
     }
   } catch { /* no notes dir */ }
 
   return out.filter((c) => c.line.trim().length > 0);
 }
 
+/**
+ * Choose the opener's MODE and its deterministic fallback line/key/topic. Pure —
+ * all IO already happened, and the model (if any) is applied AFTER this by the
+ * caller. `proactive` requires a fresh (not-vetoed, not-recently-shown) grounded
+ * candidate AND non-quiet hours; otherwise the mode falls to a greeting/quip
+ * whose line comes from the content-free pools. This is the fabrication floor:
+ * with no grounded candidate, no fact-bearing line can be produced here at all.
+ */
+export function selectCompanionLine(params: {
+  readonly candidates: readonly CompanionCandidate[];
+  readonly greetings: readonly string[];
+  readonly funPools: Readonly<Record<"joke" | "tease" | "musing", readonly string[]>>;
+  readonly recent: readonly string[];
+  readonly recentModes: readonly CompanionMode[];
+  readonly vetoed: ReadonlySet<string>;
+  readonly quiet: boolean;
+  readonly rotation: number;
+}): CompanionSelection & { readonly candidate?: CompanionCandidate; readonly facts: readonly string[] } {
+  const { candidates, greetings, funPools, recent, recentModes, vetoed, quiet, rotation } = params;
+  const recentSet = new Set(recent);
+  const fresh = candidates.filter((c) => !vetoed.has(c.key) && !recentSet.has(c.key));
+  const allowProactive = !quiet && fresh.length > 0;
+  const mode = selectMode({ allowProactive, recentModes, rotation });
+
+  if (mode === "proactive") {
+    const chosen = fresh[((rotation % fresh.length) + fresh.length) % fresh.length]!;
+    const facts = chosen.fields ? candidateFacts(chosen.fields) : [];
+    return { candidate: chosen, facts, grounded: true, key: chosen.key, line: chosen.line, mode, topic: chosen.topic ?? "" };
+  }
+
+  const pool = mode === "greeting" ? greetings : funPools[mode];
+  const items = pool
+    .map((line, i) => ({ key: `${mode}:${i.toString()}`, line }))
+    .filter((it) => it.line.trim().length > 0);
+  if (items.length === 0) {
+    return { facts: [], grounded: false, key: `${mode}:none`, line: "", mode, topic: "" };
+  }
+  const freshItems = items.filter((it) => !recentSet.has(it.key));
+  const usable = freshItems.length > 0 ? freshItems : items;
+  const chosen = usable[((rotation % usable.length) + usable.length) % usable.length]!;
+  return { facts: [], grounded: false, key: chosen.key, line: chosen.line, mode, topic: "" };
+}
+
+/**
+ * Optional local-model layer. `phrase` re-phrases a grounded item (post-checked
+ * before use); `gen` writes a fresh content-free quip/greeting. Injectable so
+ * tests never hit Ollama. Both are best-effort — any failure leaves the
+ * deterministic fallback in place.
+ */
+export interface CompanionModelFns {
+  readonly phrase?: (args: { system: string; prompt: string }) => Promise<string>;
+  readonly gen?: (args: { system: string; prompt: string }) => Promise<string>;
+}
+
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+  return Promise.race([
+    p.catch(() => undefined),
+    new Promise<undefined>((res) => setTimeout(() => res(undefined), ms))
+  ]);
+}
+
+/**
+ * Apply the model layer to a plan: for `proactive`, re-phrase and swap ONLY if
+ * `phrasingIsGrounded`; for content-free modes, generate and swap ONLY if
+ * `isContentFreeLine`. Any miss keeps the deterministic fallback. Returns the
+ * final line + a flag for whether the model's version was used.
+ */
+export async function applyCompanionVoice(
+  plan: CompanionSelection & { readonly candidate?: CompanionCandidate; readonly facts: readonly string[] },
+  lang: CompanionLang,
+  model: CompanionModelFns | undefined,
+  timeoutMs = 8000
+): Promise<string> {
+  if (!model) return plan.line;
+  if (plan.mode === "proactive") {
+    if (!model.phrase || !plan.candidate?.fields) return plan.line;
+    const { system, prompt } = buildGroundedPhrasePrompt({ fields: plan.candidate.fields }, lang);
+    const out = await withTimeout(model.phrase({ prompt, system }), timeoutMs);
+    if (out && phrasingIsGrounded(out, plan.facts)) return out.trim();
+    return plan.line;
+  }
+  if (!model.gen) return plan.line;
+  const { system, prompt } = buildFunPrompt(plan.mode, lang);
+  const out = await withTimeout(model.gen({ prompt, system }), timeoutMs);
+  if (out && isContentFreeLine(out)) return out.trim();
+  return plan.line;
+}
+
+/** Wire the real local model provider into the injectable fns, or undefined when unavailable / disabled. */
+function resolveCompanionModel(env: NodeJS.ProcessEnv): CompanionModelFns | undefined {
+  if ((env.MUSE_COMPANION_NO_MODEL ?? "").trim().length > 0) return undefined;
+  let provider: ReturnType<typeof createModelProvider>;
+  try {
+    provider = createModelProvider(env as never);
+  } catch {
+    return undefined;
+  }
+  const modelId = resolveDefaultModel(env as never);
+  if (!provider || !modelId) return undefined;
+  const call = async ({ system, prompt }: { system: string; prompt: string }): Promise<string> => {
+    const res = await provider.generate({
+      maxOutputTokens: 80,
+      messages: [
+        { content: system, role: "system" },
+        { content: prompt, role: "user" }
+      ],
+      model: modelId,
+      temperature: 0.8
+    });
+    return res.output ?? "";
+  };
+  return { gen: call, phrase: call };
+}
+
 export function registerCompanionLineCommand(program: Command, io: ProgramIO): void {
   program
     .command("companion-line")
-    .description("One short grounded-or-greeting opener for the desktop companion bubble (JSON: {line, grounded})")
+    .description("One short opener for the desktop companion bubble (JSON: {line, grounded, mode, topic})")
     .option("--lang <code>", "Language for the opener: ko | en", "en")
     .action(async (options: { readonly lang?: string }) => {
       const env = process.env;
@@ -363,18 +637,23 @@ export function registerCompanionLineCommand(program: Command, io: ProgramIO): v
         readTrustLedger(trustFile(env)).catch(() => [])
       ]);
 
-      const selection = selectCompanionLine({
+      const plan = selectCompanionLine({
         candidates,
+        funPools: { joke: buildFunPool("joke", lang), musing: buildFunPool("musing", lang), tease: buildFunPool("tease", lang) },
         greetings: buildGreetings(lang, now.getHours()),
         quiet: inQuietHours(env, now),
         recent: state.recent,
+        recentModes: state.recentModes,
         rotation,
         vetoed: avoidedSourceKeys(trust)
       });
 
-      const recent = [...state.recent, selection.key].slice(-RECENT_WINDOW);
-      await writeCompanionState(stateFile(env), { recent, rotation: rotation + 1 });
+      const line = await applyCompanionVoice(plan, lang, resolveCompanionModel(env));
 
-      io.stdout(`${JSON.stringify({ grounded: selection.grounded, line: selection.line })}\n`);
+      const recent = [...state.recent, plan.key].slice(-RECENT_WINDOW);
+      const recentModes = [...state.recentModes, plan.mode].slice(-RECENT_WINDOW);
+      await writeCompanionState(stateFile(env), { recent, recentModes, rotation: rotation + 1 });
+
+      io.stdout(`${JSON.stringify({ grounded: plan.grounded, line, mode: plan.mode, topic: plan.topic })}\n`);
     });
 }

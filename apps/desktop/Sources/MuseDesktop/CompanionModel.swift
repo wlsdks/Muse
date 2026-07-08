@@ -53,15 +53,32 @@ final class CompanionModel: ObservableObject {
     private var lastIdleText = ""
     private var recentIdle: [String] = []
     private var idleClearWork: DispatchWorkItem?
+    /// The grounded subject of the CURRENT opener (a reminder / event / …) — set
+    /// when the opener is grounded, cleared otherwise. Tapping the bubble opens
+    /// chat seeded with this (never auto-acts; the approval gate still governs any
+    /// action the user then takes).
+    private var pendingSeed = ""
 
     /// Muse greets you and, while idle, drifts a friendly line into a speech
     /// bubble now and then — so she feels present and talks first, instead of a
     /// silent avatar. Never stomps a real interaction (only fires when idle and
-    /// the bubble is empty), and clears itself after a few seconds.
+    /// the bubble is empty), and clears itself after a few seconds. The cadence is
+    /// VARIED (`IdleChatter.nextInterval`) rather than a fixed tick, so it never
+    /// feels mechanical.
     func startIdleChatter() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in self?.showIdleLine() }
-        let timer = Timer(timeInterval: 45, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.showIdleLine() }
+        scheduleNextIdle()
+    }
+
+    private func scheduleNextIdle() {
+        idleTimer?.invalidate()
+        let delay = IdleChatter.nextInterval(index: idleLineIndex)
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.showIdleLine()
+                self.scheduleNextIdle()   // re-arm with a fresh, different gap
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         idleTimer = timer
@@ -118,7 +135,29 @@ final class CompanionModel: ObservableObject {
         let lang = language == .korean ? "ko" : "en"
         guard let opener = try? await MuseBridge.opener(lang: lang) else { return }
         guard let clean = IdleChatter.acceptThought(opener.line, recent: recentIdle) else { return }
-        if showingIdleLine, bubble == lastIdleText { setIdle(clean) }
+        if showingIdleLine, bubble == lastIdleText {
+            // Carry the grounded subject so a tap can open chat ON it. Content-free
+            // openers (greeting / joke) carry no topic → a plain chat open.
+            pendingSeed = opener.grounded ? opener.topic : ""
+            setIdle(clean)
+        }
+    }
+
+    /// Tap Muse's speech bubble → open the FULL chat window, seeded with the
+    /// opener's grounded subject when there is one (so the user can act on that
+    /// reminder / event), or a plain chat open for a greeting / joke. Seeding only
+    /// PRE-FILLS the chat input; it never auto-sends or mutates anything — any
+    /// state-changing / outbound action still passes the existing approval gate.
+    func tapBubble() {
+        guard !busy, !listening else { clickOrb(); return }
+        showingIdleLine = false
+        let seed = pendingSeed
+        pendingSeed = ""
+        NotificationCenter.default.post(
+            name: .museOpenFullApp,
+            object: nil,
+            userInfo: seed.isEmpty ? nil : ["seed": seed]
+        )
     }
 
     /// Live model-download/load feedback — only while the user is waiting to talk

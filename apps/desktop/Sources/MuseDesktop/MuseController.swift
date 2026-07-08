@@ -27,7 +27,7 @@ final class MuseController: NSObject, NSMenuDelegate {
         // The floating companion's "open full app" button posts this.
         NotificationCenter.default.addObserver(
             forName: .museOpenFullApp, object: nil, queue: .main
-        ) { [weak self] _ in self?.openFullApp() }
+        ) { [weak self] note in self?.openFullAppSeeded(seed: note.userInfo?["seed"] as? String ?? "") }
         // Restore the floating companion when the full app window closes.
         NotificationCenter.default.addObserver(
             forName: .museFullAppClosed, object: nil, queue: .main
@@ -136,10 +136,15 @@ final class MuseController: NSObject, NSMenuDelegate {
 
     @objc private func toggleFromMenu() { toggleVisibility() }
 
-    @objc private func openFullApp() {
+    @objc private func openFullApp() { openFullAppSeeded(seed: "") }
+
+    /// Open the full app, optionally seeding chat with a grounded subject the user
+    /// tapped (the bubble's topic). The seed only pre-fills the chat input — it
+    /// never auto-sends; the approval gate still governs any action taken.
+    private func openFullAppSeeded(seed: String) {
         panel.orderOut(nil)   // don't float the companion over the full app
         NSApp.activate(ignoringOtherApps: true)
-        webWindow.show()
+        webWindow.show(seed: seed)
     }
 
     @objc private func openGuide() {

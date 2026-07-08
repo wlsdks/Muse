@@ -23,6 +23,20 @@ final class IdleChatterTests: XCTestCase {
         XCTAssertEqual(IdleChatter.nextCannedLine([], last: nil, index: 2), "")
     }
 
+    func testNextIntervalStaysWithinBoundsAndVaries() {
+        var seen = Set<Double>()
+        var last: Double?
+        for i in 0..<16 {
+            let v = IdleChatter.nextInterval(index: i)
+            XCTAssertGreaterThanOrEqual(v, 35)
+            XCTAssertLessThanOrEqual(v, 75)
+            XCTAssertNotEqual(v, last) // never the same gap twice in a row
+            last = v
+            seen.insert(v)
+        }
+        XCTAssertGreaterThan(seen.count, 2) // genuinely varied, not a fixed tick
+    }
+
     func testAcceptsAGoodThought() {
         XCTAssertEqual(IdleChatter.acceptThought("  Want a hand with today's plan?  "), "Want a hand with today's plan?")
     }

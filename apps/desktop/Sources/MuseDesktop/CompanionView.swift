@@ -75,7 +75,7 @@ struct CompanionView: View {
             .fixedSize(horizontal: true, vertical: true)
         }
         .contentShape(Rectangle())
-        .onTapGesture { model.clickOrb() }             // tap Muse's message to reply
+        .onTapGesture { model.tapBubble() }            // tap Muse's message → open chat (seeded on its topic)
     }
 
     /// The shared bubble style — a self-contained crafted "chip" that reads as

@@ -11,7 +11,7 @@ final class MuseWebWindowController: NSObject, WKNavigationDelegate, NSWindowDel
     private var window: NSWindow?
     private var webView: WKWebView?
 
-    func show() {
+    func show(seed: String = "") {
         if window == nil { build() }
         // The full app is a real, focusable window — become a regular app while
         // it's open so keyboard input + ⌘-Tab work (the companion is .accessory).
@@ -22,7 +22,7 @@ final class MuseWebWindowController: NSObject, WKNavigationDelegate, NSWindowDel
         // Manual override (advanced): a URL set in Settings loads directly.
         let override = PrefsStore.load().museURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let override, !override.isEmpty {
-            load(override)
+            load(CompanionSeed.url(base: override, topic: seed))
             return
         }
 
@@ -30,7 +30,7 @@ final class MuseWebWindowController: NSObject, WKNavigationDelegate, NSWindowDel
         showStarting()
         ServerManager.shared.ensureRunning { [weak self] ok in
             guard let self else { return }
-            if ok { self.load(ServerManager.shared.baseURL) } else { self.showUnreachable() }
+            if ok { self.load(CompanionSeed.url(base: ServerManager.shared.baseURL, topic: seed)) } else { self.showUnreachable() }
         }
     }
 
