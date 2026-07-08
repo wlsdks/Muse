@@ -27,6 +27,7 @@ import {
   type ConversationTrimResult,
   type TokenEstimator
 } from "./index.js";
+import { classifyCompactionFailure, type CompactionFailureReason } from "./compaction-telemetry.js";
 import { IMPORTANCE_DEFAULT_THRESHOLD, recencyBonus, scoreMessageContent } from "./message-importance.js";
 import { extractPinnedEntities } from "./pinned-entities.js";
 import {
@@ -98,6 +99,11 @@ export function trimConversationMessages(
     const keptSet = new Set<ConversationMessage>(kept);
     return {
       budgetTokens: hardBudgetTokens,
+      // The reserved overhead (system prompt + output + tool reserves)
+      // alone consumes the whole context window, so the deterministic
+      // budget guard leaves no room for a normal trim — the emergency
+      // last-user-message fallback above is the only option.
+      compactionFailureReason: classifyCompactionFailure("guard_blocked"),
       dropped: messages.filter((message) => !keptSet.has(message)),
       estimatedTokens: estimateConversationTokens(kept, { estimator, messageStructureOverhead }),
       messages: kept,
@@ -190,6 +196,14 @@ export function trimConversationMessages(
   const dropped = originalSnapshot.filter((message) => !retainedSet.has(message));
   return {
     budgetTokens: hardBudgetTokens,
+    compactionFailureReason: classifyTrimOutcome({
+      droppedCount,
+      hardBudgetTokens,
+      insertSummary: options.insertSummary,
+      removedCount,
+      summaryInserted,
+      totalTokens
+    }),
     dropped,
     estimatedTokens: totalTokens,
     messages,
@@ -197,6 +211,30 @@ export function trimConversationMessages(
     summaryInserted,
     triggeredBy
   };
+}
+
+/**
+ * Buckets the two ways `trimConversationMessages` can under-deliver, worst
+ * first: still over the HARD (provider-fatal) budget after every pass beats
+ * merely missing the summary threshold, which is a soft miss. Returns
+ * `undefined` on a clean run (including a no-op — nothing needed trimming)
+ * so callers can tell "no failure" apart from a classified one.
+ */
+function classifyTrimOutcome(input: {
+  readonly droppedCount: number;
+  readonly hardBudgetTokens: number;
+  readonly insertSummary: boolean | undefined;
+  readonly removedCount: number;
+  readonly summaryInserted: boolean;
+  readonly totalTokens: number;
+}): CompactionFailureReason | undefined {
+  if (input.totalTokens > input.hardBudgetTokens) {
+    return classifyCompactionFailure(input.removedCount === 0 ? "no_compactable_entries" : "guard_blocked");
+  }
+  if (input.insertSummary !== false && input.droppedCount > 0 && !input.summaryInserted) {
+    return classifyCompactionFailure("below_threshold");
+  }
+  return undefined;
 }
 
 /**

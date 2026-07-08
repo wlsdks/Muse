@@ -1,5 +1,6 @@
 import type { ModelMessage, ModelToolCall } from "@muse/model";
 
+import type { CompactionFailureReason } from "./compaction-telemetry.js";
 import type { UserModel, UserModelSlot } from "./user-model-slots.js";
 
 export interface TokenEstimator {
@@ -112,6 +113,13 @@ export interface ConversationTrimResult {
    * pruned tool-call) may appear here — harmless for summarization.
    */
   readonly dropped: readonly ConversationMessage[];
+  /**
+   * Bucketed reason the trim under-delivered — still over the hard budget
+   * after every pass, or dropped messages without crossing the summary
+   * threshold. `undefined` on a clean run (including a no-op). See
+   * `compaction-telemetry.ts` for the classification.
+   */
+  readonly compactionFailureReason?: CompactionFailureReason;
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -518,6 +526,10 @@ export {
   estimateConversationTokens,
   trimConversationMessages
 } from "./memory-token-trim.js";
+
+export { classifyCompactionFailure } from "./compaction-telemetry.js";
+export type { CompactionFailureInput, CompactionFailureStatusLike } from "./compaction-telemetry.js";
+export type { CompactionFailureReason };
 
 export { summarizeDroppedContext } from "./context-aux-summary.js";
 export type {

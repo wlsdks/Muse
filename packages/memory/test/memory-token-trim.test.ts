@@ -227,3 +227,76 @@ describe("trimConversationMessages — structural integrity + summary", () => {
     expect(r.summaryInserted).toBe(false);
   });
 });
+
+describe("trimConversationMessages — compactionFailureReason telemetry", () => {
+  it("is undefined when nothing needed trimming", () => {
+    const conv = [m("system", "sys"), m("user", "aaaa"), m("assistant", "bbbb"), m("user", "cccc")];
+    const r = trimConversationMessages(conv, base());
+    expect(r.compactionFailureReason).toBeUndefined();
+  });
+
+  it("is undefined on a normal successful compaction (summary inserted, comfortably under the hard budget)", () => {
+    const many: ConversationMessage[] = [m("system", "s")];
+    for (let i = 0; i < 8; i += 1) {
+      many.push(m("user", "u".repeat(8)));
+      many.push(m("assistant", "a".repeat(8)));
+    }
+    many.push(m("user", "final"));
+    // A big hard cap with a small working budget: the proactive trim fires,
+    // drops well past compactionThreshold, and the inserted summary
+    // (including its resume-directive boilerplate) still fits comfortably
+    // under the 1000-token hard ceiling — a genuinely clean run.
+    const r = trimConversationMessages(
+      many,
+      base({ insertSummary: true, maxContextWindowTokens: 1000, workingBudgetTokens: 50 })
+    );
+    expect(r.summaryInserted).toBe(true);
+    expect(r.estimatedTokens).toBeLessThanOrEqual(r.budgetTokens);
+    expect(r.compactionFailureReason).toBeUndefined();
+  });
+
+  it("is guard_blocked when the reserved overhead alone exceeds the window (non-positive hard budget)", () => {
+    const conv = [m("system", "s"), m("user", "aaaa"), m("assistant", "bbbb"), m("user", "cccc")];
+    const r = trimConversationMessages(conv, base({ maxContextWindowTokens: 0 }));
+    expect(r.compactionFailureReason).toBe("guard_blocked");
+  });
+
+  it("is no_compactable_entries when trim fires but there is nothing removable (single protected user turn)", () => {
+    const conv = [m("system", "s"), m("user", "X".repeat(50))];
+    const r = trimConversationMessages(conv, base({ maxContextWindowTokens: 10 }));
+    expect(r.removedCount).toBe(0);
+    expect(r.compactionFailureReason).toBe("no_compactable_entries");
+  });
+
+  it("is guard_blocked when some content is removed but the protected last turn alone still exceeds the hard budget", () => {
+    const conv = [m("system", "s"), m("user", "aaaaa"), m("assistant", "bbbbb"), m("user", "Z".repeat(100))];
+    const r = trimConversationMessages(conv, base({ maxContextWindowTokens: 20 }));
+    expect(r.removedCount).toBeGreaterThan(0);
+    expect(r.estimatedTokens).toBeGreaterThan(r.budgetTokens);
+    expect(r.compactionFailureReason).toBe("guard_blocked");
+  });
+
+  it("is below_threshold when messages were dropped but not enough to cross compactionThreshold", () => {
+    const many: ConversationMessage[] = [m("system", "s")];
+    for (let i = 0; i < 8; i += 1) {
+      many.push(m("user", "u".repeat(8)));
+      many.push(m("assistant", "a".repeat(8)));
+    }
+    many.push(m("user", "final"));
+    const r = trimConversationMessages(many, base({ compactionThreshold: 9999, insertSummary: true, maxContextWindowTokens: 40 }));
+    expect(r.summaryInserted).toBe(false);
+    expect(r.compactionFailureReason).toBe("below_threshold");
+  });
+
+  it("is undefined (not below_threshold) when the caller explicitly opted out of summaries via insertSummary: false", () => {
+    const many: ConversationMessage[] = [m("system", "s")];
+    for (let i = 0; i < 8; i += 1) {
+      many.push(m("user", "u".repeat(8)));
+      many.push(m("assistant", "a".repeat(8)));
+    }
+    many.push(m("user", "final"));
+    const r = trimConversationMessages(many, base({ insertSummary: false, maxContextWindowTokens: 40 }));
+    expect(r.summaryInserted).toBe(false);
+    expect(r.compactionFailureReason).toBeUndefined();
+  });
+});
