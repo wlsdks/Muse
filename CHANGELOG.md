@@ -8,6 +8,27 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.22] - 2026-07-08
+
+Terminal polish: the `muse` chat gets a living bluebird and a HUD you can shape,
+and the first-run wizard now reads as clearly-numbered steps.
+
+### Added
+
+- **An animated bluebird in the terminal chat.** The chat home screen shows a
+  small pixel bluebird (the same mascot art) that gently bobs and blinks on an
+  idle loop, above the input. Static under `NO_COLOR` / non-TTY / `MUSE_NO_ANIM`.
+- **A customizable HUD.** Shape the status bar: `MUSE_HUD_SEGMENTS=model,locality,
+  tools,skills` picks and orders segments, and `MUSE_HUD=minimal` / `full` are
+  preset shortcuts. Unset stays exactly as before.
+
+### Changed
+
+- **Clearer first-run setup steps.** The wizard now frames its flow as numbered
+  steps with a ruled divider before each — 1/3 pick a model, 2/3 connect your
+  data, 3/3 finishing up — instead of one long undifferentiated scroll; the
+  per-provider confirmations were tightened so each step reads as its own block.
+
 ## [0.2.21] - 2026-07-08
 
 A first-run experience worthy of the app: `muse` now opens a warm, branded setup
