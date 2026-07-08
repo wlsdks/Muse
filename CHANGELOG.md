@@ -8,6 +8,23 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.29] - 2026-07-09
+
+Web/desktop UI polish (real-browser verified).
+
+### Changed
+
+- **Branding matches the product voice.** Dropped the "AI Conductor / AI 지휘자" framing
+  from the web app — the sidebar fallback is now the identity line ("Learns you, not the
+  world" / "세상이 아니라, 당신을 배우는 AI") and the window title is just "Muse". (The live
+  sidebar subtitle remains the AI-generated, personalized tagline.)
+- **Connection status, not a raw address.** The header showed a bare `127.0.0.1:3030`;
+  it's now a connection-status badge (connected / connecting / offline) with the URL kept
+  as a tooltip and in Settings.
+- **Calmer load errors.** When the app can't reach the server, dashboard cards no longer
+  surface the raw browser "Failed to fetch" — they show a gentle "Couldn't load / 불러올
+  수 없어요" with a check-your-connection hint.
+
 ## [0.2.28] - 2026-07-09
 
 Onboarding nudge + a big test-coverage pass.
