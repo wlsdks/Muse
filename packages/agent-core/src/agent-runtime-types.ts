@@ -90,6 +90,14 @@ export interface AgentRuntimeOptions {
    */
   readonly maxRunWallclockMs?: number;
   /**
+   * Idle cut, in ms, for the STREAMING model path: if the provider emits no
+   * event within this window the stream is closed and the turn fails, so a
+   * connected-but-unresponsive local model (a TCP black-hole) can't freeze the
+   * turn. Default 180_000 (3 min); wired from `MUSE_STREAM_IDLE_TIMEOUT_MS` by
+   * autoconfigure. A non-positive / non-finite value falls back to the default.
+   */
+  readonly streamIdleTimeoutMs?: number;
+  /**
    * Per-tool-result character cap (Context Engineering step 1.b).
    * When set and a tool returns more than `maxChars` characters,
    * the message-bound copy is truncated head+tail with an explicit

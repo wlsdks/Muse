@@ -226,6 +226,60 @@ describe("executeStreamingModelLoop", () => {
   });
 });
 
+describe("executeStreamingModelLoop — runner.streamIdleTimeoutMs bounds a connected-but-idle stream", () => {
+  // A provider whose stream yields nothing then hangs forever (a TCP black-hole:
+  // the socket is open, the model just never answers). Without the idle cut this
+  // blocks the turn until the underlying await resolves; the wired timeout closes it.
+  const blackHoleProvider = (): ModelProvider =>
+    ({
+      id: "fake",
+      stream: async function* () {
+        await new Promise((r) => setTimeout(r, 10_000)); // never resolves before the idle bound
+        yield done("unreachable");
+      },
+    }) as unknown as ModelProvider;
+
+  const idleRunner = (streamIdleTimeoutMs?: number): ModelLoopRunner =>
+    ({
+      maxToolCalls: 5,
+      ...(streamIdleTimeoutMs !== undefined ? { streamIdleTimeoutMs } : {}),
+      tracer: { startSpan: () => noopSpan },
+      metrics: { recordTokenUsage() {} },
+      executeToolCall: async () => { throw new Error("should not run"); },
+    }) as unknown as ModelLoopRunner;
+
+  it("a short streamIdleTimeoutMs fails the turn FAST instead of hanging the full default — the release knob", async () => {
+    const started = Date.now();
+    await expect(drive(blackHoleProvider(), idleRunner(30), context(), true)).rejects.toThrowError(ModelProviderError);
+    // The 30ms bound fired — nowhere near the 10s stream stall (and far under the 3-min default).
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it("the idle cut is NON-retryable and names the stall (a black-hole fails the turn, not a transient retry)", async () => {
+    try {
+      await drive(blackHoleProvider(), idleRunner(30), context(), true);
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ModelProviderError);
+      expect((e as ModelProviderError).retryable).toBe(false);
+      expect((e as ModelProviderError).message).toContain("idle");
+    }
+  });
+
+  it("does NOT cut a stream that keeps emitting within the configured bound (a slow-but-progressing model is safe)", async () => {
+    const progressing = (): ModelProvider =>
+      ({
+        id: "fake",
+        stream: async function* () {
+          for (const text of ["a", "b", "c"]) { await new Promise((r) => setTimeout(r, 30)); yield { type: "text-delta", text } as ModelEvent; }
+          yield done("");
+        },
+      }) as unknown as ModelProvider;
+    const { execution } = await drive(progressing(), idleRunner(120), context(), true);
+    expect(execution.finalResponse.output).toBe("abc");
+  });
+});
+
 describe("executeStreamingModelLoop — tool-failure-streak circuit breaker (streaming-path coverage)", () => {
   const flakyTool = { name: "flaky_read", description: "read", inputSchema: { type: "object" as const }, risk: "read" as const };
   const flakyRequest = (): ModelRequest => ({ model: "m", messages: [{ role: "user", content: "fetch" }], tools: [flakyTool] });

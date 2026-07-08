@@ -25,6 +25,7 @@ import {
   createPiiInputGuard,
   createPiiMaskingOutputGuard,
   createSystemPromptLeakageOutputGuard,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   type AgentRuntime,
   type GuardStage,
   type HookStage,
@@ -106,6 +107,19 @@ export function createDefaultRuntimeHooks(_env: MuseEnvironment): readonly HookS
  * longer than casual chat. Default stays `temporal`
  * (legacy oldest-first).
  */
+/**
+ * Idle-timeout (ms) for the STREAMING model path, from
+ * `MUSE_STREAM_IDLE_TIMEOUT_MS`. A connected-but-unresponsive model (a TCP
+ * black-hole) otherwise blocks the turn for the full 3-min default with no knob,
+ * because the total-duration cap (`MUSE_MODEL_TIMEOUT_MS`) is intentionally NOT
+ * applied while streaming — the idle cut owns stall protection there. `parseInteger`
+ * maps 0 / negative / non-numeric back to the default, so an operator can only
+ * SHORTEN a real stall (e.g. `=8000` to fail a black-hole in 8s), never disable it.
+ */
+export function resolveStreamIdleTimeoutMs(env: MuseEnvironment): number {
+  return parseInteger(env.MUSE_STREAM_IDLE_TIMEOUT_MS, DEFAULT_STREAM_IDLE_TIMEOUT_MS);
+}
+
 export function buildContextWindowOptions(env: MuseEnvironment): ConversationTrimOptions {
   const maxContextWindowTokens = parseInteger(env.MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS, 128_000);
   const outputReserveTokens = parseInteger(env.MUSE_LLM_MAX_OUTPUT_TOKENS, 4_096);

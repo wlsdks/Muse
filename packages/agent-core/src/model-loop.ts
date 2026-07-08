@@ -710,7 +710,13 @@ export function seedDeduplicatorFromHistory(
   }
 }
 
-const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
+/**
+ * Default idle cut for the streaming path (3 min). Overridable per-run via
+ * `runner.streamIdleTimeoutMs`, which autoconfigure wires from
+ * `MUSE_STREAM_IDLE_TIMEOUT_MS` — so an operator can shorten the bound (e.g. to
+ * fail a black-holed local stream in 8s instead of 3 min) without a code change.
+ */
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
 
 /**
  * Wrap a model event stream with an IDLE timeout: if the provider emits no next

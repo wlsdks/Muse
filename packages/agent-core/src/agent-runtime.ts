@@ -217,6 +217,7 @@ export class AgentRuntime {
   private readonly maxToolCalls: number;
   private readonly systemPromptTokenBudget?: number;
   private readonly maxRunWallclockMs: number;
+  private readonly streamIdleTimeoutMs?: number;
   private readonly maxToolOutputChars: number;
   private readonly toolCallMiddleware?: readonly ToolCallMiddleware[];
   private readonly contextReferenceStore?: ContextReferenceStore;
@@ -285,6 +286,14 @@ export class AgentRuntime {
       ? Math.trunc(options.systemPromptTokenBudget as number)
       : undefined;
     this.maxRunWallclockMs = clampRunLimit(options.maxRunWallclockMs, 300_000);
+    // Positive-finite only — a non-positive / non-finite value leaves this
+    // undefined so the loop falls back to DEFAULT_STREAM_IDLE_TIMEOUT_MS rather
+    // than silently disabling the stall cut (`idleMs <= 0` disables the guard).
+    this.streamIdleTimeoutMs = typeof options.streamIdleTimeoutMs === "number"
+      && Number.isFinite(options.streamIdleTimeoutMs)
+      && options.streamIdleTimeoutMs > 0
+      ? Math.trunc(options.streamIdleTimeoutMs)
+      : undefined;
     this.maxToolOutputChars = Math.max(0, options.maxToolOutputChars ?? 0);
     this.toolCallMiddleware = options.toolCallMiddleware;
     if (options.contextReferenceStore) {
@@ -960,6 +969,7 @@ export class AgentRuntime {
       executeToolCall: (context, toolCall, activeTools) => this.executeToolCall(context, toolCall, activeTools),
       generateWithTracing: (context, provider, request) => this.generateWithTracing(context, provider, request),
       maxRunWallclockMs: this.maxRunWallclockMs,
+      ...(this.streamIdleTimeoutMs !== undefined ? { streamIdleTimeoutMs: this.streamIdleTimeoutMs } : {}),
       maxToolCalls: this.maxToolCalls,
       maxToolOutputChars: this.maxToolOutputChars,
       ...(this.toolCallMiddleware ? { toolCallMiddleware: this.toolCallMiddleware } : {}),

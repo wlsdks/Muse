@@ -99,6 +99,7 @@ export {
   type InboxSnapshot
 } from "./inbox-context.js";
 export { inboxGroundingSources } from "./context-transforms.js";
+export { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from "./model-loop.js";
 export { applyClarifyDirective, detectUnderspecifiedRequest } from "./clarify-directive.js";
 export {
   applyAmbientContext,

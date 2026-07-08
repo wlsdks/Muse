@@ -1,3 +1,4 @@
+import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from "@muse/agent-core";
 import { describe, expect, it } from "vitest";
 
 import type { MuseEnvironment } from "../src/index.js";
@@ -7,6 +8,7 @@ import {
   createInputGuards,
   createOutputGuards,
   createRunnerTools,
+  resolveStreamIdleTimeoutMs,
 } from "../src/runtime-wiring.js";
 
 const env = (overrides: Record<string, string> = {}): MuseEnvironment => overrides as MuseEnvironment;
@@ -83,6 +85,24 @@ describe("createRunnerTools", () => {
   it("exposes the run_command tool when enabled", () => {
     const tools = createRunnerTools(env({ MUSE_RUNNER_ENABLED: "true" }));
     expect(tools.map((t) => t.definition.name)).toEqual(["run_command"]);
+  });
+});
+
+describe("resolveStreamIdleTimeoutMs (MUSE_STREAM_IDLE_TIMEOUT_MS wiring)", () => {
+  it("falls back to the 3-min agent-core default when unset — behavior unchanged for operators who don't set it", () => {
+    expect(resolveStreamIdleTimeoutMs(env())).toBe(180_000);
+    expect(resolveStreamIdleTimeoutMs(env())).toBe(DEFAULT_STREAM_IDLE_TIMEOUT_MS);
+  });
+
+  it("honors a positive override so a black-holed local stream can be failed in 8s instead of 3 min", () => {
+    expect(resolveStreamIdleTimeoutMs(env({ MUSE_STREAM_IDLE_TIMEOUT_MS: "8000" }))).toBe(8_000);
+  });
+
+  it("maps 0 / negative / non-numeric back to the default — the knob can only SHORTEN a real stall, never disable the guard", () => {
+    expect(resolveStreamIdleTimeoutMs(env({ MUSE_STREAM_IDLE_TIMEOUT_MS: "0" }))).toBe(DEFAULT_STREAM_IDLE_TIMEOUT_MS);
+    expect(resolveStreamIdleTimeoutMs(env({ MUSE_STREAM_IDLE_TIMEOUT_MS: "-5000" }))).toBe(DEFAULT_STREAM_IDLE_TIMEOUT_MS);
+    expect(resolveStreamIdleTimeoutMs(env({ MUSE_STREAM_IDLE_TIMEOUT_MS: "8s" }))).toBe(DEFAULT_STREAM_IDLE_TIMEOUT_MS);
+    expect(resolveStreamIdleTimeoutMs(env({ MUSE_STREAM_IDLE_TIMEOUT_MS: "  " }))).toBe(DEFAULT_STREAM_IDLE_TIMEOUT_MS);
   });
 });
 

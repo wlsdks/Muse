@@ -172,7 +172,8 @@ import {
   createOutputGuards,
   createPersonalToolExposurePolicy,
   createRunnerTools,
-  createScheduledAgentExecutor
+  createScheduledAgentExecutor,
+  resolveStreamIdleTimeoutMs
 } from "./runtime-wiring.js";
 import {
   createModelProvider,
@@ -578,6 +579,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
         contextWindowOptions.maxContextWindowTokens,
         parseInteger(env.MUSE_MAX_TOOL_OUTPUT_CHARS, 8_000)
       ),
+      streamIdleTimeoutMs: resolveStreamIdleTimeoutMs(env),
       // Opt-in system-prompt token cap: sections evict lowest-priority-first
       // when the combined muse-sectioned footprint exceeds it (0/unset = off).
       ...(parseInteger(env.MUSE_PROMPT_TOKEN_BUDGET, 0) > 0
