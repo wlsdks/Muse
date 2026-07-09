@@ -49,6 +49,20 @@ function normalizeForMatch(value: string): string {
   return value.toLowerCase().replace(/\s+/gu, " ").trim();
 }
 
+// A subtitle ABOUT a person's name reads oddly even when framed ("Dr. Kim 담당" =
+// "in charge of Dr. Kim"), so such atoms are dropped before they can seed a line.
+// Conservative on purpose — only two unambiguous shapes, so an ordinary interest
+// atom (커피, 러닝, coffee, running, a role) is never filtered:
+//   - an English honorific PREFIX + a following name token ("Dr. Kim", "Mr Lee")
+//   - a Korean name followed by the 선생님 title ("김 선생님", "박선생님")
+// The bare ~씨 / ~님 suffix is deliberately NOT used: it false-positives on real
+// topic atoms (날씨 = weather, 솜씨 = skill), so it fails the "few robust lines" bar.
+function looksLikePersonName(value: string): boolean {
+  const t = value.trim();
+  if (/^(dr|mr|mrs|ms|mx|prof)\.?\s+\S/iu.test(t)) return true;
+  return /\S\s*선생님$/u.test(t);
+}
+
 /**
  * Collect the SHORT, user-facing fact values Muse has stored — the raw material
  * for a grounded subtitle AND the evidence set the fabrication check validates
@@ -67,6 +81,7 @@ export function gatherIdentityFacts(memory: IdentityMemory | undefined): readonl
   for (const value of raw) {
     const clean = String(value ?? "").replace(/\s+/gu, " ").trim();
     if (clean.length === 0 || clean.length > MAX_ATOM_LENGTH) continue;
+    if (looksLikePersonName(clean)) continue;
     const key = clean.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -123,7 +138,7 @@ const PERSONA_ALLOW: readonly string[] = [
   // English framing
   "your", "you", "here", "muse", "bird", "bluebird", "buddy", "side", "little",
   "always", "near", "beside", "right", "own", "very", "for", "and", "the", "duty",
-  "partner", "covered", "with", "corner", "friend", "pal"
+  "partner", "covered", "with", "corner", "friend", "pal", "handled"
 ];
 
 function significantTokens(line: string): readonly string[] {
@@ -132,16 +147,23 @@ function significantTokens(line: string): readonly string[] {
   return [...cjk, ...latin];
 }
 
-function isAllowedToken(token: string, factsNorm: string, factAtomsNorm: readonly string[]): boolean {
-  // token is a substring of the facts, OR a fact atom (+ a Korean particle /
-  // English suffix) is a substring of the token — this grounds "커피와" against
-  // the atom "커피" while still rejecting an invented "고양이".
+// token is a substring of the facts, OR a fact atom (+ a Korean particle /
+// English suffix) is a substring of the token — this grounds "커피와" against
+// the atom "커피" while still rejecting an invented "고양이".
+function isAtomToken(token: string, factsNorm: string, factAtomsNorm: readonly string[]): boolean {
   if (factsNorm.includes(token)) return true;
-  if (factAtomsNorm.some((atom) => atom.length >= 2 && token.includes(atom))) return true;
+  return factAtomsNorm.some((atom) => atom.length >= 2 && token.includes(atom));
+}
+
+function isPersonaToken(token: string): boolean {
   for (const allow of PERSONA_ALLOW) {
     if (token === allow || token.includes(allow) || allow.includes(token)) return true;
   }
   return false;
+}
+
+function isAllowedToken(token: string, factsNorm: string, factAtomsNorm: readonly string[]): boolean {
+  return isAtomToken(token, factsNorm, factAtomsNorm) || isPersonaToken(token);
 }
 
 // Any standalone digit run is a candidate fabricated count. Unlike a prose
@@ -181,6 +203,28 @@ export function taglineIsGrounded(line: string, atoms: readonly string[]): boole
     if (!isAllowedToken(token, factsNorm, factAtomsNorm)) return false;
   }
   return true;
+}
+
+/**
+ * The SHAPE gate on a MODEL-generated subtitle, stacked ON TOP of the fabrication
+ * gate. Grounded ≠ well-formed: a bare echo of an atom ("Dr. Kim") is grounded —
+ * every token comes from the store — yet it is a useless, faintly creepy subtitle
+ * (it's just a stored name), not a warm line about what Muse helps with. So the
+ * model line must ALSO frame the atom.
+ *
+ * A well-formed line therefore contains at least one significant persona/framing
+ * token that is NOT drawn from the atoms — exactly what every `taglineTemplates`
+ * line adds (담당 / 파트너 / 곁 / duty / buddy / handled …). A line whose only
+ * significant tokens are the atom itself adds no framing and is rejected; the
+ * caller then keeps the grounded-by-construction template line instead.
+ */
+export function taglineIsWellFormed(line: string, atoms: readonly string[]): boolean {
+  if (!taglineIsGrounded(line, atoms)) return false;
+  const factsNorm = normalizeForMatch(atoms.join(" "));
+  const factAtomsNorm = atoms.map(normalizeForMatch);
+  return significantTokens(line.trim()).some(
+    (token) => isPersonaToken(token) && !isAtomToken(token, factsNorm, factAtomsNorm)
+  );
 }
 
 function pickRotating(items: readonly string[], recent: readonly string[], rotation: number): string {
@@ -235,9 +279,10 @@ function stripWrapping(raw: string): string {
 
 /**
  * Apply the optional local-model layer to a grounded plan: re-phrase and swap
- * ONLY when `taglineIsGrounded` proves the new line invented nothing. A
- * content-free plan (no atoms) is never sent to the model — the pool line
- * stands. Any miss / failure keeps the deterministic line.
+ * ONLY when `taglineIsWellFormed` proves the new line invented nothing AND
+ * framed the atom (not a bare echo of it). A content-free plan (no atoms) is
+ * never sent to the model — the pool line stands. Any miss / failure keeps the
+ * deterministic line.
  */
 export async function applyTaglineModel(
   plan: TaglineResult,
@@ -259,5 +304,5 @@ export async function applyTaglineModel(
   }
   if (!out) return plan;
   const candidate = stripWrapping(out);
-  return taglineIsGrounded(candidate, atoms) ? { grounded: true, tagline: candidate } : plan;
+  return taglineIsWellFormed(candidate, atoms) ? { grounded: true, tagline: candidate } : plan;
 }

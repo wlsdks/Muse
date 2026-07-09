@@ -6,6 +6,7 @@ import {
   gatherIdentityFacts,
   selectTagline,
   taglineIsGrounded,
+  taglineIsWellFormed,
   taglineTemplates
 } from "./identity-tagline.js";
 
@@ -88,7 +89,72 @@ describe("taglineIsGrounded — the hard fabrication gate on model output", () =
   });
 });
 
+describe("taglineIsWellFormed — the SHAPE gate stacked on top of grounding", () => {
+  it("REJECTS a bare-atom echo (grounded but no framing) — the reported 'Dr. Kim' bug", () => {
+    // Grounded (every token is from the atom) yet a useless subtitle: it just
+    // echoes a stored name and frames nothing.
+    expect(taglineIsGrounded("Dr. Kim", ["Dr. Kim"])).toBe(true);
+    expect(taglineIsWellFormed("Dr. Kim", ["Dr. Kim"])).toBe(false);
+  });
+
+  it("REJECTS a lowercase / spacing variant of the same bare echo", () => {
+    expect(taglineIsWellFormed("dr kim", ["Dr. Kim"])).toBe(false);
+    expect(taglineIsWellFormed("  DR.   KIM  ", ["Dr. Kim"])).toBe(false);
+    expect(taglineIsWellFormed("커피", ["커피"])).toBe(false);
+  });
+
+  it("ACCEPTS a legitimately framed model line", () => {
+    expect(taglineIsWellFormed("Dr. Kim 담당", ["Dr. Kim"])).toBe(true);
+    expect(taglineIsWellFormed("커피 담당", ["커피"])).toBe(true);
+    expect(taglineIsWellFormed("On coffee duty", ["coffee"])).toBe(true);
+  });
+
+  it("REGRESSION GUARD: every taglineTemplates line passes its own shape gate", () => {
+    for (const atoms of [["커피", "개발자"], ["coffee", "dev"], ["Dr. Kim"], ["running"]]) {
+      for (const lang of ["ko", "en"] as const) {
+        for (const line of taglineTemplates(atoms, lang)) {
+          expect(taglineIsWellFormed(line, atoms)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("still rejects anything the grounding gate rejects (composes, never weakens it)", () => {
+    expect(taglineIsWellFormed("고양이 담당", ["커피"])).toBe(false);
+    expect(taglineIsWellFormed("커피 3잔 담당", ["커피"])).toBe(false);
+  });
+});
+
+describe("gatherIdentityFacts — a clear person name never becomes a subtitle atom", () => {
+  it("drops an honorific-prefixed name but keeps ordinary atoms", () => {
+    const atoms = gatherIdentityFacts({
+      facts: { dentist: "Dr. Kim", role: "개발자" },
+      preferences: { drink: "커피", tutor: "김 선생님" },
+      recentTopics: ["running", "Mr Lee", "날씨"]
+    });
+    expect(atoms).toContain("개발자");
+    expect(atoms).toContain("커피");
+    expect(atoms).toContain("running");
+    // "날씨" (weather) is an ordinary topic — the ~씨 suffix is deliberately NOT filtered.
+    expect(atoms).toContain("날씨");
+    // Clear person names are dropped.
+    expect(atoms).not.toContain("Dr. Kim");
+    expect(atoms).not.toContain("김 선생님");
+    expect(atoms).not.toContain("Mr Lee");
+  });
+});
+
 describe("applyTaglineModel — swap ONLY a grounded re-phrase, never touch content-free", () => {
+  it("BUG REGRESSION: a model that returns a bare 'Dr. Kim' ships a FRAMED template line, not the echo", async () => {
+    const atoms = ["Dr. Kim"];
+    const plan = selectTagline({ atoms, lang: "ko", recent: [], rotation: 0 });
+    const out = await applyTaglineModel(plan, atoms, "ko", async () => "Dr. Kim");
+    expect(out.tagline).not.toBe("Dr. Kim");
+    expect(out.tagline).toBe(plan.tagline);
+    // The shipped line frames the atom (adds 담당/파트너/곁 …), it isn't a bare name.
+    expect(taglineIsWellFormed(out.tagline, atoms)).toBe(true);
+  });
+
   it("swaps to the model line when it stays grounded", async () => {
     const plan = { grounded: true, tagline: "커피 담당" } as const;
     const out = await applyTaglineModel(plan, ["커피"], "ko", async () => "커피와 함께");
