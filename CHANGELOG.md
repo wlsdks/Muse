@@ -8,6 +8,20 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+### Added
+
+- **Privacy-tiered routing now covers the interactive chat.** With
+  `MUSE_PRIVACY_ROUTING=true` + `MUSE_CLOUD_MODEL` set, a context-free turn in
+  the interactive Ink chat may ride the configured cloud model — same
+  fail-close policy as the one-shot chat: any personal signal (persona,
+  grounding match, PII, possessive marker, remembered-fact reference) keeps the
+  turn local, `MUSE_LOCAL_ONLY` forces local unconditionally, and a cloud
+  failure silently falls back to the local model. A turn with a `@file` or
+  image attachment never rides cloud (attachment content is personal payload).
+  Cloud answers still pass the same deterministic grounding gate, and the ☁️
+  marker is display-only — never persisted into chat history. Both chat
+  surfaces now share one cloud-leg implementation (`createChatCloudTurn`).
+
 ## [0.2.32] - 2026-07-10
 
 Ask your notes from anywhere: the grounded ask pipeline now streams over the

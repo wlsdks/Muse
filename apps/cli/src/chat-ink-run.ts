@@ -43,7 +43,7 @@ import { selectPersonaEpisodes } from "./episode-selection.js";
 import { MuseChatApp, OUTBOUND_ACTUATORS, PROACTIVE_LEAD_MS, type RunChatInkOptions } from "./chat-ink.js";
 import { renderMuseBanner } from "./muse-banner.js";
 import { loadAgents, resolveAgentsDir, type AgentDef } from "./commands-agents.js";
-import { recordChatTurnTrace, recordChatTurnWeakness } from "./chat-repl.js";
+import { createChatCloudTurn, recordChatTurnTrace, recordChatTurnWeakness } from "./chat-repl.js";
 import {
   buildQueryRewritePrompt,
   defaultChatConflictEmbedder,
@@ -168,15 +168,22 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
 
   const provider = assembly.modelProvider;
   type ChatStream = AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
-  // NOT privacy-tiered-routed (unlike `runLocalChat` in chat-repl.ts): `system`
-  // (persona + grounding) is assembled inside the MuseChatApp component in
-  // chat-ink.ts BEFORE `stream`/`streamWithTools` are ever called, so a
-  // per-turn local/cloud provider swap would need the routing decision to move
-  // into the component (ahead of the persona/grounding build), plus a second
-  // provider instance threaded through here. Left unwired — this Ink surface
-  // always stays local even with `MUSE_PRIVACY_ROUTING=true`.
   const stream = (messages: readonly ChatTurnMessage[], useModel: string): ChatStream =>
     provider.stream({ messages: messages as { role: "system" | "user" | "assistant"; content: string; attachments?: ReadonlyArray<{ mimeType: string; dataBase64: string }> }[], model: useModel });
+
+  // Privacy-tiered routing parity with `runLocalChat`: the routing decision +
+  // cloud leg live in `createChatCloudTurn` (chat-repl.ts) — MuseChatApp calls
+  // this per turn AHEAD of building the persona/grounding-aware message list,
+  // so a context-free turn never reaches `stream`/`streamWithTools` at all.
+  const cloudTurnLeg = createChatCloudTurn({
+    defaultModel: model,
+    env: process.env,
+    memoryFacts: () => memoryHolder.current?.facts
+  });
+  const cloudTurn = async (message: string, personaBlock: string, groundingBlock: string) => {
+    const cloud = await cloudTurnLeg(message, personaBlock, groundingBlock);
+    return cloud ? { marker: cloud.marker, text: cloud.response.output } : undefined;
+  };
 
   // Tools-on path: route through the agent runtime so the tool loop + guards
   // fire. Outbound actuators stay forbidden (no autonomous third-party send);
@@ -688,6 +695,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     contextSummarizer: createModelDroppedContextSummarizer(provider, model),
     stream,
     streamWithTools,
+    cloudTurn,
     memorySnapshot,
     forgetMemory,
     rememberFact,

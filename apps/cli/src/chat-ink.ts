@@ -246,6 +246,13 @@ export function MuseChatApp(props: {
    *  skips the topic-focused LLM recap. */
   readonly contextSummarizer?: DroppedContextSummarizer;
   readonly personaPrompt: () => string | undefined;
+  /**
+   * Privacy-tiered routing seam (`chat-ink-run.ts` wires it to
+   * `createChatCloudTurn`): resolve THIS turn's route and run the cloud leg
+   * when eligible. Returns undefined to stay local — routing off, a personal
+   * signal, or a cloud failure all fall back the same way, silently.
+   */
+  readonly cloudTurn?: (message: string, personaBlock: string, groundingBlock: string) => Promise<{ readonly text: string; readonly marker: string } | undefined>;
   readonly stream: (messages: readonly ChatTurnMessage[], model: string) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; grounding?: { source: string; text: string }; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly streamWithTools: (messages: readonly ChatTurnMessage[], model: string, requestApproval: (toolName: string, detail: string, kind: "outbound" | "tool") => Promise<boolean>) => AsyncIterable<{ type: string; text?: string; error?: unknown; name?: string; grounding?: { source: string; text: string }; response?: { usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number } } }>;
   readonly readFile: (relativePath: string) => Promise<string | undefined>;
@@ -637,47 +644,64 @@ export function MuseChatApp(props: {
       setCommandNotice(`Attached: ${attachmentPaths.join(", ")}`);
     }
 
-    const base = props.personaPrompt() ?? formatCurrentContextLine();
+    const personaBase = props.personaPrompt();
     const agentPrefix = activeAgent ? `${activeAgent.prompt}\n\n` : "";
     const grounding: ChatGrounding = props.groundingFor
       ? await props.groundingFor(message, historyRef.current).catch(() => ({ block: "", matches: [] }))
       : { block: "", matches: [] };
-    const system = agentPrefix + base + grounding.block + props.skillsPromptFor(message);
-    const messages = buildTurnMessages(system, historyRef.current, message + attachmentBlock, props.historyWindow, imageAttachments);
+
+    // Privacy-tiered routing: an attachment splices file contents / a photo
+    // into the turn, so it must stay local regardless of the routing decision
+    // — the cloud request has no attachment channel to carry them safely.
+    const cloudTurn = props.cloudTurn;
+    const cloudEligible = cloudTurn !== undefined && attachmentPaths.length === 0 && imageAttachments.length === 0;
+    let cloudResult: { readonly text: string; readonly marker: string } | undefined;
+    if (cloudEligible) {
+      setStreaming("☁️ …"); // the await below can take a couple seconds; a blank box reads as hung
+      cloudResult = await cloudTurn(message, personaBase ?? "", grounding.block).catch(() => undefined);
+    }
+
     let accumulated = "";
     let turnTokens = 0;
     let lastInputTokens = 0;
     const toolsRan: string[] = [];
     const toolGrounding: { source: string; text: string }[] = [];
-    const iter = toolsOn
-      ? props.streamWithTools(messages, currentModel, requestApproval)
-      : props.stream(messages, currentModel);
-    try {
-      for await (const event of iter) {
-        if (interruptRef.current) { accumulated += accumulated.length > 0 ? " …(interrupted)" : "(interrupted)"; break; }
-        if (event.type === "error") {
-          const err = event.error;
-          throw err instanceof Error ? err : new Error(typeof err === "string" ? err : "model stream failed");
+    if (cloudResult) {
+      accumulated = cloudResult.text;
+    } else {
+      const base = personaBase ?? formatCurrentContextLine();
+      const system = agentPrefix + base + grounding.block + props.skillsPromptFor(message);
+      const messages = buildTurnMessages(system, historyRef.current, message + attachmentBlock, props.historyWindow, imageAttachments);
+      const iter = toolsOn
+        ? props.streamWithTools(messages, currentModel, requestApproval)
+        : props.stream(messages, currentModel);
+      try {
+        for await (const event of iter) {
+          if (interruptRef.current) { accumulated += accumulated.length > 0 ? " …(interrupted)" : "(interrupted)"; break; }
+          if (event.type === "error") {
+            const err = event.error;
+            throw err instanceof Error ? err : new Error(typeof err === "string" ? err : "model stream failed");
+          }
+          if (event.type === "tool-call-started" && typeof event.name === "string") {
+            toolsRan.push(event.name);
+            if (accumulated.length === 0) setStreaming(`🔧 using ${event.name}…`);
+          }
+          if (event.type === "tool-result" && event.grounding) {
+            toolGrounding.push(event.grounding);
+          }
+          if (event.type === "text-delta" && typeof event.text === "string") {
+            accumulated += event.text;
+            setStreaming(accumulated);
+          }
+          if (event.type === "done") {
+            const u = event.response?.usage;
+            turnTokens = (u?.inputTokens ?? 0) + (u?.outputTokens ?? 0) + (u?.reasoningTokens ?? 0);
+            lastInputTokens = u?.inputTokens ?? 0;
+          }
         }
-        if (event.type === "tool-call-started" && typeof event.name === "string") {
-          toolsRan.push(event.name);
-          if (accumulated.length === 0) setStreaming(`🔧 using ${event.name}…`);
-        }
-        if (event.type === "tool-result" && event.grounding) {
-          toolGrounding.push(event.grounding);
-        }
-        if (event.type === "text-delta" && typeof event.text === "string") {
-          accumulated += event.text;
-          setStreaming(accumulated);
-        }
-        if (event.type === "done") {
-          const u = event.response?.usage;
-          turnTokens = (u?.inputTokens ?? 0) + (u?.outputTokens ?? 0) + (u?.reasoningTokens ?? 0);
-          lastInputTokens = u?.inputTokens ?? 0;
-        }
+      } catch (error) {
+        accumulated = `⚠ ${friendlyError(error instanceof Error ? error.message : String(error))}`;
       }
-    } catch (error) {
-      accumulated = `⚠ ${friendlyError(error instanceof Error ? error.message : String(error))}`;
     }
     if (turnTokens > 0) setSessionTokens((t) => t + turnTokens);
     if (lastInputTokens > 0) setLastContextTokens(lastInputTokens);
@@ -718,6 +742,13 @@ export function MuseChatApp(props: {
           props.onUntrustedAnswer?.();
         }
       }
+    }
+    // "Shows its work" for a cloud-routed turn — display-only, appended AFTER
+    // the gate ran on the bare answer and never folded into `persisted`, so a
+    // resumed session's history/grounding never replays the marker as content.
+    if (cloudResult) {
+      accumulated += cloudResult.marker;
+      setStreaming(accumulated);
     }
     historyRef.current.push({ content: message, role: "user" });
     historyRef.current.push({ content: persisted, role: "assistant" });

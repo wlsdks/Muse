@@ -24,7 +24,7 @@ import { createModelProviderFor, createMuseRuntimeAssembly, resolveAnswerTempera
 import type { Command } from "commander";
 
 import { classifyCasualPrompt, isUnbackedActionClaim, runResistingFalseDone, type AgentRunResult, type KnowledgeMatch } from "@muse/agent-core";
-import type { ModelProvider, ModelRequest } from "@muse/model";
+import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
 import { findPii, resolvePrivacyRoutedModel, type PrivacyRoutedModelResult } from "@muse/policy";
 import type { AskTimeNudge, WeaknessEntry } from "@muse/stores";
 
@@ -316,6 +316,43 @@ export function formatCloudRouteMarker(korean: boolean, model: string): string {
   return korean ? `\n\n☁️ 클라우드 (개인 정보 없음) — ${model}` : `\n\n☁️ cloud (context-free) — ${model}`;
 }
 
+/**
+ * The privacy-tiered routing cloud leg as a reusable closure — `runLocalChat`
+ * below and the interactive Ink chat (`chat-ink-run.ts`) both need "resolve
+ * this turn's route, and if it's cloud, run it" as one call. ANY failure
+ * (routing off/personal, no provider, throw, or an empty completion) resolves
+ * to `undefined` so the caller's only job is "fall back to local" — a cloud
+ * hiccup must never become a chat-facing error.
+ */
+export function createChatCloudTurn(args: {
+  readonly defaultModel: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly memoryFacts: () => Readonly<Record<string, string>> | undefined;
+  readonly cloudProviderFactory?: (model: string, env: Readonly<Record<string, string | undefined>>) => ModelProvider | undefined;
+}): (message: string, userMemoryBlock: string, groundingBlock: string) => Promise<{ readonly response: ModelResponse; readonly model: string; readonly marker: string } | undefined> {
+  const cloudProviderFactory = args.cloudProviderFactory ?? createModelProviderFor;
+  return async (message, userMemoryBlock, groundingBlock) => {
+    const routing = resolveChatRouting({
+      defaultModel: args.defaultModel,
+      env: args.env,
+      groundingBlock,
+      memoryFacts: args.memoryFacts(),
+      message,
+      userMemoryBlock
+    });
+    if (routing.route !== "cloud") return undefined;
+    try {
+      const cloudProvider = cloudProviderFactory(routing.model, args.env);
+      if (!cloudProvider) return undefined;
+      const response = await cloudProvider.generate(buildCloudTurnRequest(message, routing.model, args.env));
+      if (response.output.trim().length === 0) return undefined;
+      return { marker: formatCloudRouteMarker(/[가-힣]/u.test(message), routing.model), model: routing.model, response };
+    } catch {
+      return undefined;
+    }
+  };
+}
+
 export async function runLocalChat(
   io: ProgramIO,
   message: string,
@@ -486,32 +523,18 @@ export async function runLocalChat(
   // grounding) or `options.priorHistory` — a cloud-routed turn sees only the
   // raw message, structurally, not by a runtime check.
   const routingDefaultModel = model ?? assembly.defaultModel ?? "default";
-  const routing = resolveChatRouting({
+  const cloudTurn = createChatCloudTurn({
+    cloudProviderFactory: options.cloudProviderFactory,
     defaultModel: routingDefaultModel,
     env: process.env,
-    groundingBlock,
-    memoryFacts: userMemory?.facts,
-    message,
-    userMemoryBlock
+    memoryFacts: () => userMemory?.facts
   });
-  const cloudProviderFactory = options.cloudProviderFactory ?? createModelProviderFor;
+  const cloudResult = await cloudTurn(message, userMemoryBlock, groundingBlock);
 
-  let result: AgentRunResult | undefined;
-  if (routing.route === "cloud") {
-    try {
-      const cloudProvider = cloudProviderFactory(routing.model, process.env);
-      if (cloudProvider) {
-        const response = await cloudProvider.generate(buildCloudTurnRequest(message, routing.model, process.env));
-        result = { response, runId: response.id };
-      }
-    } catch {
-      // Cloud provider construction / generation failed (no key, network down,
-      // MUSE_LOCAL_ONLY raced in). Fall through to the ordinary local path
-      // below — degrading to "stay local" is always the safe direction, and
-      // this must never surface as a chat-facing error.
-    }
-  }
-  const cloudRouted = result !== undefined;
+  let result: AgentRunResult | undefined = cloudResult
+    ? { response: cloudResult.response, runId: cloudResult.response.id }
+    : undefined;
+  const cloudMarker = cloudResult?.marker;
 
   if (!result) {
     const messages = [
@@ -683,8 +706,8 @@ export async function runLocalChat(
   // "Shows its work" for a cloud-routed turn — display-only (never persisted
   // to `finalResponseForHistory`, matching every other cue above) so the next
   // session's `priorHistory` never carries the marker as if it were content.
-  if (cloudRouted) {
-    finalResponse += formatCloudRouteMarker(/[가-힣]/u.test(message), routing.model);
+  if (cloudMarker) {
+    finalResponse += cloudMarker;
   }
 
   return {
