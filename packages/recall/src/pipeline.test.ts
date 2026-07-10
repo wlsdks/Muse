@@ -121,3 +121,162 @@ describe("runGroundedRecall — the grounded-recall seam", () => {
     expect(seenSystem).toContain("WireGuard VPN MTU is 1380");
   });
 });
+
+describe("runGroundedRecall — extras (the ask→seam retrofit enabling slice)", () => {
+  it("extras-free callers get a BYTE-IDENTICAL result to passing extras: {} (the API/MCP shape)", async () => {
+    const bare = await runGroundedRecall(input("Your VPN MTU is 1380. [from vpn.md]"));
+    const withEmptyExtras = await runGroundedRecall({ ...input("Your VPN MTU is 1380. [from vpn.md]"), extras: {} });
+    expect(withEmptyExtras).toEqual(bare);
+  });
+
+  it("extra context sections render after the notes block, in caller order, and drop when absent/blank", async () => {
+    let seenSystem = "";
+    await runGroundedRecall({
+      ...input("ok"),
+      extras: {
+        contextSections: [
+          { body: "Buy milk (due tomorrow)", footer: "=== END TASKS ===", header: "=== TASKS ===", present: true },
+          { body: "should never appear", footer: "=== END HIDDEN ===", header: "=== HIDDEN ===", present: false },
+          { body: "   ", footer: "=== END BLANK ===", header: "=== BLANK ===", present: true },
+          { body: "Team sync at 3pm", footer: "=== END CALENDAR ===", header: "=== CALENDAR ===", present: true }
+        ]
+      },
+      runtime: {
+        embedFn: fakeEmbed,
+        generateAnswer: async ({ system }) => {
+          seenSystem = system;
+          return "ok";
+        }
+      }
+    });
+    expect(seenSystem).not.toContain("HIDDEN");
+    expect(seenSystem).not.toContain("BLANK");
+    const notesIdx = seenSystem.indexOf("WireGuard VPN MTU is 1380");
+    const tasksIdx = seenSystem.indexOf("=== TASKS ===");
+    const tasksBodyIdx = seenSystem.indexOf("Buy milk (due tomorrow)");
+    const calendarIdx = seenSystem.indexOf("=== CALENDAR ===");
+    expect(notesIdx).toBeGreaterThan(-1);
+    expect(tasksIdx).toBeGreaterThan(notesIdx);
+    expect(tasksBodyIdx).toBeGreaterThan(tasksIdx);
+    expect(calendarIdx).toBeGreaterThan(tasksBodyIdx);
+  });
+
+  it("FAIL-CLOSE: an extra-category citation the caller never declared is stripped exactly like a fabricated note citation", async () => {
+    const result = await runGroundedRecall(
+      input("Buy milk tomorrow [task: Buy milk]. Your VPN MTU is 1380 [from vpn.md].")
+    );
+    expect(result.answer).not.toContain("[task:");
+    expect(result.answer).not.toContain("Buy milk tomorrow");
+    expect(result.strippedCitations).toContain("Buy milk");
+    expect(result.citations).toEqual(["vpn.md"]);
+  });
+
+  it("a declared + listed extra citation SURVIVES the gate", async () => {
+    const result = await runGroundedRecall({
+      ...input("Buy milk tomorrow [task: Buy milk]. Your VPN MTU is 1380 [from vpn.md]."),
+      extras: { allowedCitations: { tasks: ["Buy milk"] } }
+    });
+    expect(result.answer).toContain("[task: Buy milk]");
+    expect(result.answer).toContain("Buy milk tomorrow");
+    expect(result.strippedCitations).not.toContain("Buy milk");
+  });
+
+  it("a declared category still fail-closes a source NOT in its own list", async () => {
+    const result = await runGroundedRecall({
+      ...input("Walk the dog [task: Walk the dog]. Your VPN MTU is 1380 [from vpn.md]."),
+      extras: { allowedCitations: { tasks: ["Buy milk"] } }
+    });
+    expect(result.answer).not.toContain("Walk the dog");
+    expect(result.strippedCitations).toContain("Walk the dog");
+  });
+
+  it("an honest abstention strips an extra citation too — a refusal never carries ANY citation", async () => {
+    const result = await runGroundedRecall({
+      ...input("I'm not sure — your notes don't say. [task: Buy milk]"),
+      extras: { allowedCitations: { tasks: ["Buy milk"] } }
+    });
+    expect(result.refusal).toBe(true);
+    expect(result.answer).not.toContain("[task:");
+  });
+
+  it("refineChunks OFF (default) leaves chunk order untouched — the extras-free byte-identical proof, with 2 chunks", async () => {
+    const staleFile = join(notesDir, "rent_old.md");
+    const freshFile = join(notesDir, "rent_new.md");
+    await writeFile(staleFile, "예전에 rent was 100. 지금은 아니다.");
+    await writeFile(freshFile, "rent is currently 200.");
+    await writeIndex([
+      { embedding: [1, 0], path: staleFile, text: "예전에 rent was 100. 지금은 아니다." },
+      { embedding: [0.6, 0.8], path: freshFile, text: "rent is currently 200." }
+    ]);
+    const rentEmbed = async (text: string): Promise<number[]> => (/rent|100|200/iu.test(text) ? [1, 0] : [0, 1]);
+    const buildInput = (extras: GroundedRecallInput["extras"]): GroundedRecallInput => ({
+      extras,
+      options: { answerModel: "test-answerer", embedModel: EMBED_MODEL, topK: 2 },
+      query: "what is the rent",
+      runtime: { embedFn: rentEmbed, generateAnswer: async () => "ok" },
+      sources: { notesDir, notesIndexFile: indexFile }
+    });
+    const off = await runGroundedRecall(buildInput(undefined));
+    const offViaEmptyExtras = await runGroundedRecall(buildInput({}));
+    expect(offViaEmptyExtras).toEqual(off);
+  });
+
+  it("refineChunks ON: reorderForLongContext's raw-cosine re-sort is corrected by the SECOND demoteStale pass (current chunk cited first)", async () => {
+    const staleFile = join(notesDir, "rent_old.md");
+    const freshFile = join(notesDir, "rent_new.md");
+    await writeFile(staleFile, "예전에 rent was 100. 지금은 아니다.");
+    await writeFile(freshFile, "rent is currently 200.");
+    // stale scores HIGHER than fresh against the query — the exact shape that
+    // makes `reorderForLongContext` alone put the stale chunk back on top.
+    await writeIndex([
+      { embedding: [1, 0], path: staleFile, text: "예전에 rent was 100. 지금은 아니다." },
+      { embedding: [0.6, 0.8], path: freshFile, text: "rent is currently 200." }
+    ]);
+    let seenSystem = "";
+    await runGroundedRecall({
+      extras: { refineChunks: true },
+      options: { answerModel: "test-answerer", embedModel: EMBED_MODEL, topK: 2 },
+      query: "what is the rent",
+      runtime: {
+        embedFn: async () => [1, 0],
+        generateAnswer: async ({ system }) => {
+          seenSystem = system;
+          return "ok";
+        }
+      },
+      sources: { notesDir, notesIndexFile: indexFile }
+    });
+    const freshIdx = seenSystem.indexOf("rent is currently 200");
+    const staleIdx = seenSystem.indexOf("rent was 100");
+    expect(freshIdx).toBeGreaterThan(-1);
+    expect(staleIdx).toBeGreaterThan(-1);
+    expect(freshIdx).toBeLessThan(staleIdx);
+  });
+
+  it("untrustedNoteSources reaches buildNoteContextBlock's conflict marker (trust-aware, not neutral)", async () => {
+    const fileA = join(notesDir, "rent_a.md");
+    const fileB = join(notesDir, "rent_b.md");
+    await writeFile(fileA, "office rent is 100");
+    await writeFile(fileB, "office rent is 200");
+    await writeIndex([
+      { embedding: [1, 0, 0], path: fileA, text: "office rent is 100" },
+      { embedding: [1, 0, 0], path: fileB, text: "office rent is 200" }
+    ]);
+    const contradictingEmbed = async (): Promise<number[]> => [1, 0, 0];
+    let seenSystem = "";
+    await runGroundedRecall({
+      extras: { untrustedNoteSources: new Set(["rent_b.md"]) },
+      options: { answerModel: "test-answerer", embedModel: EMBED_MODEL, topK: 2 },
+      query: "office rent",
+      runtime: {
+        embedFn: contradictingEmbed,
+        generateAnswer: async ({ system }) => {
+          seenSystem = system;
+          return "ok";
+        }
+      },
+      sources: { notesDir, notesIndexFile: indexFile }
+    });
+    expect(seenSystem).toContain("EXTERNAL/UNVERIFIED");
+  });
+});

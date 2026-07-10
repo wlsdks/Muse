@@ -43,8 +43,9 @@ afterEach(async () => {
   await rm(dir, { force: true, recursive: true });
 });
 
-function input(runtime: Partial<GroundedRecallInput["runtime"]>): GroundedRecallInput {
+function input(runtime: Partial<GroundedRecallInput["runtime"]>, extras?: GroundedRecallInput["extras"]): GroundedRecallInput {
   return {
+    extras,
     options: { answerModel: "test-answerer", embedModel: EMBED_MODEL, topK: 3 },
     query: "what MTU does my VPN use?",
     runtime: {
@@ -104,6 +105,33 @@ describe("streamGroundedRecall — the live-gated event stream", () => {
     if (streamedResult?.type === "result") {
       expect(streamedResult.result).toEqual(buffered);
     }
+  });
+
+  it("PARITY: extras (context sections + allowed citations + refineChunks) flow through streaming and buffered identically", async () => {
+    const text = "Buy milk tomorrow [task: Buy milk]. Your VPN MTU is 1380 [from vpn.md].";
+    const extras: GroundedRecallInput["extras"] = {
+      allowedCitations: { tasks: ["Buy milk"] },
+      contextSections: [{ body: "Buy milk (due tomorrow)", footer: "=== END TASKS ===", header: "=== TASKS ===", present: true }],
+      refineChunks: true
+    };
+    const streamed = await collect(streamGroundedRecall(input({ streamAnswer: () => chunked(text.split(/(?<= )/u)) }, extras)));
+    const streamedResult = streamed.find((e) => e.type === "result");
+    const buffered = await runGroundedRecall(input({ generateAnswer: async () => text }, extras));
+    expect(streamedResult?.type).toBe("result");
+    if (streamedResult?.type === "result") {
+      expect(streamedResult.result).toEqual(buffered);
+      expect(streamedResult.result.answer).toContain("[task: Buy milk]");
+    }
+  });
+
+  it("a declared extra-category citation is not falsely stripped from the LIVE delta stream (visual streaming/buffered parity)", async () => {
+    const text = "Buy milk tomorrow [task: Buy milk]. Your VPN MTU is 1380 [from vpn.md].";
+    const events = await collect(streamGroundedRecall(input(
+      { streamAnswer: () => chunked(text.split(/(?<= )/u)) },
+      { allowedCitations: { tasks: ["Buy milk"] } }
+    )));
+    const deltas = events.filter((e) => e.type === "answer-delta").map((e) => e.text).join("");
+    expect(deltas).toContain("[task: Buy milk]");
   });
 
   it("without streamAnswer the single delta IS the gate-clean final answer", async () => {

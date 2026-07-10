@@ -14,14 +14,22 @@
  * itself never resolves credentials or vendors.
  */
 
-import { citedSourcesIn, detectEvidenceContradictions, enforceAnswerCitations, withUngroundableFallback } from "@muse/agent-core";
+import {
+  citedSourcesIn,
+  detectEvidenceContradictions,
+  enforceAnswerCitations,
+  reorderForLongContext,
+  withUngroundableFallback,
+  type AllowedCitations
+} from "@muse/agent-core";
 
 import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
 import { retrieveAndRankNotes } from "./ask-note-retrieval.js";
-import { notesGroundingFraming, type ScoredChunk } from "./chunks.js";
-import { loadIndex, type ReindexSummary } from "./notes-index.js";
-import { buildNoteContextBlock, formatSourceReceipts, relativizeNoteSource } from "./present.js";
+import { dedupNearDuplicateChunks, notesGroundingFraming, type ScoredChunk } from "./chunks.js";
+import { demoteStale } from "./conflict.js";
+import { cosine, loadIndex, type ReindexSummary } from "./notes-index.js";
+import { buildNoteContextBlock, formatSourceReceipts, groundingSectionLines, relativizeNoteSource } from "./present.js";
 import { answerIsRefusal, stripEchoedCiteAs } from "./text.js";
 
 export interface GroundedRecallSources {
@@ -64,11 +72,54 @@ export interface GroundedRecallRuntime {
   }) => AsyncIterable<string>;
 }
 
+/** One optional block appended after the notes block, mirroring the CLI's
+ *  `optionalGroundingSections` idiom (header/body/footer + a presence flag so a
+ *  caller can pass an always-shaped section and let it drop out when empty). */
+export interface GroundedRecallExtraSection {
+  readonly header: string;
+  readonly body: string;
+  readonly footer: string;
+  readonly present: boolean;
+}
+
+export interface GroundedRecallExtras {
+  /**
+   * Extra context sections (tasks/calendar/memory/…), rendered after the notes
+   * block in the exact order given. A section is dropped when `present` is
+   * false or `body` is blank — same rule `optionalGroundingSections` applies —
+   * so a caller can always pass its full fixed set without a header ever
+   * appearing over empty content.
+   */
+  readonly contextSections?: readonly GroundedRecallExtraSection[];
+  /**
+   * Merged into the citation gate alongside `{ notes: [...] }`. Fail-close by
+   * construction: a category NOT listed here (or a source not in its list)
+   * still resolves to `enforceAnswerCitations`'s own `?? []` default and is
+   * stripped exactly like a fabricated note citation — declaring a category
+   * is the only way a citation in it can survive.
+   */
+  readonly allowedCitations?: Omit<AllowedCitations, "notes">;
+  /**
+   * CLI-grade chunk refinement — dedup near-duplicates, "Lost in the Middle"
+   * reorder, then a SECOND stale-demotion pass (the reorder re-sorts by raw
+   * cosine and can put an explicitly-superseded chunk back ahead of its
+   * current counterpart — see the comment on `refineChunks` in `prepareRecall`).
+   * Off by default: an extras-free caller gets the exact prior chunk order.
+   */
+  readonly refineChunks?: boolean;
+  /** Forwarded to `buildNoteContextBlock`'s conflict marker so a conflict
+   *  against an externally-ingested note reads as untrusted, not neutral. */
+  readonly untrustedNoteSources?: ReadonlySet<string>;
+}
+
 export interface GroundedRecallInput {
   readonly query: string;
   readonly sources: GroundedRecallSources;
   readonly options: GroundedRecallOptions;
   readonly runtime: GroundedRecallRuntime;
+  /** Absent or `{}` ⇒ byte-identical to the extras-free pipeline (the API and
+   *  MCP callers pass none). See `GroundedRecallExtras`. */
+  readonly extras?: GroundedRecallExtras;
 }
 
 export interface GroundedRecallResult {
@@ -110,14 +161,19 @@ async function resolveIndexForModel(
 function buildSystemPrompt(args: {
   readonly framing: { readonly header: string; readonly guidance?: string };
   readonly contextBlock: string;
+  readonly extraSections?: readonly GroundedRecallExtraSection[];
 }): string {
+  const extraLines = groundingSectionLines(
+    (args.extraSections ?? []).map((section) => ({ ...section, present: section.present && section.body.trim().length > 0 }))
+  );
   return [
     "You are Muse, the user's personal AI. Answer the user's question ONLY from the context below.",
     ...CITATION_INSTRUCTION_LINES,
     ...(args.framing.guidance ? [args.framing.guidance] : []),
     "",
     args.framing.header,
-    args.contextBlock
+    args.contextBlock,
+    ...extraLines
   ].join("\n");
 }
 
@@ -163,25 +219,43 @@ async function prepareRecall(input: GroundedRecallInput): Promise<PreparedRecall
     topK
   });
 
-  const framing = notesGroundingFraming(retrieval.scored, query, retrieval.preGapScored, embedModel);
+  // Drop provable near-duplicates first (highest-ranked survives) before the
+  // confidence framing reads the set — mirrors the CLI's `commands-ask.ts`
+  // composition. Off by default so an extras-free caller's framing input is
+  // the exact `retrieval.scored` it always was.
+  const dedupedScored = input.extras?.refineChunks
+    ? dedupNearDuplicateChunks(retrieval.scored, cosine)
+    : retrieval.scored;
+  const framing = notesGroundingFraming(dedupedScored, query, retrieval.preGapScored, embedModel);
+  // `reorderForLongContext` re-sorts by raw cosine score, which would put a
+  // higher-scoring but explicitly-superseded chunk back ahead of its current
+  // counterpart — so the stale demotion `retrieveAndRankNotes` already applied
+  // once must run again on the reorder's OUTPUT, not before it.
+  const contextChunks = input.extras?.refineChunks
+    ? demoteStale(reorderForLongContext(dedupedScored), (c) => c.chunk.text)
+    : dedupedScored;
   const contradictions = await detectEvidenceContradictions(
-    retrieval.scored.map((s: ScoredChunk) => ({ cosine: s.score, score: s.score, source: s.file, text: s.chunk.text })),
+    contextChunks.map((s: ScoredChunk) => ({ cosine: s.score, score: s.score, source: s.file, text: s.chunk.text })),
     (text) => runtime.embedFn(text, embedModel ?? "")
   ).catch(() => [] as const);
-  const contextBlock = buildNoteContextBlock(retrieval.scored, contradictions, sources.notesDir);
+  const contextBlock = buildNoteContextBlock(contextChunks, contradictions, sources.notesDir, input.extras?.untrustedNoteSources);
 
   return {
-    allowedNotes: [...new Set(retrieval.scored.map((s) => relativizeNoteSource(s.file, sources.notesDir)))],
+    allowedNotes: [...new Set(contextChunks.map((s) => relativizeNoteSource(s.file, sources.notesDir)))],
     notesUnavailable: retrieval.notesUnavailable,
-    scored: retrieval.scored,
-    systemPrompt: buildSystemPrompt({ contextBlock, framing }),
+    scored: contextChunks,
+    systemPrompt: buildSystemPrompt({ contextBlock, extraSections: input.extras?.contextSections, framing }),
     verdict: framing.verdict
   };
 }
 
 /** The deterministic gates over the full raw answer — shared by both entry points. */
 function finalizeRecall(raw: string, prepared: PreparedRecall, input: GroundedRecallInput): GroundedRecallResult {
-  const enforced = enforceAnswerCitations(stripEchoedCiteAs(raw), { notes: [...prepared.allowedNotes] });
+  // Only a category the caller EXPLICITLY declared here can survive the gate —
+  // an undeclared category falls back to `enforceAnswerCitations`'s own `?? []`,
+  // so a citation in it is stripped exactly like a fabricated note citation.
+  const allowedCitations: AllowedCitations = { notes: [...prepared.allowedNotes], ...input.extras?.allowedCitations };
+  const enforced = enforceAnswerCitations(stripEchoedCiteAs(raw), allowedCitations);
   // Every sentence can be dropped as un-groundable (the citation-gate clause-leak
   // fix) — an empty string there would read as a silent bug, not an honest
   // abstention, so surface the SAME fixed hedge every other refusal uses.
@@ -190,8 +264,12 @@ function finalizeRecall(raw: string, prepared: PreparedRecall, input: GroundedRe
 
   // An honest abstention must not carry a citation — a model that says
   // "I'm not sure [from x.md]" is laundering confidence it doesn't have.
+  // Unconditional on refusal (not gated on `citedSourcesIn`, which only sees
+  // `[from …]`-style note citations): an extra category — `[task: …]` etc —
+  // must be stripped from a refusal exactly like a note citation would be.
+  // A no-citation refusal round-trips through this unchanged (no-op).
   const refusal = answerIsRefusal(answer);
-  if (refusal && citedSourcesIn(answer).length > 0) {
+  if (refusal) {
     const strippedRefusal = enforceAnswerCitations(answer, { notes: [] });
     strippedCitations.push(...strippedRefusal.stripped);
     answer = withUngroundableFallback(strippedRefusal).trim();
@@ -243,8 +321,12 @@ export async function* streamGroundedRecall(input: GroundedRecallInput): AsyncGe
 
   let raw = "";
   if (input.runtime.streamAnswer) {
+    // Must accept the SAME categories the buffered gate in `finalizeRecall`
+    // does — otherwise a valid extra-category citation would flash-strip live
+    // and then reappear in the final `result`, breaking stream/buffered parity.
+    const liveAllowedCitations: AllowedCitations = { notes: [...prepared.allowedNotes], ...input.extras?.allowedCitations };
     const filter = createCitationStreamFilter(
-      (span) => enforceAnswerCitations(span, { notes: [...prepared.allowedNotes] }).text
+      (span) => enforceAnswerCitations(span, liveAllowedCitations).text
     );
     for await (const delta of input.runtime.streamAnswer(generateArgs)) {
       raw += delta;
