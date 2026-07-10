@@ -131,7 +131,7 @@ Total: **502** variables.
 | `MUSE_CROSS_LINGUAL_COSINE_FLOOR` | packages/recall |
 | `MUSE_DAEMON_CONFIG_FILE` | apps/cli |
 | `MUSE_DAEMON_PLIST_FILE` | apps/cli |
-| `MUSE_DEFAULT_MODEL` | apps/cli, packages/autoconfigure |
+| `MUSE_DEFAULT_MODEL` | apps/api, apps/cli, packages/autoconfigure |
 | `MUSE_DEFAULT_TIMEZONE` | packages/autoconfigure |
 | `MUSE_DELTA_AT` | apps/cli |
 | `MUSE_DISCORD_AFTER_FILE` | packages/autoconfigure |

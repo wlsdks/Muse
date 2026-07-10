@@ -36,11 +36,12 @@ test("countGroundedSurfaces counts registered release-gate batteries, ignoring o
     '  { axis: "★ WEDGE: cited recall", file: "apps/cli/scripts/verify-cited-recall.mjs", name: "cited-recall" },',
     '  { axis: "★ WEDGE: rubric re-verify", file: "apps/cli/scripts/verify-rubric-reverify.mjs", name: "rubric-reverify" },',
     '  { axis: "★ VISION", file: "apps/cli/scripts/verify-vision-grounding.mjs", name: "vision-grounding" },',
+    '  { axis: "★ WEDGE: SSE ask stream", file: "apps/api/scripts/verify-sse-ask-stream.mjs", name: "sse-ask-stream" },',
     "];",
     '// a stray reference with no `file:` prefix must NOT count: apps/cli/scripts/verify-helper.mjs',
     'const other = "scripts/eval-agent.mjs";'
   ].join("\n");
-  assert.equal(countGroundedSurfaces(src), 3);
+  assert.equal(countGroundedSurfaces(src), 4);
   assert.equal(countGroundedSurfaces(""), 0);
 });
 

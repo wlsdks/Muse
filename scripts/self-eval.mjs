@@ -58,7 +58,7 @@ export function countVerifiedCapabilityLines(capabilitiesText) {
  * ratchet: detectRegressions fails self-eval the moment the count falls.
  */
 export function countGroundedSurfaces(selfImprovingSource) {
-  const matches = selfImprovingSource.match(/file:\s*"apps\/cli\/scripts\/verify-[\w-]+\.mjs"/gu);
+  const matches = selfImprovingSource.match(/file:\s*"apps\/(?:cli|api)\/scripts\/verify-[\w-]+\.mjs"/gu);
   return matches ? matches.length : 0;
 }
 
