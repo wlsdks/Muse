@@ -306,7 +306,23 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         return response.output;
       },
       notesDir: options.notesDir,
-      notesIndexFile: resolveNotesIndexFile(process.env as Record<string, string | undefined>)
+      notesIndexFile: resolveNotesIndexFile(process.env as Record<string, string | undefined>),
+      streamAnswer: async function* ({ system, user, model, temperature }) {
+        for await (const event of askModelProvider.stream({
+          messages: [
+            { content: system, role: "system" },
+            { content: user, role: "user" }
+          ],
+          model,
+          ...(temperature !== undefined ? { temperature } : {})
+        })) {
+          if (event.type === "text-delta") {
+            yield event.text;
+          } else if (event.type === "error") {
+            throw event.error;
+          }
+        }
+      }
     });
   }
   if (options.voice) {
