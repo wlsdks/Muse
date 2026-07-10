@@ -8,6 +8,51 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.32] - 2026-07-10
+
+Ask your notes from anywhere: the grounded ask pipeline now streams over the
+API and into the web/desktop app — and every ask surface runs on one shared,
+gate-proven pipeline, so answers can't quietly diverge between the CLI, the
+API, and the app.
+
+### Added
+
+- **"Ask your notes" in the app.** The Notes view has a question panel: the
+  answer streams in word by word, every claim carries a citation chip you can
+  tap to open the note it came from, and a confidence badge shows how sure Muse
+  is. When your notes don't contain the answer, it says so honestly instead of
+  guessing. Bilingual (한국어/English).
+- **The ask API streams.** `POST /api/ask` with `Accept: text/event-stream`
+  now delivers the answer token by token over SSE — behind the exact same
+  citation gate as the buffered response, so a fabricated citation can never
+  flash by mid-stream, even split across chunks. The plain JSON response is
+  unchanged.
+- **The streamed surface is live-proven.** A new real-model battery asserts the
+  streaming invariants (deltas equal the final answer; a fabricated source
+  never appears in any delta; unanswerable questions abstain) — the grounded
+  proof floor ratchets 34 → 35 surfaces.
+
+### Fixed
+
+- **Corrections now beat stale facts in answers.** A note that marks itself
+  superseded ("예전에 …였는데 지금은 아니다", "used to …") no longer outranks
+  its current counterpart in what Muse answers and cites — on chat, `muse ask`,
+  and the API alike. The stale note is demoted, never hidden.
+- **Opening and searching notes in the app actually works against a live
+  server.** Both calls disagreed with the server's contract (they always
+  failed silently in the browser), which also broke tapping a citation chip —
+  found by driving the real app end-to-end, fixed everywhere.
+
+### Changed
+
+- **One ask pipeline everywhere.** Plain `muse ask` now runs on the same shared
+  grounded-recall pipeline as the API and the MCP tool, so the flagship surface
+  can no longer drift from the gate the live batteries prove. (Tool-using runs
+  keep their dedicated path for now.)
+- **Verification integrity.** Direct test runs in 8 packages no longer pick up
+  stale compiled copies of old tests, which could mask a real failure with an
+  outdated pass.
+
 ## [0.2.31] - 2026-07-09
 
 Three real bugs, found by running the app against a real store instead of an empty one.
