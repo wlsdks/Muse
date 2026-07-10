@@ -107,6 +107,31 @@ export interface NotesSearchResponse {
   readonly hits: readonly NotesSearchHit[];
 }
 
+/** `POST /api/ask`'s grounded-recall verdict — mirrors `GroundedRecallResult["verdict"]`
+ * from `@muse/recall` (the web ships no `@muse/*` deps, so the shape is mirrored here). */
+export type AskVerdict = "confident" | "ambiguous" | "none";
+
+/** The early `event: retrieval` SSE frame — arrives before any answer text,
+ * so the panel can show grounding breadth while the model is still generating. */
+export interface AskRetrieval {
+  readonly groundedChunkCount: number;
+  readonly notesUnavailable: boolean;
+  readonly verdict: AskVerdict;
+}
+
+/** The buffered JSON body / final `event: result` SSE frame — mirrors
+ * `GroundedRecallResult`. */
+export interface AskResult {
+  readonly answer: string;
+  readonly verdict: AskVerdict;
+  readonly citations: readonly string[];
+  readonly strippedCitations: readonly string[];
+  readonly receipts?: string;
+  readonly refusal: boolean;
+  readonly notesUnavailable: boolean;
+  readonly groundedChunkCount: number;
+}
+
 export interface TodayBriefingResponse {
   readonly generatedAt: string;
   readonly lookaheadHours: number;

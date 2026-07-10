@@ -126,6 +126,16 @@ const en = {
   "notes.namePlaceholder": "note-name.md",
   "notes.bodyPlaceholder": "Write in Markdown…",
 
+  "ask.title": "Ask your notes",
+  "ask.placeholder": "Ask a question grounded in your notes…",
+  "ask.submit": "Ask",
+  "ask.sub": "Answers are grounded in your notes, with a source for every claim.",
+  "ask.notesUnavailable": "Your notes aren't reachable right now, so this couldn't be grounded.",
+  "ask.abstained": "Muse isn't sure — no note backs up a confident answer.",
+  "ask.verdict.confident": "Confident",
+  "ask.verdict.ambiguous": "Ambiguous",
+  "ask.verdict.none": "No grounding",
+
   "activity.title": "Activity",
   "activity.recentRuns": "Recent runs",
   "activity.proactive": "Proactive notices",
@@ -390,6 +400,16 @@ const ko: Strings = {
   "notes.save": "저장",
   "notes.namePlaceholder": "노트-이름.md",
   "notes.bodyPlaceholder": "마크다운으로 작성…",
+
+  "ask.title": "노트에 질문하기",
+  "ask.placeholder": "내 노트를 바탕으로 질문해 보세요…",
+  "ask.submit": "질문하기",
+  "ask.sub": "답변은 노트에 근거하며, 모든 주장에 출처가 붙어요.",
+  "ask.notesUnavailable": "지금은 노트에 접근할 수 없어서 근거를 확인하지 못했어요.",
+  "ask.abstained": "확신할 수 있는 노트 근거가 없어서 잘 모르겠어요.",
+  "ask.verdict.confident": "확신",
+  "ask.verdict.ambiguous": "애매함",
+  "ask.verdict.none": "근거 없음",
 
   "activity.title": "활동",
   "activity.recentRuns": "최근 실행",

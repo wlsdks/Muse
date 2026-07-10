@@ -876,6 +876,62 @@ button {
   overflow-y: auto;
 }
 
+.ask-panel {
+  margin: 16px 0;
+}
+.ask-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ask-form .input {
+  flex: 1;
+  min-width: 200px;
+}
+.ask-answer {
+  margin-top: var(--s-md);
+  padding-top: var(--s-md);
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-sm);
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+.ask-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-subtle);
+}
+.ask-sub {
+  margin: var(--s-sm) 0 0;
+  font-size: var(--text-ui);
+  color: var(--ink-tertiary);
+}
+.ask-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-xs);
+}
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-strong);
+  color: var(--ink-subtle);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.source-chip:hover {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  color: var(--primary-hover);
+}
+
 .spinner {
   width: 16px;
   height: 16px;
