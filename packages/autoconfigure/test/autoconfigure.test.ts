@@ -1,4 +1,5 @@
-import { homedir } from "node:os";
+import { mkdtempSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -193,7 +194,11 @@ describe("autoconfigure", () => {
 
   it("buildInboxContextProvider stays undefined when no messaging token is registered (Phase 2)", async () => {
     const { buildInboxContextProvider } = await import("../src/personal-providers.js");
-    expect(buildInboxContextProvider({})).toBeUndefined();
+    // Pin the credentials file to an empty tmp location — the default falls
+    // back to the REAL ~/.muse/messaging.json, so a token registered on the
+    // dev machine would leak into this "no token" assumption.
+    const emptyCredentials = join(mkdtempSync(join(tmpdir(), "muse-inbox-isolated-")), "messaging.json");
+    expect(buildInboxContextProvider({ MUSE_MESSAGING_CREDENTIALS_FILE: emptyCredentials })).toBeUndefined();
   });
 
   it("buildToolFilter is off by default and on with MUSE_TOOL_FILTER_ENABLED=true (Phase 4)", async () => {

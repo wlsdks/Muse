@@ -45,7 +45,8 @@
 - apps/api tick-daemons.ts 10개 데몬 동일 보일러플레이트 (~200줄 절감 가능) → factory 추출 후보 (행위-보존 신중 요구)
 - apps/api multi-agent-routes.ts 불리언 필드 파싱 4벌 중복 → parseOptionalBoolean 헬퍼 후보
 - apps/api server-helpers.ts 544줄 3책임(chat runner/입력 파서/HTTP plumbing) → 분리 후보
-- ⚠ autoconfigure test/autoconfigure.test.ts "buildInboxContextProvider stays undefined…" — 테스트가 실제 ~/.muse/telegram-inbox-injection.json을 읽어 "빈 env" 가정 오염 (테스트 격리 결함, 사전존재). 격리 디렉토리 주입으로 수리 후보
+- ~~autoconfigure 격리 결함~~ → fire 12에서 해결 (크리덴셜 파일을 빈 tmp로 고정 — 정확한 누수원은 ~/.muse/messaging.json의 실등록 토큰)
+- 같은 클래스 의심: resolveDotMusePath 폴백(~/.muse)을 기본으로 읽는 다른 "빈 env" 테스트가 더 있는지 스캔 후보 (autoconfigure/api 전반)
 - autoconfigure buildLoopbackTools 207줄·buildRuntimeToolRegistry 279줄 → runtime-assembly와 같은 패턴 분해 후보
 - packages/shared index.ts 고아 docstring (truncateErrorBody 설명이 함수와 144줄 분리) → 이동 후보 (소형)
 - 루프 운영: sonnet 워커 stash 금지 위반 2회째 (fire 11) — 잔여물은 없었으나 프롬프트에 대안(git show HEAD:path) 강제 + "stash 사용시 보고서에 사유 명시" 요구 추가할 것
@@ -73,3 +74,4 @@
 | 9 | apps/api | server-routes.ts 670→31줄: 10 exports를 도메인 5파일(core-chat/admin-run/auth/agent-tools/session-runtime)로 순수 이동, 재export 배럴로 임포터 무변경; AdminGate는 admin-run 소유+타입 import | api build ✓ · related 32파일 163/163 ✓ (전체 스위트 red 3건은 그래프 밖 사전존재 플레이크 확증) · lint 0 ✓ |
 | 10 | apps/api (큐 집행) | 낡은 테스트 2파일 갱신: settings-routes(데몬 플래그 6→8 고정목록 갱신, 변경-감지기 방식 유지) + p1-seam(sendChatAction 등장에 맞춰 sendMessage 필터 단언 + endpoint 집합 단언 보강) — 둘 다 src 무변경 | api 전체 130파일 793/793 완전 green ✓ · lint 0 ✓ |
 | 11 | packages/autoconfigure (+shared 스캔) | createMuseRuntimeAssembly 397→209줄: 조립을 6개 module-private 단계 헬퍼(관측스택/모델·스토어/개인스토어/툴링/훅·컨텍스트/에이전트런타임)로 순수 재배치, 배선 순서·lazy-closure 계약 보존, 공개 표면 불변 | autoconfigure build ✓ · 어셈블리 e2e+wiring 83/84 (red 1건=diff 밖 사전존재 격리결함 확증) · lint 0 ✓ |
+| 12 | autoconfigure (큐 집행) + 머지 | ①main 충돌 해소: settings-routes(9플래그 main측)+p1-seam(main측+우리의 강한 endpoint-집합 단언 보존 — 양쪽이 같은 낡은 테스트를 각자 고친 경합) ②buildInboxContextProvider 테스트 격리: 크리덴셜 파일을 빈 tmp로 고정, 실머신 ~/.muse/messaging.json 토큰 누수 차단 | 충돌 2파일 5/5 ✓ · autoconfigure.test 62/62 ✓ (실토큰 있는 머신에서 green) · build ✓ · lint 0 ✓ |
