@@ -39,11 +39,14 @@ describe("P1 seam — two-way channel conversation composes end-to-end", () => {
     const cursorFile = join(dir, "telegram-inbox.json.reply-cursor.json");
     const threadFile = join(dir, "telegram-inbox.json.threads.json");
 
-    const posts: Array<{ url: string; body: { chat_id: string; text: string } }> = [];
+    const posts: Array<{ url: string; body: { chat_id: string; text?: string; action?: string } }> = [];
     const telegram = new TelegramProvider({
       baseUrl: "https://tg.test",
       fetch: async (u, init) => {
-        posts.push({ body: JSON.parse(String(init?.body)) as { chat_id: string; text: string }, url: String(u) });
+        posts.push({
+          body: JSON.parse(String(init?.body)) as { chat_id: string; text?: string; action?: string },
+          url: String(u)
+        });
         return fakeJsonResponse({ ok: true, result: { message_id: posts.length } });
       },
       token: "BOT-T"
@@ -81,19 +84,27 @@ describe("P1 seam — two-way channel conversation composes end-to-end", () => {
       await appendInbound(inboxFile, inbound("m2", "555", "delete all my tasks"));
       await handle.tickOnce();
 
-      // 3 outbound POSTs, all to chat 555 over the real provider HTTP:
+      // Every POST hits one of exactly two known Telegram endpoints —
+      // sendChatAction (typing indicator, best-effort before each reply)
+      // and sendMessage (the actual reply content). Any other endpoint
+      // showing up here would be an unexpected wiring change.
+      const endpoints = new Set(posts.map((p) => p.url.replace(/^https:\/\/tg\.test\/botBOT-T\//u, "")));
+      expect(endpoints).toEqual(new Set(["sendChatAction", "sendMessage"]));
+
+      // 3 sendMessage POSTs, all to chat 555 over the real provider HTTP:
       // (1) the turn-1 reply, (2) the in-chat approval prompt for the
       // risky tool, (3) the turn-2 reply (blocked pending approval).
-      expect(posts.map((p) => p.url)).toEqual([
+      const sendMessagePosts = posts.filter((p) => p.url.endsWith("/sendMessage"));
+      expect(sendMessagePosts.map((p) => p.url)).toEqual([
         "https://tg.test/botBOT-T/sendMessage",
         "https://tg.test/botBOT-T/sendMessage",
         "https://tg.test/botBOT-T/sendMessage"
       ]);
-      expect(posts.every((p) => p.body.chat_id === "555")).toBe(true);
-      expect(posts[0]?.body.text).toContain("Noted, Sam.");
-      expect(posts[1]?.body.text).toContain("NOT executed");
-      expect(posts[1]?.body.text).toContain("tasks.delete");
-      expect(posts[2]?.body.text).toContain("Blocked");
+      expect(sendMessagePosts.every((p) => p.body.chat_id === "555")).toBe(true);
+      expect(sendMessagePosts[0]?.body.text).toContain("Noted, Sam.");
+      expect(sendMessagePosts[1]?.body.text).toContain("NOT executed");
+      expect(sendMessagePosts[1]?.body.text).toContain("tasks.delete");
+      expect(sendMessagePosts[2]?.body.text).toContain("Blocked");
 
       // m1 answered once (cursor); m2's agent turn carried the
       // turn-1 user msg + Muse reply (thread continuity).

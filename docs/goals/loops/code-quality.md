@@ -43,7 +43,7 @@
 - apps/api tick-daemons.ts 10개 데몬 동일 보일러플레이트 (~200줄 절감 가능) → factory 추출 후보 (행위-보존 신중 요구)
 - apps/api multi-agent-routes.ts 불리언 필드 파싱 4벌 중복 → parseOptionalBoolean 헬퍼 후보
 - apps/api server-helpers.ts 544줄 3책임(chat runner/입력 파서/HTTP plumbing) → 분리 후보
-- ⚠ 사전존재 플레이크 (fire 9 발견, 이 슬라이스와 무관 확증): apps/api src/settings-routes.test.ts 2건(env-flag 상태 누수 의심) + test/p1-seam.test.ts 1건(텔레그램 mock 순서) — 격리 실행에서도 실패. 결정론화 수리 후보
+- ~~apps/api 사전존재 red 2파일~~ → fire 10에서 해결. 정정: 플레이크가 아니라 **낡은 테스트** — src 진화(데몬 플래그 6→8, 텔레그램 typing 표시 추가)를 테스트가 못 따라간 것. 교훈: main의 full-suite red가 방치되고 있었음 — 기능 커밋이 관련 테스트 갱신 없이 들어옴
 - 루프 운영 교훈: sonnet 워커 프롬프트에 "git stash 금지" 명시할 것 (fire 2 워커가 사전존재 확인에 stash 사용 — 잔여물 없이 끝났지만 규칙 위반; fire 3부터 명시 적용됨)
 - packages/recall present.ts:23 date-sort가 feeds-store의 compareFeedEntriesNewestFirst와 불일치 (unparseable date를 0 취급) → 동작 변경이라 이 루프 범위 밖, 별도 버그픽스 후보로 기록
 - packages/recall select.ts 514줄 (memory/contacts/evidence 혼재) → 분리 후보
@@ -65,3 +65,4 @@
 | 7 | 저장소-폭 결함클래스 감사 | fire-6 결함의 두 클래스를 전수 감사: ①시한폭탄(절대날짜×실시계 seam) 추가 0 확인 ②침묵-실패(버린 execute+부정 단언=가짜통과) 99사이트 분류→5건 수리(notes-save-mirror 2·contacts-tool 1·fs-read-tools 2, 결과 캡처+에러 단언) + mutation 드릴로 새 단언이 RED 됨을 증명 | 터치 스위트 34+64 green ✓ · 드릴 RED→원복 green ✓ · lint 0 ✓ |
 | 8 | packages/multi-agent | runLeadWorkerTask 173줄 7책임 → module-private 3헬퍼(executeSubtasks/synthesizeWithRetryGate/detectCoordinationIssues)로 순수 재배치, 공개 API·파일 경계 불변, WHY 주석 동반 이동 | multi-agent 334/334 ✓ · api build ✓ · lint 0 ✓ (fable 재검증) |
 | 9 | apps/api | server-routes.ts 670→31줄: 10 exports를 도메인 5파일(core-chat/admin-run/auth/agent-tools/session-runtime)로 순수 이동, 재export 배럴로 임포터 무변경; AdminGate는 admin-run 소유+타입 import | api build ✓ · related 32파일 163/163 ✓ (전체 스위트 red 3건은 그래프 밖 사전존재 플레이크 확증) · lint 0 ✓ |
+| 10 | apps/api (큐 집행) | 낡은 테스트 2파일 갱신: settings-routes(데몬 플래그 6→8 고정목록 갱신, 변경-감지기 방식 유지) + p1-seam(sendChatAction 등장에 맞춰 sendMessage 필터 단언 + endpoint 집합 단언 보강) — 둘 다 src 무변경 | api 전체 130파일 793/793 완전 green ✓ · lint 0 ✓ |
