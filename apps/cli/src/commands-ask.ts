@@ -23,13 +23,12 @@
  */
 
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 
 import { detectEvidenceContradictions, enforceAnswerCitations, isInjectableStrategy, lexicalTokens, normalizeContactCitations, normalizeFromPrefixedCitations, normalizeMemoryCitations, normalizeSlotCitations, renderPlaybookSection, reorderForLongContext, withUngroundableFallback, type ContradictionPair } from "@muse/agent-core";
 import { describeImage } from "@muse/agent-core";
-import { classifyActionRequest, classifyCorpusOverview, isMemoryInjection } from "@muse/agent-core";
+import { classifyActionRequest, isMemoryInjection } from "@muse/agent-core";
 import { contestedFactKeys, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys, staleFactKeys } from "@muse/memory";
-import { createMuseRuntimeAssembly, resolveAnswerTemperature, resolveNoteProvenanceFile, resolveNotesDir, resolveNotesIndexFile, resolvePendingApprovalsFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveAnswerTemperature, resolveNoteProvenanceFile, resolvePendingApprovalsFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { readNoteProvenance, untrustedNotePaths } from "./note-provenance.js";
 import type { MuseTool } from "@muse/tools";
 import { acquireOllamaLease, releaseOllamaLease, resolveOllamaLeaseFile } from "@muse/stores";
@@ -59,7 +58,6 @@ import { drawBestGroundedRedraft, groundingVerdictNotice } from "@muse/recall";
 export { drawBestGroundedRedraft, groundingVerdictNotice };
 import { buildAskConnections } from "@muse/recall";
 export { buildAskConnections };
-import type { FileEntry } from "@muse/recall";
 
 
 import { CODEX_PROVIDER_ID, parseModelName } from "@muse/model";
@@ -74,20 +72,17 @@ export { decompositionJsonFields, decompositionStderrNotes, renderAskStreamError
 import { rescueMemoryCrossLingual } from "./ask-cross-lingual.js";
 
 export { resolveAskTierModels, routeAskTierModel } from "./ask-tier-models.js";
-import { parseBoundedInt } from "./parse-bounded-int.js";
 import type { Command } from "commander";
 
-import { cosine, isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
+import { cosine } from "./commands-notes-rag.js";
 import { filterLiveNoteIndexFiles } from "./commands-recall.js";
 import { embed } from "./embed.js";
 import { rankPlaybookEntriesByRelevance } from "./playbook-embed-rank.js";
-import { buildAskRunLog, resolvePersona, writeRunLog } from "./program-helpers.js";
+import { buildAskRunLog, writeRunLog } from "./program-helpers.js";
 import { buildMusePersona } from "./muse-persona.js";
 import type { ProgramIO } from "./program.js";
 import { withSigintAbort } from "./sigint-abort.js";
-import { resolveDefaultUserKey } from "./user-id.js";
 import { listNoteFiles, notesCorpusFileCount, resolveAskMaxTools, selectGraphConnections } from "./ask-corpus-helpers.js";
-import { userHasOtherPersonalData } from "./ask-user-data-presence.js";
 import { collectAutoImageAttachments, loadImageAttachment } from "./ask-image-attachments.js";
 import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { buildSessionFeedReflectionGrounding } from "./ask-session-grounding.js";
@@ -99,10 +94,11 @@ import { buildAskSystemPrompt } from "./ask-system-prompt.js";
 import { finalizeAndRenderAsk } from "./ask-finalize.js";
 import { buildActivityGrounding } from "./ask-activity-grounding.js";
 import { buildPersonalStoreGrounding } from "./ask-personal-store-grounding.js";
-import { DEFAULT_EMBED_MODEL, resolveIndexModel } from "./embed-model-default.js";
+import { DEFAULT_EMBED_MODEL } from "./embed-model-default.js";
 import { applyAskOptions, type AskOptions } from "./ask-command-options.js";
 export type { AskOptions };
 import { composeAskInput } from "./ask-input.js";
+import { notesIndexPath, prepareAskContext } from "./ask-context-setup.js";
 
 /**
  * The allowlist consumed via `metadata.allowedToolNames` when
@@ -126,24 +122,6 @@ export const NOTES_ONLY_TOOL_ALLOWLIST = ["muse.notes", "muse.notes-multi", "mus
  * deterministically keeps recall read-only for memory.
  */
 const RECALL_FORBIDDEN_TOOL_NAMES = ["remember_fact"] as const;
-
-
-
-interface NotesIndex {
-  readonly version: 1;
-  readonly model: string;
-  readonly files: readonly FileEntry[];
-}
-
-function notesIndexPath(): string {
-  return resolveNotesIndexFile(process.env as Record<string, string | undefined>);
-}
-
-function defaultUserKey(user: string | undefined, persona: string | undefined): string {
-  const base = resolveDefaultUserKey({ override: user });
-  const resolved = resolvePersona(persona);
-  return resolved ? `${base}@${resolved}` : base;
-}
 
 /**
  * Drain the chat-only fast-path model stream. A provider `error`
@@ -200,121 +178,17 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         return;
       }
 
-      const userKey = defaultUserKey(options.user, options.persona);
-      const topK = parseBoundedInt(options.top, "--top", 1, 20, 3);
-      const embedModel = options.embedModel ?? DEFAULT_EMBED_MODEL;
-
-      // Auto-stale check + incremental reindex (default on). JARVIS
-      // shouldn't make the user remember to run reindex; if a note
-      // file is newer than the index, just refresh before search.
-      const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
-      // Preserve the model the index was built with: a stale
-      // refresh must NOT silently re-embed a custom-model index
-      // with the default just because --embed-model was omitted.
-      // The mismatch is still surfaced by the explicit guard below.
-      let existingIndexModel: string | undefined;
-      try {
-        existingIndexModel = (JSON.parse(await readFile(notesIndexPath(), "utf8")) as NotesIndex).model;
-      } catch {
-        existingIndexModel = undefined;
-      }
-      if (options.autoReindex !== false) {
-        try {
-          const stale = await isNotesIndexStale(notesDir, notesIndexPath());
-          if (stale) {
-            const summary = await reindexNotes({
-              dir: notesDir,
-              indexPath: notesIndexPath(),
-              // resolveIndexModel preserves a custom index model but migrates
-              // the legacy default to the shipped multilingual default.
-              model: resolveIndexModel(existingIndexModel, embedModel),
-              // Stream per-file progress so a first ingest of a real
-              // corpus (PDFs embed slowly on CPU) shows life instead of
-              // a silent multi-second hang, and a skipped unreadable
-              // file is visible rather than swallowed.
-              onProgress: (line) => io.stderr(`  ${line}\n`)
-            });
-            if (summary.embedded > 0 || summary.failed > 0) {
-              io.stderr(`(notes index refreshed: ${summary.embedded.toString()} embedded, ${summary.skipped.toString()} cached, ${summary.failed.toString()} skipped)\n`);
-            }
-          }
-        } catch (cause) {
-          io.stderr(`(auto-reindex skipped: ${cause instanceof Error ? cause.message : String(cause)})\n`);
-        }
-      }
-
-      // Load notes index — soft-fail with hint if missing
-      let index: NotesIndex | undefined;
-      try {
-        const raw = await readFile(notesIndexPath(), "utf8");
-        index = JSON.parse(raw) as NotesIndex;
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
-          io.stderr("No notes index at ~/.muse/notes-index.json. Run `muse notes reindex` first.\n");
-          process.exitCode = 1;
-          return;
-        }
-        throw cause;
-      }
-      if (index.model !== embedModel) {
-        // One-time legacy migration: an index built with the OLD default
-        // re-embeds with the new multilingual default instead of dead-ending —
-        // otherwise the embedder upgrade would brick every existing install.
-        // A CUSTOM index model still gets the explicit mismatch error.
-        if (resolveIndexModel(index.model, embedModel) === embedModel && options.autoReindex !== false) {
-          io.stderr(`(embedding default upgraded '${index.model}' → '${embedModel}' — re-indexing your notes once)\n`);
-          try {
-            await reindexNotes({ dir: notesDir, indexPath: notesIndexPath(), model: embedModel, onProgress: (line) => io.stderr(`  ${line}\n`) });
-            index = JSON.parse(await readFile(notesIndexPath(), "utf8")) as NotesIndex;
-          } catch (cause) {
-            io.stderr(`Re-index failed (${cause instanceof Error ? cause.message : String(cause)}). Try: ollama pull ${embedModel}\n`);
-            process.exitCode = 1;
-            return;
-          }
-        }
-        if (index.model !== embedModel) {
-          io.stderr(`Index was built with embed model '${index.model}', not '${embedModel}'. Re-index or pass --embed-model ${index.model}.\n`);
-          process.exitCode = 1;
-          return;
-        }
-      }
-
-      // First-run on-ramp: an empty corpus still answers honestly (refusal),
-      // but a new user needs to be told HOW to add notes — emit it once here.
-      // Gate on note FILES on disk, not indexed chunks: when embedding is
-      // down the index has 0 live chunks though the user has notes, and
-      // "your corpus is empty" would be a false message.
-      const noteFileCount = await notesCorpusFileCount(notesDir);
-
-      // A whole-corpus overview ("what's in my notes?", "list my notes") isn't a
-      // top-K recall — every note matches weakly, so the gate would refuse and
-      // the warm-close would tell a user WHO HAS NOTES to "add a note". Answer it
-      // with the real inventory instead (deterministic, no model call, no
-      // fabrication). Only when notes actually exist; empty corpus falls through
-      // to the on-ramp.
-      if (noteFileCount > 0 && classifyCorpusOverview(query)) {
-        const overview = formatCorpusOverview(await listNoteFiles(notesDir), noteFileCount);
-        if (options.json) {
-          io.stdout(`${JSON.stringify({ corpusOverview: true, noteCount: noteFileCount, query })}\n`);
-        } else {
-          io.stdout(`${overview}\n`);
-        }
+      // Option resolution, auto-stale reindex, notes-index load/migration, and
+      // the first-run onboarding hint — see ask-context-setup.ts.
+      const context = await prepareAskContext(query, options, io);
+      if (context.kind === "error") {
+        process.exitCode = 1;
         return;
       }
-
-      // This query EXPLICITLY supplied its own grounding (a file, a URL, git, or
-      // shell history) — the "add notes" on-ramp is irrelevant noise then.
-      const hasAdHocGrounding = queryHasAdHocGrounding(options);
-      // Only probe the other personal stores when notes ARE empty AND no ad-hoc
-      // source was given (the only case the hint could fire) — so a notes-having
-      // or source-supplying user pays no extra reads.
-      const hasOtherPersonalData = !hasAdHocGrounding && noteFileCount === 0
-        ? await userHasOtherPersonalData(userKey, process.env as Record<string, string | undefined>)
-        : false;
-      const onboardingHint = corpusOnboardingHint(noteFileCount, hasOtherPersonalData || hasAdHocGrounding);
-      if (onboardingHint) {
-        io.stderr(`${onboardingHint}\n`);
+      if (context.kind === "handled") {
+        return;
       }
+      const { userKey, topK, embedModel, notesDir, index, noteFileCount } = context;
 
       // Embed query + rank chunks. A personal assistant shouldn't
       // refuse to answer just because the embedding endpoint is

@@ -99,6 +99,7 @@
 | # | A파트 (유입 감시) | B파트 (CLI 분해) | 검증 |
 |---|---|---|---|
 | 33 | PR#53 후 유입 점검: api related 38-fail은 회귀 아닌 **대형 머지 후 stale dist** (agent-core·stores·proactivity·autoconfigure 리빌드로 전부 해소 — 커밋 불요); main의 honest-action guard·MCP 액션파킹 건강 유입 확인, main이 우리 fs 리팩터에 자체 정렬한 커밋도 확인 | commands-ask.ts 1557→1328줄: 옵션 체인 30개→ask-command-options.ts(189줄, applyAskOptions+AskOptions) + 입력-조합 단계→ask-input.ts(84줄, composeAskInput — stdin first-byte 계약 무수정, exitCode는 핸들러 잔류); NOTES_ONLY 상수는 핸들러 전용이라 억지 이동 배제 | cli related 55파일 784/784 ✓ · build ✓ · lint 0 ✓ |
+| 34 | veto 채널 기능(un-veto·one-touch·silence — 안전-seam) 자체 테스트 동반 유입 확인; inbound 25-fail은 또 stale dist(autoconfigure) — 리빌드로 48/48 ✓. main이 우리 fire-33 산출물 자동 흡수(양방향 수렴 작동). 관례화: 대형 유입 후 루트 tsc -b 1회 | commands-ask.ts 1328→1202줄: 전처리 구간(userKey/topK/재색인/인덱스 로드·마이그레이션/코퍼스-개요 조기반환/온보딩 힌트)→ask-context-setup.ts(189줄, prepareAskContext — 3-kind discriminated result, exitCode 핸들러 잔류); 워커가 미사용 반환 필드를 lint로 잡아 원행위 정확 보존 | cli related 55파일 784/784 ✓ · build ✓ · lint 0 ✓ |
 
 ## Fire 로그
 
