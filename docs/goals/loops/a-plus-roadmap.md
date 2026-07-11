@@ -280,3 +280,12 @@ ratchet: 로드맵 잔여 [ ] = 27/63(무변, 슬라이스 없음) · self-eval 
 - 리뷰지점: regex 동작 불변(char class 내 `\/`≡`/`) 72 test로 확인·docs:env는 생성물·내 파일 3개만 격리 커밋. Opus 게이트 불요(피처 변경 0, 결정론 수리).
 - 리스크: 낮음. foreign src(secret-patterns.ts) 편집이나 committed lint 수리(피처 로직 무접촉)+트리 clean이라 충돌 위험 낮음. 동시 루프가 같은 줄 재수정 시 git merge. 다음 = D4-S2e(Apple 연락처 draft-first) — baseline green 회복됐으니 재개.
 - lesson: repo-wide 게이트(lint/envInventory) FOREIGN-fail이 지속되면 내 슬라이스 게이트도 막히므로 baseline-repair fire로 일회 수리(피처 로직 무접촉 트리비얼 수리+생성물 sync만) — 단 foreign 활성-churn src는 여전히 회피, committed-정적 에러만.
+
+## fire 34 · 2026-07-12 · skill v2.x · <commit-pending>
+meta: slice=JUDGE-DRILL+D4-S2e · wave=W3 · pkg=@muse/macos+apps/cli · kind=judge-drill+contacts-write-draftfirst · verdict=PASS · firesSinceDrill=0(리셋) · ★D4-S2 완주
+ratchet: 로드맵 잔여 [ ] = 26/63 · self-eval pass · fabrication 0 · macos +6·cli-gate +3 test · toolCases 371→374(eval:tools 골든)
+- 무엇: ①기준선 green(fire33 repair 유지). ②JUDGE-DRILL: 고의결함 D4-S2e contacts-write(approvalGate 호출하나 decision.approved 무시=fail-open write+deny/no-effect 미테스트) 주입→독립 Opus ④b가 정확 FAIL(라인47-51 decision 버림·happy-path-only). ③롤백→진짜 fix D4-S2e: mac_contacts_write draft-first 강제(message-send sendMessageWithApproval 미러: gate throw→deny·`if(!approved) return` osascript 전·deny/throw→write 0 spy 검증·action-log·escapeAppleScript). buildContactsApprovalGate non-interactive fail-close+등록+armed-lockstep. eval:tools 골든3.
+- 왜: 하드-카운터(firesSinceDrill=8, 마지막 드릴 fire26 이후 정확히 8) 도달. 드릴로 outbound-safety 게이트(deny→no-effect) 신뢰성 재검증 후 결함의 올바른 버전 배송. 로드맵 "draft-first 게이트" 명시.
+- 리뷰지점: 드릴 judge와 실 judge 별개 Opus. 드릴 judge가 심은 결함(decision.approved 무시)을 라인 지목·probe로 FAIL. 실 judge가 gate 강제(deny/throw→osascript 0 spy)·deny 테스트·두 mutation 독립 재현·CLI 게이트 non-interactive fail-close·escape·armed-lockstep PASS. Opus 지적 형제-parity(CLI 게이트 non-interactive 테스트 없음)→오케스트레이터가 messaging 미러 3 테스트 추가로 마감.
+- 리스크: 낮음. 로컬 store write(3rd-party send 아님)이나 로드맵대로 draft-first 적용. eval:tools 골든 추가했으나 로컬셋 heavy timeout(결정론+Opus 판정). 다음 = D7-S1(슬래시 명령 단일소스 레지스트리). 밝기 D4-S2d2 잔여.
+- lesson: JUDGE-DRILL 진짜-fix가 outbound-safety면 "gate 강제(deny→no-effect)+spy 테스트"가 message-send seam 미러로 구조 보장. Opus가 형제-parity 갭(CLI 게이트 테스트) 지적하면 오케스트레이터가 기존 형제(messaging) 테스트 미러로 즉시 마감.
