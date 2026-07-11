@@ -11,3 +11,5 @@ export { createWinAppReadTool, parseReadOutput, WIN_APP_READ_SOURCES } from "./w
 export { createWinClipboardSetTool, createWinSayTool } from "./windows-utility-tools.js";
 export { createWinScreenshotTool } from "./windows-screen-tools.js";
 export { defaultScreenshotPath, resolveWindowsScreenshotPath } from "./windows-screen-path.js";
+export { createWinMediaControlTool, keyEventScript, WIN_MEDIA_ACTIONS } from "./windows-media-tool.js";
+export { createWinSystemSetTool, WIN_SYSTEM_SETTINGS } from "./windows-system-set-tool.js";
