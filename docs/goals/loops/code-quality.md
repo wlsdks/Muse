@@ -16,7 +16,7 @@
 | packages/recall | fire 3 | 방문 |
 | packages/multi-agent | fire 8 | 방문 |
 | packages/shared | – | 미방문 |
-| apps/api | – | 미방문 |
+| apps/api | fire 9 | 방문 |
 | apps/web | – | 미방문 |
 | 기타 packages/* | – | 미방문 |
 
@@ -40,6 +40,10 @@
 - multi-agent orchestration-fan-in buildOrchestrationResponse 144줄 — lead-worker와 같은 패턴으로 분해 후보
 - multi-agent orchestrator.ts runSequential/runParallel ~70% 중복 → runWorkerStep 공유 후보
 - multi-agent worker-result.ts:99 parseHandoffPart가 검증은 trimmed로 하고 반환은 원본 — validateWorkerHandoff와 불일치. 동작 변경이라 루프 범위 밖, 별도 fix 후보 (하류가 trim 의존하는지 조사 필요)
+- apps/api tick-daemons.ts 10개 데몬 동일 보일러플레이트 (~200줄 절감 가능) → factory 추출 후보 (행위-보존 신중 요구)
+- apps/api multi-agent-routes.ts 불리언 필드 파싱 4벌 중복 → parseOptionalBoolean 헬퍼 후보
+- apps/api server-helpers.ts 544줄 3책임(chat runner/입력 파서/HTTP plumbing) → 분리 후보
+- ⚠ 사전존재 플레이크 (fire 9 발견, 이 슬라이스와 무관 확증): apps/api src/settings-routes.test.ts 2건(env-flag 상태 누수 의심) + test/p1-seam.test.ts 1건(텔레그램 mock 순서) — 격리 실행에서도 실패. 결정론화 수리 후보
 - 루프 운영 교훈: sonnet 워커 프롬프트에 "git stash 금지" 명시할 것 (fire 2 워커가 사전존재 확인에 stash 사용 — 잔여물 없이 끝났지만 규칙 위반; fire 3부터 명시 적용됨)
 - packages/recall present.ts:23 date-sort가 feeds-store의 compareFeedEntriesNewestFirst와 불일치 (unparseable date를 0 취급) → 동작 변경이라 이 루프 범위 밖, 별도 버그픽스 후보로 기록
 - packages/recall select.ts 514줄 (memory/contacts/evidence 혼재) → 분리 후보
@@ -60,3 +64,4 @@
 | 6 | domain-tools (큐 집행) | 시한폭탄 테스트 해체: event-reminder-link 통합 케이스가 절대날짜 픽스처로 리졸버 창(now-30d)을 벗어나 침묵 실패 — Date-only fake timer로 고정 + update/delete 반환값 단언 3곳 보강 (제품 코드 불변) | UTC/KST/NY 3-TZ 5/5 ✓ · domain-tools 전체 791/791 최초 완전 green ✓ · lint 0 ✓ |
 | 7 | 저장소-폭 결함클래스 감사 | fire-6 결함의 두 클래스를 전수 감사: ①시한폭탄(절대날짜×실시계 seam) 추가 0 확인 ②침묵-실패(버린 execute+부정 단언=가짜통과) 99사이트 분류→5건 수리(notes-save-mirror 2·contacts-tool 1·fs-read-tools 2, 결과 캡처+에러 단언) + mutation 드릴로 새 단언이 RED 됨을 증명 | 터치 스위트 34+64 green ✓ · 드릴 RED→원복 green ✓ · lint 0 ✓ |
 | 8 | packages/multi-agent | runLeadWorkerTask 173줄 7책임 → module-private 3헬퍼(executeSubtasks/synthesizeWithRetryGate/detectCoordinationIssues)로 순수 재배치, 공개 API·파일 경계 불변, WHY 주석 동반 이동 | multi-agent 334/334 ✓ · api build ✓ · lint 0 ✓ (fable 재검증) |
+| 9 | apps/api | server-routes.ts 670→31줄: 10 exports를 도메인 5파일(core-chat/admin-run/auth/agent-tools/session-runtime)로 순수 이동, 재export 배럴로 임포터 무변경; AdminGate는 admin-run 소유+타입 import | api build ✓ · related 32파일 163/163 ✓ (전체 스위트 red 3건은 그래프 밖 사전존재 플레이크 확증) · lint 0 ✓ |
