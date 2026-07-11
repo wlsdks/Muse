@@ -9,6 +9,7 @@
 | 영역 | 최근 fire | 상태 |
 |---|---|---|
 | packages/agent-core | – | 미방문 |
+| packages/domain-tools | fire 2 | 방문 |
 | packages/model | fire 1 | 방문 |
 | packages/cli (apps/cli) | – | 미방문 |
 | packages/memory | – | 미방문 |
@@ -26,9 +27,14 @@
 - packages/model/adapter-ollama.ts 707줄 — OllamaProvider / schema 정규화 / context-window 프로브 3책임 혼재 → 분리 후보 (fire 1 haiku 발견)
 - packages/model/adapter-ollama.ts `safeParseToolArgs` — provider-shared `recoverToolArgsJson`의 얇은 래퍼 → 통합 후보
 - 기각된 오탐 기록: gemini/anthropic stream() "중복"은 이미 synthesizeStreamEventsFromResponse 공유 헬퍼 위임이라 비중복 (재제안 금지)
+- packages/domain-tools P-번호 마커 주석 15건 (notes-investigator/situational-briefing/email-send/web-action/smart-home 등 헤더 + 테스트 제목) → 마커만 걷어내고 WHY는 보존하는 sweep 후보
+- packages/domain-tools loopback-notes.ts 736줄 (6도구+judge+walk 혼재) / loopback-calendar.ts 576줄 / loopback-reminders.ts 509줄 → 분리 후보
+- ⚠ 사전존재 red: packages/domain-tools test/event-reminder-link.test.ts "delete removes the linked reminder…" — dueAt 2시간 오프셋, 머신 TZ/DST 의존 단언. 테스트를 TZ 고정으로 결정론화하는 수리 후보 (fire 2에서 발견, 무관 확인)
+- 루프 운영 교훈: sonnet 워커 프롬프트에 "git stash 금지" 명시할 것 (fire 2 워커가 사전존재 확인에 stash 사용 — 잔여물 없이 끝났지만 규칙 위반)
 
 ## Fire 로그
 
 | # | 대상 | 출하 | 검증 |
 |---|---|---|---|
 | 1 | packages/model | provider-openai.ts 546줄 → Chat(324줄) + provider-openai-responses.ts(234줄) 행위-보존 분리, 공개 API 불변; 미사용 import 제거 + goal-마커 테스트 제목 정리 | @muse/model build ✓ · 457 tests ✓ · lint 0 ✓ (fable 재검증) |
+| 2 | packages/domain-tools | 토큰-동일 중복 judge-출력 파서 2벌(parseNotesJudgeOutput/parseLlmJudgeOutput) → judge-output.ts parseJudgeStringArray로 통합 + 직접 단위테스트 7건 신설 | build ✓ · 신규 7/7 ✓ · related 322/323 (red 1건은 사전존재 TZ-의존, 무관 확인) · lint 0 ✓ |
