@@ -6,7 +6,7 @@
   - ◦ 프로액티브 알림 근거 한 줄 — ambient 몫: `ambient-notice-loop.ts`의 `deriveAmbientNotices`는 룰 저자가 쓴 `message`를 그대로 보내 "왜 지금"이 없음; 매칭에 실제 쓰인 필드+패턴(예: `rule.match.app`에서 매칭에 실제 관여한 `[field, pattern]` 목록, 이미 함수 내부에 존재)으로 "(app에 'Slack' 포함되어 매칭)" 같은 절 결정론 생성해 `notice.text`에 덧붙임 — 저장 규칙 데이터 verbatim만, 새 판단/추론 금지.
   - ◦ 프로액티브 알림 근거 한 줄 — commitment-checkin 몫: `buildCheckinQuestion`은 이미 약속 원문을 인용하지만 "언제 남긴 약속인지"가 없음; `PersistedCheckin.createdAt`과 발화 시각(now) 차이를 일수로 계산해 "(N일 전 남기신 약속)" 절을 결정론으로 추가 — 새 필드 fabrication 없이 기존 createdAt만 사용.
   - ◦ pattern 알림 LLM-합성(Phase-D) 경로에 근거 절 보존 요구 — 합성 프롬프트가 "(N…across M…)" 절을 유지하도록(수치 fabrication 가드는 이미 있음, 절 존재는 미보장; fire 2 판정자 발굴) 재검증 게이트 또는 프롬프트 제약 + 테스트.
-  - ◦ 위임 ack 중복 억제 — 최종 전송 실패→다음 틱 재시도 시 복창 ack가 한 번 더 가는 수용된 엣지를 실제로 닫기(예: inbound별 ack-sent 마킹을 handled-키와 별도 사이드카로, ack는 1회만).
+  - ✓ 위임 ack 중복 억제 — response-experience fire 3 (ackAlreadySent 사이드카, at-most-once delivered ack)
   - ◦ digest 라인 injection-span 중화 검토 — digest 컴파일 라인에 recap.ts `safeRecapText`류 중화 적용 여부 결정+구현(소스 루프 컨벤션과 일관성 유지하며; 신뢰불가 텍스트가 큐를 타는 경로가 실재하는지 먼저 조사).
   - ◦ digest-sent cross-process 레이스 완화 — api+cli 두 데몬이 같은 sent-sidecar를 check→mark하는 창에서 중복 다이제스트 가능; 원자적 마킹(mkdir-lock 또는 단일 데몬 소유권 규칙)으로 닫기.
   - ◦ ack 카피/톤 개선 — composeAck 프롬프트·가드 튜닝(복창이 더 자연스럽고 짧게, "다 되면 알려줄게" 일관성), eval:channel-rhythm 케이스로 pin.

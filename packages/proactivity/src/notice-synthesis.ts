@@ -3,6 +3,7 @@
 
 import type { JsonObject } from "@muse/shared";
 import { composeSurfacePrompt } from "@muse/prompts";
+import type { JsonObject } from "@muse/shared";
 
 import type { ImminentItem } from "./notice-imminent.js";
 import type { RunDueProactiveNoticesOptions } from "./proactive-notice-loop.js";
@@ -10,7 +11,16 @@ import type { RunDueProactiveNoticesOptions } from "./proactive-notice-loop.js";
 /**
  * Structural duck-type of `@muse/agent-core`'s `AgentRuntime.run`.
  * Avoids a cross-package dep (@muse/proactivity doesn't import
- * agent-core to dodge the circular path).
+ * agent-core to dodge the circular path). `metadata` is typed as
+ * `JsonObject` (a generic JSON leaf type `@muse/proactivity` already
+ * depends on via `@muse/shared`, not agent-core-specific) to match
+ * `AgentRunInput.metadata` exactly — `Record<string, unknown>` looks
+ * looser but is actually a variance trap: its `unknown` values aren't
+ * assignable to `JsonValue`, so the real `AgentRuntime.run` fails the
+ * structural check in the contravariant parameter position even
+ * though every real caller only ever passes plain JSON. Matching the
+ * type exactly (rather than further loosening it) keeps this duck-type
+ * sound for any future caller, not just today's.
  * Consumers (apps/api) pass the real AgentRuntime — TS structural
  * typing makes that work without a runtime type tag.
  *
