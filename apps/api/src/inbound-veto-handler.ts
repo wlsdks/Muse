@@ -72,20 +72,6 @@ export interface HandleInboundVetoReplyOptions {
   readonly now: Date;
 }
 
-/**
- * No `muse proactive` command actually reverses a veto once recorded:
- * `muse proactive keep <source>` appends a NEW ledger entry but the trust
- * ledger's `avoidedSourceKeys` scans ALL entries for `outcome: "vetoed"`, so
- * the earlier veto entry keeps silencing the source regardless. Promising an
- * undo that does not work would be a lie the user discovers the next time
- * they try it — so the confirmation instead points at the real listing
- * command (`muse proactive scoreboard`, which does show every vetoed
- * source) rather than inventing an undo. Flagged as a deviation for the
- * evaluator/planner: a real un-veto is `muse proactive`'s gap, not this
- * handler's to paper over.
- */
-const SCOREBOARD_HINT = "확인은 `muse proactive scoreboard`에서 볼 수 있어.";
-
 export async function handleInboundVetoReply(
   options: HandleInboundVetoReplyOptions
 ): Promise<string | undefined> {
@@ -119,5 +105,5 @@ export async function handleInboundVetoReply(
   const scope = scopeIsKindLevel
     ? "이런 종류의 알림은 이제 안 보낼게"
     : `'${latest.title ?? latest.sourceKey}' 알림은 이제 안 보낼게`;
-  return `알겠어 — ${scope}. ${SCOREBOARD_HINT}`;
+  return `알겠어 — ${scope}. 되돌리려면: muse proactive keep ${key}`;
 }

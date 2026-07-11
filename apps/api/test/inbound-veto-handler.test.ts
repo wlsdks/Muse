@@ -65,8 +65,7 @@ describe("handleInboundVetoReply", () => {
 
     const reply = await handleInboundVetoReply({ lastDeliveryFile, now: NOW, text: "그만", trustLedgerFile });
     expect(reply).toContain("your Tuesday journal habit");
-    expect(reply).toContain("muse proactive scoreboard");
-    expect(reply).not.toContain("되돌리려면"); // no undo promised — the command doesn't exist
+    expect(reply).toContain("muse proactive keep pattern-firing:pat-1");
 
     const avoided = avoidedSourceKeys(await readTrustLedger(trustLedgerFile));
     expect(avoided.has("pattern-firing:pat-1")).toBe(true);

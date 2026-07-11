@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { appendInterruptionDelivery, readDigestQueue, readInterruptionLedger, readLastProactiveDeliveries } from "@muse/stores";
+import {
+  appendInterruptionDelivery,
+  appendSurfaced,
+  avoidedSourceKeys,
+  readDigestQueue,
+  readInterruptionLedger,
+  readLastProactiveDeliveries,
+  readTrustLedger,
+  recordOutcome
+} from "@muse/stores";
 
 import { applyInterruptionBudget, resolveInterruptionBudgetCaps } from "../src/interruption-gate.js";
 
@@ -264,6 +273,61 @@ describe("applyInterruptionBudget", () => {
       text: "not the vetoed pattern"
     });
     expect(result.outcome).toBe("delivered");
+    expect(delivers).toBe(1);
+  });
+
+  it("un-veto (muse proactive keep) is a real reversal — a later `avoidedSourceKeys` re-read lets the source deliver again", async () => {
+    const dir = tmpDir();
+    const ledgerFile = join(dir, "ledger.json");
+    const digestFile = join(dir, "digest.json");
+    const trustLedgerFile = join(dir, "trust.json");
+    const key = "pattern-firing:tod:mon:9-12:journal";
+
+    // Simulate the channel-veto reply: a surfaced notice, then vetoed.
+    await appendSurfaced(trustLedgerFile, { id: "tod:mon:9-12:journal", kind: "pattern-firing", surfacedAtMs: NOW.getTime() - 60_000, title: "journal habit" });
+    await recordOutcome(trustLedgerFile, key, "vetoed", NOW.getTime() - 30_000);
+
+    const avoidedAfterVeto = avoidedSourceKeys(await readTrustLedger(trustLedgerFile));
+    expect(avoidedAfterVeto.has(key)).toBe(true);
+    const skipped = await applyInterruptionBudget({
+      avoidedSources: avoidedAfterVeto,
+      caps: { dailyCap: 6, hourlyCap: 2 },
+      deliver: async () => {
+        throw new Error("must not be called while vetoed");
+      },
+      digestFile,
+      ledgerFile,
+      now: NOW,
+      source: "pattern-firing",
+      sourceId: "tod:mon:9-12:journal",
+      sourceKey: key,
+      text: "your Tuesday journal habit"
+    });
+    expect(skipped.outcome).toBe("skipped");
+
+    // `muse proactive keep <key>` — recordOutcome's append path (no unrated
+    // entry to update since the surfaced entry is already rated "vetoed").
+    await recordOutcome(trustLedgerFile, key, "kept", NOW.getTime());
+
+    const avoidedAfterKeep = avoidedSourceKeys(await readTrustLedger(trustLedgerFile));
+    expect(avoidedAfterKeep.has(key)).toBe(false);
+
+    let delivers = 0;
+    const delivered = await applyInterruptionBudget({
+      avoidedSources: avoidedAfterKeep,
+      caps: { dailyCap: 6, hourlyCap: 2 },
+      deliver: async () => {
+        delivers += 1;
+      },
+      digestFile,
+      ledgerFile,
+      now: NOW,
+      source: "pattern-firing",
+      sourceId: "tod:mon:9-12:journal",
+      sourceKey: key,
+      text: "your Tuesday journal habit"
+    });
+    expect(delivered.outcome).toBe("delivered");
     expect(delivers).toBe(1);
   });
 
