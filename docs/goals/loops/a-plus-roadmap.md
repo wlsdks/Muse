@@ -45,7 +45,7 @@ ratchet: 로드맵 잔여 [ ] = 27/33 · self-eval pass · fabrication 0 · risk
 - 리뷰지점: 오탐(과다 하이라이트→무시학습)이 최대 UX 리스크 → false-positive 배터리(ls·echo·따옴표 속 rm·~/Documents·/tmp/x 전부 []) + Opus 독립 검증. redact 뒤 하이라이트라 시크릿 노출 없음. ESC는 escaped \x1b(raw 바이트 아님, byte-hygiene 안전).
 - 리스크: -rf가 비-rm(grep -rf)에도 하이라이트되는 bounded over-flag이나 advisory(비차단)+흔한 안전명령 미발현이라 Opus가 허용. b(스테이징)는 no-external-effect 계약 필요라 별도.
 
-## fire 6 · 2026-07-11 · skill v2.x · <commit-pending>
+## fire 6 · 2026-07-11 · skill v2.x · 27c9ef986
 meta: slice=D2-S6b · wave=W1 · pkg=apps/cli · kind=security-staging · verdict=PASS · firesSinceDrill=6
 ratchet: 로드맵 잔여 [ ] = 26/34 · self-eval pass · fabrication 0 · actuator-tools 29 test(+staging)
 - 무엇: CLI fs-write 게이트의 비대화형 거부를 기존 pending-approval-store(@muse/messaging 재사용)에 스테이징. buildCliPendingApprovalStager가 FsWriteDraft→PendingApproval 매핑해 recordPendingApproval(resolvePendingApprovalsFile). muse approvals가 읽는 동일 파일. no-external-effect: 실 fs-write 툴 e2e서 파일 미생성+entry round-trip.
