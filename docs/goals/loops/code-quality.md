@@ -12,7 +12,7 @@
 | packages/domain-tools | fire 2 | 방문 |
 | packages/model | fire 1 | 방문 |
 | packages/cli (apps/cli) | – | 미방문 |
-| packages/memory | – | 미방문 |
+| packages/memory | fire 4 | 방문 |
 | packages/recall | fire 3 | 방문 |
 | packages/multi-agent | – | 미방문 |
 | packages/shared | – | 미방문 |
@@ -34,6 +34,9 @@
 - packages/recall present.ts:23 date-sort가 feeds-store의 compareFeedEntriesNewestFirst와 불일치 (unparseable date를 0 취급) → 동작 변경이라 이 루프 범위 밖, 별도 버그픽스 후보로 기록
 - packages/recall select.ts 514줄 (memory/contacts/evidence 혼재) → 분리 후보
 - packages/recall parse-bounded-int.ts·mime.ts는 범용 유틸이 recall에 배치됨 → 크로스패키지 이동 후보 (무거움, 신중히)
+- packages/memory memory-token-trim.ts 806줄 (토큰 추정+트림 패스+컴팩션 요약 3책임) → trim-passes/compaction-summary 분리 후보 (haiku "riskiest" 경고 — 순수 이동으로만)
+- packages/memory pattern-detector.ts 412줄 (time-of-day + weekly-task 두 신호) → 분리 후보
+- packages/memory 두 store의 upsert 파이프라인(collectFactSupersessions/appendFactHistory 흐름)도 유사 반복 → forget 통합과 같은 패턴으로 후속 후보
 
 ## Fire 로그
 
@@ -42,3 +45,4 @@
 | 1 | packages/model | provider-openai.ts 546줄 → Chat(324줄) + provider-openai-responses.ts(234줄) 행위-보존 분리, 공개 API 불변; 미사용 import 제거 + goal-마커 테스트 제목 정리 | @muse/model build ✓ · 457 tests ✓ · lint 0 ✓ (fable 재검증) |
 | 2 | packages/domain-tools | 토큰-동일 중복 judge-출력 파서 2벌(parseNotesJudgeOutput/parseLlmJudgeOutput) → judge-output.ts parseJudgeStringArray로 통합 + 직접 단위테스트 7건 신설 | build ✓ · 신규 7/7 ✓ · related 322/323 (red 1건은 사전존재 TZ-의존, 무관 확인) · lint 0 ✓ |
 | 3 | packages/recall | present.ts 967→771줄: build*ContextBlock 10개+safeField를 context-blocks.ts(199줄)로 순수 이동(index 재export로 공개 API 불변, 임포터 12파일 갱신) + chunk-lookup 3벌을 chunks.ts findChunkByNote로 통합 | recall build ✓ · 607/607 ✓ · cli build ✓ · lint 0 ✓ (fable 재검증) |
+| 4 | packages/memory | in-memory/file 두 store가 중복하던 forget() 결정 로직(키 canonicalize 해석+kind 네임스페이스 스코핑)을 순수 헬퍼 resolveForgetTarget로 통합, WHY 주석 한 벌화 + 직접 단위테스트 8건 | memory build ✓ · 685/685 ✓ · lint 0 ✓ (fable 재검증) |
