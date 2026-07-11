@@ -324,7 +324,7 @@ describe("defaultIndexPath — empty-HOME fall-through (goal-547 sibling)", () =
     const prev = process.env.HOME;
     process.env.HOME = "/u/jinan";
     try {
-      expect(defaultIndexPath()).toBe("/u/jinan/.muse/notes-index.json");
+      expect(defaultIndexPath()).toBe(join("/u/jinan", ".muse", "notes-index.json"));
     } finally {
       if (prev === undefined) delete process.env.HOME;
       else process.env.HOME = prev;

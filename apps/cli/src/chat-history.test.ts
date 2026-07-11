@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { activityLogPath, capContentForSummary, lastChatHistoryPath } from "./chat-history.js";
@@ -45,8 +46,8 @@ describe("lastChatHistoryPath / activityLogPath — empty-HOME fall-through (goa
   });
 
   it("roots both files under HOME/.muse when HOME is set", () => {
-    expect(lastChatHistoryPath()).toBe("/u/jinan/.muse/last-chat.jsonl");
-    expect(activityLogPath()).toBe("/u/jinan/.muse/activity.jsonl");
+    expect(lastChatHistoryPath()).toBe(join("/u/jinan", ".muse", "last-chat.jsonl"));
+    expect(activityLogPath()).toBe(join("/u/jinan", ".muse", "activity.jsonl"));
   });
 
   it("falls back to os.homedir() when HOME is whitespace-only — does NOT produce a path with leading whitespace or relative '.muse/...' under CWD", () => {

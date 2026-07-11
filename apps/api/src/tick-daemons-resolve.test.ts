@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { homedir } from "node:os";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,8 +22,8 @@ describe("resolveAmbientSignalFile / resolveProactiveTrustFile", () => {
 
   it("fall back to $HOME/.muse/<file> when no override", () => {
     process.env.HOME = "/tmp/fakehome";
-    expect(resolveAmbientSignalFile({})).toBe("/tmp/fakehome/.muse/ambient.json");
-    expect(resolveProactiveTrustFile({})).toBe("/tmp/fakehome/.muse/proactive-trust.json");
+    expect(resolveAmbientSignalFile({})).toBe(join("/tmp/fakehome", ".muse", "ambient.json"));
+    expect(resolveProactiveTrustFile({})).toBe(join("/tmp/fakehome", ".muse", "proactive-trust.json"));
   });
 
   it("fall back to the OS home dir when HOME is unset — never the filesystem root", () => {

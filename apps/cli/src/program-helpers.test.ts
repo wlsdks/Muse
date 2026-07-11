@@ -175,17 +175,17 @@ describe("defaultConfigPath", () => {
   });
 
   it("uses HOME when set, rooting config.json under ~/.config/muse", () => {
-    expect(defaultConfigPath()).toBe("/u/jinan/.config/muse/config.json");
+    expect(defaultConfigPath()).toBe(join("/u/jinan", ".config", "muse", "config.json"));
   });
 
   it("honours an explicit non-empty `home` argument over HOME (trimmed)", () => {
-    expect(defaultConfigPath("/elsewhere")).toBe("/elsewhere/.config/muse/config.json");
-    expect(defaultConfigPath("  /trimmed  ")).toBe("/trimmed/.config/muse/config.json");
+    expect(defaultConfigPath("/elsewhere")).toBe(join("/elsewhere", ".config", "muse", "config.json"));
+    expect(defaultConfigPath("  /trimmed  ")).toBe(join("/trimmed", ".config", "muse", "config.json"));
   });
 
   it("treats an empty / whitespace-only explicit `home` argument as unset and falls through to HOME", () => {
-    expect(defaultConfigPath("")).toBe("/u/jinan/.config/muse/config.json");
-    expect(defaultConfigPath("   ")).toBe("/u/jinan/.config/muse/config.json");
+    expect(defaultConfigPath("")).toBe(join("/u/jinan", ".config", "muse", "config.json"));
+    expect(defaultConfigPath("   ")).toBe(join("/u/jinan", ".config", "muse", "config.json"));
   });
 
   it("FAILS LOUD when HOME and os.homedir() both resolve to empty — config.json must NOT silently land at /.config/muse/... at the filesystem root", () => {

@@ -51,7 +51,10 @@ export function createCalendarSecretSources(
 ): SecretSource[] {
   const sources: SecretSource[] = [createEnvSource(options.env)];
 
-  const includeKeychain = options.useKeychain ?? (options.platform ?? process.platform) === "darwin";
+  // An explicitly injected keychain source is always honored (the caller
+  // already built it); otherwise default inclusion is darwin-only.
+  const includeKeychain = options.useKeychain
+    ?? (options.keychain !== undefined || (options.platform ?? process.platform) === "darwin");
   if (includeKeychain) {
     sources.push(
       options.keychain ?? createKeychainSource({ service: () => CALENDAR_KEYCHAIN_SERVICE })
