@@ -20,7 +20,15 @@ export interface RespondToInboundOptions {
   readonly registry: MessagingProviderRegistry;
   /** `${providerId}:${messageId}` keys already answered — skipped. */
   readonly alreadyHandled?: ReadonlySet<string>;
+  /**
+   * Re-fire cadence for the typing indicator while the agent thinks.
+   * Telegram's typing presence expires after ~5s, so a slow local
+   * model needs periodic keepalives or the chat looks dead mid-turn.
+   */
+  readonly typingIntervalMs?: number;
 }
+
+const DEFAULT_TYPING_INTERVAL_MS = 4_000;
 
 export interface RespondToInboundResult {
   /** Keys answered (agent ran) this batch — caller persists these. */
@@ -55,7 +63,25 @@ export async function respondToInbound(
     if (already.has(key) || handled.includes(key)) {
       continue;
     }
+    let typingTimer: ReturnType<typeof setInterval> | undefined;
     try {
+      // "typing…" presence while the agent composes — cosmetic, so a
+      // failure (unsupported provider, dead chat) never blocks the reply.
+      try {
+        const provider = options.registry.require(message.providerId);
+        if (provider.sendTyping) {
+          const sendTyping = provider.sendTyping.bind(provider);
+          await sendTyping(message.source);
+          typingTimer = setInterval(() => {
+            void sendTyping(message.source).catch(() => undefined);
+          }, options.typingIntervalMs ?? DEFAULT_TYPING_INTERVAL_MS);
+          if (typeof typingTimer.unref === "function") {
+            typingTimer.unref();
+          }
+        }
+      } catch {
+        // ignore: presence is best-effort
+      }
       const reply = (
         await options.runner.run({
           providerId: message.providerId,
@@ -81,6 +107,10 @@ export async function respondToInbound(
       replied += 1;
     } catch (cause) {
       errors.push(`${key}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      if (typingTimer) {
+        clearInterval(typingTimer);
+      }
     }
   }
 
