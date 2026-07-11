@@ -33,7 +33,8 @@ import type {
 } from "@muse/runtime-state";
 import {
   COMPACTION_SUMMARY_PREFIX,
-  summarizeDroppedContext,
+  DEFAULT_CHUNK_MAX_CHARS,
+  summarizeDroppedContextInStages,
   trimConversationMessages,
   verifyCompactionSummaryQuality,
   type ContextReferenceStore,
@@ -575,9 +576,10 @@ export class AgentRuntime {
     // result leaves the deterministic summary untouched (no aux call when
     // unconfigured, so existing behavior is byte-identical).
     if (this.contextSummarizer && preparedRequest.contextWindow?.summaryInserted && preparedRequest.dropped && preparedRequest.dropped.length > 0) {
-      const auxSummary = await summarizeDroppedContext(preparedRequest.dropped, this.contextSummarizer, {
+      const auxSummary = await summarizeDroppedContextInStages(preparedRequest.dropped, this.contextSummarizer, {
         fallback: "",
         maxChars: this.contextSummaryMaxChars,
+        chunkMaxChars: DEFAULT_CHUNK_MAX_CHARS,
         ...(this.contextWindow?.focusTopic ? { focusTopic: this.contextWindow.focusTopic } : {})
       });
       if (auxSummary.length > 0) {

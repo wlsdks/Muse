@@ -43,7 +43,8 @@ import type { DroppedContextSummarizer } from "@muse/memory";
 import type { ModelProvider } from "@muse/model";
 
 const SUMMARIZER_SYSTEM_PROMPT =
-  "You compress dropped conversation turns into a short factual recap that preserves names, decisions, and open questions. Output ONLY the recap — no preamble, no headings — in 2 to 4 sentences.";
+  "You compress dropped conversation turns into a short factual recap that preserves names, decisions, and open questions. Output ONLY the recap — no preamble, no headings — in 2 to 4 sentences." +
+  " Preserve any opaque identifier — a UUID, file path, URL, or number — VERBATIM; never paraphrase or drop it.";
 
 // hermes' `/compact <focus>` pattern, adapted: when the caller names a
 // topic (e.g. a chat `/compact <topic>` request), ask for full fidelity on

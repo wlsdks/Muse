@@ -763,7 +763,7 @@ delta-scout 주기에.
 - [x] **D3-S7** ✅ 2026-07-11 🔒 X-3 PID-재사용 kill 가드 — background-process record에 `osStartTime`(spawn 시 OS start-time 캡처, 주입식 reader) 추가, 순수 `pidIdentityMatches`(레거시=unset→검증불가 보존, set이면 현재값과 equality). `stopBackgroundProcess`/`reconcileBackgroundProcesses` kill/reconcile 전 대조 — 불일치(재사용/소멸)면 kill 금지+record `exited`(fail-close, 신규 결과 `pid_reused`). CLI가 `ps -o lstart= -p`로 배선(BSD+GNU, /proc 회피, 실기기 검증). 13 재사용-시뮬 유닛·mutation-RED 양방향·Opus 평가자 PASS(messaging 0편집·env 0). **W1(원칙 갭) 완주**
 
 #### W2 — 신뢰성 (컴팩션·예산·서브에이전트·브라우저)
-- [ ] **D1-S3** 단계적 요약(청크→병합, FAIL-OPEN) + 식별자-보존 지시 + 기존 CMP-2 무수정
+- [x] **D1-S3** ✅ 2026-07-11 단계적 요약 — `summarizeDroppedContextInStages`+`chunkDroppedOnToolPairs`(@muse/memory, 순수): dropped를 tool-pair 경계로 청크(`role:"tool"` 앞 분할 절대금지, 오버사이즈 pair는 1청크)→청크별 summarizeDroppedContext 재사용(각 FAIL-OPEN, fallback:"")→비어있지않은 것만 병합·maxChars 캡. **부분실패=생존청크 보존**, 전실패=결정론 floor. 기존 `summarizeDroppedContext` byte-identical(additions-only). 식별자-보존 지시(UUID/경로/URL/숫자 VERBATIM)를 SUMMARIZER_SYSTEM_PROMPT에 명문화(grounding 강화). agent-runtime:578+chat-ink-core:941 양쪽 배선(1청크=단일샷 등가). 18 test(경계·부분실패·단일청크등가·mutation-RED 양방향)·Opus 평가자 PASS
 - [ ] **D1-S5** 이터레이션 예산 재설계(PTC 계상·서브에이전트 하위예산·소진 명시) + 유닛
 - [ ] **D3-S1** 서브에이전트 depth 강등 + 부모 tool-deny 상속 + mutation
 - [ ] **D3-S2** 단일-run heartbeat 배선(기존 detectStalled 재사용) + fake-clock 유닛 (→ VQ-1 배선점)

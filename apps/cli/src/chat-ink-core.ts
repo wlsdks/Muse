@@ -11,10 +11,11 @@ import { isAbsolute, join } from "node:path";
 import { augmentCompactionSummary } from "@muse/agent-core";
 import {
   createApproximateTokenEstimator,
+  DEFAULT_CHUNK_MAX_CHARS,
   DEFAULT_MESSAGE_STRUCTURE_OVERHEAD,
   estimateConversationTokens,
   normalizeMemoryKey,
-  summarizeDroppedContext,
+  summarizeDroppedContextInStages,
   trimConversationMessages,
   verifyCompactionSummaryQuality,
   type ConversationTrimOptions,
@@ -938,7 +939,11 @@ export async function runFocusedCompaction(
   let note = `Compacted ${droppedCount} message(s), focused on "${topic}" — kept the most recent exchange and a deterministic summary.`;
   let messages: Parameters<typeof augmentCompactionSummary>[0] = result.messages;
 
-  const auxSummary = await summarizeDroppedContext(result.dropped, summarizer, { fallback: "", focusTopic: topic });
+  const auxSummary = await summarizeDroppedContextInStages(result.dropped, summarizer, {
+    fallback: "",
+    focusTopic: topic,
+    chunkMaxChars: DEFAULT_CHUNK_MAX_CHARS
+  });
   if (auxSummary.length > 0) {
     const gate = verifyCompactionSummaryQuality(result.dropped, auxSummary);
     if (gate.passed) {
