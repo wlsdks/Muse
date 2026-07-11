@@ -76,3 +76,52 @@ describe("respondToInbound typing indicator", () => {
     expect(result.replied).toBe(1);
   });
 });
+
+describe("respondToInbound typing keepalive", () => {
+  it("re-fires typing while a slow agent thinks, so the indicator never dies", async () => {
+    let typingCount = 0;
+    const provider: MessagingProvider = {
+      describe: () => ({ description: "stub", displayName: "T", id: "typingful" }),
+      id: "typingful",
+      send: async () => ({ destination: "42", messageId: "m", providerId: "typingful" }),
+      sendTyping: async () => {
+        typingCount += 1;
+      }
+    };
+    const result = await respondToInbound({
+      messages: [message("1", "hello")],
+      registry: new MessagingProviderRegistry([provider]),
+      runner: {
+        run: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          return "slow answer";
+        }
+      },
+      typingIntervalMs: 20
+    });
+
+    expect(result.replied).toBe(1);
+    expect(typingCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("stops re-firing once the reply is delivered", async () => {
+    let typingCount = 0;
+    const provider: MessagingProvider = {
+      describe: () => ({ description: "stub", displayName: "T", id: "typingful" }),
+      id: "typingful",
+      send: async () => ({ destination: "42", messageId: "m", providerId: "typingful" }),
+      sendTyping: async () => {
+        typingCount += 1;
+      }
+    };
+    await respondToInbound({
+      messages: [message("1", "hello")],
+      registry: new MessagingProviderRegistry([provider]),
+      runner: { run: async () => "fast" },
+      typingIntervalMs: 10
+    });
+    const after = typingCount;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(typingCount).toBe(after);
+  });
+});
