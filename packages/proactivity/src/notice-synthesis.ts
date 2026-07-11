@@ -1,7 +1,7 @@
 // Proactive-notice synthesis — one-shot LLM prose over an imminent item's
 // factSheet, gated by an optional faithfulness reverify before delivery.
 
-import { composeIdentityPrompt } from "@muse/prompts";
+import { composeSurfacePrompt } from "@muse/prompts";
 
 import type { ImminentItem } from "./notice-imminent.js";
 import type { RunDueProactiveNoticesOptions } from "./proactive-notice-loop.js";
@@ -45,19 +45,26 @@ export interface ProactiveModelProviderLike {
   }): Promise<{ readonly output: string }>;
 }
 
-const PHASE_D_SYSTEM_PROMPT = composeIdentityPrompt(
-  `The proactive
-daemon just detected an imminent calendar event or task. Compose a
-single short heads-up (one or two sentences, ≤ 200 chars) that:
-- Names the item and how soon it fires
-- Mentions location if a calendar event lists one
-- Suggests ONE concrete next step the user can take (e.g.
-  "want me to pull up yesterday's notes?", "shall I draft the
-  reply?"). Skip the suggestion if nothing obvious fits.
+const PHASE_D_BASE_PROMPT = "Examples of a good next step: \"want me to pull up yesterday's notes?\", \"shall I "
+  + "draft the reply?\". Skip the suggestion if nothing obvious fits. Do NOT prefix with the time emoji — the "
+  + "surface adds it. No markdown, no lists, no JSON, plain text only.";
 
-Do NOT prefix with the time emoji — the surface adds it. No
-markdown, no lists, no JSON, plain text only.`
-);
+/**
+ * Compose the Phase D system prompt, folding an optional persona preamble in
+ * as the L1 personality layer (between identity and the proactive role text)
+ * rather than string-prepending it — a raw prepend would push identity out of
+ * position 0 of the overall system content.
+ */
+function buildProactiveSystemPrompt(personaPreamble?: string): string {
+  const trimmed = personaPreamble?.trim();
+  return composeSurfacePrompt(
+    "proactive",
+    { basePrompt: PHASE_D_BASE_PROMPT },
+    trimmed ? { layers: [{ content: trimmed, id: "personality", section: "stable" }] } : {}
+  );
+}
+
+const PHASE_D_SYSTEM_PROMPT = buildProactiveSystemPrompt();
 
 /**
  * Faithfulness judge for a synthesized proactive notice — re-checks the LLM prose
@@ -82,7 +89,7 @@ export async function synthesizeNoticeText(
     return item.text;
   }
   const systemContent = options.personaPreamble && options.personaPreamble.trim().length > 0
-    ? `${options.personaPreamble.trim()}\n\n${PHASE_D_SYSTEM_PROMPT}`
+    ? buildProactiveSystemPrompt(options.personaPreamble)
     : PHASE_D_SYSTEM_PROMPT;
   const messages = [
     { content: systemContent, role: "system" as const },

@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { MUSE_IDENTITY_CORE, SURFACE_ROLES } from "@muse/prompts";
 import { writeReminders } from "@muse/stores";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -201,6 +202,15 @@ describe("buildFunPool / companionPersona — content-free, on-persona fun", () 
   it("the persona is a single consistent voice string per language", () => {
     expect(companionPersona("ko")).toContain("파랑새");
     expect(companionPersona("en").toLowerCase()).toContain("bluebird");
+  });
+
+  it("composes through the seam: identity-core at position 0, then the lang persona, then the companion role", () => {
+    for (const lang of ["ko", "en"] as const) {
+      const prompt = companionPersona(lang);
+      expect(prompt.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+      expect(prompt).toContain(SURFACE_ROLES.companion);
+      expect(prompt.indexOf(SURFACE_ROLES.companion)).toBeGreaterThan(prompt.indexOf(MUSE_IDENTITY_CORE));
+    }
   });
 });
 

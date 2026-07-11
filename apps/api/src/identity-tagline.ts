@@ -24,6 +24,8 @@
  * app open differs and never immediately repeats.
  */
 
+import { composeSurfacePrompt, TAGLINE_PERSONA_TEXT } from "@muse/prompts";
+
 export type TaglineLang = "ko" | "en";
 
 /** The subset of UserMemory this generator reads — kept local so the module has no store dep. */
@@ -91,11 +93,16 @@ export function gatherIdentityFacts(memory: IdentityMemory | undefined): readonl
   return atoms;
 }
 
-/** The small bluebird persona applied to every model-generated subtitle. */
+/**
+ * The small bluebird persona applied to every model-generated subtitle —
+ * identity-core (L0) + the lang-specific voice flavor (L1 personality layer,
+ * `TAGLINE_PERSONA_TEXT` from `@muse/prompts`) + the tagline surface role
+ * (L2, `SURFACE_ROLES.tagline`).
+ */
 export function taglinePersona(lang: TaglineLang): string {
-  return lang === "ko"
-    ? "너는 '뮤즈'라는 작은 파랑새 컴패니언이야. 사이드바에 들어갈 아주 짧은 부제(2~6단어)를 만들어. 따뜻하고 장난기 있게, 하지만 과하지 않게. 주어진 사실에 없는 건 절대 지어내지 마. 딱 한 줄, 마침표 없이."
-    : "You are Muse, a tiny bluebird companion. Write a very short sidebar subtitle (2–6 words), warm and a little playful but never over the top. Never invent anything not in the given facts. One line, no period.";
+  return composeSurfacePrompt("tagline", {}, {
+    layers: [{ content: TAGLINE_PERSONA_TEXT[lang], id: "personality", section: "stable" }]
+  });
 }
 
 /**

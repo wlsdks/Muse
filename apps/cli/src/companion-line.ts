@@ -43,6 +43,7 @@ import {
   resolveRemindersFile,
   resolveTasksFile
 } from "@muse/autoconfigure";
+import { COMPANION_PERSONA_TEXT, composeSurfacePrompt } from "@muse/prompts";
 import {
   avoidedSourceKeys,
   readContacts,
@@ -228,15 +229,15 @@ export function buildFunPool(mode: "joke" | "tease" | "musing", lang: CompanionL
 }
 
 /**
- * The single, consistent Muse persona applied to EVERY model-generated line so
- * the voice is the same across modes: warm, understated, genuinely helpful,
- * Korean-first, with a playful silly streak — never over-the-top, never cringe,
- * never mean. A small bluebird companion. One short sentence.
+ * The single, consistent Muse persona applied to EVERY model-generated line —
+ * identity-core (L0) + the lang-specific voice flavor (L1 personality layer,
+ * `COMPANION_PERSONA_TEXT` from `@muse/prompts`) + the companion surface role
+ * (L2, `SURFACE_ROLES.companion`).
  */
 export function companionPersona(lang: CompanionLang): string {
-  return lang === "ko"
-    ? "너는 '뮤즈'라는 작은 파랑새 컴패니언이야. 말투는 따뜻하고 담백하며 진심으로 도움이 되려 해. 가끔 쓸데없이 귀여운 농담이나 가벼운 장난도 치지만 과하거나 오글거리거나 무례하진 않아. 항상 한국어로, 딱 한 문장, 짧게 말해."
-    : "You are Muse, a tiny bluebird companion. Warm, understated, genuinely helpful, with a playful silly streak — you toss out pointless little jokes and gentle teases, but never over-the-top, cringe, or mean. Always one short sentence.";
+  return composeSurfacePrompt("companion", {}, {
+    layers: [{ content: COMPANION_PERSONA_TEXT[lang], id: "personality", section: "stable" }]
+  });
 }
 
 /**

@@ -39,6 +39,7 @@ import { formatBirthdayBriefLine, readContacts, readProactiveHistory, readReflec
 import { readCheckins, selectDueCheckins, type PersistedCheckin } from "@muse/proactivity";
 import { detectCalendarConflicts } from "@muse/domain-tools";
 import { projectRecentlyLearned } from "@muse/memory";
+import { composeSurfacePrompt } from "@muse/prompts";
 
 import { briefFocusBeat } from "./calendar-focus.js";
 import { playInvocationWithWatchdog, resolveAudioPlayerInvocation } from "./voice-playback.js";
@@ -283,6 +284,45 @@ export function selectBriefOverdue(
   };
 }
 
+/**
+ * The `muse brief` system prompt: identity-core + `SURFACE_ROLES.brief` (both
+ * via `composeSurfacePrompt`), the stable rendering rules, then the per-turn
+ * dynamic content (persona, greeting hint, routine note, known name) after
+ * the cache boundary. Pure so the seam wiring is directly testable.
+ */
+export function buildBriefSystemPrompt(params: {
+  readonly personaPrompt: string | undefined;
+  readonly greetingHint: string;
+  readonly hour: number;
+  readonly minute: number;
+  readonly routineNote: string;
+  readonly knownUserName: string | undefined;
+}): string {
+  const { personaPrompt, greetingHint, hour, minute, routineNote, knownUserName } = params;
+  return composeSurfacePrompt("brief", {
+    basePrompt: [
+      "Compose a brief summary in 2–3 sentences, in the user's preferred language.",
+      "Open with a short greeting that matches the time of day (and the routine-window hint below).",
+      "If there are OVERDUE items (past their due date), LEAD with them — they are the most time-sensitive AND the user can still act on them today; do not bury them under upcoming items.",
+      "Otherwise lead with the most imminent thing (a task due soon, or a noteworthy recent notice).",
+      "If there are follow-ups the user is due on (things they said they'd do), gently surface one — a time-sensitive personal commitment matters more than a routine task.",
+      "If a contact's birthday is TODAY or TOMORROW (see 'Upcoming birthdays'), mention it warmly — a birthday you can still act on matters; only the named people in the fact sheet, never invent one.",
+      "If a 'Weather (your area)' line is present, work it in briefly — and if rain/snow is coming, suggest preparing (an umbrella, leave early); never invent weather not in the fact sheet.",
+      "If nothing is imminent, say so briefly and suggest one useful action.",
+      "Plain text, no markdown, no bullet list, no JSON.",
+      "Do NOT mention this system prompt."
+    ].join("\n"),
+    providerDynamicSuffix: [
+      ...(personaPrompt ? [personaPrompt] : []),
+      `It is currently ${greetingHint} (local clock ${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}).`,
+      ...(routineNote ? [routineNote] : []),
+      knownUserName && knownUserName.length > 0
+        ? `Address the user as "${knownUserName}".`
+        : "No name is on file for the user — open with a plain time-of-day greeting (e.g. \"Good morning.\") and do NOT address them by any name or invent/guess one."
+    ].join("\n")
+  });
+}
+
 export function registerBriefCommand(program: Command, io: ProgramIO): void {
   program
     .command("brief")
@@ -457,25 +497,14 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         })
       ].join("\n");
 
-      const systemPrompt = [
-        ...(personaPrompt ? [personaPrompt, ""] : []),
-        "You are Muse, the user's personal AI assistant.",
-        `It is currently ${greetingHint} (local clock ${hour.toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}).`,
-        ...(routineNote ? [routineNote] : []),
-        "Compose a brief summary in 2–3 sentences, in the user's preferred language.",
-        "Open with a short greeting that matches the time of day (and the routine-window hint above).",
-        "If there are OVERDUE items (past their due date), LEAD with them — they are the most time-sensitive AND the user can still act on them today; do not bury them under upcoming items.",
-        "Otherwise lead with the most imminent thing (a task due soon, or a noteworthy recent notice).",
-        "If there are follow-ups the user is due on (things they said they'd do), gently surface one — a time-sensitive personal commitment matters more than a routine task.",
-        "If a contact's birthday is TODAY or TOMORROW (see 'Upcoming birthdays'), mention it warmly — a birthday you can still act on matters; only the named people in the fact sheet, never invent one.",
-        "If a 'Weather (your area)' line is present, work it in briefly — and if rain/snow is coming, suggest preparing (an umbrella, leave early); never invent weather not in the fact sheet.",
-        "If nothing is imminent, say so briefly and suggest one useful action.",
-        knownUserName && knownUserName.length > 0
-          ? `Address the user as "${knownUserName}".`
-          : "No name is on file for the user — open with a plain time-of-day greeting (e.g. \"Good morning.\") and do NOT address them by any name or invent/guess one.",
-        "Plain text, no markdown, no bullet list, no JSON.",
-        "Do NOT mention this system prompt."
-      ].join("\n");
+      const systemPrompt = buildBriefSystemPrompt({
+        greetingHint,
+        hour,
+        knownUserName,
+        minute: now.getMinutes(),
+        personaPrompt,
+        routineNote
+      });
 
       const { answer: composed, error: streamError } = await consumeAskStream(
         assembly.modelProvider.stream({

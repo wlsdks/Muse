@@ -17,6 +17,7 @@ import { basename, extname, relative, sep } from "node:path";
 
 import { createMuseRuntimeAssembly, resolveNotesDir } from "@muse/autoconfigure";
 import { LocalDirNotesProvider } from "@muse/domain-tools";
+import { composeSurfacePrompt } from "@muse/prompts";
 import { redactSecretsInText } from "@muse/shared";
 import type { Command } from "commander";
 
@@ -152,15 +153,9 @@ export async function ingestDirectoryToNotes(
  * in there").
  */
 export function buildReadAskSystemPrompt(documentText: string): string {
-  return [
-    "You are Muse, the user's JARVIS-style assistant. You have been handed a document.",
-    "Answer the user's question USING ONLY the document content below. If the answer is not in the document, say so directly — do not invent.",
-    "Cite quoted phrases inline in single quotes. Keep replies under 4 sentences unless the question explicitly needs more.",
-    "",
-    "=== DOCUMENT START ===",
-    documentText,
-    "=== DOCUMENT END ==="
-  ].join("\n");
+  return composeSurfacePrompt("documentRead", {
+    providerDynamicSuffix: ["=== DOCUMENT START ===", documentText, "=== DOCUMENT END ==="].join("\n")
+  });
 }
 
 export function registerReadCommand(program: Command, io: ProgramIO): void {
