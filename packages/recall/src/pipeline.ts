@@ -22,6 +22,7 @@ import {
   withUngroundableFallback,
   type AllowedCitations
 } from "@muse/agent-core";
+import { composeSurfacePrompt } from "@muse/prompts";
 
 import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
@@ -121,12 +122,13 @@ export interface GroundedRecallExtras {
   readonly extraChunks?: readonly ScoredChunk[];
   /**
    * Full override of the system-prompt string, given the SAME framing +
-   * contextBlock + extraSections `buildSystemPrompt` would otherwise use —
-   * lets a caller with its own richer prompt shape (persona, path-specific
-   * instructions, a stable-prefix ordering for KV-cache reuse) reuse the
-   * seam's retrieval/dedup/context-block work without inheriting this
-   * module's generic wording. Absent ⇒ the built-in `buildSystemPrompt`
-   * (byte-identical to today).
+   * contextBlock + extraSections `composeDefaultRecallSystemPrompt` would
+   * otherwise use — lets a caller with its own richer prompt shape (persona,
+   * path-specific instructions, a stable-prefix ordering for KV-cache reuse)
+   * reuse the seam's retrieval/dedup/context-block work without inheriting
+   * this module's generic wording. Absent ⇒ the built-in
+   * `composeDefaultRecallSystemPrompt`, which now composes through
+   * `composeSurfacePrompt("recall", …)` (docs/strategy/prompt-architecture.md).
    */
   readonly composeSystemPrompt?: (args: {
     readonly framing: { readonly header: string; readonly guidance?: string };
@@ -203,7 +205,15 @@ async function resolveIndexForModel(
   return { embedModel, files: index.model === embedModel ? index.files : [] };
 }
 
-function buildSystemPrompt(args: {
+/**
+ * The DEFAULT system-prompt composition (docs/strategy/prompt-architecture.md
+ * Phase 2) — routed through the seam: identity-core + `SURFACE_ROLES.recall`
+ * lead the stable prefix, then the stable citation contract
+ * (`CITATION_INSTRUCTION_LINES`), then a single cache boundary, then the
+ * per-turn retrieval framing/context/extra sections. `input.extras?.composeSystemPrompt`
+ * (see its doc above) stays the override hook a caller can supply instead.
+ */
+function composeDefaultRecallSystemPrompt(args: {
   readonly framing: { readonly header: string; readonly guidance?: string };
   readonly contextBlock: string;
   readonly extraSections?: readonly GroundedRecallExtraSection[];
@@ -211,15 +221,16 @@ function buildSystemPrompt(args: {
   const extraLines = groundingSectionLines(
     (args.extraSections ?? []).map((section) => ({ ...section, present: section.present && section.body.trim().length > 0 }))
   );
-  return [
-    "You are Muse, the user's personal AI. Answer the user's question ONLY from the context below.",
-    ...CITATION_INSTRUCTION_LINES,
-    ...(args.framing.guidance ? [args.framing.guidance] : []),
-    "",
-    args.framing.header,
-    args.contextBlock,
-    ...extraLines
-  ].join("\n");
+  return composeSurfacePrompt("recall", {
+    basePrompt: CITATION_INSTRUCTION_LINES.join("\n"),
+    providerDynamicSuffix: [
+      ...(args.framing.guidance ? [args.framing.guidance] : []),
+      "",
+      args.framing.header,
+      args.contextBlock,
+      ...extraLines
+    ].join("\n")
+  });
 }
 
 /**
@@ -303,7 +314,7 @@ async function prepareRecall(input: GroundedRecallInput): Promise<PreparedRecall
     // longer "unavailable" once any (index retrieval OR ad-hoc) contributed.
     notesUnavailable: retrieval.notesUnavailable && extraChunks.length === 0,
     scored: contextChunks,
-    systemPrompt: (input.extras?.composeSystemPrompt ?? buildSystemPrompt)({ contextBlock, extraSections, framing }),
+    systemPrompt: (input.extras?.composeSystemPrompt ?? composeDefaultRecallSystemPrompt)({ contextBlock, extraSections, framing }),
     verdict: framing.verdict
   };
 }

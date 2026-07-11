@@ -27,21 +27,15 @@ import { join, relative } from "node:path";
 const ROOT = process.cwd();
 const ROOTS = ["packages", "apps"];
 
-// Phase 2/3 (docs/strategy/prompt-architecture.md migration plan) — not yet
-// wired through composeSurfacePrompt. Shrink this list as each file
-// migrates; do NOT add a freshly-written file here instead of migrating it.
-const LEGACY_IDENTITY_STRING_FILES = new Set([
-  "apps/api/src/identity-tagline.ts",
-  "apps/cli/src/chat-reflection.ts",
-  "apps/cli/src/commands-brief.ts",
-  "apps/cli/src/commands-read.ts",
-  "apps/cli/src/companion-line.ts",
-  "packages/recall/src/pipeline.ts"
-]);
+// Phase 2/3 (docs/strategy/prompt-architecture.md migration plan) is complete
+// as of the "every surface composes through the seam" slice — every file that
+// used to hand-assemble an identity string or call `buildSystemPrompt(`
+// directly now routes through `composeSurfacePrompt` / `identity-core.ts`.
+// Both lists are intentionally EMPTY. Do NOT add a freshly-written file here
+// instead of migrating it — a new offender fails the gate below.
+const LEGACY_IDENTITY_STRING_FILES = new Set([]);
 
-const LEGACY_BUILD_SYSTEM_PROMPT_FILES = new Set([
-  "packages/recall/src/pipeline.ts"
-]);
+const LEGACY_BUILD_SYSTEM_PROMPT_FILES = new Set([]);
 
 const IDENTITY_STRING_PATTERNS = [/You are Muse\b/u, /너는 뮤즈/u];
 const BUILD_SYSTEM_PROMPT_PATTERN = /\bbuildSystemPrompt\s*\(/u;

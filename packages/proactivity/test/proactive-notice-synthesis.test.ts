@@ -53,4 +53,18 @@ describe("synthesizeNoticeText — faithfulness gate on the proactive notice (un
     expect(system).toContain(MUSE_IDENTITY_CORE);
     expect(system).toContain("imminent calendar event or task");
   });
+
+  it("keeps identity at position 0 even with a persona preamble (Phase 2+3 seam — a raw string-prepend used to push identity out of slot 0)", async () => {
+    const sink: { request?: { messages: { role: string; content: string }[] } } = {};
+    await synthesizeNoticeText(baseItem, {
+      agentModel: "m",
+      modelProvider: { generate: async (request: typeof sink.request) => { sink.request = request; return { output: "x" }; } },
+      personaPreamble: "PERSONA_PREAMBLE_MARKER"
+    });
+    const system = sink.request?.messages.find((m) => m.role === "system")?.content ?? "";
+    expect(system.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+    expect(system).toContain("PERSONA_PREAMBLE_MARKER");
+    expect(system.indexOf("PERSONA_PREAMBLE_MARKER")).toBeGreaterThan(system.indexOf(MUSE_IDENTITY_CORE));
+    expect(system).toContain("imminent calendar event or task");
+  });
 });

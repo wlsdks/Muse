@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { MUSE_IDENTITY_CORE, SURFACE_ROLES } from "@muse/prompts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { NOTES_INDEX_SCHEMA_VERSION } from "./notes-index.js";
@@ -290,6 +291,23 @@ describe("runGroundedRecall — extras (the ask→seam retrofit enabling slice)"
     expect(result.citations).toContain("report.pdf");
     expect(result.strippedCitations).not.toContain("report.pdf");
     expect(result.notesUnavailable).toBe(false);
+  });
+
+  it("the DEFAULT composition (Phase 2+3 seam) anchors identity at position 0, then the recall role, then a single cache boundary", async () => {
+    let seenSystem = "";
+    await runGroundedRecall({
+      ...input("ok"),
+      runtime: {
+        embedFn: fakeEmbed,
+        generateAnswer: async ({ system }) => { seenSystem = system; return "ok"; }
+      }
+    });
+    expect(seenSystem.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+    expect(seenSystem).toContain(SURFACE_ROLES.recall);
+    expect(seenSystem.split("<!-- MUSE_CACHE_BOUNDARY -->").length - 1).toBe(1);
+    const boundary = seenSystem.indexOf("<!-- MUSE_CACHE_BOUNDARY -->");
+    expect(seenSystem.indexOf(SURFACE_ROLES.recall)).toBeLessThan(boundary);
+    expect(seenSystem.indexOf("WireGuard VPN MTU is 1380")).toBeGreaterThan(boundary);
   });
 
   it("composeSystemPrompt absent uses the built-in builder (byte-identical to today)", async () => {

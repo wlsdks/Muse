@@ -1,3 +1,4 @@
+import { MUSE_IDENTITY_CORE, SURFACE_ROLES } from "@muse/prompts";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -67,6 +68,20 @@ describe("synthesizeReflection — fence + grounding", () => {
     const blanks = [{ endedAt: "2026-05-01", summary: "  " }, { endedAt: "2026-05-02", summary: "" }];
     expect(await synthesizeReflection({ episodes: blanks, model: "m", provider })).toBe("");
     expect(provider.calls).toBe(0);
+  });
+
+  it("composes through the seam: the system message carries identity-core at position 0, then the chatReflect role", async () => {
+    let seenSystem = "";
+    const provider: ReflectionProvider = {
+      generate: async ({ messages }) => {
+        seenSystem = messages.find((m) => m.role === "system")?.content ?? "";
+        return { output: '{"insight":"You keep returning to the budget."}' };
+      }
+    };
+    await synthesizeReflection({ episodes: eps(3), model: "m", provider });
+    expect(seenSystem.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+    expect(seenSystem).toContain(SURFACE_ROLES.chatReflect);
+    expect(seenSystem.indexOf(SURFACE_ROLES.chatReflect)).toBeGreaterThan(seenSystem.indexOf(MUSE_IDENTITY_CORE));
   });
 });
 

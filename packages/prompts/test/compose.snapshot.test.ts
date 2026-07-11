@@ -100,6 +100,47 @@ describe("composeSurfacePrompt — ask", () => {
   });
 });
 
+// Phase 2+3 (docs/strategy/prompt-architecture.md §Migration): every remaining
+// surface (brief/recall/council/reflect/pattern-suggestion/proactive/companion/
+// tagline/planning, plus the council-synthesizer and the live in-chat
+// reflection role added this slice) now composes through the same seam.
+const MIGRATED_SURFACES = [
+  "brief", "recall", "council", "councilSynthesis", "reflect", "chatReflect",
+  "patternSuggestion", "proactive", "planning", "companion", "tagline", "documentRead"
+] as const;
+
+describe("composeSurfacePrompt — Phase 2+3 migrated surfaces", () => {
+  it.each(MIGRATED_SURFACES)("%s: anchors identity at position 0 and carries its own role text", (surface) => {
+    const prompt = composeSurfacePrompt(surface, {});
+    expect(prompt.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+    expect(prompt).toContain(SURFACE_ROLES[surface]);
+  });
+
+  it.each(MIGRATED_SURFACES)("%s: emits exactly one cache-boundary marker", (surface) => {
+    const prompt = composeSurfacePrompt(surface, { retrievedContext: "[Knowledge]\n- doc1" });
+    const occurrences = prompt.split(MUSE_CACHE_BOUNDARY_MARKER).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it.each(MIGRATED_SURFACES)("%s: places fed dynamic content after the boundary", (surface) => {
+    const prompt = composeSurfacePrompt(surface, {
+      providerDynamicSuffix: "FAKE_DYNAMIC_SUFFIX_XYZ",
+      retrievedContext: "FAKE_RETRIEVED_MARKER_XYZ"
+    });
+    const boundary = prompt.indexOf(MUSE_CACHE_BOUNDARY_MARKER);
+    expect(boundary).toBeGreaterThan(-1);
+    expect(prompt.indexOf("FAKE_RETRIEVED_MARKER_XYZ")).toBeGreaterThan(boundary);
+    expect(prompt.indexOf("FAKE_DYNAMIC_SUFFIX_XYZ")).toBeGreaterThan(boundary);
+  });
+
+  it("golden snapshot per migrated surface", () => {
+    const rendered = Object.fromEntries(
+      MIGRATED_SURFACES.map((surface) => [surface, composeSurfacePrompt(surface, {})])
+    );
+    expect(rendered).toMatchSnapshot();
+  });
+});
+
 describe("composeSurfacePrompt — per-layer token ceiling", () => {
   it("throws when a caller-supplied stable layer is over its token ceiling", () => {
     const overLong = "x".repeat(3000);

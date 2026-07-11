@@ -1,3 +1,4 @@
+import { composeSurfacePrompt } from "./compose.js";
 import { composeIdentityPrompt } from "./identity-core.js";
 import { cleanBlock, compactLines, compactSections } from "./prompt-text.js";
 
@@ -5,7 +6,9 @@ export { composeIdentityPrompt, MUSE_IDENTITY_CORE } from "./identity-core.js";
 export {
   composeSurfacePrompt,
   composeSurfacePromptSegments,
+  COMPANION_PERSONA_TEXT,
   SURFACE_ROLES,
+  TAGLINE_PERSONA_TEXT,
   type ComposedPromptSegment,
   type ComposedPromptSegmentLayer,
   type ComposeSurfaceContext,
@@ -103,18 +106,7 @@ export const DEFAULT_BASE_PROMPT = composeIdentityPrompt(
  * mode, into the system message of an agentRuntime.run call). Lift
  * here so the two surfaces don't drift on tone / priority order.
  */
-export const TODAY_BRIEF_SYSTEM_PROMPT = composeIdentityPrompt(
-  "Render the morning briefing JSON as a short, conversational summary (2-3 sentences, max 4). " +
-  "Lead with the most time-sensitive thing in this priority: an overdue reminder or overdue followup, then the next event, " +
-  "then an overdue or soon-due task. Mention overall task count, the soonest event with its time, " +
-  "any pending reminders by count (call out overdue ones explicitly), any followups the agent owes today " +
-  "(call those out as 'you said you would …' since they came from the user's own commitments), " +
-  "and one recent note if relevant. " +
-  "Be warm but concise — no bullet lists, no headers. Match the user's locale. " +
-  "All times in the JSON are ALREADY formatted as the user's local clock time (e.g. a `due` of " +
-  "'2026-05-19 15:00 (today)') — state them exactly as given; never convert, shift, recompute, or " +
-  "reinterpret a time, and never invent one that is not in the JSON."
-);
+export const TODAY_BRIEF_SYSTEM_PROMPT = composeSurfacePrompt("brief", {});
 
 /**
  * Compose the user-message body that pairs the system prompt above
@@ -197,16 +189,6 @@ export interface PlanningPromptInput {
 export function buildPlanningSystemPrompt(input: PlanningPromptInput): string {
   const segments: string[] = [];
 
-  if (input.basePrompt && input.basePrompt.trim().length > 0) {
-    segments.push(input.basePrompt.trim());
-    segments.push("");
-  }
-
-  segments.push("[Role]");
-  segments.push("당신은 도구 호출 계획을 세우는 플래너입니다.");
-  segments.push("사용자의 요청을 분석하고, 필요한 도구 호출 순서를 JSON으로 출력하세요.");
-  segments.push("절대 도구를 직접 실행하지 마세요. 계획만 출력합니다.");
-  segments.push("");
   segments.push("[Available Tools]");
   segments.push("아래 도구만 계획에 포함할 수 있습니다.");
   segments.push("목록에 없는 도구는 사용할 수 없습니다.");
@@ -246,7 +228,18 @@ export function buildPlanningSystemPrompt(input: PlanningPromptInput): string {
   segments.push("[User Request]");
   segments.push(input.userPrompt);
 
-  return segments.join("\n");
+  // The diagnostic model provider (packages/model/src/provider-diagnostic.ts,
+  // `isDiagnosticPlanningPrompt`) recognizes a planning turn by the literal
+  // "[Role]" marker alongside "[Output Format]"/"[Available Tools]" (both
+  // still emitted above) — smoke:broad and several plan-execute tests depend
+  // on that detection, so the marker travels as its own stable layer ahead of
+  // the planning role text rather than disappearing with the old [Role] block.
+  return composeSurfacePrompt("planning", {
+    basePrompt: input.basePrompt,
+    providerDynamicSuffix: segments.join("\n")
+  }, {
+    layers: [{ content: "[Role]", id: "planning-role-marker", section: "stable" }]
+  });
 }
 
 export function buildLayeredSystemPrompt(

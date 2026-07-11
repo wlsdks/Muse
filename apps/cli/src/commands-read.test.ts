@@ -3,12 +3,33 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { LocalDirNotesProvider } from "@muse/domain-tools";
+import { MUSE_IDENTITY_CORE, SURFACE_ROLES } from "@muse/prompts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildDocumentNoteBody, ensureNoteMarkdownExtension, extractDocumentText, ingestDirectoryToNotes, isLikelyBinary, isPdfDocument, noteIdForDocument, saveDocumentToNotes } from "./commands-read.js";
+import { buildDocumentNoteBody, buildReadAskSystemPrompt, ensureNoteMarkdownExtension, extractDocumentText, ingestDirectoryToNotes, isLikelyBinary, isPdfDocument, noteIdForDocument, saveDocumentToNotes } from "./commands-read.js";
 
 // A telegram-bot-token shaped secret (redactSecretsInText scrubs it).
 const SECRET = `123456:${"A".repeat(35)}`;
+
+describe("buildReadAskSystemPrompt — Phase 2+3 seam", () => {
+  it("anchors identity at position 0, then the documentRead role, then the document text after the cache boundary", () => {
+    const prompt = buildReadAskSystemPrompt("the rent is due on the 1st");
+    expect(prompt.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+    expect(prompt).toContain(SURFACE_ROLES.documentRead);
+    const boundary = prompt.indexOf("<!-- MUSE_CACHE_BOUNDARY -->");
+    expect(boundary).toBeGreaterThan(-1);
+    expect(prompt.indexOf(SURFACE_ROLES.documentRead)).toBeLessThan(boundary);
+    expect(prompt.indexOf("=== DOCUMENT START ===")).toBeGreaterThan(boundary);
+    expect(prompt).toContain("the rent is due on the 1st");
+    expect(prompt).toContain("=== DOCUMENT END ===");
+  });
+
+  it("still instructs grounded, USING-ONLY-the-document answering", () => {
+    const prompt = buildReadAskSystemPrompt("doc text");
+    expect(prompt).toContain("USING ONLY the document content below");
+    expect(prompt).toContain("say so directly — do not invent");
+  });
+});
 
 describe("buildDocumentNoteBody — ingested-document note", () => {
   it("titles by the source filename and records the source + page count", () => {
