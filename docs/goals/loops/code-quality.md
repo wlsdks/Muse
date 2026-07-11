@@ -66,7 +66,7 @@
 - fire 21 부가 발견·수리: main 커밋 0477d981이 macos-contacts-import.ts에 raw 제어바이트(RS/US/GS) 반입 → shared 바이트-위생 게이트 red였음 → \uXXXX 이스케이프로 수리 (문자열 값 바이트-동일; fire 22 머지에서 main의 자체 \x 표기 수정과 경합 → main측 채택)
 - 기각 기록 (fire 22, 재제안 금지): fs asString 2벌은 trim 유무가 다른 비-중복 (write 쪽 no-trim은 공백-유의미 content 보호) / scheduler delay()는 `options.sleep ?? delay` 무괄호 참조로 실사용 (괄호-grep의 함정) / renderTemplateVariables는 직접-단위테스트 대상이라 export 정당 / fs refusal 2형은 도구별 출력 계약 가능성 — 병합은 동작 변경
 - fs-write-tools 도구 생성기 5개의 approval-gate 보일러플레이트 → 후속 후보 (fs-edit-engine 분리로 파일은 533줄로 감소)
-- browser-tools.ts 919줄 (12 도구 팩토리 + approval-gate 패턴 5벌) → ⚠ outbound-safety fail-close seam이라 churn 신중 — 건드리면 deny/timeout 경로 테스트가 게이트를 증명하는지 먼저 확인
+- ~~browser approval-gate 패턴~~ → fire 24 완료: haiku 조사로 게이트-증명 테스트(5사이트 전부 deny=controller호출0 spy 단언) 확인 후, 판정 공통분모만 resolveGateDecision 헬퍼로 추출 — 도구별 반환 shape·key의 부재-semantics·게이트 전후 로직 전부 불변. 잔여: 12 도구 팩토리 자체의 응답 봉투 보일러플레이트 (후속 후보, 저가치)
 - browser puppeteer-controller captureSnapshot 116줄 → 성능-크리티컬 경로, 불가침 판정 (재제안 금지)
 - skills AuthoredSkillStore.consolidate() 106줄 다중 관심사 → 코어 큐레이터 연산이라 신중 후보
 - stores 동시성 스트레스 테스트 3파일(consent/veto/objectives-concurrent)은 머신 부하시 false-timeout — 알려진 클래스, 부하 낮으면 green (fire 13 확인)
@@ -111,3 +111,4 @@
 | 21 | 배치 (진안 지시 "큐 한번에") | sonnet 4병렬(stores 2분해·mcp 보안·proactivity+shared 소형·web i18n) + opus 설계자문(McpManager — 분리 기각·최소안) + sonnet 구현 + fable 직접수리(macos raw 제어바이트). 오탐 2건 추가 기각(fingerprint·i18n 151), 원칙적 deviation 1건 승인(playbook I/O 잔류) | stores 116/116(격리)+flake 트리오 8/8 ✓ · mcp 800/800 ✓ · proactivity 113/113 ✓ · shared 47/47 ✓(위생 게이트 복구) · web 249/249 ✓ · macos 215/215 ✓ · lint 0 ✓ |
 | 22 | fs·calendar·scheduler (2회차) + 머지 | fs-write-tools 748→533줄: 순수 텍스트-편집 엔진(fuzzy 매칭·유니코드 폴딩·적용, 224줄)을 fs-edit-engine.ts로 이동(바이트-동일 diff 확인, 재export로 임포터 무변경) + calendar 죽은 공개 export 축소; scheduler delay는 워커 전제-검증이 실사용 발견해 미착수 (위 기각 기록) | fs 184/184 ✓ · calendar 164/164 ✓ · scheduler 117/117(무변경 확인) ✓ · autoconfigure build ✓ · lint 0 ✓ |
 | 23 | voice·browser·skills | authored-skill-store 740→563줄: 독립 유틸 계층(리스크 스캔·유사도·eviction 랭킹·잡 참조, 216줄)을 skill-analysis.ts로 순수 이동(데이터-흐름 기준 경계 조정 — 클래스 전용 타입/상수/IO는 잔류), 재export로 소비자 무변경 + voice safeReadText 2벌(바이트-동일 확인) → http-utils.ts | skills 85/85 ✓ · voice 145/145 ✓ · autoconfigure build ✓ · lint 0 ✓ (fable 재검증) |
+| 24 | browser (신중-큐 집행) | 게이트-증명 테스트 존재를 haiku 조사로 선확인(5사이트 deny=spy 0효과) 후 approval-gate 판정 공통분모만 resolveGateDecision으로 추출(문자열 바이트-동일, shape·부재-semantics·전후 로직 불변); 게이트-증명 테스트 무수정 green이 행위-보존의 증거 | browser 120/120 ✓ (테스트 diff 0) · build ✓ · lint 0 ✓ |
