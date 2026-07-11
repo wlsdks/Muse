@@ -1,7 +1,8 @@
 /**
- * The tools `muse mcp serve` exposes — three read-only (grounded recall,
- * knowledge search, user-model read) plus one write-proxy (`propose_action`,
- * which only PARKS a proposed action in the approval queue, never executes it)
+ * The tools `muse mcp serve` exposes — four read-only (grounded recall,
+ * knowledge search, user-model read, calendar read) plus one write-proxy
+ * (`propose_action`, which only PARKS a proposed action in the approval
+ * queue, never executes it)
  * — and the self-contained dependency bootstrap they run on (no API server, no
  * `createMuseRuntimeAssembly`
  * — mirrors how `commands-ask.ts` / `ask-routes.ts` wire the grounded-recall
@@ -17,12 +18,14 @@ import { randomUUID } from "node:crypto";
 
 import { effectiveConfidence, FileUserMemoryStore, type UserMemoryStore } from "@muse/memory";
 import { LocalDirNotesProvider, type NotesProvider } from "@muse/domain-tools";
+import { LocalCalendarProvider, type CalendarEvent } from "@muse/calendar";
 import {
   assembleKnowledgeCorpus,
   createModelProvider,
   mergeModelKeysFromFile,
   resolveAnswerTemperature,
   resolveDefaultModel,
+  resolveLocalCalendarFile,
   resolveNotesDir,
   resolveNotesIndexFile,
   resolvePendingApprovalsFile,
@@ -63,6 +66,7 @@ export interface McpServeDependencies {
   readonly now: () => Date;
   readonly stagePendingApproval: (entry: PendingApproval) => Promise<void>;
   readonly newId: () => string;
+  readonly listCalendarEvents: (range: { readonly from: Date; readonly to: Date }) => Promise<readonly CalendarEvent[]>;
 }
 
 /**
@@ -78,11 +82,13 @@ function resolveMcpUserId(env: MuseEnvironment): string {
 export function resolveMcpServeDependencies(rawEnv: MuseEnvironment = process.env): McpServeDependencies {
   const env = mergeModelKeysFromFile(rawEnv);
   const notesDir = resolveNotesDir(env);
+  const calendar = new LocalCalendarProvider({ file: resolveLocalCalendarFile(env) });
   return {
     answerModel: resolveDefaultModel(env),
     answerTemperature: resolveAnswerTemperature(env),
     embedFn: (text, model) => embed(text, model),
     embedModel: DEFAULT_EMBED_MODEL,
+    listCalendarEvents: (range) => calendar.listEvents(range),
     modelProvider: createModelProvider(env),
     newId: () => randomUUID(),
     notesDir,
@@ -337,6 +343,75 @@ function buildUserModelReadTool(deps: McpServeDependencies): MuseTool {
   };
 }
 
+function serializeCalendarEvent(event: CalendarEvent): JsonObject {
+  return {
+    endsAt: event.endsAt.toISOString(),
+    id: event.id,
+    startsAt: event.startsAt.toISOString(),
+    title: event.title,
+    ...(event.location ? { location: event.location } : {})
+  };
+}
+
+function buildCalendarReadTool(deps: McpServeDependencies): MuseTool {
+  return {
+    definition: {
+      description:
+        "Read the user's calendar events between two timestamps. Use when a connected agent needs to know what's on the user's schedule in a specific window (e.g. today, this week). Provide the window explicitly as `from` and `to` ISO timestamps. Do NOT use to CREATE or change events (read-only); do NOT guess the window — pass the exact from/to.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          from: {
+            description: "Start of the window (inclusive), ISO 8601 timestamp. Example: '2026-07-12T00:00:00Z'.",
+            type: "string"
+          },
+          to: {
+            description: "End of the window (inclusive), ISO 8601 timestamp. Example: '2026-07-13T00:00:00Z'.",
+            type: "string"
+          }
+        },
+        required: ["from", "to"],
+        type: "object"
+      },
+      name: "calendar_read",
+      risk: "read"
+    },
+    execute: async (args) => {
+      const rawFrom = (args as { from?: unknown }).from;
+      const rawTo = (args as { to?: unknown }).to;
+      if (typeof rawFrom !== "string" || rawFrom.trim().length === 0) {
+        throw new Error("calendar_read: 'from' must be a non-empty ISO timestamp string.");
+      }
+      if (typeof rawTo !== "string" || rawTo.trim().length === 0) {
+        throw new Error("calendar_read: 'to' must be a non-empty ISO timestamp string.");
+      }
+
+      const from = new Date(rawFrom);
+      const to = new Date(rawTo);
+      if (Number.isNaN(from.getTime())) {
+        throw new Error(`calendar_read: 'from' is not a valid timestamp: '${rawFrom}'`);
+      }
+      if (Number.isNaN(to.getTime())) {
+        throw new Error(`calendar_read: 'to' is not a valid timestamp: '${rawTo}'`);
+      }
+      // Fail-close BEFORE ever calling the source: an inverted or zero-width
+      // window must never silently pass through and leak an unbounded read.
+      if (to.getTime() <= from.getTime()) {
+        throw new Error(`calendar_read: 'to' (${rawTo}) must be strictly after 'from' (${rawFrom}).`);
+      }
+
+      const events = await deps.listCalendarEvents({ from, to });
+
+      return {
+        count: events.length,
+        events: events.map(serializeCalendarEvent),
+        from: rawFrom,
+        to: rawTo
+      };
+    }
+  };
+}
+
 // Mirrors PENDING_APPROVAL_TTL_MS in actuator-tools.ts (buildCliPendingApprovalStager) —
 // a proposed action parks for a week before it's stale, same as a refused CLI write.
 const PROPOSE_ACTION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -408,5 +483,11 @@ function buildProposeActionTool(deps: McpServeDependencies): MuseTool {
 }
 
 export function buildMcpServeTools(deps: McpServeDependencies): readonly MuseTool[] {
-  return [buildMuseRecallTool(deps), buildKnowledgeSearchTool(deps), buildUserModelReadTool(deps), buildProposeActionTool(deps)];
+  return [
+    buildMuseRecallTool(deps),
+    buildKnowledgeSearchTool(deps),
+    buildUserModelReadTool(deps),
+    buildCalendarReadTool(deps),
+    buildProposeActionTool(deps)
+  ];
 }
