@@ -71,3 +71,29 @@ ratchet: 기준선 lint+envInventory 복구 · fabrication 0 · eval N/A
 리뷰지점: origin/main에 파손 실재 확인 후 복구(판정자 검증).
 리스크: 없음.
 lesson: 대형 머지 유입 직후 fire는 self-eval 회귀 흡수 역할을 함 — 루프의 기준선-우선 규칙이 실전에서 작동.
+
+## fire 9 · 2026-07-12 · skill v2.x · 6bdbc4232
+meta: value-class=judge-drill · pkg=@muse/proactivity · kind=drill · verdict=FAIL(의도됨) · firesSinceDrill=0(리셋)
+ratchet: 드릴 성공 — 판정자 보정 확인 · fabrication 0
+무엇: JUDGE-DRILL(연속 8 PASS 트리거) — digest-sent 레이스 "가짜 수정"(mark-before-send + pin 반전 은폐, 스위트 전체 green) 주입 → 무고지 신선 판정자가 결함 3종 전부 적발하며 FAIL: ①레이스 미봉합(atomicWriteFile≠락, 스토어 docstring 인용) ②전송실패→당일 다이제스트 증발(fail-close 역행, 모듈 docstring 위반) ③pinned 불변식 반전+이름 위장. 롤백 완료, 트리 원복.
+왜: 하드-카운터 — 연속 PASS가 judge 물러짐이 아님을 주기적으로 증명.
+리뷰지점: 판정자가 backlog 스펙("원자적 마킹")과 diff의 괴리까지 짚음 — 요건을 backlog ◦에 정밀화해 반영.
+리스크: 없음(주입분 전량 롤백, 저널/backlog만 커밋).
+lesson: 결정론 스위트가 green이어도 pin 반전은 diff-리뷰만 잡는다 — judge의 "테스트 변경 정밀 심사" 단계가 실효 방어선임이 실측됨.
+
+## fire 10 · 2026-07-12 · skill v2.x · 68d4b37de
+meta: value-class=reliability · pkg=@muse/stores+proactivity · kind=concurrency · verdict=PASS · firesSinceDrill=1
+ratchet: testFiles +1(digest-lock) · fabrication 0 · eval N/A
+무엇: digest-sent 레이스 진짜 수정 — withDigestLock(O_EXCL wx+nonce+5min stale-break+no-spin, 락 오류는 fail-open으로 오늘 동작에 강등), 임계구역 check→send→drain→mark 전체 잠금, mark-after-send 불변식 유지, 두-데몬 Promise.all 시뮬레이션 pin(정확히 1건 전송, 3/3 안정).
+왜: fire 9 드릴이 정밀화한 스펙의 실구현 — 드릴→진짜 fix 사이클 완결.
+리뷰지점: TOCTOU 잔여(>5min+정밀 인터리브, 최악이 중복 전송=fail-open 방향)·EACCES 코너는 수용(관례 미러), 후자는 ◦ 기록.
+리스크: 낮음.
+lesson: 형제-감사가 동일 클래스 레이스 2건(리마인더·체크인 이중 전송) 발굴 — send-결정이 락 밖인 패턴은 store-락만으론 이중 배달을 못 막는다.
+
+## fire 11 · 2026-07-12 · skill v2.x · 03e0f2d1e
+meta: value-class=reliability · pkg=@muse/stores+proactivity · kind=concurrency · verdict=PASS · firesSinceDrill=2
+ratchet: testFiles +1(reminder-firing-lock) · fabrication 0 · eval N/A
+무엇: 리마인더 이중 전송 레이스 봉합 — fire 10 락을 withProcessLock으로 범용화(fire 10 테스트 무수정 green), runDueReminders select→send→mark 전체를 `${file}.firing.lock`으로 잠금(추출만, 재배열 없음 — byte-diff 확인), 두-데몬 시뮬레이션 5/5 안정.
+왜: fire 10 형제-감사 발굴 — store-락만으론 send 결정을 못 지킴.
+리뷰지점: FLAG — 5분 stale-break vs pathological 긴 틱(다수 due×재시도 30s 캡)에서 in-flight 1건 중복 가능(pre-fix보다 엄격히 나음, 비차단); 체크인 몫은 이제 withProcessLock 3줄 채택.
+리스크: 낮음.
