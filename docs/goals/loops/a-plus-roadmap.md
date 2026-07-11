@@ -211,7 +211,7 @@ ratchet: 로드맵 잔여 [ ] = 28/57 · self-eval pass · fabrication 0 · grou
 - 리스크: 없음(코드 0). 교훈: decompose 전에 기존 verify-*.mjs/배터리 존재를 먼저 확인해야 redundant sub-slice 안 만듦. 다음 = D4-S1c(read 확대: 캘린더·태스크 read 툴 + 실 stdio 왕복 계약).
 - lesson: 새 grounded surface 슬라이스 전에 `ls apps/*/scripts/verify-*.mjs` + eval-self-improving.mjs BATTERIES를 grep해 이미 등록된 표면인지 확인 — 이미 있으면 라이브 실증+정직 마킹, 중복 날조 금지(ratchet=count-inflation 가드).
 
-## fire 26 · 2026-07-12 · skill v2.x · <commit-pending>
+## fire 26 · 2026-07-12 · skill v2.x · 2244aca88
 meta: slice=JUDGE-DRILL+D4-S1c1 · wave=W3 · pkg=apps/cli · kind=judge-drill+mcp-calendar-read · verdict=PASS · firesSinceDrill=0(리셋)
 ratchet: 로드맵 잔여 [ ] = 29/59(D4-S1c→c1/c2/c3 분해 +2, c1 체크 -1) · self-eval pass · fabrication 0 · cli mcp-serve +3 test(calendar_read)·baseline ENV repair(foreign 8 env)
 - 무엇: ①기준선 envInventory FOREIGN-fail(digest/interruption 8 env merge, docs:env 없이)→resync 커밋(3a7e73737). ②JUDGE-DRILL: 고의결함 D4-S1c(캘린더 윈도우 필터가 `toIso` 상한 무시+shape/sort-only 테스트) 주입→독립 Opus ④b가 empirical probe(`["a","b","c"]` leak)로 구체 FAIL. ③롤백→진짜 fix D4-S1c1: calendar_read MCP 툴(from/to 독립파싱→LocalCalendarProvider.listEvents 위임, 양-bound pass-through 구조적 보장). D4-S1c를 c1/c2/c3 분해.
