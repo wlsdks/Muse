@@ -13,6 +13,8 @@ export interface CommandEntry {
   readonly category: CommandCategory;
   readonly aliases?: readonly string[];
   readonly platforms: readonly CommandPlatform[];
+  /** The real `muse <name>` command when it differs from the chat slash name; defaults to `name`. */
+  readonly cliName?: string;
 }
 
 const CHAT_ONLY: readonly CommandPlatform[] = ["chat"];
@@ -29,13 +31,13 @@ export const SLASH_COMMAND_REGISTRY: readonly CommandEntry[] = [
   { name: "today", desc: "morning briefing — tasks, calendar, weather, headlines", category: "info", platforms: CHAT_AND_CLI },
   { name: "tools", desc: "toggle tools (reads run; writes/actions ask first)", category: "tools", platforms: CHAT_ONLY },
   { name: "job", desc: "run a long task in the background — /job <prompt>", category: "tools", platforms: CHAT_ONLY },
-  { name: "jobs", desc: "show recent background jobs + status", category: "tools", platforms: CHAT_AND_CLI },
+  { name: "jobs", desc: "show recent background jobs + status", category: "tools", platforms: CHAT_ONLY },
   { name: "orchestrate", desc: "fan out to background sub-agents — /orchestrate <prompt>", category: "tools", platforms: CHAT_ONLY },
   { name: "memory", desc: "show what Muse remembers about you", category: "memory", platforms: CHAT_AND_CLI },
   { name: "remember", desc: "teach a fact — /remember <key>=<value>", category: "memory", platforms: CHAT_AND_CLI },
-  { name: "pref", desc: "set a preference — /pref <key>=<value>", category: "memory", platforms: CHAT_AND_CLI },
+  { name: "pref", desc: "set a preference — /pref <key>=<value>", category: "memory", platforms: CHAT_ONLY },
   { name: "recall", desc: "search past notes + episodes — /recall <query>", category: "knowledge", platforms: CHAT_AND_CLI },
-  { name: "reflect", desc: "reflect on patterns across your past sessions", category: "knowledge", platforms: CHAT_AND_CLI },
+  { name: "reflect", desc: "reflect on patterns across your past sessions", category: "knowledge", platforms: CHAT_AND_CLI, cliName: "reflections" },
   { name: "forget", desc: "forget one thing — /forget <key> (or --all)", category: "memory", platforms: CHAT_AND_CLI },
   { name: "trust", desc: "show this user's trusted + blocked tools", category: "tools", platforms: CHAT_AND_CLI },
   { name: "persona", desc: "show the active persona slot", category: "tools", platforms: CHAT_AND_CLI },
@@ -52,5 +54,5 @@ export const SLASH_COMMAND_REGISTRY: readonly CommandEntry[] = [
 export function slashCommandsForPlatform(platform: CommandPlatform): readonly { readonly cmd: string; readonly desc: string }[] {
   return SLASH_COMMAND_REGISTRY
     .filter((entry) => entry.platforms.includes(platform))
-    .map((entry) => ({ cmd: entry.name, desc: entry.desc }));
+    .map((entry) => ({ cmd: platform === "cli" ? (entry.cliName ?? entry.name) : entry.name, desc: entry.desc }));
 }

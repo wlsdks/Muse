@@ -298,3 +298,12 @@ ratchet: 로드맵 잔여 [ ] = 26/64(D7-S1→a/b 분해 +1, a 체크 -1) · sel
 - 리뷰지점: Opus PASS — 옛 27-배열 완전 제거(git diff -31, 잔존 하드코딩 0)·chat byte-identical(순서보존, /메뉴 불변)·dedup이 real Set-uniqueness+name/alias 충돌스캔(shallow 아님)·두 mutation 독립 재현(dup→RED, 게이트 무력화→RED)·플랫폼게이트 정확(in-session /undo·/compact·/cost는 cli 미마킹)·chat-core 154/154.
 - 리스크: 낮음. 리팩터라 유저-가시 0(CHANGELOG 생략). CLI-help 실반영(commander)은 D7-S1b. Opus doc-nit(로드맵 "28개"→27) 정정. 다음 = D7-S1b(commander CLI desc를 레지스트리와 cross-check, 겹치는 명령 drift 방지 증명).
 - lesson: chat/CLI 겹치는 메타데이터는 단일 레지스트리+platforms 게이트로; 파생 함수(slashCommandsForPlatform)가 하드코딩 배열을 대체하면 drift 구조적 불가, dedup은 Set-uniqueness로 증명.
+
+## fire 36 · 2026-07-12 · skill v2.x · 73f60dca3
+meta: slice=D7-S1b · wave=W3 · pkg=apps/cli · kind=slash-registry-cli-drift-lock · verdict=PASS · firesSinceDrill=2 · ★D7-S1 완주
+ratchet: 로드맵 잔여 [ ] = 25/64(D7-S1b 체크) · self-eval pass · fabrication 0 · cli +1 test file(slash-command-registry.cli-drift, testFiles 1386→1387)
+- 무엇: ①기준선 green(self-eval ok, testFiles 1386). ②D7-S1b: 레지스트리 `cli` 태그가 실제 CLI 명령 surface와 drift 없음 락킹. 진실 소스 = `COMMAND_STUBS`(생성 매니페스트, command-manifest.drift.test가 commander 트리에 pin — `muse --help`/completion 권위 소스). 발견: cli-태그 12개 중 jobs·pref·reflect가 실재 `muse <name>` 없음(CLI엔 runs/job·remember·reflections). 정정: `CommandEntry.cliName?` 추가 → reflect={cliName:"reflections"} 유지, jobs·pref=chat-only. `slashCommandsForPlatform("cli")`는 `cliName ?? name` 투영(chat/channel은 name 불변). drift-lock test 4: (a)cli-태그 모든 항목이 COMMAND_STUBS에 실재 assert (b)투영 cmd 실재 (c)reflect→reflections·never reflect (d)chat 27 불변.
+- 왜: hermes 단일-레지스트리처럼 1-엔트리가 여러 표면 구동하되, "cli-태그가 실제 CLI 명령"임을 실 매니페스트로 증명해야 태깅이 현실과 조용히 갈라지지 않음. D7-S1a가 태깅을 넣었고(느슨), D7-S1b가 실 surface와 대조해 3개 오태깅 적발+정정+락.
+- 리뷰지점: Opus PASS — 실 상태 대조(COMMAND_STUBS=commander 트리 pin, 자기참조 아님)·독립 mutation 2종 재현(bogus cliName→RED, reflect cliName 제거→RED)·3정정 사실확인(jobs/pref/reflect 부재·reflections 실재)·chat 불변(27, name 투영)·scope 2파일·comment 정책(cliName WHY 1줄만). 비차단 노트: cli 투영은 아직 소비자 없음(chat만 소비) → drift-lock+태그정정이 정직한 delivered 범위, 라이브 render 배선은 미래.
+- 리스크: 낮음. 내부 메타데이터 정확성(유저-가시 0 → CHANGELOG 생략, D7-S1a와 동일). 형제-감사: 12 cli-태그 전부 이 fire에 enumerate·대조(jobs/pref/reflect만 오태깅, 나머지 9 실재 확인). 다음 = D4-S2d2(밝기 value-passing Shortcut-input, top-to-bottom 첫 미체크 — 이전 defer).
+- lesson: "레지스트리 태그가 여러 표면을 구동한다"는 클레임은 태그를 그 표면의 **실 매니페스트(생성물)와 cross-check**해야 검증됨 — 자기참조(레지스트리 vs 손복사 리스트)는 tautological. 실 surface와 대조하면 오태깅(chat-slash명 ≠ CLI 명령명: reflect/reflections)이 드러나고, cliName? optional로 rename을 흡수하며 나머지는 chat-only로 정정.
