@@ -62,3 +62,12 @@ ratchet: testFiles +0(6 테스트 재작성+2 pin) · fabrication 0 · eval N/A
 왜: fire 5 판정자 권고 — 절대날짜는 구조적으로 stale 불가.
 리뷰지점: 미래-createdAt 가드 제거는 유일 콜사이트에서 도달 불가(판정 확인); 외부-소스 createdAt 콜러가 생기면 가드 복원(비게이팅 권고).
 리스크: 낮음.
+
+## fire 8 · 2026-07-12 · skill v2.x · acfa5f6f9
+meta: value-class=baseline-restore · pkg=@muse/shared · kind=regression-fix · verdict=PASS · firesSinceDrill=8
+ratchet: 기준선 lint+envInventory 복구 · fabrication 0 · eval N/A
+무엇: 타 루프 머지發 회귀 2건 복구 — secret-patterns 정규식 불필요 이스케이프(의미보존 프로브 6입력 동일) + 미사용 import + ENV.md 재생성(MUSE_WINDOWS_ACTUATORS 추가).
+왜: 규칙 ① — 깨진 기준선 위에 새 슬라이스 없음.
+리뷰지점: origin/main에 파손 실재 확인 후 복구(판정자 검증).
+리스크: 없음.
+lesson: 대형 머지 유입 직후 fire는 self-eval 회귀 흡수 역할을 함 — 루프의 기준선-우선 규칙이 실전에서 작동.
