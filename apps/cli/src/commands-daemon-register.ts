@@ -17,46 +17,37 @@ import {
   buildCalendarRegistry,
   buildMessagingRegistry,
   createMessagingPollDispatchers,
-  createGateEmbedder,
   parseBoolean,
   parseNonNegativeInteger,
-  resolveContactsFile,
   resolveDigestQueueFile,
   resolveDigestSentFile,
-  resolveEpisodesFile,
   resolveFollowupsFile,
   resolveInterruptionLedgerFile,
   resolveLastProactiveDeliveryFile,
   resolveActionLogFile,
   resolveNotesDir,
   resolveObjectivesFile,
-  resolvePatternsFiredFile,
   resolveProactiveHistoryFile,
   resolveRemindersFile,
   resolveTasksFile,
   type DecayContradictedDeps,
   type DistillQueuedDeps
 } from "@muse/autoconfigure";
-import { synthesizePatternSuggestion, adjustConfidenceFloor, sdtCriterion, summarizeNoticeResponses } from "@muse/agent-core";
-import type { PatternMatch } from "@muse/memory";
 import type { MessagingProviderRegistry } from "@muse/messaging";
-import { formatBirthdayBriefLine, queryContacts, resolveUpcomingBirthdays, readEpisodes, queryActionLog, readReminders, readTasks, readProactiveHistory } from "@muse/stores";
-import { createAmbientNoticeRunner, createMessagingObjectiveActuator, createModelObjectiveEvaluator, createProposingObjectiveActuator, createWebWatchRunner, deriveBriefingImminent, deriveCalendarBriefingImminent, FileAmbientSignalSource, gateProactiveNoticeSink, isQuietHour, parseQuietHours, MacOsActiveWindowSource, parseAmbientNoticeRules, WindowsActiveWindowSource, runDueBackgroundExitNotices, runDueCheckins, runDueFollowups, runDuePatternNotices, runDueProactiveNotices, runDueReminders, webWatchesFromConfig, type AmbientNoticeRunner, type BriefingCalendarLister, type ChromeSnapshotConnection, type InterruptionBudgetWiring, type ProactiveNoticeSink, type WebWatchRunner } from "@muse/proactivity";
-import { homeWatchesFromConfig, type EmailProvider, runDueSituationalBriefing } from "@muse/domain-tools";
+import { queryActionLog, readReminders, readTasks } from "@muse/stores";
+import { createAmbientNoticeRunner, createMessagingObjectiveActuator, createModelObjectiveEvaluator, createProposingObjectiveActuator, createWebWatchRunner, FileAmbientSignalSource, gateProactiveNoticeSink, parseQuietHours, MacOsActiveWindowSource, parseAmbientNoticeRules, WindowsActiveWindowSource, webWatchesFromConfig, type AmbientNoticeRunner, type BriefingCalendarLister, type ChromeSnapshotConnection, type InterruptionBudgetWiring, type ProactiveNoticeSink, type WebWatchRunner } from "@muse/proactivity";
+import { homeWatchesFromConfig, type EmailProvider } from "@muse/domain-tools";
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { backgroundStoreFile } from "./commands-background.js";
 import { buildLaunchAgentPlist, LAUNCH_AGENT_LABEL, resolveLaunchAgentFile } from "./commands-daemon-launchagent.js";
 import { buildSchtasksCreateArgs, buildSchtasksQueryArgs, SCHTASKS_TASK_NAME } from "./commands-daemon-schtasks.js";
 import { readDaemonConfig, resolveDaemonConfigFile, writeDaemonConfig } from "./commands-daemon-config.js";
 import { dirname, join } from "node:path";
 
-import { checkinsFile } from "./commands-checkins.js";
 import { closestCommandName } from "./closest-command.js";
 import { parseBoundedFlag } from "./commands-proactive.js";
-import { DEFAULT_REFLECTION_INTERVAL_MS, resolveReflectionsFile, runReflectionPass, shouldRunReflection } from "./commands-reflections.js";
-import { createIndexedProactiveInvestigator } from "./proactive-notes-recall.js";
+import { DEFAULT_REFLECTION_INTERVAL_MS } from "./commands-reflections.js";
 import {
   makeDigestFlushTick,
   makeMemoryConsolidateTick,
@@ -76,10 +67,20 @@ import {
   makeObjectivesTick,
   makeWebWatchTick
 } from "./daemon-watch-ticks.js";
+import {
+  makeBackgroundExitNoticeTick,
+  makeBriefingTick,
+  makeCheckinsTick,
+  makeFollowupTick,
+  makePatternTick,
+  makeProactiveTick,
+  makeRemindersTick,
+  makeReflectionTick,
+  makeRetentionPruneTick
+} from "./daemon-delivery-ticks.js";
 import type { ProgramIO } from "./program.js";
 import { DaemonStopSignal, runDaemonLoop } from "./commands-daemon-loop.js";
 import { defaultChromeConnection, defaultFollowupModel, defaultKnowledgeEnrich, type FollowupModel } from "./commands-daemon-connections.js";
-import { maybeAutoPrune } from "./local-state-retention.js";
 
 const DEFAULT_INTERRUPTION_HOURLY_CAP = 2;
 const DEFAULT_INTERRUPTION_DAILY_CAP = 6;
@@ -347,7 +348,6 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const sidecarFile = e.MUSE_PROACTIVE_SIDECAR_FILE?.trim()?.length
         ? e.MUSE_PROACTIVE_SIDECAR_FILE.trim()
         : join(homedir(), ".muse", "proactive-fired.json");
-      const backgroundExitNotifiedFile = (): string => join(homedir(), ".muse", "bg-exit-notified.json");
       const dailyCapRaw = e.MUSE_PROACTIVE_DAILY_CAP ? Number(e.MUSE_PROACTIVE_DAILY_CAP) : 0;
       const dailyCap = Number.isFinite(dailyCapRaw) && dailyCapRaw > 0 ? Math.trunc(dailyCapRaw) : 0;
       const followupsFile = resolveFollowupsFile(e);
@@ -539,165 +539,67 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         return;
       }
 
-      const proactiveInvestigator = createIndexedProactiveInvestigator();
-      const proactiveTick = async (): Promise<void> => {
-        const summary = await runDueProactiveNotices({
-          ...(calendarRegistry.list().length > 0 ? { calendarRegistry } : {}),
-          destination,
-          historyFile,
-          investigate: proactiveInvestigator,
-          leadMinutes,
-          messagingRegistry,
-          providerId: provider,
-          ...(quietHours ? { quietHours } : {}),
-          sidecarFile,
-          tasksFile,
-          trustLedgerFile,
-          ...(dailyCap > 0 ? { dailyCap } : {})
-        });
-        const tag = `[${new Date().toISOString()}]`;
-        io.stdout(`${tag} proactive: fired ${summary.fired.toString()}/${summary.imminent.toString()} imminent`);
-        if (summary.errors.length > 0) {
-          io.stdout(`, ${summary.errors.length.toString()} error(s)`);
-          for (const error of summary.errors) {
-            io.stdout(`\n  ! ${error}`);
-          }
-        }
-        io.stdout("\n");
-      };
+      const proactiveTick = makeProactiveTick({
+        calendarRegistry,
+        dailyCap,
+        destination,
+        historyFile,
+        leadMinutes,
+        messagingRegistry,
+        provider,
+        quietHours,
+        sidecarFile,
+        stdout: io.stdout,
+        tasksFile,
+        trustLedgerFile
+      });
 
-      const backgroundExitNoticeTick = async (): Promise<void> => {
-        const summary = await runDueBackgroundExitNotices({
-          destination,
-          interruptionBudget,
-          messagingRegistry,
-          notifiedFile: backgroundExitNotifiedFile(),
-          providerId: provider,
-          storeFile: backgroundStoreFile()
-        });
-        if (summary.notified > 0 || summary.errors.length > 0) {
-          const tag = `[${new Date().toISOString()}]`;
-          io.stdout(`${tag} background-exit: notified ${summary.notified.toString()}/${summary.pending.toString()} pending`);
-          if (summary.errors.length > 0) {
-            io.stdout(`, ${summary.errors.length.toString()} error(s)`);
-            for (const error of summary.errors) {
-              io.stdout(`\n  ! ${error}`);
-            }
-          }
-          io.stdout("\n");
-        }
-      };
+      const backgroundExitNoticeTick = makeBackgroundExitNoticeTick({
+        destination,
+        interruptionBudget,
+        messagingRegistry,
+        provider,
+        stdout: io.stdout
+      });
 
-      const remindersTick = async (): Promise<void> => {
-        const summary = await runDueReminders({
-          destination,
-          file: remindersFile,
-          providerId: provider,
-          registry: messagingRegistry
-        });
-        const tag = `[${new Date().toISOString()}]`;
-        io.stdout(`${tag} reminders: fired ${summary.delivered.toString()}/${summary.due.toString()} due`);
-        if (summary.errors.length > 0) {
-          io.stdout(`, ${summary.errors.length.toString()} error(s)`);
-          for (const error of summary.errors) {
-            io.stdout(`\n  ! ${error}`);
-          }
-        }
-        io.stdout("\n");
-      };
+      const remindersTick = makeRemindersTick({
+        destination,
+        messagingRegistry,
+        provider,
+        remindersFile,
+        stdout: io.stdout
+      });
 
-      const followupTick = async (): Promise<void> => {
-        if (!followupModel) {
-          io.stdout(`[${new Date().toISOString()}] followup: skipped (no model resolved)\n`);
-          return;
-        }
-        const summary = await runDueFollowups({
-          destination,
-          file: followupsFile,
-          interruptionBudget,
-          model: followupModel.model,
-          modelProvider: followupModel.modelProvider,
-          providerId: provider,
-          registry: messagingRegistry
-        });
-        const tag = `[${new Date().toISOString()}]`;
-        io.stdout(`${tag} followup: fired ${summary.delivered.toString()}/${summary.due.toString()} due`);
-        if (summary.errors.length > 0) {
-          io.stdout(`, ${summary.errors.length.toString()} error(s)`);
-          for (const error of summary.errors) {
-            io.stdout(`\n  ! ${error}`);
-          }
-        }
-        io.stdout("\n");
-      };
+      const followupTick = makeFollowupTick({
+        destination,
+        followupModel,
+        followupsFile,
+        interruptionBudget,
+        messagingRegistry,
+        provider,
+        stdout: io.stdout
+      });
 
-      const checkinsTick = async (): Promise<void> => {
-        const summary = await runDueCheckins({
-          destination,
-          file: checkinsFile(e),
-          interruptionBudget,
-          providerId: provider,
-          registry: messagingRegistry,
-          ...(quietHours ? { quietHours } : {})
-        });
-        const tag = `[${new Date().toISOString()}]`;
-        io.stdout(`${tag} checkins: fired ${summary.delivered.toString()}/${summary.due.toString()} due`);
-        if (summary.errors.length > 0) {
-          io.stdout(`, ${summary.errors.length.toString()} error(s)`);
-          for (const error of summary.errors) io.stdout(`\n  ! ${error}`);
-        }
-        io.stdout("\n");
-      };
+      const checkinsTick = makeCheckinsTick({
+        destination,
+        env: e,
+        interruptionBudget,
+        messagingRegistry,
+        provider,
+        quietHours,
+        stdout: io.stdout
+      });
 
-      const renderPatternFacts = (match: PatternMatch): string =>
-        match.category === "weekly-task"
-          ? `weekly recurring task on ${match.bucket.weekday}; recent: ${match.relatedTitles.slice(0, 3).join("; ")}; ${match.bucket.matches.toString()}× over ${match.bucket.distinctWeeks.toString()} weeks`
-          : `recurring action: ${match.bucket.weekday} ${match.bucket.hourBand}, area "${match.bucket.pathFamily}"; ${match.bucket.matches.toString()}× over ${match.bucket.distinctDays.toString()} days`;
-
-      const patternTick = async (): Promise<void> => {
-        if (quietHours && isQuietHour(new Date().getHours(), quietHours)) {
-          io.stdout(`[${new Date().toISOString()}] pattern: held (quiet hours)\n`);
-          return;
-        }
-        // SDT criterion (Green & Swets): the pattern category's firing floor
-        // adapts to the user's OWN response history — dismiss-heavy raises it,
-        // acted-on lowers it. Fail-soft to the default floor on any error.
-        let minConfidence: number | undefined;
-        try {
-          const history = await readProactiveHistory(resolveProactiveHistoryFile(e));
-          const stats = summarizeNoticeResponses(history.map((entry) => ({ kind: entry.kind, text: entry.text })));
-          const patternStats = stats.get("pattern");
-          if (patternStats && patternStats.acted + patternStats.dismissed >= 3) {
-            minConfidence = adjustConfidenceFloor(0.7, sdtCriterion(patternStats));
-          }
-        } catch { /* default floor */ }
-        const summary = await runDuePatternNotices({
-          destination,
-          interruptionBudget,
-          patternsFiredFile: resolvePatternsFiredFile(e),
-          ...(minConfidence !== undefined ? { select: { minConfidence } } : {}),
-          providerId: provider,
-          registry: messagingRegistry,
-          ...(followupModel
-            ? {
-                composeSuggestion: (match: PatternMatch): Promise<string | undefined> =>
-                  synthesizePatternSuggestion(
-                    {
-                      category: match.category,
-                      confidence: match.confidence,
-                      fallbackSuggestion: match.suggestion,
-                      groundedFacts: renderPatternFacts(match)
-                    },
-                    {
-                      model: followupModel.model,
-                      modelProvider: followupModel.modelProvider as Parameters<typeof synthesizePatternSuggestion>[1]["modelProvider"]
-                    }
-                  )
-              }
-            : {})
-        });
-        io.stdout(`[${new Date().toISOString()}] pattern: delivered ${summary.delivered.toString()}/${summary.fireable.toString()} fireable\n`);
-      };
+      const patternTick = makePatternTick({
+        destination,
+        env: e,
+        followupModel,
+        interruptionBudget,
+        messagingRegistry,
+        provider,
+        quietHours,
+        stdout: io.stdout
+      });
 
       const ambientTick = makeAmbientTick({ ambientRunner, stdout: io.stdout });
 
@@ -712,72 +614,30 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
 
       const homeWatchTick = makeHomeWatchTick({ homeWatchRunner, stdout: io.stdout });
 
-      // Situational briefing — a periodic digest (objective status +
-      // imminent tasks + a related note), self-deduped by its sidecar
-      // (default 4h window). Opt-in via MUSE_BRIEFING_ENABLED.
-      const briefingTick = async (): Promise<void> => {
-        if (!parseBoolean(e.MUSE_BRIEFING_ENABLED, false)) {
-          io.stdout(`[${new Date().toISOString()}] briefing: skipped (set MUSE_BRIEFING_ENABLED)\n`);
-          return;
-        }
-        const now = new Date();
-        let imminent: Awaited<ReturnType<typeof deriveBriefingImminent>> = [];
-        try {
-          imminent = await deriveBriefingImminent(tasksFile, { leadMinutes, now });
-        } catch { /* fail-soft — brief objective status only */ }
-        const calendarLister = helpers.briefingCalendarLister
-          ?? (calendarRegistry.list().length > 0 ? (range: Parameters<BriefingCalendarLister>[0]) => calendarRegistry.listEvents(range) : undefined);
-        if (calendarLister) {
-          try {
-            imminent = [...imminent, ...(await deriveCalendarBriefingImminent(calendarLister, { leadMinutes, now }))];
-          } catch { /* fail-soft — calendar unavailable */ }
-        }
-        const summary = await runDueSituationalBriefing({
-          birthdayLine: async () => {
-            try {
-              const contacts = await queryContacts(resolveContactsFile(e));
-              return formatBirthdayBriefLine(resolveUpcomingBirthdays(contacts, { now, withinDays: 7 }));
-            } catch {
-              return undefined;
-            }
-          },
-          destination,
-          imminent,
-          messagingRegistry,
-          now: () => now,
-          objectivesFile,
-          providerId: provider,
-          sidecarFile: e.MUSE_BRIEFING_SIDECAR_FILE?.trim()?.length
-            ? e.MUSE_BRIEFING_SIDECAR_FILE.trim()
-            : join(homedir(), ".muse", "briefing-fired.json"),
-          ...(knowledgeEnrich ? { relatedKnowledge: knowledgeEnrich } : {})
-        });
-        io.stdout(`[${now.toISOString()}] briefing: ${summary.delivered > 0 ? "delivered" : "quiet (deduped or nothing to say)"}\n`);
-      };
+      const briefingTick = makeBriefingTick({
+        briefingCalendarLister: helpers.briefingCalendarLister,
+        calendarRegistry,
+        destination,
+        env: e,
+        knowledgeEnrich,
+        leadMinutes,
+        messagingRegistry,
+        objectivesFile,
+        provider,
+        stdout: io.stdout,
+        tasksFile
+      });
 
-      // Grounded "dreaming" — the daemon synthesises reflections from recent
-      // episodes while idle. Off by default; throttled to a slow cadence
-      // (default 6h) so it isn't a model call every tick. Silent unless it adds.
       const reflectionIntervalRaw = e.MUSE_REFLECTION_INTERVAL_MS ? Number(e.MUSE_REFLECTION_INTERVAL_MS) : DEFAULT_REFLECTION_INTERVAL_MS;
       const reflectionIntervalMs = Number.isFinite(reflectionIntervalRaw) && reflectionIntervalRaw > 0 ? reflectionIntervalRaw : DEFAULT_REFLECTION_INTERVAL_MS;
-      let lastReflectionMs: number | undefined;
-      const reflectionTick = async (): Promise<void> => {
-        if (!parseBoolean(e.MUSE_REFLECTION_ENABLED, false) || !followupModel) return;
-        const nowMs = Date.now();
-        if (!shouldRunReflection(lastReflectionMs, nowMs, reflectionIntervalMs)) return;
-        lastReflectionMs = nowMs;
-        try {
-          const episodes = (await readEpisodes(resolveEpisodesFile(e))).slice(-30);
-          const inputs = episodes.map((ep) => ({ id: ep.id, text: ep.summary }));
-          const added = await runReflectionPass(inputs, {
-            model: followupModel.model,
-            modelProvider: followupModel.modelProvider as Parameters<typeof runReflectionPass>[1]["modelProvider"],
-            reflectionsFile: resolveReflectionsFile(e),
-            embed: createGateEmbedder(e)
-          });
-          if (added > 0) io.stdout(`[${new Date(nowMs).toISOString()}] reflections: +${added.toString()} (see \`muse reflections\`)\n`);
-        } catch { /* fail-soft — dreaming is a background nicety */ }
-      };
+      const lastReflectionMs: TickRunState = { current: undefined };
+      const reflectionTick = makeReflectionTick({
+        env: e,
+        followupModel,
+        intervalMs: reflectionIntervalMs,
+        lastRunMs: lastReflectionMs,
+        stdout: io.stdout
+      });
 
       // Continuous email ingestion — the always-on half of `muse email sync`: the
       // daemon pulls recent inbox emails into recallable notes on its own tick, so
@@ -967,28 +827,16 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         ...(helpers.browsingSync ? { browsingSync: helpers.browsingSync } : {})
       });
 
-      // DS-13: age-based retention for unbounded append-only local state
-      // (.muse/runs, .muse/checkpoints, ~/.muse/action-log.json,
-      // ~/.muse/learn-queue.jsonl). `maybeAutoPrune` already self-gates via a
-      // persisted ~/.muse/prune-meta.json marker (default 24h) so it survives
-      // daemon restarts; this in-memory throttle just avoids re-checking that
-      // marker file on every short tick within one daemon's uptime, mirroring
-      // the other ticks' `last*Ms` pattern. Never throws (log-and-continue
-      // is baked into maybeAutoPrune itself — each of the four targets prunes
-      // independently).
       const RETENTION_PRUNE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
-      let lastRetentionPruneCheckMs: number | undefined;
-      const retentionPruneTick = async (): Promise<void> => {
-        const nowMs = Date.now();
-        if (lastRetentionPruneCheckMs !== undefined && nowMs - lastRetentionPruneCheckMs < RETENTION_PRUNE_CHECK_INTERVAL_MS) return;
-        lastRetentionPruneCheckMs = nowMs;
-        try {
-          const summary = await maybeAutoPrune({ env: e, workspaceDir: io.workspaceDir ?? process.cwd() });
-          if (summary.ran && options.print) {
-            io.stdout(`[${new Date(nowMs).toISOString()}] retention-prune: ${summary.reason}\n`);
-          }
-        } catch { /* maybeAutoPrune already never throws — this is a final backstop */ }
-      };
+      const lastRetentionPruneCheckMs: TickRunState = { current: undefined };
+      const retentionPruneTick = makeRetentionPruneTick({
+        env: e,
+        intervalMs: RETENTION_PRUNE_CHECK_INTERVAL_MS,
+        lastRunMs: lastRetentionPruneCheckMs,
+        print: options.print ?? false,
+        stdout: io.stdout,
+        workspaceDir: io.workspaceDir ?? process.cwd()
+      });
 
       const runTick = async (): Promise<void> => {
         await proactiveTick();
