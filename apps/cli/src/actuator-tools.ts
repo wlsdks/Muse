@@ -10,11 +10,14 @@
  * available. NOT for payments / money movement (out of scope).
  */
 
+import { randomUUID } from "node:crypto";
+
 import type { MuseEnvironment } from "@muse/autoconfigure";
 import { resolveActionLogFile, resolveContactsFile } from "@muse/autoconfigure";
+import { recordPendingApproval } from "@muse/messaging";
 import { appendActionLog, queryContacts, resolveContact } from "@muse/stores";
 import { GmailEmailProvider, createEmailForwardTool, createEmailReplyTool, createEmailSendTool, createHomeActionTool, createWebActionTool, createAllowlistPathValidator, type EmailApprovalGate, type HostLookup, type MessageApprovalGate, type WebActionApprovalGate } from "@muse/domain-tools";
-import { defaultFileReadRoots, type FsWriteApprovalGate } from "@muse/fs";
+import { defaultFileReadRoots, type FsWriteApprovalGate, type FsWriteDraft } from "@muse/fs";
 import { isWebEgressAllowed } from "@muse/model";
 import {
   createMacAppOpenTool,
@@ -250,6 +253,40 @@ function buildBrowserApprovalGate(deps: {
   };
 }
 
+const PENDING_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Maps a refused fs-write draft onto the SAME pending-approval store the
+ * channel-approval gate uses (`packages/messaging/pending-approval-store`),
+ * so a write staged from a non-interactive `muse ask` run shows up in
+ * `muse approvals list` alongside a refused Telegram/etc. action. The
+ * staged entry carries only the capped preview the draft already has —
+ * NOT the full write payload — so it is a reviewable worklist item, not a
+ * re-runnable one; re-running a staged fs write is a follow-up.
+ */
+export function buildCliPendingApprovalStager(deps: {
+  readonly file: string;
+  readonly now?: () => Date;
+  readonly ttlMs?: number;
+}): (draft: FsWriteDraft) => Promise<void> {
+  const now = deps.now ?? (() => new Date());
+  const ttlMs = deps.ttlMs ?? PENDING_APPROVAL_TTL_MS;
+  return async (draft) => {
+    const createdAt = now();
+    await recordPendingApproval(deps.file, {
+      arguments: { action: draft.action, path: draft.path },
+      createdAt: createdAt.toISOString(),
+      draft: draft.summary,
+      expiresAt: new Date(createdAt.getTime() + ttlMs).toISOString(),
+      id: randomUUID(),
+      providerId: "cli",
+      risk: "write",
+      source: "cli-local-write",
+      tool: `file_${draft.action}`
+    });
+  };
+}
+
 /**
  * Fail-closed approval gate for the @muse/fs write tools (file_write /
  * file_edit / file_multi_edit). Shows the exact target path + a content
@@ -257,16 +294,27 @@ function buildBrowserApprovalGate(deps: {
  * confirm can't be delivered, so the write is DENIED (a wrong autonomous
  * overwrite of a local file is not trivially reversible). The path is
  * already home-sandboxed + deny-listed inside the tool; this is the
- * human-in-the-loop layer on top.
+ * human-in-the-loop layer on top. When `stagePendingApproval` is provided,
+ * a non-interactive refusal is ALSO recorded as a pending approval — best
+ * effort (a staging failure still denies the write, never approves it).
  */
 export function buildFsWriteApprovalGate(deps: {
   readonly io: ProgramIO;
   readonly confirmAction: (message: string) => Promise<boolean>;
   readonly isInteractive?: () => boolean;
+  readonly stagePendingApproval?: (draft: FsWriteDraft) => Promise<void>;
 }): FsWriteApprovalGate {
   const interactive = deps.isInteractive ?? DEFAULT_INTERACTIVE;
   return async (draft) => {
     if (!interactive()) {
+      if (deps.stagePendingApproval) {
+        try {
+          await deps.stagePendingApproval(draft);
+        } catch {
+          // best-effort — a staging failure still falls through to the deny below
+        }
+        return { approved: false, reason: "staged for approval — review with `muse approvals`" };
+      }
       return { approved: false, reason: "non-interactive — file writes need a live confirm" };
     }
     deps.io.stdout(`\n${draft.summary}\n--- preview ---\n${draft.preview}\n\n`);

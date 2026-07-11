@@ -44,3 +44,12 @@ ratchet: 로드맵 잔여 [ ] = 27/33 · self-eval pass · fabrication 0 · risk
 - 왜: DS-2는 파국명령만 코드거부하고 routine-risky(rm -rf ./build 등)는 통과시킴 — 사람이 승인할 때 위험부위를 눈에 띄게(informed consent). openclaw exec-approval span 참조.
 - 리뷰지점: 오탐(과다 하이라이트→무시학습)이 최대 UX 리스크 → false-positive 배터리(ls·echo·따옴표 속 rm·~/Documents·/tmp/x 전부 []) + Opus 독립 검증. redact 뒤 하이라이트라 시크릿 노출 없음. ESC는 escaped \x1b(raw 바이트 아님, byte-hygiene 안전).
 - 리스크: -rf가 비-rm(grep -rf)에도 하이라이트되는 bounded over-flag이나 advisory(비차단)+흔한 안전명령 미발현이라 Opus가 허용. b(스테이징)는 no-external-effect 계약 필요라 별도.
+
+## fire 6 · 2026-07-11 · skill v2.x · <commit-pending>
+meta: slice=D2-S6b · wave=W1 · pkg=apps/cli · kind=security-staging · verdict=PASS · firesSinceDrill=6
+ratchet: 로드맵 잔여 [ ] = 26/34 · self-eval pass · fabrication 0 · actuator-tools 29 test(+staging)
+- 무엇: CLI fs-write 게이트의 비대화형 거부를 기존 pending-approval-store(@muse/messaging 재사용)에 스테이징. buildCliPendingApprovalStager가 FsWriteDraft→PendingApproval 매핑해 recordPendingApproval(resolvePendingApprovalsFile). muse approvals가 읽는 동일 파일. no-external-effect: 실 fs-write 툴 e2e서 파일 미생성+entry round-trip.
+- 왜: 기존엔 비대화형 CLI write를 silent deny → 이제 durable worklist item(auditability+채널/로컬 pending 단일화). 신규 스토어 금지 준수(기존 재사용).
+- 리뷰지점: Opus 독립 e2e(파일 미생성+readback isPendingApproval 통과)·staging throw→deny 불변·mutation-RED 양방향. 시크릿: draft는 byte-count만(content 미포함), store 0600. messaging/src 0편집(동시 Matrix 루프와 충돌 회피).
+- 리스크: CLI-write 스테이징 entry는 {path,action}만이라 approve→재실행 불가(VQ-18, 채널처럼 full-args 필요). 동시 Matrix/Telegram 루프가 트리 대량 오염(api/web/autoconfigure/messaging) → 내 3 apps/cli 파일만 격리 커밋.
+lesson: 다른 루프가 churn 중인 패키지의 스토어를 재사용할 땐 barrel 익스포트만 import하고 그 src는 절대 편집 말 것 — 충돌 원천 회피(D2-S6b가 messaging store를 0편집으로 CLI 확장).

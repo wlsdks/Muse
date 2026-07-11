@@ -3258,3 +3258,4 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
 - ✓ D2-S2b 2026-07-11 — 토폴로지 분류기를 chatToolApprovalGate에 배선(un-analyzable run_command은 read위조로도 silent-allow 불가 + 프롬프트 경고); trust.json 미배선이라 full auto-approve 강등은 VQ-16; 다음 = D1-S1(ping-pong 루프감지)
 - ✓ D1-S1 2026-07-11 — ping-pong 루프가드(A↔B 교대 감지, 창20/warn6/block10, 휘발필드 strip, block→abort 양쪽 루프 배선); stall/3-cycle/distinct=none 오탐0; 다음 = D2-S6a(승인 프롬프트 위험토큰 하이라이트). VQ-17: eval:computer-task가 ambient GEMINI_API_KEY로 클라우드 하이재킹
 - ✓ D2-S6a 2026-07-11 — 승인 프롬프트 위험-토큰 하이라이트(identifyRiskyTokens/emphasizeRiskyTokens, DS-2 어휘 재사용, redact 뒤 TRUSTED ANSI); 안전명령 오탐0; 다음 = D2-S6b(write-approval 스테이징, pending-approval-store 재사용)
+- ✓ D2-S6b 2026-07-11 — write-approval 스테이징(CLI fs-write 비대화형 거부→기존 pending-approval-store 기록, messaging src 미수정, no-external-effect e2e); 다음 = D3-S7(PID-재사용 kill 가드). VQ-18: CLI-write 재실행(content) 미배선
