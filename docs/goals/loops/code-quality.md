@@ -24,7 +24,8 @@
 | packages/mcp | fire 15 | 방문 |
 | packages/tools | fire 16 | 방문 (병합 후보는 기각) |
 | packages/proactivity | fire 17 | 방문 |
-| 기타 packages/* | – | 미방문 (messaging은 main 활발 — 충돌 회피로 보류) |
+| packages/fs·calendar·scheduler | fire 22 | 방문 |
+| 기타 packages/* | – | 미방문 잔여: messaging(main 활발 — 보류)·voice·browser·skills·macos·소형 유틸들 |
 
 ## 대기 발견 큐
 
@@ -61,7 +62,9 @@
 - ~~minutesUntil 5벌~~ → fire 21 완료 (situational-briefing의 private 중복 정의 삭제 포함)
 - ~~web i18n 고아 키~~ → fire 21 완료: 실측 고아 3개만 제거 (~151 주장은 동적 접근 오인 — 동적 prefix 4종 보호)
 - ~~shared 고아 docstring~~ → fire 21 완료
-- fire 21 부가 발견·수리: main 커밋 0477d981이 macos-contacts-import.ts에 raw 제어바이트(RS/US/GS) 반입 → shared 바이트-위생 게이트 red였음 → \uXXXX 이스케이프로 수리 (문자열 값 바이트-동일)
+- fire 21 부가 발견·수리: main 커밋 0477d981이 macos-contacts-import.ts에 raw 제어바이트(RS/US/GS) 반입 → shared 바이트-위생 게이트 red였음 → \uXXXX 이스케이프로 수리 (문자열 값 바이트-동일; fire 22 머지에서 main의 자체 \x 표기 수정과 경합 → main측 채택)
+- 기각 기록 (fire 22, 재제안 금지): fs asString 2벌은 trim 유무가 다른 비-중복 (write 쪽 no-trim은 공백-유의미 content 보호) / scheduler delay()는 `options.sleep ?? delay` 무괄호 참조로 실사용 (괄호-grep의 함정) / renderTemplateVariables는 직접-단위테스트 대상이라 export 정당 / fs refusal 2형은 도구별 출력 계약 가능성 — 병합은 동작 변경
+- fs-write-tools 도구 생성기 5개의 approval-gate 보일러플레이트 → 후속 후보 (fs-edit-engine 분리로 파일은 533줄로 감소)
 - stores 동시성 스트레스 테스트 3파일(consent/veto/objectives-concurrent)은 머신 부하시 false-timeout — 알려진 클래스, 부하 낮으면 green (fire 13 확인)
 - autoconfigure buildLoopbackTools 207줄·buildRuntimeToolRegistry 279줄 → runtime-assembly와 같은 패턴 분해 후보
 - packages/shared index.ts 고아 docstring (truncateErrorBody 설명이 함수와 144줄 분리) → 이동 후보 (소형)
@@ -102,3 +105,4 @@
 | 19 | apps/api (큐 집행) | tick-daemons.ts 719→664줄: 범용 factory 기각(투기적 추상화) 후 정직한 3헬퍼 — stopOnClose ×10 · optionalNumber ×23 · resolveMessagingTarget ×9(registry 동반 반환으로 타입-내로잉 보존); 다른 semantics 사이트(daily-cap 0-폴백, ?? "90")는 의도적 보존 | api build ✓ · 데몬 테스트 9파일 31/31 ✓ · lint 0 ✓ (fable 재검증) |
 | 20 | packages/stores (큐 집행) | personal-episodes-store.ts 554→286줄: 분석 계층(retention/themes/absence/consolidation, 275줄)을 episode-analytics.ts로 순수 이동 — vacuum→analytics 단방향 value import, 역참조는 type-only(런타임 순환 0), 재export로 소비자 무변경; 떠돌던 vacuum docstring 제자리 복귀 | stores build ✓ · episode 스위트 29/29 ✓ · mcp 7/7·proactivity·cli build ✓ · lint 0 ✓ |
 | 21 | 배치 (진안 지시 "큐 한번에") | sonnet 4병렬(stores 2분해·mcp 보안·proactivity+shared 소형·web i18n) + opus 설계자문(McpManager — 분리 기각·최소안) + sonnet 구현 + fable 직접수리(macos raw 제어바이트). 오탐 2건 추가 기각(fingerprint·i18n 151), 원칙적 deviation 1건 승인(playbook I/O 잔류) | stores 116/116(격리)+flake 트리오 8/8 ✓ · mcp 800/800 ✓ · proactivity 113/113 ✓ · shared 47/47 ✓(위생 게이트 복구) · web 249/249 ✓ · macos 215/215 ✓ · lint 0 ✓ |
+| 22 | fs·calendar·scheduler (2회차) + 머지 | fs-write-tools 748→533줄: 순수 텍스트-편집 엔진(fuzzy 매칭·유니코드 폴딩·적용, 224줄)을 fs-edit-engine.ts로 이동(바이트-동일 diff 확인, 재export로 임포터 무변경) + calendar 죽은 공개 export 축소; scheduler delay는 워커 전제-검증이 실사용 발견해 미착수 (위 기각 기록) | fs 184/184 ✓ · calendar 164/164 ✓ · scheduler 117/117(무변경 확인) ✓ · autoconfigure build ✓ · lint 0 ✓ |
