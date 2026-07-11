@@ -154,7 +154,7 @@ ratchet: 로드맵 잔여 [ ] = 17/40(D1-S7b→b1/b2 분해로 +1, b1 체크로 
 - 리스크: 낮음. b1은 미배선 코어라 유저-가시 0(CHANGELOG b2에서). 기존 step-budget.ts=토큰예산이라 액션-카운트는 별개 정당. 배선(b2)이 실 bounded-task 효과의 관문. 다음 = D1-S7b2(buildBrowserTools 공유 인스턴스+각 act-tool fail-close+출력 표면화).
 - lesson: JUDGE-DRILL은 "롤백→진짜 fix" 시 드릴 결함의 *올바른 버전*을 배송하면 드릴이 곧 실슬라이스 스펙이 됨(토큰 효율). 드릴 judge가 심은 결함 외에 미배선·기존모듈 중복까지 자율 발견 → 게이트가 체크리스트 재생 아닌 적응형 추론임 확증.
 
-## fire 19 · 2026-07-11 · skill v2.x · <commit-pending>
+## fire 19 · 2026-07-11 · skill v2.x · cf9be0dcb
 meta: slice=D1-S7b2 · wave=W2 · pkg=@muse/agent-core+@muse/browser+apps/cli · kind=action-budget-wiring · verdict=PASS · firesSinceDrill=1
 ratchet: 로드맵 잔여 [ ] = 16/40 · self-eval pass · fabrication 0 · agent-core+4·browser+7·cli-config+7 test · env MUSE_BROWSER_MAX_ACTIONS
 - 무엇: b1 액션-예산 코어를 실배선. createBrowserActionTracker(agent-core mutable seam, b1 primitive 재사용)를 buildBrowserTools가 per-task 공유 인스턴스 1개로 생성→browser 최소 구조 seam BrowserActionGuard로 click/type/fill 3툴 배선. execute 최상단 소진 시 fail-close 거부(controller 미도달)+성공시 actionsUsed N/M·budgetWarning. resolveBrowserMaxActions 기본30·MUSE_BROWSER_MAX_ACTIONS. D1-S7b 완료(b1+b2).
