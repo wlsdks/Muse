@@ -60,9 +60,9 @@ export interface ReadAppleContactsResult {
  */
 export const APPLE_CONTACTS_IMPORT_CAP = 2000;
 
-const RECORD_SEP = "\u001e";
-const FIELD_SEP = "\u001f";
-const VALUE_SEP = "\u001d";
+const RECORD_SEP = "\x1E";
+const FIELD_SEP = "\x1F";
+const VALUE_SEP = "\x1D";
 
 /**
  * A Contacts birthday whose YEAR is unset comes back through AppleScript with a
