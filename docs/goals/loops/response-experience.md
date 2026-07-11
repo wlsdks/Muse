@@ -20,3 +20,12 @@ ratchet: 근거절 mutation-pin 3건(이전엔 소실돼도 0 테스트 실패) 
 왜: 근거 없는 프로액티브=감시감; 근거 절이 조용히 사라지는 회귀 클래스가 무감지였음.
 리뷰지점: 판정자 발굴 잔여 갭 — LLM-합성 경로는 절 존재 미보장(신규 ◦로 큐잉).
 리스크: 없음(테스트+docs만).
+
+## fire 3 · 2026-07-12 · skill v2.x · (sha pending)
+meta: value-class=reliability+regression-fix · pkg=@muse/messaging+api+proactivity · kind=retry-dedupe+type-contract · verdict=PASS · firesSinceDrill=3
+ratchet: testFiles +2 · fabrication 0 · eval N/A(composeAck 무접촉)
+무엇: (A) 위임 ack가 재시도에도 최대 1회만 배달 — ackAlreadySent 사이드카(500 bound, fail-open), notify 자체를 미배선해 composeAck 호출도 절약. (B) 베이스라인 tsc 회귀 수정 — ProactiveAgentRuntimeLike.metadata를 JsonObject 정확-매치로(반변 위치 variance 트랩), 양성 컴파일 pin 추가.
+왜: (A) 큐잉된 수용-엣지의 실제 봉인. (B) 클린 리빌드에서만 드러나는 main 빌드 파손.
+리뷰지점: acked-but-never-handled 항목이 500-eviction 후 중복 ack 가능(수용 엣지, 인박스 트림이 먼저 제거).
+리스크: 낮음 — 옵션 부재 시 byte-동일 pin.
+lesson: 회귀 491a1772c는 duck-type 계약(metadata 추가)을 바꾸면서 소비 패키지(apps/api)를 빌드하지 않아 침묵 출하 — 좁은-게이트 정책의 사각. 공유 duck-type을 바꾸면 그 소비자 패키지 빌드가 형제-감사에 포함되어야 함. 양성 assignability pin이 재발 방지.
