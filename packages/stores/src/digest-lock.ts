@@ -1,24 +1,26 @@
 /**
- * Cross-process mutual exclusion for the once-a-day digest flush
- * (`runDigestFlushIfDue`). Two SEPARATE daemons (the api server's tick and
- * the CLI daemon's tick) can both read `digestAlreadySentToday` as false
- * before either calls `markDigestSent` — `atomicWriteFile` makes each
- * individual write collision-free, but it is not mutual exclusion, so
- * without a real lock both daemons send the compiled digest.
+ * Cross-process mutual exclusion, originally built for the once-a-day
+ * digest flush (`runDigestFlushIfDue`) and generalized (`withProcessLock`)
+ * for any other select→act→mark critical section shared by TWO SEPARATE
+ * daemons (the api server's tick and the CLI daemon's tick) reading/writing
+ * the same store file — `atomicWriteFile` makes each individual write
+ * collision-free, but it is not mutual exclusion, so without a real lock
+ * both daemons can read the same "not yet done" state and both act on it.
  *
  * Mirrors `withFileLock`'s established convention (`encrypted-file.ts`): an
  * O_EXCL exclusive-create lock file, a nonce so a holder only ever unlinks
  * its OWN lock, and mtime-based stale-lock breaking so a crashed holder
- * can't wedge the digest forever. It deliberately does NOT spin/retry the
- * way `withFileLock` does — a digest tick that loses the race should not
- * block waiting for the other daemon to finish (that just delays a SECOND
- * send rather than preventing it); it returns "lock-held" on the first live
- * contention so the caller treats the other daemon as owning this flush.
+ * can't wedge the critical section forever. It deliberately does NOT
+ * spin/retry the way `withFileLock` does — a tick that loses the race
+ * should not block waiting for the other daemon to finish (that just
+ * delays a SECOND action rather than preventing it); it returns
+ * "lock-held" on the first live contention so the caller treats the other
+ * daemon as owning this tick.
  *
  * Fail-open: a lock-acquisition error that is NOT contention (a weird fs
  * failure — permissions, a read-only mount, …) runs `fn` UNLOCKED rather
- * than silencing the flush. A broken lock must degrade to today's known
- * duplicate-send risk, never to a digest that never sends.
+ * than silencing the action. A broken lock must degrade to today's known
+ * duplicate-action risk, never to an action that never runs.
  */
 
 import { randomUUID } from "node:crypto";
@@ -27,15 +29,24 @@ import { dirname } from "node:path";
 
 import { errorMessage } from "@muse/shared";
 
-/** A lock older than this (no fresh holder) is treated as crashed and broken. */
-export const DIGEST_LOCK_STALE_MS = 5 * 60_000;
+/** Default staleness window for `withProcessLock` — a lock older than this
+ *  (no fresh holder) is treated as crashed and broken. */
+const DEFAULT_STALE_MS = 5 * 60_000;
+
+/** Back-compat name for the digest flush's stale window — same value as
+ *  `withProcessLock`'s default, kept as its own export since `digest-lock.test.ts`
+ *  and other pre-generalization call sites already reference it. */
+export const DIGEST_LOCK_STALE_MS = DEFAULT_STALE_MS;
 
 /** Bounded — never spins waiting out a live holder; only retries past a stale/vanished lock. */
 const MAX_ACQUIRE_ATTEMPTS = 3;
 
-export type DigestLockOutcome<T> =
+export type ProcessLockOutcome<T> =
   | { readonly kind: "ran"; readonly value: T; readonly lockError?: string }
   | { readonly kind: "lock-held" };
+
+/** Back-compat alias — pre-generalization callers/tests import this name. */
+export type DigestLockOutcome<T> = ProcessLockOutcome<T>;
 
 type LockProbe = "live" | "stale" | "vanished";
 
@@ -44,10 +55,10 @@ type LockProbe = "live" | "stale" | "vanished";
 // fictitious/injected "now" (the digest-hour test clock, for example) would
 // misjudge a fresh lock as stale or vice versa. Mirrors `withFileLock`'s
 // `Date.now()` convention (`encrypted-file.ts`) for the same reason.
-async function probeLock(lockPath: string): Promise<LockProbe> {
+async function probeLock(lockPath: string, staleMs: number): Promise<LockProbe> {
   try {
     const mtimeMs = (await fs.stat(lockPath)).mtimeMs;
-    return Date.now() - mtimeMs > DIGEST_LOCK_STALE_MS ? "stale" : "live";
+    return Date.now() - mtimeMs > staleMs ? "stale" : "live";
   } catch (cause) {
     // ONLY ENOENT means "vanished between EEXIST and stat" — any other stat
     // error says nothing about the holder, so treat it as live (never steal
@@ -84,19 +95,22 @@ async function tryAcquireOnce(lockPath: string, nonce: string): Promise<AcquireA
 }
 
 /**
- * Run `fn` holding the digest flush lock at `${sentFile}.lock`. Resolves to
+ * Run `fn` holding an exclusive lock at `lockPath`. Resolves to
  * `{ kind: "lock-held" }` immediately on a LIVE held lock (no spin) — the
- * caller should treat that as "another daemon owns this flush". Resolves to
+ * caller should treat that as "another daemon owns this tick". Resolves to
  * `{ kind: "ran", value }` after breaking a stale/vanished lock or acquiring
  * cleanly; `lockError` is set (and `fn` still ran, UNLOCKED) when lock
  * acquisition itself failed for a non-contention reason.
  */
-export async function withDigestLock<T>(sentFile: string, fn: () => Promise<T>): Promise<DigestLockOutcome<T>> {
-  const lockPath = `${sentFile}.lock`;
+export async function withProcessLock<T>(
+  lockPath: string,
+  fn: () => Promise<T>,
+  staleMs: number = DEFAULT_STALE_MS
+): Promise<ProcessLockOutcome<T>> {
   const nonce = `${process.pid.toString()}-${randomUUID()}`;
 
   try {
-    await fs.mkdir(dirname(sentFile), { recursive: true });
+    await fs.mkdir(dirname(lockPath), { recursive: true });
   } catch (cause) {
     return { kind: "ran", lockError: errorMessage(cause), value: await fn() };
   }
@@ -117,7 +131,7 @@ export async function withDigestLock<T>(sentFile: string, fn: () => Promise<T>):
     }
     // "contended" — decide whether the holder is stale/vanished (worth one
     // more attempt) or genuinely live (return lock-held, no spin).
-    const probe = await probeLock(lockPath);
+    const probe = await probeLock(lockPath, staleMs);
     if (probe === "live") {
       return { kind: "lock-held" };
     }
@@ -128,4 +142,11 @@ export async function withDigestLock<T>(sentFile: string, fn: () => Promise<T>):
     // bounded by MAX_ACQUIRE_ATTEMPTS so a flapping lock can't spin forever.
   }
   return { kind: "lock-held" };
+}
+
+/** Thin wrapper over `withProcessLock` at the digest flush's established
+ *  path (`${sentFile}.lock`) and stale window — kept so fire-10's call
+ *  sites and tests didn't need to change when the lock generalized. */
+export async function withDigestLock<T>(sentFile: string, fn: () => Promise<T>): Promise<DigestLockOutcome<T>> {
+  return withProcessLock(`${sentFile}.lock`, fn, DIGEST_LOCK_STALE_MS);
 }
