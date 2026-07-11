@@ -85,26 +85,29 @@ describe("P1 seam — two-way channel conversation composes end-to-end", () => {
       await handle.tickOnce();
 
       // Every POST hits one of exactly two known Telegram endpoints —
-      // sendChatAction (typing indicator, best-effort before each reply)
-      // and sendMessage (the actual reply content). Any other endpoint
-      // showing up here would be an unexpected wiring change.
+      // sendChatAction (typing keepalives, interleaved on a timer) and
+      // sendMessage (the actual reply content). Any other endpoint here
+      // would be an unexpected wiring change.
       const endpoints = new Set(posts.map((p) => p.url.replace(/^https:\/\/tg\.test\/botBOT-T\//u, "")));
       expect(endpoints).toEqual(new Set(["sendChatAction", "sendMessage"]));
 
-      // 3 sendMessage POSTs, all to chat 555 over the real provider HTTP:
-      // (1) the turn-1 reply, (2) the in-chat approval prompt for the
-      // risky tool, (3) the turn-2 reply (blocked pending approval).
-      const sendMessagePosts = posts.filter((p) => p.url.endsWith("/sendMessage"));
-      expect(sendMessagePosts.map((p) => p.url)).toEqual([
+      // 3 outbound sendMessage POSTs, all to chat 555 over the real
+      // provider HTTP: (1) the turn-1 reply, (2) the in-chat approval
+      // prompt for the risky tool, (3) the turn-2 reply (blocked pending
+      // approval). Typing keepalives (sendChatAction) interleave on a
+      // timer, so they are asserted by presence, not position.
+      const messages = posts.filter((p) => p.url.endsWith("/sendMessage"));
+      expect(messages.map((p) => p.url)).toEqual([
         "https://tg.test/botBOT-T/sendMessage",
         "https://tg.test/botBOT-T/sendMessage",
         "https://tg.test/botBOT-T/sendMessage"
       ]);
-      expect(sendMessagePosts.every((p) => p.body.chat_id === "555")).toBe(true);
-      expect(sendMessagePosts[0]?.body.text).toContain("Noted, Sam.");
-      expect(sendMessagePosts[1]?.body.text).toContain("NOT executed");
-      expect(sendMessagePosts[1]?.body.text).toContain("tasks.delete");
-      expect(sendMessagePosts[2]?.body.text).toContain("Blocked");
+      expect(posts.some((p) => p.url.endsWith("/sendChatAction"))).toBe(true);
+      expect(posts.every((p) => p.body.chat_id === "555")).toBe(true);
+      expect(messages[0]?.body.text).toContain("Noted, Sam.");
+      expect(messages[1]?.body.text).toContain("NOT executed");
+      expect(messages[1]?.body.text).toContain("tasks.delete");
+      expect(messages[2]?.body.text).toContain("Blocked");
 
       // m1 answered once (cursor); m2's agent turn carried the
       // turn-1 user msg + Muse reply (thread continuity).

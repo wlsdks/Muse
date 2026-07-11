@@ -284,6 +284,8 @@ const en = {
   "int.explain.safety": "Every reply passes the same grounding + citation gate as the rest of Muse (a claim without a real source is dropped by code), and any risky action a chat message asks for is refused pending your explicit approval — draft-first, never autonomous.",
   "int.token": "Bot token",
   "int.tokenPlaceholder": "Paste the bot token here",
+  "int.homeserver": "Homeserver URL",
+  "int.homeserverPlaceholder": "https://matrix.org",
   "int.connect": "Connect",
   "int.connecting": "Verifying…",
   "int.disconnect": "Disconnect",
@@ -302,11 +304,17 @@ const en = {
   "int.tip.disconnect": "Removes the stored token from this machine and immediately stops sends through this channel.",
   "int.tip.envDisconnect": "This channel is configured via an environment variable; unset it where the server is launched to disconnect.",
   "int.daemons": "Live inbound & auto-reply",
-  "int.daemons.sub": "Two background daemons make a connected channel conversational. They are off by default and enabled with environment flags where the API server is launched (set the flag to 1 and restart).",
+  "int.daemons.sub": "Background daemons make a connected channel conversational. They are off by default (environment flags where the API server is launched); once a flag is on, connecting a provider on this page starts its daemon instantly — no restart.",
   "int.daemon.poll": "Telegram inbound polling",
   "int.daemon.reply": "Channel auto-reply",
   "int.daemon.on": "On",
   "int.daemon.off": "Off",
+  "int.daemon.running": "Running",
+  "int.daemon.enabledNotRunning": "Enabled, not running",
+  "int.daemon.matrixSync": "Matrix inbound sync",
+  "int.tip.daemon.matrix": "Continuously long-polls your homeserver's /sync so room messages arrive the moment they are sent.",
+  "int.tip.daemon.state": "Live state from the running server — this reflects an actual daemon handle, not just the flag.",
+  "int.tip.daemon.notRunning": "The flag is on but no daemon is actually running — usually the provider wasn't connected when the server booted. Reconnecting the provider on this page starts it instantly.",
   "int.tip.daemon.poll": "Polls Telegram every 30s (MUSE_TELEGRAM_POLL_INTERVAL_MS to change) and stores new messages in the local inbox.",
   "int.tip.daemon.reply": "Answers unhandled inbox messages by running the full agent and replying on the originating channel — the chat becomes a continuous Muse session.",
   "int.security": "Tokens are stored only on this machine (~/.muse/messaging.json, permissions 600), are never echoed back to this UI, and leave the box only toward the provider's own API.",
@@ -327,7 +335,11 @@ const en = {
   "int.step.slack.4": "Copy the Bot User OAuth Token (xoxb-…) and paste it here.",
   "int.step.line.1": "In the LINE Developers console, create a Messaging API channel.",
   "int.step.line.2": "Issue a channel access token (long-lived).",
-  "int.step.line.3": "Paste the token here; point the channel's webhook at your Muse server to receive messages."
+  "int.step.line.3": "Paste the token here; point the channel's webhook at your Muse server to receive messages.",
+  "int.desc.matrix": "Chat with Muse over Matrix — open, self-hostable messaging. Messages in rooms your account joined become Muse turns (plaintext rooms only; end-to-end-encrypted rooms are not supported).",
+  "int.step.matrix.1": "Create an account on any Matrix homeserver (e.g. matrix.org) — a dedicated bot account keeps your own messages separate.",
+  "int.step.matrix.2": "In Element, open Settings → Help & About → Advanced → Access Token and copy it.",
+  "int.step.matrix.3": "Paste the homeserver URL (e.g. https://matrix.org) and the access token here."
 } as const;
 
 export type StringKey = keyof typeof en;
@@ -611,6 +623,8 @@ const ko: Strings = {
   "int.explain.safety": "모든 답변은 Muse의 다른 표면과 동일한 grounding+인용 게이트를 통과하며(실제 출처 없는 주장은 코드가 차단), 채팅으로 들어온 위험한 액션 요청은 명시적 승인 전까지 거부됩니다 — draft-first, 자율 실행 없음.",
   "int.token": "봇 토큰",
   "int.tokenPlaceholder": "봇 토큰을 여기에 붙여넣으세요",
+  "int.homeserver": "홈서버 URL",
+  "int.homeserverPlaceholder": "https://matrix.org",
   "int.connect": "연결",
   "int.connecting": "검증 중…",
   "int.disconnect": "연결 해제",
@@ -629,11 +643,17 @@ const ko: Strings = {
   "int.tip.disconnect": "저장된 토큰을 이 컴퓨터에서 삭제하고 이 채널로의 발송을 즉시 중단합니다.",
   "int.tip.envDisconnect": "이 채널은 환경변수로 설정돼 있어요. 서버를 실행하는 곳에서 해당 변수를 해제해야 연결이 끊깁니다.",
   "int.daemons": "실시간 수신 & 자동 응답",
-  "int.daemons.sub": "연결된 채널을 대화형으로 만드는 백그라운드 데몬 2개입니다. 기본은 꺼짐이며, API 서버를 실행하는 곳에서 환경 플래그를 1로 설정하고 재시작하면 켜집니다.",
+  "int.daemons.sub": "연결된 채널을 대화형으로 만드는 백그라운드 데몬입니다. 기본은 꺼짐(서버 실행 환경의 플래그)이고, 플래그가 켜져 있으면 이 페이지에서 프로바이더를 연결하는 순간 데몬이 즉시 시작됩니다 — 재시작 불필요.",
   "int.daemon.poll": "텔레그램 수신 폴링",
   "int.daemon.reply": "채널 자동 응답",
   "int.daemon.on": "켜짐",
   "int.daemon.off": "꺼짐",
+  "int.daemon.running": "실행 중",
+  "int.daemon.enabledNotRunning": "켜짐 · 미실행",
+  "int.daemon.matrixSync": "Matrix 수신 동기화",
+  "int.tip.daemon.matrix": "홈서버의 /sync를 지속 long-poll해서 방 메시지가 전송 즉시 도착합니다.",
+  "int.tip.daemon.state": "실행 중인 서버의 라이브 상태 — 플래그가 아니라 실제 데몬 핸들 기준입니다.",
+  "int.tip.daemon.notRunning": "플래그는 켜져 있는데 실제로 도는 데몬이 없어요 — 보통 서버 부팅 때 프로바이더가 연결 전이었던 경우입니다. 이 페이지에서 다시 연결하면 즉시 시작돼요.",
   "int.tip.daemon.poll": "30초마다 텔레그램을 폴링해(MUSE_TELEGRAM_POLL_INTERVAL_MS로 변경) 새 메시지를 로컬 인박스에 저장합니다.",
   "int.tip.daemon.reply": "처리 안 된 인박스 메시지를 풀 에이전트로 실행해 원래 채널로 답합니다 — 채팅이 연속적인 Muse 세션이 됩니다.",
   "int.security": "토큰은 이 컴퓨터에만 저장되고(~/.muse/messaging.json, 권한 600), 이 UI로 다시 노출되지 않으며, 오직 해당 플랫폼 공식 API로만 나갑니다.",
@@ -654,7 +674,11 @@ const ko: Strings = {
   "int.step.slack.4": "Bot User OAuth Token(xoxb-…)을 복사해 여기에 붙여넣으세요.",
   "int.step.line.1": "LINE Developers 콘솔에서 Messaging API 채널을 만듭니다.",
   "int.step.line.2": "채널 액세스 토큰(장기)을 발급합니다.",
-  "int.step.line.3": "토큰을 여기에 붙여넣고, 메시지 수신을 위해 채널 웹훅을 Muse 서버로 지정하세요."
+  "int.step.line.3": "토큰을 여기에 붙여넣고, 메시지 수신을 위해 채널 웹훅을 Muse 서버로 지정하세요.",
+  "int.desc.matrix": "오픈소스·자가호스팅 메신저 Matrix로 Muse와 대화하세요. 계정이 참여한 방의 메시지가 Muse 턴이 됩니다(일반 텍스트 방만 지원, 종단간 암호화 방은 미지원).",
+  "int.step.matrix.1": "아무 Matrix 홈서버(예: matrix.org)에 계정을 만드세요 — 전용 봇 계정을 쓰면 내 메시지와 분리됩니다.",
+  "int.step.matrix.2": "Element에서 설정 → Help & About → Advanced → Access Token 을 열어 복사하세요.",
+  "int.step.matrix.3": "홈서버 URL(예: https://matrix.org)과 액세스 토큰을 여기에 붙여넣으세요."
 };
 
 export const DICTIONARIES: Record<Lang, Strings> = { en, ko };

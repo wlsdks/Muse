@@ -34,6 +34,22 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   automatic downgrade for any future unattended/trusted-run path is tracked as
   a follow-up.)
 
+- **A file change Muse can't confirm is saved to your approvals list instead of
+  dropped.** When Muse (running with tools) wants to write or edit a file but
+  there's no interactive prompt to confirm it — a headless or scripted run —
+  the change is now recorded on your pending-approvals worklist (the same one
+  `muse approvals` shows) rather than silently refused. Nothing is written to
+  disk until you approve it. Reuses the existing approvals store, so remote and
+  local pending items live in one place.
+
+- **The approval prompt now highlights the risky parts of a command.** When
+  Muse asks you to confirm a command, the parts worth a second look —
+  a recursive/force delete flag (`-rf`, `--force`), a destructive command
+  (`rm`, `dd`, `mkfs`), or a sensitive path (`/`, `~/.ssh`, `/etc`, a device) —
+  are shown in bold red so they catch your eye instead of blending into a long
+  line. Secrets are still redacted first; the highlight is purely visual and
+  never changes what runs.
+
 - **Stops a "ping-pong" tool loop.** A small model sometimes gets stuck
   bouncing between the same two tool calls (do A, do B, do A, do B…) without
   ever making progress, burning its whole step budget and ending in an error.

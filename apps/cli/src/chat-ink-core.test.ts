@@ -450,6 +450,28 @@ describe("chatToolApprovalGate", () => {
     expect(denied).toEqual({ allowed: false, reason: "user declined the tool call" });
   });
 
+  it("highlights risky tokens in a risky run_command's detail", async () => {
+    let detail = "";
+    const gate = chatToolApprovalGate(outbound, async (_name, d) => { detail = d; return true; });
+    await gate({
+      risk: "execute",
+      toolCall: { name: "run_command", arguments: { command: "sh", args: ["-c", "rm -rf /tmp/x"] } }
+    });
+    expect(detail).toContain("\x1b[1;31mrm\x1b[0m");
+    expect(detail).toContain("\x1b[1;31m-rf\x1b[0m");
+  });
+
+  it("a safe run_command's detail has no emphasis ANSI (byte-identical to the plain summary)", async () => {
+    let detail = "";
+    const gate = chatToolApprovalGate(outbound, async (_name, d) => { detail = d; return true; });
+    await gate({
+      risk: "execute",
+      toolCall: { name: "run_command", arguments: { command: "ls", args: ["-la"] } }
+    });
+    expect(detail).not.toContain("\x1b[");
+    expect(detail).toBe(summarizeToolArgs({ command: "ls", args: ["-la"] }));
+  });
+
   it("a genuine read tool that is NOT run_command still silently allows, ask never called", async () => {
     let asked = false;
     const gate = chatToolApprovalGate(outbound, async () => { asked = true; return true; });

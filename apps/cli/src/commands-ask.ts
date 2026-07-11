@@ -29,7 +29,7 @@ import { detectEvidenceContradictions, enforceAnswerCitations, isInjectableStrat
 import { describeImage } from "@muse/agent-core";
 import { classifyActionRequest, classifyCorpusOverview, isMemoryInjection } from "@muse/agent-core";
 import { contestedFactKeys, defaultBeliefProvenanceFile, deriveFactProvenance, FileBeliefProvenanceStore, normalizeMemoryKey, provisionalFactKeys, staleFactKeys } from "@muse/memory";
-import { createMuseRuntimeAssembly, resolveAnswerTemperature, resolveNoteProvenanceFile, resolveNotesDir, resolveNotesIndexFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { createMuseRuntimeAssembly, resolveAnswerTemperature, resolveNoteProvenanceFile, resolveNotesDir, resolveNotesIndexFile, resolvePendingApprovalsFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { readNoteProvenance, untrustedNotePaths } from "./note-provenance.js";
 import type { MuseTool } from "@muse/tools";
 import { acquireOllamaLease, releaseOllamaLease, resolveOllamaLeaseFile } from "@muse/stores";
@@ -706,7 +706,8 @@ Examples:
           checkEditIntegrity: true,
           approvalGate: actuatorMod.buildFsWriteApprovalGate({
             confirmAction: (message: string) => fsConfirm({ message }).then((answer) => !fsIsCancel(answer) && answer === true),
-            io
+            io,
+            stagePendingApproval: actuatorMod.buildCliPendingApprovalStager({ file: resolvePendingApprovalsFile(process.env as MuseEnvironment) })
           })
         });
         // web_download reaches the public web, so the master web-egress switch

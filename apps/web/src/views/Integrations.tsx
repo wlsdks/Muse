@@ -3,14 +3,24 @@ import { useState } from "react";
 
 import { AsyncBlock, Badge, Button, Card, Icon, Tooltip } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
-import { canDisconnect, providerStatus } from "./integrations-logic.js";
+import { canDisconnect, daemonBadge, providerStatus, requiresHomeserver } from "./integrations-logic.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { StringKey } from "../i18n/strings.js";
 import type { DaemonFlagsResponse, MessagingConnectResponse, MessagingSetupProvider, MessagingSetupResponse } from "../api/types.js";
 
-const GUIDE_STEPS: Readonly<Record<string, number>> = { discord: 4, line: 3, slack: 4, telegram: 3 };
-const DAEMON_KEYS = ["MUSE_TELEGRAM_POLL_ENABLED", "MUSE_INBOUND_REPLY_ENABLED"] as const;
+const GUIDE_STEPS: Readonly<Record<string, number>> = { discord: 4, line: 3, matrix: 3, slack: 4, telegram: 3 };
+const DAEMON_KEYS = ["MUSE_TELEGRAM_POLL_ENABLED", "MUSE_MATRIX_POLL_ENABLED", "MUSE_INBOUND_REPLY_ENABLED"] as const;
+const DAEMON_LABEL_KEYS: Readonly<Record<string, StringKey>> = {
+  MUSE_INBOUND_REPLY_ENABLED: "int.daemon.reply",
+  MUSE_MATRIX_POLL_ENABLED: "int.daemon.matrixSync",
+  MUSE_TELEGRAM_POLL_ENABLED: "int.daemon.poll"
+};
+const DAEMON_TIP_KEYS: Readonly<Record<string, StringKey>> = {
+  MUSE_INBOUND_REPLY_ENABLED: "int.tip.daemon.reply",
+  MUSE_MATRIX_POLL_ENABLED: "int.tip.daemon.matrix",
+  MUSE_TELEGRAM_POLL_ENABLED: "int.tip.daemon.poll"
+};
 
 /**
  * Integrations — connect external messaging channels with one paste + click.
@@ -76,17 +86,17 @@ export function IntegrationsView({ client }: { client: ApiClient }) {
               <div className="row" key={flag.key}>
                 <div className="row-main">
                   <div className="row-title">
-                    {t(flag.key === "MUSE_TELEGRAM_POLL_ENABLED" ? "int.daemon.poll" : "int.daemon.reply")}
+                    {t(DAEMON_LABEL_KEYS[flag.key] ?? "int.daemon.reply")}
                     {" "}
-                    <Tooltip tip={t(flag.key === "MUSE_TELEGRAM_POLL_ENABLED" ? "int.tip.daemon.poll" : "int.tip.daemon.reply")}>
+                    <Tooltip tip={t(DAEMON_TIP_KEYS[flag.key] ?? "int.tip.daemon.reply")}>
                       <Icon.alert className="nav-icon" aria-hidden />
                     </Tooltip>
                   </div>
                   <div className="row-meta mono">{flag.key}</div>
                 </div>
-                <Badge tone={flag.enabled ? "ok" : "neutral"}>
-                  {t(flag.enabled ? "int.daemon.on" : "int.daemon.off")}
-                </Badge>
+                <Tooltip tip={t(daemonBadge(flag).tone === "warn" ? "int.tip.daemon.notRunning" : "int.tip.daemon.state")}>
+                  <Badge tone={daemonBadge(flag).tone}>{t(daemonBadge(flag).labelKey)}</Badge>
+                </Tooltip>
               </div>
             ))}
           </AsyncBlock>
@@ -111,11 +121,16 @@ function ProviderCard({
 }) {
   const { t } = useI18n();
   const [token, setToken] = useState("");
+  const [homeserver, setHomeserver] = useState("");
   const [account, setAccount] = useState<string | null>(null);
   const status = providerStatus(provider);
+  const needsHomeserver = requiresHomeserver(provider.id);
 
   const connect = useMutation({
-    mutationFn: () => client.post<MessagingConnectResponse>(`/api/messaging/setup/${provider.id}`, { token: token.trim() }),
+    mutationFn: () => client.post<MessagingConnectResponse>(`/api/messaging/setup/${provider.id}`, {
+      token: token.trim(),
+      ...(needsHomeserver ? { homeserverUrl: homeserver.trim() } : {})
+    }),
     onSuccess: (response) => {
       setToken("");
       setAccount(response.account ?? null);
@@ -171,6 +186,18 @@ function ProviderCard({
       )}
 
       <div style={{ display: "grid", gap: 8 }}>
+        {needsHomeserver && (
+          <input
+            id={`int-homeserver-${provider.id}`}
+            aria-label={t("int.homeserver")}
+            className="input"
+            type="url"
+            autoComplete="off"
+            value={homeserver}
+            onChange={(event) => setHomeserver(event.target.value)}
+            placeholder={t("int.homeserverPlaceholder")}
+          />
+        )}
         <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
           <input
             id={`int-token-${provider.id}`}
@@ -186,7 +213,7 @@ function ProviderCard({
             <Button
               variant="primary"
               size="sm"
-              disabled={token.trim().length === 0 || connect.isPending}
+              disabled={token.trim().length === 0 || (needsHomeserver && homeserver.trim().length === 0) || connect.isPending}
               onClick={() => connect.mutate()}
             >
               {connect.isPending ? t("int.connecting") : t("int.connect")}

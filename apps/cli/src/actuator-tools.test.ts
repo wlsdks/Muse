@@ -1,14 +1,17 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createAgentRuntime, groundToolArguments } from "@muse/agent-core";
 import { createContactsAddTool } from "@muse/domain-tools";
+import { createFsWriteTools } from "@muse/fs";
+import { readPendingApprovals } from "@muse/messaging";
 import type { ModelProvider, ModelResponse } from "@muse/model";
+import type { JsonObject } from "@muse/shared";
 import { ToolRegistry } from "@muse/tools";
 import { describe, expect, it } from "vitest";
 
-import { buildActuatorTools, buildEmailApprovalGate, buildMessagingApprovalGate, buildWebApprovalGate, formatActuatorBanner, summarizeActuators } from "./actuator-tools.js";
+import { buildActuatorTools, buildCliPendingApprovalStager, buildEmailApprovalGate, buildFsWriteApprovalGate, buildMessagingApprovalGate, buildWebApprovalGate, formatActuatorBanner, summarizeActuators } from "./actuator-tools.js";
 import type { ProgramIO } from "./program.js";
 
 describe("buildMessagingApprovalGate — draft-first, fail-closed in non-TTY", () => {
@@ -284,5 +287,106 @@ describe("web/email/home approval gates — fail-closed in non-TTY (outbound-saf
     expect(await yes(webAction)).toMatchObject({ approved: true });
     const no = buildWebApprovalGate({ confirmAction: async () => false, io: { stderr: () => {}, stdout: () => {} }, isInteractive: () => true, prompt: "Perform this web action?" });
     expect(await no(webAction)).toMatchObject({ approved: false });
+  });
+});
+
+describe("fs-write approval gate — non-interactive staging (no-external-effect contract)", () => {
+  function fsWorkDir(): string {
+    return mkdtempSync(join(tmpdir(), "muse-fs-write-"));
+  }
+
+  function pendingFile(dir: string): string {
+    return join(dir, "pending-approvals.json");
+  }
+
+  it("STAGES a non-interactive file_write and writes NOTHING to disk — end-to-end through the real fs-write tool", async () => {
+    const dir = fsWorkDir();
+    // A macOS temp dir resolves through a /private symlink — `resolveSafePath`
+    // canonicalizes it, so the recorded path must be compared post-realpath too.
+    const target = join(realpathSync(dir), "notes.md");
+    const pending = pendingFile(dir);
+    const [fsWriteTool] = createFsWriteTools({
+      approvalGate: buildFsWriteApprovalGate({
+        confirmAction: async () => true,
+        io: { stderr: () => {}, stdout: () => {} },
+        isInteractive: () => false,
+        stagePendingApproval: buildCliPendingApprovalStager({ file: pending })
+      }),
+      roots: [dir]
+    });
+
+    const result = (await fsWriteTool!.execute({ content: "hello", path: target }, { runId: "t1" })) as JsonObject;
+
+    expect(result["written"]).toBe(false);
+    expect(existsSync(target)).toBe(false);
+
+    const entries = await readPendingApprovals(pending);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      arguments: { action: "write", path: target },
+      risk: "write",
+      tool: "file_write"
+    });
+    expect(entries[0]!.draft.length).toBeGreaterThan(0);
+  });
+
+  it("back-compat: no stagePendingApproval + non-interactive → plain deny, nothing recorded anywhere", async () => {
+    const dir = fsWorkDir();
+    const target = join(dir, "notes.md");
+    const pending = pendingFile(dir);
+    const [fsWriteTool] = createFsWriteTools({
+      approvalGate: buildFsWriteApprovalGate({
+        confirmAction: async () => true,
+        io: { stderr: () => {}, stdout: () => {} },
+        isInteractive: () => false
+      }),
+      roots: [dir]
+    });
+
+    const result = (await fsWriteTool!.execute({ content: "hello", path: target }, { runId: "t2" })) as JsonObject;
+
+    expect(result["written"]).toBe(false);
+    expect(existsSync(target)).toBe(false);
+    expect(existsSync(pending)).toBe(false);
+  });
+
+  it("a throwing stagePendingApproval is fail-safe — the gate still denies, and nothing is written", async () => {
+    const dir = fsWorkDir();
+    const target = join(dir, "notes.md");
+    const gate = buildFsWriteApprovalGate({
+      confirmAction: async () => true,
+      io: { stderr: () => {}, stdout: () => {} },
+      isInteractive: () => false,
+      stagePendingApproval: async () => {
+        throw new Error("disk full");
+      }
+    });
+
+    const decision = await gate({ action: "write", path: target, preview: "hello", summary: "Create notes.md" });
+    expect(decision.approved).toBe(false);
+
+    const [fsWriteTool] = createFsWriteTools({ approvalGate: gate, roots: [dir] });
+    const result = (await fsWriteTool!.execute({ content: "hello", path: target }, { runId: "t3" })) as JsonObject;
+    expect(result["written"]).toBe(false);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("interactive + confirm still approves (unchanged) — no staging on the approved path", async () => {
+    const dir = fsWorkDir();
+    const pending = pendingFile(dir);
+    let staged = false;
+    const gate = buildFsWriteApprovalGate({
+      confirmAction: async () => true,
+      io: { stderr: () => {}, stdout: () => {} },
+      isInteractive: () => true,
+      stagePendingApproval: async () => {
+        staged = true;
+      }
+    });
+
+    const decision = await gate({ action: "write", path: join(dir, "notes.md"), preview: "hello", summary: "Create notes.md" });
+    expect(decision.approved).toBe(true);
+    expect(staged).toBe(false);
+    expect(existsSync(pending)).toBe(false);
   });
 });
