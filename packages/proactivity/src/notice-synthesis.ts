@@ -1,7 +1,6 @@
 // Proactive-notice synthesis — one-shot LLM prose over an imminent item's
 // factSheet, gated by an optional faithfulness reverify before delivery.
 
-import type { JsonObject } from "@muse/shared";
 import { composeSurfacePrompt } from "@muse/prompts";
 import type { JsonObject } from "@muse/shared";
 
