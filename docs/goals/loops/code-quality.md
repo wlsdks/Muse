@@ -47,7 +47,7 @@
 - ~~orchestrator runSequential/runParallel 중복~~ → fire 16 집행 완료 (runWorkerStep 통합)
 - 기각 (fire 16): tools workspaceHints/mutationTargetHints 병합 — sonnet의 전제-검증이 "완전 부분집합" 판정을 **반증** (실파싱: mutation 고유 14개 존재 → 병합=게이트 확장=동작 변경). 두 상수는 의도적 별도 어휘일 가능성 — 재제안 금지. 교훈: 상수 집합 비교는 regex가 아니라 실파서로 (내 검증 오류를 워커가 잡음)
 - multi-agent worker-result.ts:99 parseHandoffPart가 검증은 trimmed로 하고 반환은 원본 — validateWorkerHandoff와 불일치. 동작 변경이라 루프 범위 밖, 별도 fix 후보 (하류가 trim 의존하는지 조사 필요)
-- apps/api tick-daemons.ts 10개 데몬 동일 보일러플레이트 (~200줄 절감 가능) → factory 추출 후보 (행위-보존 신중 요구)
+- ~~tick-daemons factory~~ → fire 19에서 **범용 factory는 기각**(guard/옵션이 데몬마다 실제로 달라 투기적 추상화 — architecture.md 위배), 정직한 공통분모 3헬퍼만 추출 완료. 재제안 금지 (다시 오면 이 사유)
 - apps/api multi-agent-routes.ts 불리언 필드 파싱 4벌 중복 → parseOptionalBoolean 헬퍼 후보
 - apps/api server-helpers.ts 544줄 3책임(chat runner/입력 파서/HTTP plumbing) → 분리 후보
 - ~~autoconfigure 격리 결함~~ → fire 12에서 해결 (크리덴셜 파일을 빈 tmp로 고정 — 정확한 누수원은 ~/.muse/messaging.json의 실등록 토큰)
@@ -95,3 +95,4 @@
 | 16 | tools 스캔 → multi-agent (큐 집행) | tools 힌트 병합은 워커 전제-검증이 반증해 NO-SHIP(위 기각 기록); 대체로 orchestrator runSequential(38)·runParallel(26)의 worker당 중복 흐름을 runWorkerStep 헬퍼(33줄)로 통합 — publish fire-safe 자세·에러 구분(원본 vs new Error(reason)) 보존, 소비부가 errorMessage만 쓰므로 non-Error 래핑도 문자열-동일 | multi-agent 334/334 ✓ · build ✓ · lint 0 ✓ (fable 재검증) |
 | 17 | packages/proactivity | proactive-notice-loop.ts 899→621줄: 수집/포맷을 notice-imminent.ts(168줄), 합성/그라운딩을 notice-synthesis.ts(152줄)로 순수 이동, 이동 공개심볼 재export로 소비자(cli 데몬·api tick·테스트) 무변경; @muse/stores 4중 import 통합 | proactivity 113/113 ✓ · cli+api build ✓ · api notice 3파일 6/6 ✓ · lint 0 ✓ (fable 재검증) |
 | 18 | apps/web | SSE 프레임 파싱 3벌 통합(sse-frames.ts — chat/notice의 last-data-line 인라인 파서를 ask의 join-all 헬퍼로; 실트래픽 JSON 단일라인이라 관찰-동일, 잠재 divergence 제거) + readToken 2벌 → lib/token-storage.ts; 레이아웃/JSX 무변경이라 브라우저 검증 불요 | web vitest 39파일 249/249 ✓ · tsc+vite build ✓ · lint 0 ✓ |
+| 19 | apps/api (큐 집행) | tick-daemons.ts 719→664줄: 범용 factory 기각(투기적 추상화) 후 정직한 3헬퍼 — stopOnClose ×10 · optionalNumber ×23 · resolveMessagingTarget ×9(registry 동반 반환으로 타입-내로잉 보존); 다른 semantics 사이트(daily-cap 0-폴백, ?? "90")는 의도적 보존 | api build ✓ · 데몬 테스트 9파일 31/31 ✓ · lint 0 ✓ (fable 재검증) |
