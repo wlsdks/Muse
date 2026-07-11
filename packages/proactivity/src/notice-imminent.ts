@@ -4,6 +4,8 @@
 import type { CalendarEvent, CalendarProviderRegistry } from "@muse/calendar";
 import { readTasks, type PersistedTask, type ProactiveFiredKind } from "@muse/stores";
 
+import { minutesUntil } from "./quiet-hours.js";
+
 /**
  * Order imminent items soonest-first so the most time-critical one
  * interrupts first (Proactive Agent, arXiv 2410.12361: prioritise WHAT to
@@ -127,7 +129,7 @@ function isCalendarOptedOut(event: CalendarEvent): boolean {
 }
 
 function calendarNoticeText(event: CalendarEvent, now: Date): string {
-  const minutes = Math.max(0, Math.round((event.startsAt.getTime() - now.getTime()) / 60_000));
+  const minutes = minutesUntil(event.startsAt, now);
   const head = minutes === 0
     ? `⏰ ${event.title} starting now`
     : `⏰ ${event.title} in ${minutes} min`;
@@ -135,14 +137,14 @@ function calendarNoticeText(event: CalendarEvent, now: Date): string {
 }
 
 function taskNoticeText(task: PersistedTask, dueAt: Date, now: Date): string {
-  const minutes = Math.max(0, Math.round((dueAt.getTime() - now.getTime()) / 60_000));
+  const minutes = minutesUntil(dueAt, now);
   return minutes === 0
     ? `📋 ${task.title} due now`
     : `📋 ${task.title} due in ${minutes} min`;
 }
 
 function calendarFactSheet(event: CalendarEvent, now: Date): string {
-  const minutes = Math.max(0, Math.round((event.startsAt.getTime() - now.getTime()) / 60_000));
+  const minutes = minutesUntil(event.startsAt, now);
   const parts = [
     `kind: calendar event`,
     `title: ${event.title}`,
@@ -155,7 +157,7 @@ function calendarFactSheet(event: CalendarEvent, now: Date): string {
 }
 
 function taskFactSheet(task: PersistedTask, dueAt: Date, now: Date): string {
-  const minutes = Math.max(0, Math.round((dueAt.getTime() - now.getTime()) / 60_000));
+  const minutes = minutesUntil(dueAt, now);
   const parts = [
     `kind: task`,
     `title: ${task.title}`,
