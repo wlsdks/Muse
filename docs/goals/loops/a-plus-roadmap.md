@@ -202,7 +202,7 @@ ratchet: 로드맵 잔여 [ ] = 29/57(D4-S1→a/b/c 분해로 +2) · self-eval p
 - 리뷰지점: Opus outbound-safety 위협모델 PASS — execute에 실행 브랜치 0(action/arguments는 파킹 데이터, dispatch 안 됨)·blank fail-close(stage 전 throw)·stage reject→staged:true 아님·no-external-effect 실검증(temp round-trip + notesDir 무변)·두 mutation 독립 재현(stage 제거→round-trip RED, blank검증→RED)·provenance 구분(source "mcp-serve" vs cli). 헤더 doc "three tools" stale도 수정.
 - 리스크: 낮음. 외부가 draft/arguments 완전 제어→muse approvals raw 표시 spoofing 표면(VQ-20)이나 파킹=no-effect+승인=사람확인+fail-close라 계약 위반 아님(기존 CLI-write 경로와 동일 표면, 악화 아님). eval:tools는 N/A(outbound MCP 툴, Muse 로컬모델 선택셋 아님). 다음 = D4-S1b(grounded-recall을 grounded surface로 등록, verify-*.mjs 배터리→groundedSurfaces +1).
 
-## fire 25 · 2026-07-12 · skill v2.x · <commit-pending>
+## fire 25 · 2026-07-12 · skill v2.x · 05a8c0ebe
 meta: slice=D4-S1b · wave=W3 · pkg=(none, doc-only) · kind=already-holds-invariant · verdict=PASS · firesSinceDrill=7
 ratchet: 로드맵 잔여 [ ] = 28/57 · self-eval pass · fabrication 0 · groundedSurfaces 38(mcp-serve-grounding 이미 포함)·라이브 배터리 4/4
 - 무엇: D4-S1b(grounded-recall을 grounded surface로 등록)가 **이미-성립 불변식**임을 발견+실증. verify-mcp-serve-grounding.mjs가 `muse mcp serve` 최초커밋 cc1fdde81(07-07)에서 배터리+release-gate(eval-self-improving.mjs:62) 등록까지 함께 배송 → groundedSurfaces 이미 카운트(38). 코드 변경 0, 라이브 재실행 4/4 PASS로 실증 후 doc-only 마킹.
