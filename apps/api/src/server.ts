@@ -497,7 +497,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       const longPollRaw = process.env.MUSE_TELEGRAM_LONG_POLL_SECONDS
         ? Number(process.env.MUSE_TELEGRAM_LONG_POLL_SECONDS)
         : undefined;
+      // Default 👀 "seen" reaction (Bot API has no read receipts);
+      // MUSE_TELEGRAM_ACK_REACTION overrides the emoji, empty disables.
+      const ackReaction = process.env.MUSE_TELEGRAM_ACK_REACTION ?? "👀";
       const pollHandle = startTelegramPollTick({
+        ...(ackReaction.trim().length > 0 ? { ackReaction: ackReaction.trim() } : {}),
         errorLogger: (message) => server.log.warn(message),
         inboxFile: options.telegramInboxFile,
         ...(pollMsRaw !== undefined ? { intervalMs: pollMsRaw } : {}),

@@ -53,3 +53,29 @@ describe("TelegramProvider real-time surface", () => {
     await expect(provider.sendTyping("1")).rejects.toThrow(/chat not found/u);
   });
 });
+
+describe("TelegramProvider.reactToMessage", () => {
+  it("POSTs a setMessageReaction with the emoji", async () => {
+    const calls: { url: string; body: unknown }[] = [];
+    const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ body: JSON.parse(String(init?.body)), url: String(url) });
+      return jsonResponse(200, { ok: true, result: true });
+    }) as unknown as typeof globalThis.fetch;
+
+    const provider = new TelegramProvider({ baseUrl: "http://tg.test", fetch: fetchImpl, token: "T" });
+    await provider.reactToMessage("12345", "77", "👀");
+
+    expect(calls[0]?.url).toBe("http://tg.test/botT/setMessageReaction");
+    expect(calls[0]?.body).toEqual({
+      chat_id: "12345",
+      message_id: 77,
+      reaction: [{ emoji: "👀", type: "emoji" }]
+    });
+  });
+
+  it("surfaces an upstream failure as a provider error", async () => {
+    const fetchImpl = (async () => jsonResponse(400, { description: "REACTION_INVALID", ok: false })) as unknown as typeof globalThis.fetch;
+    const provider = new TelegramProvider({ baseUrl: "http://tg.test", fetch: fetchImpl, token: "T" });
+    await expect(provider.reactToMessage("1", "2", "🤖")).rejects.toThrow(/REACTION_INVALID/u);
+  });
+});
