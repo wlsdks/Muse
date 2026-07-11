@@ -24,6 +24,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   itself blocks each escape, so a regression that weakened the confinement
   would be caught automatically.
 
+- **Groundwork (not yet wired):** a shell-topology check that recognizes when
+  a command hides its real work behind a shell construction the existing
+  catastrophic-command guard can't read — command substitution, process
+  substitution, a heredoc, or `eval`. On its own it changes nothing yet; a
+  follow-up will use it to route such a command to explicit approval instead
+  of letting an unattended/auto-approve path run something un-inspectable.
+
 - **Post-compaction loop guard.** When the agent's context is compacted
   mid-run (old turns summarized away), a stuck small model could keep
   re-issuing the exact same tool call — the compaction failed to break the
