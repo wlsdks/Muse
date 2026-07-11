@@ -289,3 +289,12 @@ ratchet: 로드맵 잔여 [ ] = 26/63 · self-eval pass · fabrication 0 · maco
 - 리뷰지점: 드릴 judge와 실 judge 별개 Opus. 드릴 judge가 심은 결함(decision.approved 무시)을 라인 지목·probe로 FAIL. 실 judge가 gate 강제(deny/throw→osascript 0 spy)·deny 테스트·두 mutation 독립 재현·CLI 게이트 non-interactive fail-close·escape·armed-lockstep PASS. Opus 지적 형제-parity(CLI 게이트 non-interactive 테스트 없음)→오케스트레이터가 messaging 미러 3 테스트 추가로 마감.
 - 리스크: 낮음. 로컬 store write(3rd-party send 아님)이나 로드맵대로 draft-first 적용. eval:tools 골든 추가했으나 로컬셋 heavy timeout(결정론+Opus 판정). 다음 = D7-S1(슬래시 명령 단일소스 레지스트리). 밝기 D4-S2d2 잔여.
 - lesson: JUDGE-DRILL 진짜-fix가 outbound-safety면 "gate 강제(deny→no-effect)+spy 테스트"가 message-send seam 미러로 구조 보장. Opus가 형제-parity 갭(CLI 게이트 테스트) 지적하면 오케스트레이터가 기존 형제(messaging) 테스트 미러로 즉시 마감.
+
+## fire 35 · 2026-07-12 · skill v2.x · <commit-pending>
+meta: slice=D7-S1a · wave=W3 · pkg=apps/cli · kind=slash-registry · verdict=PASS · firesSinceDrill=1
+ratchet: 로드맵 잔여 [ ] = 26/64(D7-S1→a/b 분해 +1, a 체크 -1) · self-eval pass · fabrication 0 · cli +6 test(slash-command-registry)
+- 무엇: 슬래시 명령 단일소스 레지스트리. chat-ink 로컬 SLASH_COMMANDS(27개 `{cmd,desc}`)를 slash-command-registry.ts 1-엔트리(name·desc·category·aliases?·platforms)로 추출, chat이 slashCommandsForPlatform("chat")로 파생(하드코딩 배열 제거=단일소스). desc byte-identical·순서 보존(autocomplete 불변). platforms 게이트: 세션계열 15=chat-only, list/show 12=chat+cli(미래 CLI/채널 seam). D7-S1을 a(레지스트리+chat)/b(CLI help 반영)로 분해.
+- 왜: hermes COMMAND_REGISTRY처럼 1-엔트리가 여러 표면 구동→drift 제거. 기존 chat/CLI 겹치는 명령 desc가 각각 정의돼 drift 가능하던 걸 단일소스로.
+- 리뷰지점: Opus PASS — 옛 27-배열 완전 제거(git diff -31, 잔존 하드코딩 0)·chat byte-identical(순서보존, /메뉴 불변)·dedup이 real Set-uniqueness+name/alias 충돌스캔(shallow 아님)·두 mutation 독립 재현(dup→RED, 게이트 무력화→RED)·플랫폼게이트 정확(in-session /undo·/compact·/cost는 cli 미마킹)·chat-core 154/154.
+- 리스크: 낮음. 리팩터라 유저-가시 0(CHANGELOG 생략). CLI-help 실반영(commander)은 D7-S1b. Opus doc-nit(로드맵 "28개"→27) 정정. 다음 = D7-S1b(commander CLI desc를 레지스트리와 cross-check, 겹치는 명령 drift 방지 증명).
+- lesson: chat/CLI 겹치는 메타데이터는 단일 레지스트리+platforms 게이트로; 파생 함수(slashCommandsForPlatform)가 하드코딩 배열을 대체하면 drift 구조적 불가, dedup은 Set-uniqueness로 증명.
