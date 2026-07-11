@@ -103,3 +103,11 @@ ratchet: 로드맵 잔여 [ ] = 21/37 · self-eval pass · fabrication 0 · mult
 - 왜: verify-first로 서브태스크가 재-expand 가능(손자 무한분해) 확인됨. openclaw subagent-capabilities(depth≥max→leaf)·hermes max_spawn_depth1 참조. flat 보드에 깊이 ceiling.
 - 리뷰지점: Opus가 ceiling 경계(depth==maxDepth 거부·1 아래 허용)·parent+1·back-compat(depth無=0)·파싱테이블(0/-1/abc/1.5→1 floor)·wiring·mutation-RED 양방향 검증. depth 필드 omit-when-0로 기존 보드 JSON 무마이그레이션.
 - 리스크: 없음(옵셔널 필드·back-compat). 새 env MUSE_BOARD_MAX_DEPTH→docs:env 갱신(워커가 proactive 처리, envInventory 게이트 회피). 다음 D3-S1b=부모 tool-deny 상속(executor 게이트).
+
+## fire 13 · 2026-07-11 · skill v2.x · <commit-pending>
+meta: slice=D3-S1b · wave=W2 · pkg=@muse/multi-agent+apps/cli · kind=defense-in-depth · verdict=PASS · firesSinceDrill=4
+ratchet: 로드맵 잔여 [ ] = 20/38 · self-eval pass · fabrication 0 · multi-agent 8 test 신규
+- 무엇: 부모 tool-deny 상속. 순수 inheritParentToolDeny(child⊆parent 교집합) + ask-decompose 워커에 구조적 클램프(워커 allowedToolNames = 부모 교집합, args.metadata 무mutation, planner/synthesize 미클램프). D3-S1 완료.
+- 왜: 서브에이전트가 부모에 없는 도구를 못 쓰게 구조 강제(openclaw subagent-capabilities). 현 워커는 metadata verbatim으로 이미 상속하나 unenforced convention → 클램프를 실 enforcement point에 사전배치.
+- 리뷰지점: Opus가 순수 helper 정확성(교집합·dedup·empty clamp·무mutation)·wiring·mutation-RED 양방향 + **명시적 유의미성 판정**(진짜 defense-in-depth vs no-op락) 검증.
+lesson: ⚠tool-deny 상속은 현 프로덕션에서 이미 verbatim으로 성립(broader-set 미전달)이라 클램프는 프로덕션 no-op — 테스트-only seam으로 검증. defense-in-depth 락이나 라이브 버그 수정은 아님. 유저-가시 변화 0이라 CHANGELOG 정직 생략. 이런 "이미 성립하는 불변식 락" 슬라이스는 seam을 정직히 disclose하고 Opus 유의미성 판정으로 통과.
