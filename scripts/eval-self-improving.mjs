@@ -56,6 +56,7 @@ const BATTERIES = [
   { axis: "★ VISION: grounding floor on the image surface (answer visible / abstain on absent)", file: "apps/cli/scripts/verify-vision-grounding.mjs", name: "vision-grounding" },
   { axis: "★ WEDGE: runGroundedRecall seam (the API-surface pipeline; fabrication stripped IN the seam)", file: "apps/cli/scripts/verify-grounded-recall-seam.mjs", name: "grounded-recall-seam" },
   { axis: "★ WEDGE: POST /api/ask SSE stream (real route; live citation filter holds delta-by-delta)", file: "apps/api/scripts/verify-sse-ask-stream.mjs", name: "sse-ask-stream" },
+  { axis: "★ WEDGE: channel conversational reply (Telegram/Matrix runner; gate + pairing fail-close)", file: "apps/api/scripts/verify-channel-reply-grounding.mjs", name: "channel-reply-grounding" },
   { axis: "★ WEDGE: browsing cited recall (local history under the citation gate)", file: "apps/cli/scripts/verify-browsing-recall.mjs", name: "browsing-recall" },
   { axis: "★ WEDGE: cross-lingual feed rescue (KO query → EN headline out of the recency window)", file: "apps/cli/scripts/verify-feed-crosslingual.mjs", name: "feed-crosslingual" },
   { axis: "★ WEDGE: muse mcp serve grounding gate (muse_recall over the real MCP wire)", file: "apps/cli/scripts/verify-mcp-serve-grounding.mjs", name: "mcp-serve-grounding" },
