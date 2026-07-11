@@ -3,9 +3,43 @@ import type { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { MUSE_IDENTITY_CORE, SURFACE_ROLES } from "@muse/prompts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, isOutsideActiveHours, playAudioFile, playSynthesizedAudio, resolveUserName, selectBriefOverdue, unscheduledTimesInBrief } from "./commands-brief.js";
+import { BRIEF_AUDIO_PLAYER_TIMEOUT_MS, buildBriefSystemPrompt, isOutsideActiveHours, playAudioFile, playSynthesizedAudio, resolveUserName, selectBriefOverdue, unscheduledTimesInBrief } from "./commands-brief.js";
+
+describe("buildBriefSystemPrompt — Phase 2+3 seam", () => {
+  const base = { greetingHint: "morning", hour: 8, knownUserName: undefined, minute: 5, personaPrompt: undefined, routineNote: "" };
+
+  it("anchors identity at position 0, then the brief role, then the cache boundary", () => {
+    const prompt = buildBriefSystemPrompt(base);
+    expect(prompt.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+    expect(prompt).toContain(SURFACE_ROLES.brief);
+    expect(prompt.indexOf(SURFACE_ROLES.brief)).toBeGreaterThan(prompt.indexOf(MUSE_IDENTITY_CORE));
+  });
+
+  it("carries the rendering rules and places dynamic content (greeting/name) after the cache boundary", () => {
+    const prompt = buildBriefSystemPrompt({ ...base, knownUserName: "Stark" });
+    expect(prompt).toContain("Compose a brief summary in 2–3 sentences");
+    expect(prompt).toContain("Plain text, no markdown, no bullet list, no JSON.");
+    const boundary = prompt.indexOf("<!-- MUSE_CACHE_BOUNDARY -->");
+    expect(boundary).toBeGreaterThan(-1);
+    expect(prompt.indexOf("It is currently morning")).toBeGreaterThan(boundary);
+    expect(prompt.indexOf('Address the user as "Stark".')).toBeGreaterThan(boundary);
+  });
+
+  it("never invents a name when none is on file", () => {
+    const prompt = buildBriefSystemPrompt(base);
+    expect(prompt).toContain("No name is on file for the user");
+    expect(prompt).not.toContain("Address the user as");
+  });
+
+  it("includes the routine note only when present", () => {
+    const withNote = buildBriefSystemPrompt({ ...base, routineNote: "User is OUTSIDE their typical active window." });
+    expect(withNote).toContain("OUTSIDE their typical active window");
+    expect(buildBriefSystemPrompt(base)).not.toContain("OUTSIDE their typical active window");
+  });
+});
 
 describe("selectBriefOverdue — the morning brief's OVERDUE heads-up (still actionable today)", () => {
   const now = new Date("2026-06-04T09:00:00Z");

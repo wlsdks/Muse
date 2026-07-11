@@ -15,7 +15,7 @@
  */
 
 import type { ModelMessage, ModelProvider, ModelRequest } from "@muse/model";
-import { composeIdentityPrompt } from "@muse/prompts";
+import { composeSurfacePrompt } from "@muse/prompts";
 import { redactSecretsInText } from "@muse/shared";
 
 export interface PatternSuggestionInput {
@@ -37,18 +37,7 @@ export interface SynthesizePatternSuggestionOptions {
   readonly temperature?: number;
 }
 
-const SUGGESTION_SYSTEM_PROMPT = composeIdentityPrompt(
-  `You noticed a RECURRING
-pattern in the user's own behavior and want to OFFER to help before being
-asked. Write ONE short, warm, first-person offer (one sentence, ≤ 160 chars)
-grounded STRICTLY in the facts given — name the real recurring thing and offer
-the next useful step. Rules:
-- Use ONLY the given facts. Invent NOTHING (no times/names/details not stated).
-- It's an OFFER, not an action ("…할까요?" / "want me to …?"), never "I did".
-- If the facts are too thin to make a genuinely useful, specific offer, output
-  exactly: NONE
-No preamble, no markdown, no quotes.`
-);
+const SUGGESTION_SYSTEM_PROMPT = composeSurfacePrompt("patternSuggestion", {});
 
 export async function synthesizePatternSuggestion(
   input: PatternSuggestionInput,

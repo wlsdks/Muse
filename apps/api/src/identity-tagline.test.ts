@@ -1,3 +1,4 @@
+import { MUSE_IDENTITY_CORE, SURFACE_ROLES } from "@muse/prompts";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,8 +8,25 @@ import {
   selectTagline,
   taglineIsGrounded,
   taglineIsWellFormed,
+  taglinePersona,
   taglineTemplates
 } from "./identity-tagline.js";
+
+describe("taglinePersona — Phase 2+3 seam", () => {
+  it("composes identity-core at position 0, then the lang persona, then the tagline role", () => {
+    for (const lang of ["ko", "en"] as const) {
+      const prompt = taglinePersona(lang);
+      expect(prompt.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+      expect(prompt).toContain(SURFACE_ROLES.tagline);
+      expect(prompt.indexOf(SURFACE_ROLES.tagline)).toBeGreaterThan(prompt.indexOf(MUSE_IDENTITY_CORE));
+    }
+  });
+
+  it("still carries the lang-specific voice flavor", () => {
+    expect(taglinePersona("ko")).toContain("파랑새");
+    expect(taglinePersona("en").toLowerCase()).toContain("bluebird");
+  });
+});
 
 describe("gatherIdentityFacts — only short, user-facing values become atoms", () => {
   it("collects short fact/preference/topic values, dedups, skips long ones", () => {

@@ -21,17 +21,12 @@ import {
   type GroundingReverify
 } from "@muse/agent-core";
 import { extractJsonObject } from "@muse/memory";
+import { composeSurfacePrompt } from "@muse/prompts";
 import { stripUntrustedTerminalChars } from "@muse/shared";
 
 import { recurringEpisodeThreads, type RecurringThread } from "./chat-ink-core.js";
 
-const CHAT_REFLECTION_SYSTEM =
-  "You are Muse reflecting on the user's PAST SESSIONS. From ONLY the session summaries and recurring topics given, write ONE short, useful observation a personal assistant would notice — a thread the user keeps returning to, an unresolved follow-up they mentioned, or a pattern across sessions. " +
-  "Output ONLY a JSON object, no prose: {\"insight\":\"<one sentence, second person, under 30 words>\"}. " +
-  "If there is no honest cross-session pattern, output {\"insight\":\"\"}. " +
-  "Ground EVERY word in the given summaries — never invent a fact, name, date, number, or topic that is not present. Prefer a recurring or unresolved thread over a one-off. " +
-  "Examples: summaries that mention the Q3 budget in three different sessions without resolving it → {\"insight\":\"You've come back to the Q3 budget across several sessions without closing it — want to make a plan?\"}; " +
-  "a single session about an unrelated one-off, or summaries with no shared thread → {\"insight\":\"\"}. Never fabricate a pattern to fill the field.";
+const CHAT_REFLECTION_SYSTEM = composeSurfacePrompt("chatReflect", {});
 
 export interface ReflectionEpisode {
   readonly endedAt: string;

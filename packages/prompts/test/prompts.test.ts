@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MUSE_CACHE_BOUNDARY_MARKER,
+  MUSE_IDENTITY_CORE,
+  SURFACE_ROLES,
   InMemoryPromptLayerRegistry,
   TODAY_BRIEF_SYSTEM_PROMPT,
   buildPlanningSystemPrompt,
@@ -202,13 +204,14 @@ describe("system prompt building", () => {
 });
 
 describe("buildPlanningSystemPrompt", () => {
-  it("includes role, available tools, output format, constraints, and user request sections", () => {
+  it("composes identity + the planning role, then available tools, output format, constraints, and user request", () => {
     const result = buildPlanningSystemPrompt({
       toolDescriptions: "- jira_get_issue: Fetch issue\n- confluence_search_by_text: Search docs",
       userPrompt: "Fix the onboarding bug"
     });
 
-    expect(result).toContain("[Role]");
+    expect(result.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
+    expect(result).toContain(SURFACE_ROLES.planning);
     expect(result).toContain("도구 호출 계획을 세우는 플래너");
     expect(result).toContain("[Available Tools]");
     expect(result).toContain("- jira_get_issue: Fetch issue");
@@ -220,34 +223,36 @@ describe("buildPlanningSystemPrompt", () => {
     expect(result).toContain("Fix the onboarding bug");
   });
 
-  it("orders sections deterministically: Role → Available Tools → Output Format → Constraints → User Request", () => {
+  it("orders sections deterministically: identity → planning role → cache boundary → Available Tools → Output Format → Constraints → User Request", () => {
     const result = buildPlanningSystemPrompt({
       toolDescriptions: "- a",
       userPrompt: "do thing"
     });
-    const expectedOrder = [
-      "[Role]",
+    const positions = [
+      MUSE_IDENTITY_CORE,
+      SURFACE_ROLES.planning,
+      MUSE_CACHE_BOUNDARY_MARKER,
       "[Available Tools]",
       "[Output Format]",
       "[Constraints]",
       "[User Request]"
-    ];
-    const positions = expectedOrder.map((section) => result.indexOf(section));
+    ].map((section) => result.indexOf(section));
     for (let index = 1; index < positions.length; index += 1) {
       expect(positions[index]).toBeGreaterThan(positions[index - 1] ?? -1);
     }
   });
 
-  it("prepends an optional base prompt before the planning sections", () => {
+  it("carries an optional base prompt between the planning role and the cache boundary", () => {
     const result = buildPlanningSystemPrompt({
       basePrompt: "You are a careful assistant.",
       toolDescriptions: "- a",
       userPrompt: "do thing"
     });
     const baseIndex = result.indexOf("You are a careful assistant.");
-    const roleIndex = result.indexOf("[Role]");
-    expect(baseIndex).toBeGreaterThanOrEqual(0);
-    expect(baseIndex).toBeLessThan(roleIndex);
+    const roleIndex = result.indexOf(SURFACE_ROLES.planning);
+    const boundaryIndex = result.indexOf(MUSE_CACHE_BOUNDARY_MARKER);
+    expect(baseIndex).toBeGreaterThan(roleIndex);
+    expect(baseIndex).toBeLessThan(boundaryIndex);
   });
 
   it("omits the base prompt section when an empty string is supplied", () => {
@@ -256,7 +261,7 @@ describe("buildPlanningSystemPrompt", () => {
       toolDescriptions: "- a",
       userPrompt: "do thing"
     });
-    expect(result.startsWith("[Role]")).toBe(true);
+    expect(result.startsWith(MUSE_IDENTITY_CORE)).toBe(true);
   });
 
   it("injects a [Similar Past Plan] exemplar before the user request (Agentic Plan Caching, arXiv 2506.14852)", () => {
@@ -273,6 +278,11 @@ describe("buildPlanningSystemPrompt", () => {
   it("omits the exemplar section when not provided (unchanged)", () => {
     const result = buildPlanningSystemPrompt({ toolDescriptions: "- a", userPrompt: "do thing" });
     expect(result).not.toContain("[Similar Past Plan]");
+  });
+
+  it("emits exactly one cache-boundary marker", () => {
+    const result = buildPlanningSystemPrompt({ toolDescriptions: "- a", userPrompt: "do thing" });
+    expect(result.split(MUSE_CACHE_BOUNDARY_MARKER).length - 1).toBe(1);
   });
 });
 

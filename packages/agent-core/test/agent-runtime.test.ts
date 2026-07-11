@@ -3231,7 +3231,7 @@ describe("AgentRuntime PlanExecute mode", () => {
     // {tool,args,description}[] array) so a structured provider is constrained
     // to a valid plan; parsePlan/extractJsonArray stays the fallback.
     expect(planningRequest?.responseFormat).toMatchObject({ type: "array", items: { type: "object", required: ["tool"] } });
-    expect(planningRequest?.messages.some((message) => message.role === "system" && message.content.includes("[Role]"))).toBe(true);
+    expect(planningRequest?.messages.some((message) => message.role === "system" && message.content.includes("도구 호출 계획을 세우는 플래너"))).toBe(true);
     const synthesisRequest = requests[1];
     expect(synthesisRequest?.tools).toEqual([]);
     expect(synthesisRequest?.messages.some((message) => message.role === "user" && message.content.includes("수집된 정보:"))).toBe(true);
