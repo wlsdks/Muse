@@ -10,6 +10,17 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Opt-in macOS sandbox for local command execution.** Set
+  `MUSE_RUNNER_SANDBOX=seatbelt` and every command Muse runs through the Rust
+  runner executes inside a macOS seatbelt profile: writes are confined to the
+  working directory, the temp dir, and known build caches (pnpm/npm/.cache);
+  sensitive paths like `~/.ssh` are write-protected; network is off unless the
+  caller opts a specific request in. Proven by real-process contract tests —
+  a legitimate build/git flow succeeds while write-escape, home-dir, and
+  network attempts are denied by the OS. Unset, behavior is byte-identical to
+  before (the sandbox is strictly opt-in); on non-macOS the runner warns and
+  runs unsandboxed. `muse doctor` now reports the sandbox posture.
+
 - **Post-compaction loop guard.** When the agent's context is compacted
   mid-run (old turns summarized away), a stuck small model could keep
   re-issuing the exact same tool call — the compaction failed to break the

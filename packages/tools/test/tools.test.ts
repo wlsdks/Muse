@@ -795,6 +795,34 @@ describe("Rust runner watchdog", () => {
     expect(() => writeRunnerStdin(child, { command: "noop" })).not.toThrow();
   });
 
+  it("writeRunnerStdin serializes allowNetwork when the caller set it", async () => {
+    const { PassThrough } = await import("node:stream");
+    const stdin = new PassThrough();
+    const child = { stdin } as unknown as Parameters<typeof writeRunnerStdin>[0];
+
+    writeRunnerStdin(child, { allowNetwork: true, command: "curl" });
+
+    const buffered: Buffer[] = [];
+    stdin.on("data", (chunk: Buffer) => buffered.push(chunk));
+    await new Promise<void>((resolve) => { stdin.once("end", () => resolve()); });
+    const text = Buffer.concat(buffered).toString("utf8");
+    expect(text).toContain(`"allowNetwork":true`);
+  });
+
+  it("writeRunnerStdin omits allowNetwork when the caller never set it (no unrequested network opt-in)", async () => {
+    const { PassThrough } = await import("node:stream");
+    const stdin = new PassThrough();
+    const child = { stdin } as unknown as Parameters<typeof writeRunnerStdin>[0];
+
+    writeRunnerStdin(child, { command: "curl" });
+
+    const buffered: Buffer[] = [];
+    stdin.on("data", (chunk: Buffer) => buffered.push(chunk));
+    await new Promise<void>((resolve) => { stdin.once("end", () => resolve()); });
+    const text = Buffer.concat(buffered).toString("utf8");
+    expect(text).not.toContain("allowNetwork");
+  });
+
   it("attachReadStreamErrorAbsorber registers a no-op `error` listener so an OS-level pipe error (kernel pipe corruption, sandbox tear-down mid-read) on child.stdout / child.stderr doesn't crash the parent — sibling-pattern to the stdin EPIPE absorber, applied to the read side", async () => {
     const { PassThrough } = await import("node:stream");
 
@@ -871,6 +899,25 @@ describe("invokeRustRunner — runner output trust boundary", () => {
   it("falls back to a typed `runner returned invalid JSON` failure when stdout is not JSON (never throws)", async () => {
     const result = await invokeRustRunner(await fakeRunner("not json at all"), { command: "x" });
     expect(result).toMatchObject({ error: "runner returned invalid JSON", ok: false, status: null, stdout: "not json at all", timedOut: false });
+  });
+
+  it("picks up sandboxWarning when the runner surfaces one", async () => {
+    const result = await invokeRustRunner(
+      await fakeRunner(JSON.stringify({ ok: true, sandboxWarning: "seatbelt unsupported here — ran unsandboxed" })),
+      { command: "x" }
+    );
+    expect(result.sandboxWarning).toBe("seatbelt unsupported here — ran unsandboxed");
+  });
+
+  it("tolerates a runner response that omits sandboxWarning (no key on the parsed result)", async () => {
+    const result = await invokeRustRunner(await fakeRunner(JSON.stringify({ ok: true })), { command: "x" });
+    expect(result.sandboxWarning).toBeUndefined();
+    expect(result).not.toHaveProperty("sandboxWarning");
+  });
+
+  it("ignores a wrong-typed sandboxWarning field", async () => {
+    const result = await invokeRustRunner(await fakeRunner(JSON.stringify({ ok: true, sandboxWarning: 42 })), { command: "x" });
+    expect(result.sandboxWarning).toBeUndefined();
   });
 });
 
@@ -957,6 +1004,11 @@ describe("Rust runner tool", () => {
 
   it("rejects blank runner commands before spawning the child process", () => {
     expect(() => parseRunnerCommandRequest({ command: " " })).toThrow("run_command requires");
+  });
+
+  it("never grants the model network access — a model-supplied allowNetwork field is dropped, not passed through", () => {
+    const req = parseRunnerCommandRequest({ allowNetwork: true, command: "curl" } as never);
+    expect(req).not.toHaveProperty("allowNetwork");
   });
 
   it("clamps a model-supplied timeout / output cap to a sane maximum (no 11-day hang / memory blow-up)", () => {

@@ -751,8 +751,8 @@ delta-scout 주기에.
 
 #### W1 — 원칙 갭 (보안·루프이탈·PID)
 - [x] **D2-S1a** ✅ 2026-07-11 seatbelt SBPL 프로파일 생성기(`build_seatbelt_profile`+`escape_sbpl_string`, 순수·미배선) — deny-default·file-read* broad·write는 cwd/$TMPDIR/pnpm·npm·cache만·network opt-in; 인젝션 이스케이프 Fable 검증. 26 test(12신규)·clippy clean. ⏭️b에서 배선
-- [ ] **D2-S1b** 🔒 runner `MUSE_RUNNER_SANDBOX=seatbelt` 배선 + 실프로세스 탈출 3종 계약 테스트 ⚠(정당명령 오탐 목록 → VQ-9)
-- [ ] **D2-S1c** 🔒 비-macOS "unsupported+경고" 폴백 + `muse doctor` 포스처 체크
+- [x] **D2-S1b** ✅ 2026-07-11 🔒 runner `MUSE_RUNNER_SANDBOX=seatbelt` 배선(`spawn_plan`→`sandbox-exec -p`) + 실프로세스 탈출 3종 계약 테스트(cwd밖 write·~/.ssh write·network fail-close + allowNetwork opt-in, 정당명령 git/sh/node 통과). 실기기 발견 2건 반영: ①프로파일 경로 **canonicalize 필수**(/var→/private/var 심링크, 미해결시 전면 거부) ②`/dev/null`+`/dev/dtracehelper` write-data allowance 없으면 git 전멸 → 추가(+`/private/tmp` subpath). 미설정 byte-identical(스폰플랜 passthrough+`sandboxWarning` skip-serialize), canonicalize 실패 fail-close. allowNetwork는 caller-only(모델 tool-args에서 차단, 네거티브 테스트). 38 rust test(계약4·mutation-RED 검증)·clippy clean·평가자 PASS(maker≠judge)
+- [x] **D2-S1c** ✅ 2026-07-11 (S1b에 합류 배송) 비-macOS `RequestedUnsupported` 폴백(비샌드박스 실행+`sandboxWarning` 표면화, 유닛테스트) + `muse doctor` `runnerSandboxPostureCheck` 3-way(off/ok·darwin active/ok·비darwin warn)
 - [ ] **D2-S1d** 📈 eval:adversarial에 sandbox-탈출 케이스 추가(→ D2-S7과 합류 가능)
 - [ ] **D2-S2** 🔒⚠ 셸 토폴로지 패스(치환/heredoc/eval 감지→승인 강등) + 우회·near-miss 쌍
 - [ ] **D1-S1** ⚠ ping-pong+휘발성ID 스트리핑 루프감지(창20/warn6/block10) + 진짜-진행 통과 유닛 + unknown-tool 감지 병합

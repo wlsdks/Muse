@@ -26,6 +26,12 @@ export interface RunnerCommandRequest {
   readonly env?: Readonly<Record<string, string>>;
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
+  /**
+   * Opt into network access under the seatbelt sandbox (`MUSE_RUNNER_SANDBOX=seatbelt`).
+   * Caller-controlled ONLY — never read from model tool-args in
+   * `parseRunnerCommandRequest`, so the model can never grant itself network access.
+   */
+  readonly allowNetwork?: boolean;
 }
 
 export interface RunnerCommandResponse {
@@ -38,6 +44,8 @@ export interface RunnerCommandResponse {
   readonly error: string | null;
   /** TX-11: deterministic failure category, present only on a failed result. */
   readonly failureKind?: RunnerFailureKind;
+  /** Set when `MUSE_RUNNER_SANDBOX=seatbelt` was requested but this platform can't honor it. */
+  readonly sandboxWarning?: string;
 }
 
 export interface RustRunnerToolOptions {
@@ -276,7 +284,8 @@ function parseRunnerResponse(value: string): RunnerCommandResponse | undefined {
       stderr: typeof parsed.stderr === "string" ? parsed.stderr : "",
       stdout: typeof parsed.stdout === "string" ? parsed.stdout : "",
       timedOut: parsed.timedOut === true,
-      truncated: parsed.truncated === true
+      truncated: parsed.truncated === true,
+      ...(typeof parsed.sandboxWarning === "string" ? { sandboxWarning: parsed.sandboxWarning } : {})
     };
   } catch {
     return undefined;
