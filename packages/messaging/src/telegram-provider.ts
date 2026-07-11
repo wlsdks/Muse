@@ -205,6 +205,35 @@ export class TelegramProvider implements MessagingProvider {
     }
   }
 
+  /**
+   * Emoji reaction on an inbound message — the closest the Bot API
+   * offers to a read receipt (there is no mark-as-read for normal
+   * bots). Telegram accepts only its fixed reaction-emoji set; an
+   * out-of-set emoji fails upstream and the caller treats it as
+   * cosmetic.
+   */
+  async reactToMessage(destination: string, messageId: string, emoji: string): Promise<void> {
+    const response = await fetchWithTimeout(this.fetchImpl, `${this.baseUrl}/bot${this.token}/setMessageReaction`, {
+      body: JSON.stringify({
+        chat_id: destination,
+        message_id: Number(messageId),
+        reaction: [{ emoji, type: "emoji" }]
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST"
+    }, this.timeoutMs);
+    const text = await response.text();
+    const parsed = tryParseJson<TelegramSendResponse>(text);
+    if (!response.ok || !parsed?.ok) {
+      throw new MessagingProviderError(
+        this.id,
+        "UPSTREAM_FAILED",
+        `Telegram setMessageReaction failed: ${parsed?.description ?? (truncateErrorBody(text) || response.statusText)}`,
+        response.status
+      );
+    }
+  }
+
   async send(message: OutboundMessage): Promise<OutboundReceipt> {
     // Clamp the SOURCE so the ESCAPED text Telegram receives stays
     // within its 4096 limit — escaping (MarkdownV2 \-escapes / HTML

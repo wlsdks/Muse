@@ -43,6 +43,12 @@ export interface TelegramPollOptions {
   readonly relaunchDelayMs?: number;
   /** Fires after a poll that ingested >0 messages — lets the reply daemon run immediately. */
   readonly onIngested?: (count: number) => void;
+  /**
+   * Emoji reaction fired on each ingested message — the "seen" signal
+   * (Bot API has no read receipts). Cosmetic: a reaction failure never
+   * blocks ingestion. Empty/undefined disables.
+   */
+  readonly ackReaction?: string;
   readonly logger?: (message: string) => void;
   readonly errorLogger?: (message: string) => void;
 }
@@ -77,6 +83,11 @@ export function startTelegramPollTick(options: TelegramPollOptions): TelegramPol
       }
       for (const message of inbound) {
         await appendInbound(options.inboxFile, message);
+        if (options.ackReaction) {
+          void options.provider
+            .reactToMessage(message.source, message.messageId, options.ackReaction)
+            .catch(() => undefined);
+        }
       }
       options.logger?.(`telegram-poll: ingested ${inbound.length.toString()} message(s)`);
       options.onIngested?.(inbound.length);

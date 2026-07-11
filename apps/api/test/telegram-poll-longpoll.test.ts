@@ -98,3 +98,40 @@ describe("startTelegramPollTick long-poll mode", () => {
     expect(calls).toBe(after);
   });
 });
+
+describe("startTelegramPollTick ack reaction", () => {
+  it("reacts to each ingested message and a reaction failure never blocks ingestion", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tg-ack-"));
+    const reactions: string[] = [];
+    let calls = 0;
+    const provider = {
+      pollUpdates: async () => {
+        calls += 1;
+        return calls === 1 ? [makeMessage("1"), makeMessage("2")] : [];
+      },
+      reactToMessage: async (source: string, messageId: string, emoji: string) => {
+        reactions.push(`${source}:${messageId}:${emoji}`);
+        if (messageId === "2") {
+          throw new Error("REACTION_INVALID");
+        }
+      }
+    } as unknown as TelegramProvider;
+
+    const ingests: number[] = [];
+    const handle = startTelegramPollTick({
+      ackReaction: "👀",
+      inboxFile: join(dir, "inbox.json"),
+      longPollSeconds: 25,
+      onIngested: (count) => {
+        ingests.push(count);
+      },
+      provider,
+      relaunchDelayMs: 5
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    handle.stop();
+
+    expect(reactions).toEqual(["999:1:👀", "999:2:👀"]);
+    expect(ingests).toEqual([2]);
+  });
+});
