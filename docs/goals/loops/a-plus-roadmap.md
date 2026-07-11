@@ -36,3 +36,11 @@ ratchet: 로드맵 잔여 [ ] = 28/32 · self-eval pass · fabrication 0 · agen
 - 리뷰지점: 오탐이 최대 리스크(정당 다단계를 루프로 오인해 abort) → 유닛(genuine progress/stall/3-cycle=none)+Opus 독립 false-positive 배터리+model-loop 2841 green로 검증. id-strip이 args는 보존해 distinct-arg 병합 안 함(Opus 확인). mutation-RED 양방향(교대조건·volatile strip).
 - 리스크: eval:computer-task가 ambient GEMINI_API_KEY로 Gemini 하이재킹(VQ-17, eval 정책위반) → MUSE_LOCAL_ONLY=true로 local-forced 재실행 시 PASS(1/1, add-works·multiply-intact·no-collateral, 실 다단계작업이 가드 하에 false-abort 없이 완료). 가드는 10-deep A↔B에서만 abort라 정당작업 불발현.
 lesson: "LOCAL OLLAMA ONLY" eval이 실제로 로컬 강제를 안 하면 ambient 클라우드 키에 하이재킹됨 — eval 스크립트는 MUSE_LOCAL_ONLY/MUSE_DEFAULT_MODEL을 명시 강제해야(VQ-17).
+
+## fire 5 · 2026-07-11 · skill v2.x · <commit-pending>
+meta: slice=D2-S6a · wave=W1 · pkg=@muse/tools+apps/cli · kind=security-ux · verdict=PASS · firesSinceDrill=5
+ratchet: 로드맵 잔여 [ ] = 27/33 · self-eval pass · fabrication 0 · risky-token 13 test 신규
+- 무엇: 승인 프롬프트 위험-토큰 하이라이트. 순수 identifyRiskyTokens(파괴 플래그·민감경로·명령위치 파괴동사, DS-2 위험어휘 재사용, 토큰-레벨)+emphasizeRiskyTokens(TRUSTED ANSI bold-red)를 chatToolApprovalGate detail에 배선(summarizeToolArgs redact+strip 뒤에만).
+- 왜: DS-2는 파국명령만 코드거부하고 routine-risky(rm -rf ./build 등)는 통과시킴 — 사람이 승인할 때 위험부위를 눈에 띄게(informed consent). openclaw exec-approval span 참조.
+- 리뷰지점: 오탐(과다 하이라이트→무시학습)이 최대 UX 리스크 → false-positive 배터리(ls·echo·따옴표 속 rm·~/Documents·/tmp/x 전부 []) + Opus 독립 검증. redact 뒤 하이라이트라 시크릿 노출 없음. ESC는 escaped \x1b(raw 바이트 아님, byte-hygiene 안전).
+- 리스크: -rf가 비-rm(grep -rf)에도 하이라이트되는 bounded over-flag이나 advisory(비차단)+흔한 안전명령 미발현이라 Opus가 허용. b(스테이징)는 no-external-effect 계약 필요라 별도.

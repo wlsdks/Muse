@@ -24,7 +24,7 @@ import {
 import { type FrameName } from "@muse/mascot";
 import { classifyProviderLocality, type ProviderLocality } from "@muse/model";
 import { clamp, redactSecretsInText, stripUntrustedTerminalChars } from "@muse/shared";
-import { classifyCommandTopology } from "@muse/tools";
+import { classifyCommandTopology, emphasizeRiskyTokens } from "@muse/tools";
 
 import { needsContextualRewrite, type ChatGrounding } from "./chat-grounding.js";
 import { MUSE_TAGLINE } from "./muse-identity.js";
@@ -586,10 +586,14 @@ export function chatToolApprovalGate(
     if (risk === "read" && (topology === undefined || topology.analyzable)) return { allowed: true };
 
     const kind: ApprovalKind = outbound.includes(toolCall.name) ? "outbound" : "tool";
+    // `summarizeToolArgs` already stripped untrusted terminal chars and
+    // redacted secrets — the ANSI emphasis is TRUSTED styling added AFTER
+    // that, so it never re-introduces an untrusted control byte.
+    const summary = emphasizeRiskyTokens(summarizeToolArgs(toolCall.arguments));
     const detail =
       topology && !topology.analyzable
-        ? `⚠ un-inspectable shell construction (${topology.construct ?? "un-analyzable"}) — its real command can't be checked automatically. ${summarizeToolArgs(toolCall.arguments)}`
-        : summarizeToolArgs(toolCall.arguments);
+        ? `⚠ un-inspectable shell construction (${topology.construct ?? "un-analyzable"}) — its real command can't be checked automatically. ${summary}`
+        : summary;
     const approved = await ask(toolCall.name, detail, kind);
     if (approved) return { allowed: true };
     return { allowed: false, reason: `user declined the ${kind === "outbound" ? "outbound action" : "tool call"}` };
