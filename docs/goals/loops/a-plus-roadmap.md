@@ -271,3 +271,12 @@ ratchet: 로드맵 잔여 [ ] = 27/63(D4-S2d 밝기 분리 +1, d 체크 -1) · s
 - 리뷰지점: Opus PASS — 이름 해소 정확(bluetooth_off→off shortcut, override 우선)·setup message가 focus 아닌 Bluetooth·shortcut argv라 shell 인젝션 없음·doctor check 완전 배선(focus 옆 별개 check, focus test 무영향)+ok/warn/undefined/override 테스트·mutation-RED(이름 무력화→override/off RED)·additionalProperties 유지·docs:env.
 - 리스크: 낮음. eval:tools 로컬셋 heavy timeout(가산 enum). 다음 = D4-S2e(Apple 연락처 '쓰기' draft-first 게이트 — 이건 write toward 사람 아닌 로컬 store지만 outbound-safety 근접이라 신중).
 - lesson: 서브에이전트가 "off-scope 파일 회피"로 함수만 만들고 미배선 남기면 dead code=드릴 결함 클래스 → 오케스트레이터가 배선+테스트로 마감. 별개 함수를 별개 check로 배선하면 기존 pinned test 무영향(확장이 아니라 병렬 추가).
+
+## fire 33 · 2026-07-12 · skill v2.x · c5e6dab25
+meta: slice=BASELINE-REPAIR(foreign) · wave=W3 · pkg=@muse/shared+docs · kind=baseline-repair · verdict=PASS · firesSinceDrill=7
+ratchet: 로드맵 잔여 [ ] = 27/63(무변, 슬라이스 없음) · self-eval 회복(lint+envInventory FOREIGN-fail→green) · fabrication 0
+- 무엇: ① 기준선 non-zero(lint:fail+envInventory:fail 둘 다 FOREIGN) → 규칙대로 회귀 수리가 이번 fire 전부(새 슬라이스 금지). (1) 동시 secret-detection 루프가 secret-patterns.ts에 char-class 내 불필요 `\/` escape 3개+test unused findSecrets import 커밋(no-useless-escape/no-unused-vars) → `\/`→`/`(char class서 동일)·import 제거, secret 72 test green(동작 불변). (2) Windows 루프가 MUSE_WINDOWS_ACTUATORS를 docs:env 없이 추가 → docs:env resync.
+- 왜: 두 회귀가 repo-wide lint(0/0)+envInventory 게이트를 막아 내 진행도 차단(공유 baseline). 트리 clean(미커밋 foreign 0)이라 committed 에러 수리 안전. ①이 "non-zero면 회귀 수리가 fire 전부" 명시.
+- 리뷰지점: regex 동작 불변(char class 내 `\/`≡`/`) 72 test로 확인·docs:env는 생성물·내 파일 3개만 격리 커밋. Opus 게이트 불요(피처 변경 0, 결정론 수리).
+- 리스크: 낮음. foreign src(secret-patterns.ts) 편집이나 committed lint 수리(피처 로직 무접촉)+트리 clean이라 충돌 위험 낮음. 동시 루프가 같은 줄 재수정 시 git merge. 다음 = D4-S2e(Apple 연락처 draft-first) — baseline green 회복됐으니 재개.
+- lesson: repo-wide 게이트(lint/envInventory) FOREIGN-fail이 지속되면 내 슬라이스 게이트도 막히므로 baseline-repair fire로 일회 수리(피처 로직 무접촉 트리비얼 수리+생성물 sync만) — 단 foreign 활성-churn src는 여전히 회피, committed-정적 에러만.
