@@ -88,7 +88,7 @@ ratchet: 로드맵 잔여 [ ] = 22/36 · self-eval pass · fabrication 0 · agen
 - 리뷰지점: Opus가 주석-only(로직 무변경)·행동락 양방향(선언-only 아님, drill이 방금 그 실패모드 잡음)·mutation-RED(스텝을 각 예산으로→toolsUsed 길이3 RED)·주석정확성 trace 확인.
 - 리스크: 없음(기존 동작 락, 무변경). 유저-가시 변화 0이라 CHANGELOG 생략(정직). 다음 D1-S5b2=서브에이전트 하위예산(신규 plumbing).
 
-## fire 11 · 2026-07-11 · skill v2.x · <commit-pending>
+## fire 11 · 2026-07-11 · skill v2.x · 2341ec4fb
 meta: slice=D1-S5b2 · wave=W2 · pkg=@muse/multi-agent+apps/cli · kind=budget-isolation · verdict=PASS · firesSinceDrill=2
 ratchet: 로드맵 잔여 [ ] = 21/36 · self-eval pass · fabrication 0 · multi-agent+cli 29 test(신규+배선)
 - 무엇: 서브에이전트 별도 하위예산. 순수 resolveSubAgentToolBudget(부모→max(3,floor(부모×0.5)), uncapped→5, 워커 항상 cap) + ask-decompose 워커 execute에 shallow-override 배선(부모 상속 대신 sub-budget). synthesize/planner는 부모예산 유지. D1-S5 완료(b1+b2).
