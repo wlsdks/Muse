@@ -1,7 +1,7 @@
 import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { defaultPowerShellRunner, POWERSHELL_TIMEOUT_MS, type WinPowerShellRunner } from "./windows-exec.js";
+import { defaultPowerShellRunner, POWERSHELL_TIMEOUT_MS } from "./windows-exec.js";
 import type { WindowsToolDeps } from "./windows-app-open-tool.js";
 
 export const WIN_APP_READ_SOURCES = ["battery", "wifi", "storage", "frontmost"] as const;
