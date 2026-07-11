@@ -25,6 +25,12 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   built-in command for it, this runs a small Shortcut you set up once (Muse tells
   you exactly how if it's missing), and `muse doctor` flags whether it's ready.
 
+- **`muse setup cloud` now explains privacy routing.** After wiring a cloud
+  model, the wizard tells you how to turn on privacy-tiered routing so only
+  context-free questions use the cloud while anything personal stays on your
+  local model. Colloquial Korean possessives like "내꺼 일정", "제꺼 노트" are
+  now correctly treated as personal, so they stay local when routing is on.
+
 - **Toggle Mac Dark Mode by asking.** "turn on dark mode" / "다크모드 켜줘" now
   switches macOS between dark and light appearance.
 
