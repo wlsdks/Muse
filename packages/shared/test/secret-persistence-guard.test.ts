@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findSecrets, guardSecretPersistence } from "../src/index.js";
+import { SECRET_PATTERNS, findSecrets, findSecretsForGuard, guardSecretPersistence } from "../src/index.js";
 
 describe("findSecrets / guardSecretPersistence — deterministic secret detection", () => {
   it("detects an explicit KO password label bound to a value (the live-probe repro)", () => {
@@ -58,7 +58,31 @@ describe("findSecrets / guardSecretPersistence — deterministic secret detectio
   });
 
   it("findSecrets exposes the raw matches (kind + value) for callers that need detail", () => {
-    const matches = findSecrets("token: abc12345");
+    const matches = findSecretsForGuard("token: abc12345");
     expect(matches.some((m) => m.kind === "credential-label" && m.value.includes("abc12345"))).toBe(true);
+  });
+});
+
+describe("credential-label over-block regression (adversarial gate FAIL #2/#3)", () => {
+  it("does NOT block ordinary text where a keyword is followed by a plain English word", () => {
+    for (const ordinary of [
+      "the secret ingredient is patience",
+      "Reset my password tomorrow morning",
+      "Ask IT about api key provisioning process",
+      "회의록: password rotation policy 논의함",
+      "Write down the token exchange sequence diagram"
+    ]) {
+      expect(guardSecretPersistence(ordinary).safe).toBe(true);
+    }
+  });
+
+  it("STILL blocks a real labeled credential (value has a digit/symbol or vendor shape)", () => {
+    expect(guardSecretPersistence("내 비밀번호는 hunter2야").safe).toBe(false);
+    expect(guardSecretPersistence("password: p@ssw0rd!").safe).toBe(false);
+    expect(guardSecretPersistence("api key sk-abc123def456ghi").safe).toBe(false);
+  });
+
+  it("the fuzzy credential-label pattern is NOT in the shared masker list (redactor must stay high-precision)", () => {
+    expect(SECRET_PATTERNS.some((p) => p.name === "credential-label")).toBe(false);
   });
 });

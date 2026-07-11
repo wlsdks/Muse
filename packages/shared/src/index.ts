@@ -11,7 +11,7 @@ export {
   registerSecretValue
 } from "./secret-redaction.js";
 
-export { findSecrets, type SecretMatch } from "./secret-patterns.js";
+export { findSecrets, findSecretsForGuard, SECRET_PATTERNS, GUARD_ONLY_PATTERNS, type SecretMatch } from "./secret-patterns.js";
 
 export {
   guardSecretPersistence,

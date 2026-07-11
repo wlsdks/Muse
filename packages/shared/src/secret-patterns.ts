@@ -95,10 +95,6 @@ export const SECRET_PATTERNS: ReadonlyArray<{ readonly name: string; readonly re
   // as a label (remember_fact's `key`/`value` are separate params the guard
   // recombines as "<key> <value>"). Hangul isn't a JS `\w`/letter char either
   // way, so the Korean alternatives need no such guard.
-  {
-    name: "credential-label",
-    regex: /(?:(?<![A-Za-z])(?:password|passphrase|api[ _-]?key|secret|token)(?![A-Za-z])|비밀번호|암호|패스워드|비번|토큰|시크릿)\s*(?:은|는|이|가|을|를)?\s*(?:is|are|[:=])?\s*["'`]?((?:(?=[A-Za-z0-9!@#$%^&*()_+.-]*\d)[A-Za-z0-9!@#$%^&*()_+.-]{3,}|[A-Za-z]{8,}))["'`]?/giu
-  }
 ];
 
 export interface SecretMatch {
@@ -119,6 +115,35 @@ export function findSecrets(text: string): readonly SecretMatch[] {
   }
   const found: SecretMatch[] = [];
   for (const { name, regex } of SECRET_PATTERNS) {
+    for (const match of text.matchAll(regex)) {
+      found.push({ kind: name, value: match[0] });
+    }
+  }
+  return found;
+}
+
+/**
+ * Patterns used ONLY by the persistence guard, never by `redactSecretsInText`
+ * (the masker must stay high-precision — it rewrites persisted memory/history).
+ * A label followed by a value that is NOT a plain English word: the value must
+ * carry a digit or symbol, or be a vendor-shaped token. This is why
+ * "the secret ingredient is patience" / "reset my password tomorrow" do NOT
+ * match, but "비밀번호는 hunter2" / "password: p@ss!" do.
+ */
+export const GUARD_ONLY_PATTERNS: ReadonlyArray<{ readonly name: string; readonly regex: RegExp }> = [
+  {
+    name: "credential-label",
+    regex: /(?:(?<![A-Za-z])(?:password|passphrase|api[ _-]?key|secret|token)(?![A-Za-z])|비밀번호|암호|패스워드|비번|토큰|시크릿)\s*(?:은|는|이|가|을|를)?\s*(?:is|are|[:=])?\s*["'`]?((?=[A-Za-z0-9!@#$%^&*()_+.\/-]*[\d!@#$%^&*()_+.\/])[A-Za-z0-9!@#$%^&*()_+.\/-]{3,})["'`]?/giu
+  }
+];
+
+/** Guard-side scan: the shared masker patterns PLUS the guard-only ones. */
+export function findSecretsForGuard(text: string): readonly SecretMatch[] {
+  if (typeof text !== "string" || text.length === 0) {
+    return [];
+  }
+  const found: SecretMatch[] = [...findSecrets(text)];
+  for (const { name, regex } of GUARD_ONLY_PATTERNS) {
     for (const match of text.matchAll(regex)) {
       found.push({ kind: name, value: match[0] });
     }

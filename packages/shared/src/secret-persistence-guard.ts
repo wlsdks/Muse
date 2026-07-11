@@ -1,4 +1,4 @@
-import { findSecrets } from "./secret-patterns.js";
+import { findSecretsForGuard } from "./secret-patterns.js";
 
 /**
  * Fail-close gate for any tool that persists user-authored free text to an
@@ -43,7 +43,7 @@ export function guardSecretPersistence(text: string): SecretPersistenceGuardResu
   if (typeof text !== "string" || text.length === 0) {
     return { safe: true };
   }
-  const matches = findSecrets(text);
+  const matches = findSecretsForGuard(text);
   if (matches.length === 0) {
     return { safe: true };
   }
