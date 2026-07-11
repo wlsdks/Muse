@@ -19,7 +19,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { createGateEmbedder, createKnowledgeEnricher, createOllamaEmbedder, parseBoolean, resolveActionLogFile, resolveContactsFile, resolveLearningPauseFile, resolvePlaybookFile, resolveSuppressedLessonsFile } from "@muse/autoconfigure";
+import { createGateEmbedder, createKnowledgeEnricher, createOllamaEmbedder, parseBoolean, parseNonNegativeInteger, resolveActionLogFile, resolveContactsFile, resolveDigestQueueFile, resolveInterruptionLedgerFile, resolveLearningPauseFile, resolvePlaybookFile, resolveSuppressedLessonsFile } from "@muse/autoconfigure";
 import { createCachingEmbedder } from "@muse/agent-core";
 import type { FastifyInstance } from "fastify";
 
@@ -203,6 +203,7 @@ export function startFollowupDaemonIfConfigured(
     errorLogger: (message) => server.log.warn(message),
     followupsFile: options.followupsFile,
     ...(followupTickMsRaw !== undefined ? { intervalMs: followupTickMsRaw } : {}),
+    interruptionBudget: resolveInterruptionBudgetWiring(env),
     logger: (message) => server.log.info(message),
     ...(followupMaxPerTickRaw !== undefined ? { maxPerTick: followupMaxPerTickRaw } : {}),
     model: options.defaultModel,
@@ -428,6 +429,7 @@ export function startPatternDaemonIfConfigured(
   const patternHandle = startPatternTick({
     destination: patternDestination,
     errorLogger: (message) => server.log.warn(message),
+    interruptionBudget: resolveInterruptionBudgetWiring(env),
     logger: (message) => server.log.info(message),
     ...(options.tasksFile ? { tasksFile: options.tasksFile } : {}),
     ...(options.notesDir ? { notesDir: options.notesDir } : {}),
@@ -575,6 +577,7 @@ export function startAmbientDaemonIfConfigured(
   const handle = startAmbientTick({
     destination,
     errorLogger: (message) => server.log.warn(message),
+    interruptionBudget: resolveInterruptionBudgetWiring(env),
     logger: (message) => server.log.info(message),
     providerId,
     registry,
@@ -664,6 +667,31 @@ export function resolveProactiveSidecarFile(env: NodeJS.ProcessEnv): string {
   const sysHome = homedir().trim();
   if (sysHome.length > 0) return `${sysHome}/.muse/proactive-fired.json`;
   throw new Error("Cannot resolve home directory for proactive sidecar file — set MUSE_PROACTIVE_SIDECAR_FILE or HOME (refusing to default to filesystem root)");
+}
+
+const DEFAULT_INTERRUPTION_HOURLY_CAP = 2;
+const DEFAULT_INTERRUPTION_DAILY_CAP = 6;
+
+/**
+ * The shared interruption budget every UNASKED notice daemon (pattern /
+ * ambient / followup) opts into. Always returned (never gated behind its
+ * own enabled flag) so a delivery is ledgered even when both caps are
+ * disabled (`<= 0` → unlimited, per `withinInterruptionBudget`) — the
+ * ledger stays the single source of truth for "what did Muse actually
+ * push, unasked" regardless of whether the cap is currently enforcing.
+ */
+export function resolveInterruptionBudgetWiring(env: NodeJS.ProcessEnv): {
+  readonly ledgerFile: string;
+  readonly digestFile: string;
+  readonly hourlyCap: number;
+  readonly dailyCap: number;
+} {
+  return {
+    dailyCap: parseNonNegativeInteger(env.MUSE_INTERRUPTION_DAILY_CAP, DEFAULT_INTERRUPTION_DAILY_CAP),
+    digestFile: resolveDigestQueueFile(env),
+    hourlyCap: parseNonNegativeInteger(env.MUSE_INTERRUPTION_HOURLY_CAP, DEFAULT_INTERRUPTION_HOURLY_CAP),
+    ledgerFile: resolveInterruptionLedgerFile(env)
+  };
 }
 
 export function resolveProactiveTrustFile(env: NodeJS.ProcessEnv): string {

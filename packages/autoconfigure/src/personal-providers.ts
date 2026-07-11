@@ -64,6 +64,8 @@ export {
   resolveFollowupLlmBudgetFile,
   resolveFollowupsFile,
   resolveInboxInjectionCursorFile,
+  resolveInterruptionLedgerFile,
+  resolveDigestQueueFile,
   resolvePatternsFiredFile,
   resolveRecallHitsFile,
   resolveCheckinsFile,

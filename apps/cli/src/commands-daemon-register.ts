@@ -21,9 +21,12 @@ import {
   decayContradictedStrategies,
   distillQueuedCorrections,
   parseBoolean,
+  parseNonNegativeInteger,
   resolveContactsFile,
+  resolveDigestQueueFile,
   resolveEpisodesFile,
   resolveFollowupsFile,
+  resolveInterruptionLedgerFile,
   resolveLearningPauseFile,
   resolveActionLogFile,
   resolveNotesDir,
@@ -44,7 +47,7 @@ import { FileUserMemoryStore } from "@muse/memory";
 import type { PatternMatch } from "@muse/memory";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import { formatBirthdayBriefLine, queryContacts, resolveUpcomingBirthdays, readEpisodes, resolveLearnQueueFile, decayStalePlaybookRewards, isLearningPaused, queryActionLog, queryPlaybook, readReminders, readTasks, recordPlaybookStrategy, removePlaybookStrategy, readProactiveHistory, readRecallHits, writeFadedMemoryKeys } from "@muse/stores";
-import { createAmbientNoticeRunner, createMessagingObjectiveActuator, createModelObjectiveEvaluator, createProposingObjectiveActuator, createWebWatchRunner, deriveBriefingImminent, deriveCalendarBriefingImminent, FileAmbientSignalSource, gateProactiveNoticeSink, isQuietHour, parseQuietHours, MacOsActiveWindowSource, parseAmbientNoticeRules, runDueBackgroundExitNotices, runDueCheckins, runDueFollowups, runDueObjectives, runDuePatternNotices, runDueProactiveNotices, runDueReminders, webWatchesFromConfig, type AmbientNoticeRunner, type BriefingCalendarLister, type ChromeSnapshotConnection, type ProactiveNoticeSink, type WebWatchRunner } from "@muse/proactivity";
+import { createAmbientNoticeRunner, createMessagingObjectiveActuator, createModelObjectiveEvaluator, createProposingObjectiveActuator, createWebWatchRunner, deriveBriefingImminent, deriveCalendarBriefingImminent, FileAmbientSignalSource, gateProactiveNoticeSink, isQuietHour, parseQuietHours, MacOsActiveWindowSource, parseAmbientNoticeRules, runDueBackgroundExitNotices, runDueCheckins, runDueFollowups, runDueObjectives, runDuePatternNotices, runDueProactiveNotices, runDueReminders, webWatchesFromConfig, type AmbientNoticeRunner, type BriefingCalendarLister, type ChromeSnapshotConnection, type InterruptionBudgetWiring, type ProactiveNoticeSink, type WebWatchRunner } from "@muse/proactivity";
 import { homeWatchesFromConfig, GmailEmailProvider, type EmailProvider, runDueSituationalBriefing, selectUpcomingConflicts } from "@muse/domain-tools";
 import { BROWSING_SYNC_LIMIT, locateChromeHistoryFile, shouldAutoSyncBrowsing, syncBrowsingHistory } from "@muse/recall";
 import { execFile } from "node:child_process";
@@ -73,6 +76,26 @@ import { defaultChromeConnection, defaultFollowupModel, defaultKnowledgeEnrich, 
 import { maybeAutoPrune } from "./local-state-retention.js";
 import { defaultEmbedModel } from "./council-corpus.js";
 import { embed } from "./embed.js";
+
+const DEFAULT_INTERRUPTION_HOURLY_CAP = 2;
+const DEFAULT_INTERRUPTION_DAILY_CAP = 6;
+
+/**
+ * The shared interruption budget every UNASKED notice tick (pattern /
+ * ambient / followup / background-exit / checkins) opts into. Always
+ * returned (never gated behind its own flag) so a delivery is ledgered
+ * even when both caps are disabled (`<= 0` → unlimited, per
+ * `withinInterruptionBudget`) — see `apps/api/src/tick-daemons.ts`'s
+ * identical resolver for the server-side counterpart.
+ */
+function resolveInterruptionBudgetWiring(e: NodeJS.ProcessEnv): InterruptionBudgetWiring {
+  return {
+    dailyCap: parseNonNegativeInteger(e.MUSE_INTERRUPTION_DAILY_CAP, DEFAULT_INTERRUPTION_DAILY_CAP),
+    digestFile: resolveDigestQueueFile(e),
+    hourlyCap: parseNonNegativeInteger(e.MUSE_INTERRUPTION_HOURLY_CAP, DEFAULT_INTERRUPTION_HOURLY_CAP),
+    ledgerFile: resolveInterruptionLedgerFile(e)
+  };
+}
 
 export interface DaemonHelpers {
   /** Test seam — defaults to `process.env`. */
@@ -281,6 +304,12 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
           })
         : baseMessagingRegistry;
 
+      // Shared budget across the 5 UNASKED notice ticks (pattern / ambient /
+      // followup / background-exit / checkins) — reminders and the
+      // user-scheduled proactive imminent-item tick are EXEMPT (the user
+      // asked for those; the budget only caps what Muse initiates itself).
+      const interruptionBudget = resolveInterruptionBudgetWiring(e);
+
       const calendarRegistry = buildCalendarRegistry(e);
       const tasksFile = resolveTasksFile(e);
       const historyFile = resolveProactiveHistoryFile(e);
@@ -356,6 +385,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
             ambientSource = new FileAmbientSignalSource(ambientFile);
           }
           ambientRunner = createAmbientNoticeRunner({
+            interruptionBudget,
             rules: ambientRules,
             sink: noticeSink,
             source: ambientSource,
@@ -502,6 +532,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const backgroundExitNoticeTick = async (): Promise<void> => {
         const summary = await runDueBackgroundExitNotices({
           destination,
+          interruptionBudget,
           messagingRegistry,
           notifiedFile: backgroundExitNotifiedFile(),
           providerId: provider,
@@ -546,6 +577,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         const summary = await runDueFollowups({
           destination,
           file: followupsFile,
+          interruptionBudget,
           model: followupModel.model,
           modelProvider: followupModel.modelProvider,
           providerId: provider,
@@ -566,6 +598,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         const summary = await runDueCheckins({
           destination,
           file: checkinsFile(e),
+          interruptionBudget,
           providerId: provider,
           registry: messagingRegistry,
           ...(quietHours ? { quietHours } : {})
@@ -603,6 +636,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         } catch { /* default floor */ }
         const summary = await runDuePatternNotices({
           destination,
+          interruptionBudget,
           patternsFiredFile: resolvePatternsFiredFile(e),
           ...(minConfidence !== undefined ? { select: { minConfidence } } : {}),
           providerId: provider,
