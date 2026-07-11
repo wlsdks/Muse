@@ -61,3 +61,12 @@ ratchet: 로드맵 잔여 [ ] = 25/34 · self-eval FOREIGN-fail(envInventory=MUS
 - 왜: 원 프로세스 죽고 PID 재사용되면 stopBackgroundProcess가 무관 유저 프로세스를 SIGTERM, reconcile은 isAlive만 봐 stale running. hermes process_registry 커널 start-time 검증 참조. "위험실행=결정론가드" 정합.
 - 리뷰지점: Opus 독립 검증(reused-PID no-kill 직접 구동·truth table empty-string edge·throwing reader는 spawnSync가 안 던져 unreachable+fail-safe)·mutation-RED 양방향. messaging 0편집(동시 Matrix 루프 충돌 회피)·env 0.
 - 리스크: 동시 Matrix 루프가 트리 대량 오염(api/web/autoconfigure/messaging)+envInventory FOREIGN-fail(MUSE_MATRIX_POLL_ENABLED). 내 5파일(stores 4+cli 1)만 격리 커밋. stop의 reader-throw는 try/catch 없으나 프로덕션 spawnSync는 미발현.
+
+## fire 8 · 2026-07-11 · skill v2.x · <commit-pending>
+meta: slice=D1-S3 · wave=W2 · pkg=@muse/memory+agent-core+cli · kind=compaction-quality · verdict=PASS · firesSinceDrill=8(≥8→다음 judge-drill)
+ratchet: 로드맵 잔여 [ ] = 24/34 · self-eval pass · fabrication 0 · memory 18 test 신규 · ★W2 착수
+- 무엇: 단계적 요약. summarizeDroppedContextInStages+chunkDroppedOnToolPairs(memory 순수). dropped를 tool-pair 경계로 청크(role:"tool" 앞 분할금지)→청크별 summarizeDroppedContext 재사용(각 FAIL-OPEN)→생존청크 병합·maxChars 캡. 식별자 VERBATIM 지시를 SUMMARIZER_SYSTEM_PROMPT에. agent-runtime:578+chat-ink-core:941 배선.
+- 왜: 기존 CMP-2는 전체 dropped를 1회 aux 호출→대형 컨텍스트서 fidelity 손실/통째 절단. openclaw summarizeInStages 참조. 부분실패 보존+식별자 보존으로 grounding 강화.
+- 리뷰지점: 기존 summarizeDroppedContext byte-identical(additions-only 확인)·부분실패=생존 보존 vs 전실패=floor·단일청크 등가·mutation-RED 양방향. Opus 독립 검증.
+- 리스크: ★★동시 Matrix 루프가 평가 중 **공유 main에서 git rebase(b2e4bd55a) 실행→auto-stash가 내 미커밋 슬라이스 orphan**. 무손실 복구(워킹트리 온전+stash@{0} 중복)했으나 최악 사고 근접. 내 6파일만 격리 커밋.
+lesson: ★동시 루프가 공유 main 워크트리서 `git rebase`/`pull --rebase` 실행 시 auto-stash가 타 루프 미커밋 작업을 orphan시킴 — 이 루프는 **worker→evaluator 창의 미커밋 노출을 최소화**하려 슬라이스를 최대한 빨리 커밋, 그리고 **이 루프를 격리 /tmp 워크트리로 옮기는 것이 근본 해결**(진안 결정 필요).

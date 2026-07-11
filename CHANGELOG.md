@@ -34,6 +34,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   automatic downgrade for any future unattended/trusted-run path is tracked as
   a follow-up.)
 
+- **Better recaps when a long conversation gets compressed.** When Muse has to
+  drop older turns to stay within its context window, it now summarizes them in
+  chunks (splitting on tool-call boundaries) and stitches the pieces together,
+  instead of one pass over everything — so a big drop keeps more of its detail.
+  If part of the summarizing fails, the parts that succeeded are still kept, and
+  the summarizer is now told to copy identifiers (IDs, file paths, URLs,
+  numbers) exactly rather than paraphrase them.
+
 - **Muse won't accidentally stop the wrong program.** When Muse stops a
   background task it started, it now first checks that the process still running
   under that ID is the same one it launched — because after a program exits, the

@@ -531,7 +531,12 @@ export { classifyCompactionFailure } from "./compaction-telemetry.js";
 export type { CompactionFailureInput, CompactionFailureStatusLike } from "./compaction-telemetry.js";
 export type { CompactionFailureReason };
 
-export { summarizeDroppedContext } from "./context-aux-summary.js";
+export {
+  chunkDroppedOnToolPairs,
+  DEFAULT_CHUNK_MAX_CHARS,
+  summarizeDroppedContext,
+  summarizeDroppedContextInStages
+} from "./context-aux-summary.js";
 export type {
   DroppedContextSummarizer,
   DroppedContextSummarizerOptions,
