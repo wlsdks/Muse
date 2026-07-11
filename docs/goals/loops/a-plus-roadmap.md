@@ -201,3 +201,12 @@ ratchet: 로드맵 잔여 [ ] = 29/57(D4-S1→a/b/c 분해로 +2) · self-eval p
 - 왜: hermes mcp_serve(자신을 MCP 서버로)의 write는 Muse에선 outbound-safety 수출이어야 — 외부 요청은 자동실행 불가, 승인큐 파킹만. 클릭 승인≠외부 요청 자동실행. 신규 스토어 금지(기존 재사용).
 - 리뷰지점: Opus outbound-safety 위협모델 PASS — execute에 실행 브랜치 0(action/arguments는 파킹 데이터, dispatch 안 됨)·blank fail-close(stage 전 throw)·stage reject→staged:true 아님·no-external-effect 실검증(temp round-trip + notesDir 무변)·두 mutation 독립 재현(stage 제거→round-trip RED, blank검증→RED)·provenance 구분(source "mcp-serve" vs cli). 헤더 doc "three tools" stale도 수정.
 - 리스크: 낮음. 외부가 draft/arguments 완전 제어→muse approvals raw 표시 spoofing 표면(VQ-20)이나 파킹=no-effect+승인=사람확인+fail-close라 계약 위반 아님(기존 CLI-write 경로와 동일 표면, 악화 아님). eval:tools는 N/A(outbound MCP 툴, Muse 로컬모델 선택셋 아님). 다음 = D4-S1b(grounded-recall을 grounded surface로 등록, verify-*.mjs 배터리→groundedSurfaces +1).
+
+## fire 25 · 2026-07-12 · skill v2.x · <commit-pending>
+meta: slice=D4-S1b · wave=W3 · pkg=(none, doc-only) · kind=already-holds-invariant · verdict=PASS · firesSinceDrill=7
+ratchet: 로드맵 잔여 [ ] = 28/57 · self-eval pass · fabrication 0 · groundedSurfaces 38(mcp-serve-grounding 이미 포함)·라이브 배터리 4/4
+- 무엇: D4-S1b(grounded-recall을 grounded surface로 등록)가 **이미-성립 불변식**임을 발견+실증. verify-mcp-serve-grounding.mjs가 `muse mcp serve` 최초커밋 cc1fdde81(07-07)에서 배터리+release-gate(eval-self-improving.mjs:62) 등록까지 함께 배송 → groundedSurfaces 이미 카운트(38). 코드 변경 0, 라이브 재실행 4/4 PASS로 실증 후 doc-only 마킹.
+- 왜: fire 24 decomposition을 내가 배터리 존재를 모르고 씀 → 발견 후 정직하게 이미-성립 처리. 중복 배터리 날조는 groundedSurfaces ratchet이 막는 count-inflation이라 안 함(정직 > 가짜 progress).
+- 리뷰지점: Opus 정직-accounting 검증 PASS — 등록됨(countGroundedSurfaces 정규식 매치=38, mcp-serve entry counted true)·행동검증(실 SDK Client·initialize→tools/call·모든 인용 실 seed resolve·refusal 무-날조, "tool responded" 아님)·라이브 4/4(skip 아님)·D4-S1b 특정 acceptance에 gap 없음(stdio subprocess·read 확대는 D4-S1c로 분리). 코드없이 [x]가 정직한 행동임 확인.
+- 리스크: 없음(코드 0). 교훈: decompose 전에 기존 verify-*.mjs/배터리 존재를 먼저 확인해야 redundant sub-slice 안 만듦. 다음 = D4-S1c(read 확대: 캘린더·태스크 read 툴 + 실 stdio 왕복 계약).
+- lesson: 새 grounded surface 슬라이스 전에 `ls apps/*/scripts/verify-*.mjs` + eval-self-improving.mjs BATTERIES를 grep해 이미 등록된 표면인지 확인 — 이미 있으면 라이브 실증+정직 마킹, 중복 날조 금지(ratchet=count-inflation 가드).
