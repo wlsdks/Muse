@@ -756,7 +756,7 @@ delta-scout 주기에.
 - [ ] **D2-S1d** 📈 eval:adversarial에 sandbox-탈출 케이스 추가(→ D2-S7과 합류 가능)
 - [ ] **D2-S2** 🔒⚠ 셸 토폴로지 패스(치환/heredoc/eval 감지→승인 강등) + 우회·near-miss 쌍
 - [ ] **D1-S1** ⚠ ping-pong+휘발성ID 스트리핑 루프감지(창20/warn6/block10) + 진짜-진행 통과 유닛 + unknown-tool 감지 병합
-- [ ] **D1-S2** post-compaction 루프가드(창3) + 시나리오 유닛
+- [x] **D1-S2** ✅ 2026-07-11 post-compaction 루프가드(창3) — `PostCompactionLoopGuard`(arm on summaryInserted, tool+args+result 서명 3연속→abort); 15/15 유닛+wiring, mutation 5 RED, 독립평가자 PASS(arming=run당1회 아키텍처 확인). ⏭️후속: plan-execute-loop 미커버(별도 슬라이스)
 - [ ] **D2-S6a** 승인 프롬프트 위험-토큰 하이라이트(DS-2 분류기 재사용)
 - [ ] **D2-S6b** write-approval 스테이징 — 기존 `pending-approval-store.ts` CLI 경로 확장(신규 스토어 금지) + no-external-effect 계약
 - [ ] **D3-S7** 🔒 X-3 PID-재사용 kill 가드(OS start-time 대조→불일치시 kill 금지) + 재사용-시뮬 유닛 (→ VQ-8 이식성)

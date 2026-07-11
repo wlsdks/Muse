@@ -379,9 +379,10 @@ export class AgentRuntime {
         // in-flight generation can't be interrupted.
         ...(layeredContext.input.signal ? { signal: layeredContext.input.signal } : {})
       };
+      const compactionOccurred = preparedRequest.contextWindow?.summaryInserted === true;
       const execution = isPlanExecuteMode(layeredContext.input.metadata)
-        ? await executePlanExecuteLoopFn(this.modelLoopRunner(), layeredContext, selected.provider, loopRequest)
-        : await executeModelLoopFn(this.modelLoopRunner(), layeredContext, selected.provider, loopRequest);
+        ? await executePlanExecuteLoopFn(this.modelLoopRunner(compactionOccurred), layeredContext, selected.provider, loopRequest)
+        : await executeModelLoopFn(this.modelLoopRunner(compactionOccurred), layeredContext, selected.provider, loopRequest);
       const guardedResponse = await this.finalizeInvocation({
         cacheKey,
         context: layeredContext,
@@ -444,8 +445,9 @@ export class AgentRuntime {
       };
       let execution: ModelLoopExecution;
       const isPlanExecuteRun = isPlanExecuteMode(layeredContext.input.metadata);
+      const compactionOccurred = preparedRequest.contextWindow?.summaryInserted === true;
       if (isPlanExecuteRun) {
-        const planStream = streamPlanExecuteFn(this.modelLoopRunner(), layeredContext, selected.provider, streamLoopRequest);
+        const planStream = streamPlanExecuteFn(this.modelLoopRunner(compactionOccurred), layeredContext, selected.provider, streamLoopRequest);
         let next = await planStream.next();
         while (!next.done) {
           yield next.value;
@@ -454,7 +456,7 @@ export class AgentRuntime {
         execution = next.value;
       } else {
         const stream = executeStreamingModelLoopFn(
-          this.modelLoopRunner(),
+          this.modelLoopRunner(compactionOccurred),
           layeredContext,
           selected.provider,
           streamLoopRequest,
@@ -964,8 +966,9 @@ export class AgentRuntime {
     }
   }
 
-  private modelLoopRunner(): ModelLoopRunner {
+  private modelLoopRunner(compactionOccurred?: boolean): ModelLoopRunner {
     return {
+      ...(compactionOccurred ? { compactionOccurred } : {}),
       executeToolCall: (context, toolCall, activeTools) => this.executeToolCall(context, toolCall, activeTools),
       generateWithTracing: (context, provider, request) => this.generateWithTracing(context, provider, request),
       maxRunWallclockMs: this.maxRunWallclockMs,

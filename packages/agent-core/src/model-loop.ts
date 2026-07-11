@@ -53,6 +53,7 @@ import {
   type StreamedModelTurn
 } from "./runtime-internals.js";
 import { GeneralShellPhaseGate } from "./general-shell-phase.js";
+import { buildPostCompactionSignature, PostCompactionLoopGuard, POST_COMPACTION_GUARD_WINDOW } from "./post-compaction-loop-guard.js";
 import { detectConflictingWritesInBatch } from "./tool-batch-conflict.js";
 import { ToolCallDeduplicator } from "./tool-call-deduplicator.js";
 import { applyToolCallMiddleware, type ToolCallMiddleware } from "./tool-call-middleware.js";
@@ -121,6 +122,14 @@ export interface ModelLoopRunner {
    * allowlist). Empty/undefined → tool execution is unchanged.
    */
   readonly toolCallMiddleware?: readonly ToolCallMiddleware[];
+  /**
+   * True when THIS run's prepared request had a context-window compaction
+   * fire (`preparedRequest.contextWindow?.summaryInserted`), decided once
+   * before the loop starts. Arms the post-compaction loop guard for the
+   * whole loop; undefined/false leaves the guard permanently unarmed, so a
+   * run with no compaction is byte-identical to before this guard existed.
+   */
+  readonly compactionOccurred?: boolean;
   generateWithTracing(
     context: AgentRunContext,
     provider: ModelProvider,
@@ -208,6 +217,30 @@ function interruptedExecution(
   };
 }
 
+/**
+ * Terminal execution for a confirmed post-compaction loop: the same
+ * mechanism as `interruptedExecution` (return the accumulated messages/
+ * results immediately, never a throw) so this stop condition is handled
+ * exactly like the other fail-closed loop exits.
+ */
+function postCompactionAbortedExecution(
+  request: ModelRequest,
+  intermediateMessages: ModelMessage[],
+  toolResults: ExecutedToolResult[],
+  toolsUsed: readonly string[]
+): ModelLoopExecution {
+  return {
+    finalResponse: {
+      id: "post-compaction-loop-guard",
+      model: request.model,
+      output: `Stopped: post-compaction loop detected — identical tool call repeated ${POST_COMPACTION_GUARD_WINDOW.toString()} times after context compaction.`
+    },
+    intermediateMessages,
+    toolResults,
+    toolsUsed: [...new Set(toolsUsed)]
+  };
+}
+
 /** Trackers threaded through the shared per-batch tool-execution body. */
 interface ToolBatchTrackers {
   readonly deduplicator: ToolCallDeduplicator;
@@ -215,6 +248,7 @@ interface ToolBatchTrackers {
   readonly failureStreak: ToolFailureStreakTracker;
   readonly shellPhase: GeneralShellPhaseGate;
   readonly reverify: ReverifyNudgeTracker;
+  readonly postCompactionGuard: PostCompactionLoopGuard;
 }
 
 interface ToolBatchState {
@@ -228,6 +262,7 @@ interface ToolBatchState {
 interface ToolBatchResult {
   readonly toolCallCount: number;
   readonly messages: readonly ModelMessage[];
+  readonly postCompactionLoopDetected: boolean;
 }
 
 /**
@@ -272,9 +307,10 @@ async function* runToolBatch(
   trackers: ToolBatchTrackers,
   state: ToolBatchState
 ): AsyncGenerator<ModelLoopStreamEvent, ToolBatchResult, void> {
-  const { deduplicator, progress, failureStreak, shellPhase, reverify } = trackers;
+  const { deduplicator, progress, failureStreak, shellPhase, reverify, postCompactionGuard } = trackers;
   const { deadlineMs, now, anchorTerms } = state;
   let toolCallCount = state.toolCallCount;
+  let postCompactionLoopDetected = false;
   const toolMessages: ModelMessage[] = [];
 
   intermediateMessages.push(assistantMessage);
@@ -409,6 +445,17 @@ async function* runToolBatch(
         shellPhase.record(toolCall.name, executed.result.output);
         reverify.recordTool(plan.toolRisk);
       }
+      // Unlike the stall tracker above, the compaction guard DOES see
+      // dedup-served repeats: the exact-signature deduplicator itself proves
+      // "same tool+args+result again" — that is precisely the compaction-didn't-
+      // break-the-loop signal, and gating this on `!isDuplicate` would mean a
+      // model stuck re-asking the exact same thing never trips it (only its
+      // FIRST occurrence would ever reach a `!isDuplicate` block). A blocked
+      // call (middleware/conflict/deadline/budget) is a different, already-
+      // handled stop condition, so `plan.canRun` alone is the right gate.
+      if (plan.canRun && postCompactionGuard.record(buildPostCompactionSignature(toolCall, executed.result.output))) {
+        postCompactionLoopDetected = true;
+      }
       toolsUsed.push(toolCall.name);
       toolResults.push(executed);
       // cap individual tool results so a single big
@@ -448,7 +495,7 @@ async function* runToolBatch(
     : nextMessages;
   intermediateMessages.push(...toolMessages);
 
-  return { messages, toolCallCount };
+  return { messages, postCompactionLoopDetected, toolCallCount };
 }
 
 export async function executeModelLoop(
@@ -469,6 +516,8 @@ export async function executeModelLoop(
   const failureStreak = new ToolFailureStreakTracker();
   const shellPhase = new GeneralShellPhaseGate((request.tools ?? []).map((tool) => tool.name));
   const reverify = new ReverifyNudgeTracker();
+  const postCompactionGuard = new PostCompactionLoopGuard();
+  if (runner.compactionOccurred) postCompactionGuard.arm();
   const reverifyRunIntent = hasRunVerifyIntent(request.messages);
   const now = runner.now ?? Date.now;
   const deadlineMs = runner.maxRunWallclockMs && runner.maxRunWallclockMs > 0
@@ -548,7 +597,7 @@ export async function executeModelLoop(
       intermediateMessages,
       toolResults,
       toolsUsed,
-      { deduplicator, progress, failureStreak, shellPhase, reverify },
+      { deduplicator, failureStreak, postCompactionGuard, progress, reverify, shellPhase },
       { anchorTerms, deadlineMs, messages, now, toolCallCount }
     );
     // Blocking path: drain the per-batch generator without forwarding its
@@ -559,6 +608,9 @@ export async function executeModelLoop(
     }
     messages = step.value.messages;
     toolCallCount = step.value.toolCallCount;
+    if (step.value.postCompactionLoopDetected) {
+      return postCompactionAbortedExecution(request, intermediateMessages, toolResults, toolsUsed);
+    }
     // Per-step checkpoint: the messages now include this batch's tool results, so a
     // crash before the next model call can resume from here without re-running tools.
     if (toolCallCount > 0) {
@@ -586,6 +638,8 @@ export async function* executeStreamingModelLoop(
   const failureStreak = new ToolFailureStreakTracker();
   const shellPhase = new GeneralShellPhaseGate((request.tools ?? []).map((tool) => tool.name));
   const reverify = new ReverifyNudgeTracker();
+  const postCompactionGuard = new PostCompactionLoopGuard();
+  if (runner.compactionOccurred) postCompactionGuard.arm();
   const reverifyRunIntent = hasRunVerifyIntent(request.messages);
   const now = runner.now ?? Date.now;
   const deadlineMs = runner.maxRunWallclockMs && runner.maxRunWallclockMs > 0
@@ -660,11 +714,14 @@ export async function* executeStreamingModelLoop(
       intermediateMessages,
       toolResults,
       toolsUsed,
-      { deduplicator, progress, failureStreak, shellPhase, reverify },
+      { deduplicator, failureStreak, postCompactionGuard, progress, reverify, shellPhase },
       { anchorTerms, deadlineMs, messages, now, toolCallCount }
     );
     messages = batchResult.messages;
     toolCallCount = batchResult.toolCallCount;
+    if (batchResult.postCompactionLoopDetected) {
+      return postCompactionAbortedExecution(request, intermediateMessages, toolResults, toolsUsed);
+    }
     // Per-step checkpoint (streaming parity): resume mid-loop after a crash without
     // re-running already-completed tools (their results are in the replayed messages).
     if (toolCallCount > 0) {

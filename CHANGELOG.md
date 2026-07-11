@@ -10,6 +10,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Post-compaction loop guard.** When the agent's context is compacted
+  mid-run (old turns summarized away), a stuck small model could keep
+  re-issuing the exact same tool call — the compaction failed to break the
+  loop and nothing caught it. A new deterministic guard arms on compaction
+  and aborts the run if an identical tool call (name + arguments + result)
+  repeats three times afterward. A run with no compaction is completely
+  unaffected.
+
 - **Privacy-tiered routing now covers the interactive chat.** With
   `MUSE_PRIVACY_ROUTING=true` + `MUSE_CLOUD_MODEL` set, a context-free turn in
   the interactive Ink chat may ride the configured cloud model — same
