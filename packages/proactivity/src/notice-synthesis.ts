@@ -1,6 +1,7 @@
 // Proactive-notice synthesis — one-shot LLM prose over an imminent item's
 // factSheet, gated by an optional faithfulness reverify before delivery.
 
+import type { JsonObject } from "@muse/shared";
 import { composeSurfacePrompt } from "@muse/prompts";
 
 import type { ImminentItem } from "./notice-imminent.js";
@@ -24,7 +25,7 @@ export interface ProactiveAgentRuntimeLike {
     readonly model: string;
     readonly messages: readonly { readonly role: "system" | "user" | "assistant"; readonly content: string }[];
     /** Marks a machine-authored run so conversational layers (register/brevity) stay off. */
-    readonly metadata?: Readonly<Record<string, unknown>>;
+    readonly metadata?: JsonObject;
   }): Promise<{ readonly response: { readonly output: string } }>;
 }
 
