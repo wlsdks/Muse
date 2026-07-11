@@ -647,6 +647,9 @@ importers:
       '@muse/messaging':
         specifier: workspace:*
         version: link:../messaging
+      '@muse/prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared
