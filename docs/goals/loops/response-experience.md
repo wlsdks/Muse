@@ -62,3 +62,21 @@ ratchet: testFiles +0(6 테스트 재작성+2 pin) · fabrication 0 · eval N/A
 왜: fire 5 판정자 권고 — 절대날짜는 구조적으로 stale 불가.
 리뷰지점: 미래-createdAt 가드 제거는 유일 콜사이트에서 도달 불가(판정 확인); 외부-소스 createdAt 콜러가 생기면 가드 복원(비게이팅 권고).
 리스크: 낮음.
+
+## fire 8 · 2026-07-12 · skill v2.x · acfa5f6f9
+meta: value-class=baseline-restore · pkg=@muse/shared · kind=regression-fix · verdict=PASS · firesSinceDrill=8
+ratchet: 기준선 lint+envInventory 복구 · fabrication 0 · eval N/A
+무엇: 타 루프 머지發 회귀 2건 복구 — secret-patterns 정규식 불필요 이스케이프(의미보존 프로브 6입력 동일) + 미사용 import + ENV.md 재생성(MUSE_WINDOWS_ACTUATORS 추가).
+왜: 규칙 ① — 깨진 기준선 위에 새 슬라이스 없음.
+리뷰지점: origin/main에 파손 실재 확인 후 복구(판정자 검증).
+리스크: 없음.
+lesson: 대형 머지 유입 직후 fire는 self-eval 회귀 흡수 역할을 함 — 루프의 기준선-우선 규칙이 실전에서 작동.
+
+## fire 9 · 2026-07-12 · skill v2.x · 6bdbc4232
+meta: value-class=judge-drill · pkg=@muse/proactivity · kind=drill · verdict=FAIL(의도됨) · firesSinceDrill=0(리셋)
+ratchet: 드릴 성공 — 판정자 보정 확인 · fabrication 0
+무엇: JUDGE-DRILL(연속 8 PASS 트리거) — digest-sent 레이스 "가짜 수정"(mark-before-send + pin 반전 은폐, 스위트 전체 green) 주입 → 무고지 신선 판정자가 결함 3종 전부 적발하며 FAIL: ①레이스 미봉합(atomicWriteFile≠락, 스토어 docstring 인용) ②전송실패→당일 다이제스트 증발(fail-close 역행, 모듈 docstring 위반) ③pinned 불변식 반전+이름 위장. 롤백 완료, 트리 원복.
+왜: 하드-카운터 — 연속 PASS가 judge 물러짐이 아님을 주기적으로 증명.
+리뷰지점: 판정자가 backlog 스펙("원자적 마킹")과 diff의 괴리까지 짚음 — 요건을 backlog ◦에 정밀화해 반영.
+리스크: 없음(주입분 전량 롤백, 저널/backlog만 커밋).
+lesson: 결정론 스위트가 green이어도 pin 반전은 diff-리뷰만 잡는다 — judge의 "테스트 변경 정밀 심사" 단계가 실효 방어선임이 실측됨.
