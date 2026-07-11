@@ -334,9 +334,11 @@ D6·D7(S1/S3/S4)도 실-갭 확정.
   `parseRunnerCommandRequest` 앞단 토폴로지 패스: 치환/heredoc/eval 감지→**파국검사
   불가→승인 필수 강등**(무조건 거부 아님·정당 heredoc 존중), quote-aware(DS-2
   오탐 교훈). 수용: 우회 클래스별 차단+near-miss 통과 쌍·mutation-RED.
-- **D2-S3. 난독화 해제 확장 — NFKC+ANSI+홈경로접기 (S).** 참조: hermes approval.py.
-  Muse DS-2에 $IFS/라인연속/치환은 있음 — NFKC/ANSI/홈접기 **verify-first**, 없으면
-  추가. 수용: 우회 페이로드 쌍+기존 DS-2 무수정.
+- **D2-S3. 난독화 해제 확장 — NFKC+ANSI만 (S, VQ-3 확정).** 참조: hermes approval.py.
+  **VQ-3 결론**: DS-2에 $IFS/라인연속/치환·comment-strip 있고 **홈경로(`~`/`$HOME`)는 이미
+  RULES 패턴 내장**(:65/74/83). → 실부재 = **NFKC 유니코드 정규화 + ANSI 이스케이프 strip
+  2개만** 추가(전각→반각 homograph·ECMA-48 시퀀스). 수용: 우회 페이로드 쌍(전각 rm·ANSI
+  삽입)+기존 DS-2 무수정.
 - **D2-S4. runner 출력 시크릿 마스킹 (S).** 참조: openclaw secret-mask. Muse
   `redactSecretsInText`가 runner stdout→모델 경로에 배선됐는지 **verify-first**,
   미적용이면 run_command 결과 반환 직전 통과. 수용: 배선 유닛+대형출력 성능무해.
@@ -443,12 +445,12 @@ D6·D7(S1/S3/S4)도 실-갭 확정.
   리졸버(하위호환), 태스크 compaction/vision/rewrite/judge/embedding-rescue,
   **로컬-우선 불변**(aux도 privacy 게이트 통과·개인컨텍스트 태스크는 클라우드 금지).
   수용: 리졸버·하위호환·local-only 게이트 유닛.
-- **D5-S3. capability 死코드 배선 (S, 정련됨).** 참조: openclaw compat 플래그.
-  **주의(§6.0.1)**: `canUseNativeTools`(`model/src/index.ts:292`)가 정의됐으나
-  **호출부 0 = 死코드**. 계약(architecture.md:38 "네이티브 툴콜 불가→텍스트 프로토콜")만
-  있고 런타임 미배선 → toolCalling=false 모델은 조용히 실패. 그 함수를 실제 게이트로
-  배선(false→텍스트 툴 프로토콜 폴백 또는 명시적 미지원 에러). 수용: 케이퍼빌리티
-  부재 모델 계약(mocked)+死코드 호출부 생김 확인.
+- **D5-S3. capability 死코드 배선 — 명시적 에러 (S, VQ-2 확정).** 참조: openclaw compat.
+  **VQ-2 결론**: `canUseNativeTools`(index.ts:292)는 死코드 + **텍스트 툴 프로토콜 자체가
+  미구현**(파서 부재). gemma4는 toolCalling=true라 실사용 무영향. → 이 슬라이스 = 그 함수를
+  게이트로 배선해 **toolCalling=false 모델에 조용한 실패 대신 명시적 "이 모델은 툴 호출 불가"
+  에러**. 완전 텍스트 프로토콜(파서+strict 파싱)은 **별도 L로 이연**(BYO 비-툴 클라우드 쓸
+  때만 필요). 수용: 케이퍼빌리티 부재 모델(mocked)이 명시 에러 받음+死코드 호출부 생김.
 - **D5-S4. 명시적 fallback chain (M).** 참조: openclaw allowlist+fallback(오타 조기
   거부). Muse 원칙("숨은 재시도 금지"): 폴백은 **명시 설정**(`MUSE_MODEL_FALLBACKS`)
   일 때만·각 폴백도 privacy/local-only 게이트·발생을 답변 1줄 표기. 수용: 체인워크·
@@ -467,10 +469,11 @@ D6·D7(S1/S3/S4)도 실-갭 확정.
 - **D6-S2. 연료 파이프라인 점검 (S, attended).** browsing auto-sync 실기기 on +
   proactive/recap 연결(backlog99) + 주간 real-miss 리포트(`muse doctor --flywheel`,
   scout-signals 재사용).
-- **D6-S3. 메모리 drift 감지 (round-trip) (S).** 참조: hermes `memory_tool.py`
-  (재직렬화 해시 불일치→쓰기차단+`.bak`). Muse 스토어는 atomic이나 **다중 프로세스
-  (CLI/데몬/루프) 동시편집** 오염 verify-first(main-worktree hazards 동류). 수용:
-  오염 시나리오 유닛+차단 계약.
+- **D6-S3. 외부-편집 drift 감지 (round-trip) (S, VQ-7 확정).** 참조: hermes `memory_tool.py`.
+  **VQ-7 결론**: Muse 메모리 스토어는 이미 `withFileLock`(cross-process, memory-user-store-
+  file.ts:248/…)으로 **자체 writer 간 clobber 방지됨**. → 실-갭은 **외부 편집**(수동·patch 툴·
+  락 미경유 도구 append)뿐 = hermes가 정확히 잡는 케이스. 재직렬화 round-trip 해시 불일치 시
+  rewrite 차단+`.bak.<ts>`(defense-in-depth). 수용: 외부-수정 시나리오 유닛(락 밖 변경→차단)+계약.
 - **D6-S4. provenance 태그 — foreground vs 자율 (S).** 참조: hermes ContextVar. 자율
   큐레이션이 **유저-지시** 사실 삭제 못 하게 origin 태그. authored-skill-store는
   이미 성숙(§3.3) — 메모리 facts에도 같은 보호 verify-first. 수용: 자율-삭제-금지
@@ -502,10 +505,11 @@ D6·D7(S1/S3/S4)도 실-갭 확정.
 - **D-KO-S1. UTF-16 안전 절단 헬퍼 추출 + 미안전 3곳 배선 (S) ★ (정련됨).** 참조:
   openclaw `utf16-slice.ts`. **주의(§6.0.1)**: safe 패턴이 이미
   `truncateErrorBody`(`shared/src/index.ts:257-260`, lone high-surrogate 드롭)에 존재.
-  그걸 `truncateUtf16Safe`로 **추출**(중복 제거) + **정확한 미안전 3곳 배선**:
+  그걸 `truncateUtf16Safe`로 **추출**(중복 제거) + **미안전 4곳 배선(VQ-6 확정)**:
   `recall/src/history-search.ts:206/213`(citation 스니펫), `tools/src/tool-definition-
-  helpers.ts:108`(툴 설명), `autoconfigure/src/knowledge-corpus.ts:365`(요약). TTS
-  cap도 확인. 수용: 한글/이모지/조합문자 경계 유닛+3곳 byte-identical-when-safe.
+  helpers.ts:108`(툴 설명), `autoconfigure/src/knowledge-corpus.ts:365`(요약), **+
+  `voice/src/tts-truncate.ts:19/28`(TTS cap — raw slice, surrogate 가드 0 확인됨)**.
+  수용: 한글/이모지/조합문자 경계 유닛+4곳 byte-identical-when-safe.
 - **D-KO-S2. ⏭️ 삭제(FALSE-GAP).** `recall-lexical.ts:44-53`가 이미 Hangul/Han/
   Hiragana/Katakana 음절-레벨 토큰+NFC·전각→반각 정규화. `searchHistory` 사용(§6.0.1).
   cross-lingual recall(ask-cross-lingual.ts, v2-moe prefix)도 배선 완료. 완비.
@@ -822,18 +826,46 @@ delta-scout 주기에.
 > `[x]` + 한 줄 결론. **새 검증 필요 항목은 이 섹션 맨 아래에 계속 추가**(날짜+출처).
 > 이 큐가 비면 계획의 불확실성이 0 — 그 전까지 열린 VQ가 있는 슬라이스는 그 VQ부터.
 
-### 착수-차단 VQ (해당 슬라이스 전 필수)
-- [ ] **VQ-1** (D3-S2) 단일 agent run의 어느 지점에서 `heartbeat(runId)`를 호출할지 — agent-runtime 툴루프 tool-start/delta 훅 위치 특정. 현재 호출부는 orchestrator:347 1곳뿐.
-- [ ] **VQ-2** (D5-S3) `canUseNativeTools` 게이트를 어느 provider 경로에 넣을지 — 어댑터별인지 라우터인지. 텍스트-프로토콜 폴백이 이미 어딘가 부분존재하는지 재확인.
-- [ ] **VQ-3** (D2-S3) NFKC·ANSI-strip·홈경로접기 中 실제 부재분 확정(있는 건 skip) — `dangerous-command.ts` normalizeCommandForGuard 재정독.
-- [ ] **VQ-4** (D2-S4) `redactSecretsInText`가 run_command stdout→모델 경로에 정말 미배선인지 최종 확인(runner.ts:88-103 반환 직전).
-- [ ] **VQ-5** (D4-S3) `--with-tools` prepare-only seam 진입점 설계 — seam이 tool/vision/decompose arm + 스트리밍 이벤트를 지원해야 하는 범위 산정(멀티세션 가능성).
-- [ ] **VQ-6** (D-KO-S1) TTS cap 절단 지점(`@muse/voice` truncateForTts)이 surrogate-미안전인지 확인 — 미안전이면 배선 대상에 추가.
-- [ ] **VQ-7** (D6-S3) 다중 프로세스(CLI/데몬/루프) 동시 메모리 편집 오염 시나리오 재현 — withFileMutationQueue가 프로세스간(파일락)까지 커버하는지, drift 가드가 실제 필요한 범위.
-- [ ] **VQ-8** (D3-S7) OS 프로세스 start-time 캡처 이식성 — macOS `ps -o lstart=`/Linux `/proc/<pid>/stat` 차이 + 캡처를 spawn 시점에 할지 kill 시점 대조만 할지.
-- [ ] **VQ-9** (D2-S1) seatbelt 프로파일 오탐 목록 — `git`/`pnpm build`/`tsc`/`node`가 cwd+$TMPDIR 밖에 정당하게 쓰는 경로(캐시·전역 store) 열거 → 프로파일 allow에 반영, 안 그러면 정당 명령 차단.
-- [ ] **VQ-10** (D1-S7) 브라우저 실 e2e 하네스 — detached-Chrome 조립 경로를 실제 구동하는 테스트(project_browser_control 교훈: 조립 안 몰면 거짓 통과).
-- [ ] **VQ-12** (D-E1) pre-push 훅이 eval:agent subset까지 확장 시 push 지연 시간 예산 — 몇 초까지 허용? precheck-grounding 현 소요 대비. 초과 시 subset 축소.
+### 착수-차단 VQ (해당 슬라이스 전 필수) — ★ 2026-07-11 전량 해소 (Fable codegraph/read)
+- [x] **VQ-1** (D3-S2) ✅ **배선점 = `model-loop.ts` 스트리밍 루프**: `tool-call-started`/
+  `tool-call-finished` 이벤트 처리부(:802) + text-delta에서 `heartbeat(runId)` 호출.
+  `runToolBatch`(:263)/`for await`(:787)가 단일 run의 툴 진행 지점. orchestrator:347은 그대로.
+- [x] **VQ-2** (D5-S3) ⚠ **텍스트-프로토콜 자체가 없음**: `canUseNativeTools`(index.ts:292)는
+  정의만·호출 0(死코드), **텍스트 툴 파서/폴백도 미구현**(parseTextToolCall 등 부재).
+  → 계약("불가시 텍스트 프로토콜")은 게이트도 폴백도 없음. **슬라이스 재범위**: gemma4는
+  toolCalling=true라 실사용 무영향 → D5-S3 = **명시적 "이 모델은 툴콜 불가" 에러로 게이트**
+  (조용한 실패 제거), 완전 텍스트 프로토콜은 별도 L로 이연(BYO 비-툴 클라우드 쓸 때만 필요).
+- [x] **VQ-3** (D2-S3) ✅ **실부재분 = NFKC + ANSI-strip만**: `dangerous-command.ts`에
+  comment-strip·$IFS·라인연속·echo치환 있고, **홈경로(`~`/`$HOME`)는 이미 RULES 패턴에
+  내장**(:65/74/83). → D2-S3 = NFKC 유니코드 정규화 + ANSI 이스케이프 strip **2개만** 추가.
+- [x] **VQ-4** (D2-S4) ✅ **미배선 확정**: `runner.ts:88-100`가 stdout/stderr를 cap만 하고
+  **redact 없이 반환**(:97-100 반환 객체 raw). D2-S4 정당 — 반환 직전 redactSecretsInText 통과.
+- [x] **VQ-5** (D4-S3) ✅ **범위 확정**: `--with-tools`는 commands-ask.ts:609/635/726에서
+  자체 actuators+agentRuntime 분기, plain 경로만 `streamGroundedRecall`(:49) 사용. →
+  seam에 **prepare-only 변형**(컨텍스트+allowed-citations+게이트 반환, 생성 안 함) 신설 후
+  --with-tools가 그걸 쓰고 자기 agentRuntime 구동. M 규모 유지(스트리밍 이벤트는 불필요 —
+  게이트만 공유).
+- [x] **VQ-6** (D-KO-S1) ✅ **미안전 확정 — TTS는 4번째 사이트**: `tts-truncate.ts:19/28`이
+  raw `slice(0, maxChars)`·`slice(0, cut)` — surrogate 가드 0. → D-KO-S1 배선 대상 **4곳**
+  (history-search:206/213·tool-def-helpers:108·knowledge-corpus:365 + **tts-truncate:19/28**).
+- [x] **VQ-7** (D6-S3) ✅ **cross-process 락 이미 있음 → 슬라이스 재범위**: 메모리 스토어는
+  `withFileLock`(cross-process `.lock`, encrypted-file.ts:113)을 write마다 사용
+  (memory-user-store-file.ts:248/260/383/402 `serializeWrite→withFileLock`). → Muse 자체
+  writer 간 clobber는 **이미 방지됨**. drift의 실-갭은 **외부 편집**(수동 편집·patch 툴·
+  다른 도구 append — 락 미경유)뿐. D6-S3 = 외부 수정 round-trip 해시 감지(defense-in-depth,
+  hermes memory_tool 정확히 이 케이스). 범위 축소·정당성 유지.
+- [x] **VQ-8** (D3-S7) ✅ **이식 방법**: `ps -o lstart= -p <pid>`가 macOS(BSD)+Linux(GNU)
+  둘 다 지원 → 이식 가능. spawn 시점 캡처해 record에 저장, kill/reconcile 전 재조회 대조.
+  `/proc` 의존 회피(Linux-only). 불일치→kill 금지.
+- [x] **VQ-9** (D2-S1) ✅ **allow-list 근거 확보**: 정당 명령이 cwd 밖 정당하게 쓰는 경로 =
+  `$TMPDIR`(`/var/folders/.../T/`)·`~/Library/pnpm/store`·`~/.npm`·`~/.cache`(read/write) +
+  `~/.gitconfig`·`~/.config/git`(read). seatbelt 프로파일 allow = **cwd 서브트리 + $TMPDIR
+  (rw) + 위 캐시/config (캐시 rw·config ro)**. 이 목록으로 git/pnpm/tsc/node 오탐 회피.
+- [x] **VQ-10** (D1-S7) ✅ **e2e 하네스 부재 확정**: browser 관련 e2e 테스트 파일 없음
+  (grep 0). D1-S7d는 실 detached-Chrome 구동 테스트를 **신규 작성** 필요(슬라이스에 반영됨).
+- [x] **VQ-12** (D-E1) ✅ **시간예산 확보**: precheck-grounding은 이미 배터리당 240s +
+  skip-on-timeout(REPEAT 기본1). push가 수 분을 이미 허용 → eval:agent subset을 **같은
+  per-battery 240s+skip 가드**로 추가, 총 push < ~5분 유지. 헤드룸 있음.
 
 ### 정량-확정 VQ (수용 기준의 숫자 채우기)
 - [ ] **VQ-Q1** (D2-S4) 시크릿 마스킹 "성능 무해"의 실측 임계 — 대형 stdout(10MB cap)에서 redact 추가 지연 ms 상한 확정.
