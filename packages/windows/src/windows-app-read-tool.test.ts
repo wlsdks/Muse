@@ -37,7 +37,7 @@ describe("win_app_read", () => {
   });
 
   it("storage parses drive rows", () => {
-    const out = parseReadOutput("storage", "C\t120.5\t476.9\nD\t800.1\t931.5\n") as { drives: readonly { name: string; freeGb: number }[] };
+    const out = parseReadOutput("storage", "C\t120.5\t476.9\nD\t800.1\t931.5\n") as unknown as { drives: readonly { name: string; freeGb: number }[] };
     expect(out.drives).toHaveLength(2);
     expect(out.drives[0]).toMatchObject({ freeGb: 120.5, name: "C" });
   });
