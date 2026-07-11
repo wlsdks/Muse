@@ -220,7 +220,7 @@ ratchet: 로드맵 잔여 [ ] = 29/59(D4-S1c→c1/c2/c3 분해 +2, c1 체크 -1)
 - 리스크: 낮음. calendar_read는 read-only(이벤트 생성/변경 없음)·이벤트 내용서 실행 안 함. 윈도우 필터는 provider 위임이라 툴은 양-bound 전달만(drop 구조적 불가). eval:tools N/A(outbound MCP). 다음 = D4-S1c2(태스크 read)·c3(실 stdio 왕복).
 - lesson: JUDGE-DRILL "진짜 fix"는 드릴 결함의 *구조적으로 불가능한* 버전이 이상적 — ignore-upper-bound를 "from/to 독립파싱해 한 콜에 둘 다 전달"로 재설계하면 그 결함 클래스가 재발 불가(테스트 의존 아닌 구조 보장).
 
-## fire 27 · 2026-07-12 · skill v2.x · <commit-pending>
+## fire 27 · 2026-07-12 · skill v2.x · 5dcfa0b49
 meta: slice=D4-S1c2 · wave=W3 · pkg=apps/cli · kind=mcp-tasks-read · verdict=PASS · firesSinceDrill=1
 ratchet: 로드맵 잔여 [ ] = 28/59 · self-eval pass · fabrication 0 · cli mcp-serve +4 test(tasks_read)
 - 무엇: `muse mcp serve` tasks_read 툴(c1 calendar_read 대칭). status enum(open 기본/done/all)→기존 LocalFileTasksProvider.list(status) 위임, 태스크 구조화 반환(createdAt/completedAt ISO). status pass-through(정확 전달, 하드코딩 아님)·invalid status→throw+source 미호출(fail-close). McpServeDependencies에 injectable listTasks. Task 타입 domain-tools barrel 1줄 export.
