@@ -34,6 +34,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   automatic downgrade for any future unattended/trusted-run path is tracked as
   a follow-up.)
 
+- **Combining sub-task answers won't overflow — long ones are saved to a file.**
+  When Muse merges several finished sub-tasks into one answer, each piece now
+  gets a fair share of the space; a piece that's too long is trimmed in the
+  prompt and its full text is written to a file under your `~/.muse` folder,
+  with the path shown — so a big result is never silently dropped and the merge
+  step can't blow past the model's limit.
+
 - **A limit on how many background jobs run at once.** `muse job run` no longer
   starts an unlimited number of background jobs — if you already have the cap's
   worth running (three by default, set `MUSE_JOBS_MAX_CONCURRENT` to change it),

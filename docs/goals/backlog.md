@@ -3278,3 +3278,4 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
 - ✓ D3-S1b 2026-07-11 — 부모 tool-deny 상속(inheritParentToolDeny child⊆parent 구조클램프, ask-decompose 워커 배선); D3-S1 완료. ⚠defense-in-depth(프로덕션 현재 no-op). 다음 = D3-S2(런타임 하트비트)
 - ✓ D3-S2 2026-07-11 — 단일-run heartbeat emission seam(model-loop 3 point, 기존 detectStalled 재사용, fake-clock 유닛); 라이브 레지스트리 피딩은 아키텍처 결정이라 deferred(backlog). 다음 = D3-S4(용량 거부+헤드룸 예산)
 - ✓ D3-S4a 2026-07-11 — job 동시상한(MUSE_JOBS_MAX_CONCURRENT 기본3, at-cap 명시거부, 무제한 spawn 차단); 다음 = D3-S4b(부모-헤드룸 요약예산+스필)
+- ✓ D3-S4b 2026-07-11 — 보드 합성 헤드룸 예산+파일스필(per-child ×0.5/n floor2000, 초과분 ~/.muse/board-spill/ 왕복); D3-S4 완료. 다음 = D1-S7a(브라우저 AX-tree 숫자 refs)
