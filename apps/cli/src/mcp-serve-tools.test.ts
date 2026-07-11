@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { InMemoryUserMemoryStore } from "@muse/memory";
-import { LocalDirNotesProvider } from "@muse/domain-tools";
+import { LocalDirNotesProvider, type Task } from "@muse/domain-tools";
 import { readPendingApprovals, recordPendingApproval, type PendingApproval } from "@muse/messaging";
 import type { CalendarEvent } from "@muse/calendar";
 import type { ModelProvider } from "@muse/model";
@@ -24,6 +24,9 @@ function baseDeps(overrides: Partial<McpServeDependencies> = {}, notesDir: strin
     embedModel: "nomic-embed-text-v2-moe",
     listCalendarEvents: async () => {
       throw new Error("listCalendarEvents not wired in this test's baseDeps — override it explicitly");
+    },
+    listTasks: async () => {
+      throw new Error("listTasks not wired in this test's baseDeps — override it explicitly");
     },
     modelProvider: undefined,
     newId: () => "fixed-id",
@@ -51,11 +54,11 @@ describe("buildMcpServeTools", () => {
     rmSync(notesDir, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 4 read-only tools plus the 1 write-proxy tool, with required args declared", () => {
+  it("exposes exactly the 5 read-only tools plus the 1 write-proxy tool, with required args declared", () => {
     const tools = buildMcpServeTools(baseDeps({}, notesDir));
-    expect(tools).toHaveLength(5);
+    expect(tools).toHaveLength(6);
     const byName = new Map(tools.map((tool) => [tool.definition.name, tool] as const));
-    expect([...byName.keys()].sort()).toEqual(["calendar_read", "knowledge_search", "muse_recall", "propose_action", "user_model_read"]);
+    expect([...byName.keys()].sort()).toEqual(["calendar_read", "knowledge_search", "muse_recall", "propose_action", "tasks_read", "user_model_read"]);
     expect(byName.get("muse_recall")?.definition.inputSchema.required).toEqual(["question"]);
     expect(byName.get("knowledge_search")?.definition.inputSchema.required).toEqual(["query"]);
     expect(byName.get("calendar_read")?.definition.inputSchema.required).toEqual(["from", "to"]);
@@ -257,6 +260,84 @@ describe("buildMcpServeTools", () => {
       await expect(calendarRead.execute({ from: "2026-07-13T00:00:00Z", to: "2026-07-12T00:00:00Z" }, context)).rejects.toThrow(/must be strictly after/iu);
       await expect(calendarRead.execute({ from: "2026-07-12T00:00:00Z", to: "2026-07-12T00:00:00Z" }, context)).rejects.toThrow(/must be strictly after/iu);
 
+      expect(called).toBe(false);
+    });
+  });
+
+  describe("tasks_read", () => {
+    function fakeTask(id: string, title: string, status: "open" | "done"): Task {
+      return { createdAt: new Date("2026-07-01T00:00:00.000Z"), id, providerId: "fake", status, title };
+    }
+
+    it("defaults to status 'open' and passes it through to the source", async () => {
+      const calls: string[] = [];
+      const seeded = [fakeTask("a", "task-a", "open"), fakeTask("b", "task-b", "open")];
+      const tools = buildMcpServeTools(baseDeps({
+        listTasks: async (status) => {
+          calls.push(status);
+          return seeded;
+        }
+      }, notesDir));
+      const tasksRead = tools.find((tool) => tool.definition.name === "tasks_read")!;
+
+      const result = await tasksRead.execute({}, context) as unknown as {
+        status: string;
+        count: number;
+        tasks: readonly { id: string; title: string; status: string; createdAt: string }[];
+      };
+
+      expect(calls).toEqual(["open"]);
+      expect(result.status).toBe("open");
+      expect(result.count).toBe(2);
+      expect(result.tasks).toEqual([
+        { createdAt: "2026-07-01T00:00:00.000Z", id: "a", status: "open", title: "task-a" },
+        { createdAt: "2026-07-01T00:00:00.000Z", id: "b", status: "open", title: "task-b" }
+      ]);
+    });
+
+    it("passes an explicit 'done' status through to the source (not hardcoded to 'open')", async () => {
+      const calls: string[] = [];
+      const tools = buildMcpServeTools(baseDeps({
+        listTasks: async (status) => {
+          calls.push(status);
+          return [fakeTask("c", "task-c", "done")];
+        }
+      }, notesDir));
+      const tasksRead = tools.find((tool) => tool.definition.name === "tasks_read")!;
+
+      const result = await tasksRead.execute({ status: "done" }, context) as unknown as { status: string; count: number };
+
+      expect(calls).toEqual(["done"]);
+      expect(result.status).toBe("done");
+      expect(result.count).toBe(1);
+    });
+
+    it("passes an explicit 'all' status through to the source", async () => {
+      const calls: string[] = [];
+      const tools = buildMcpServeTools(baseDeps({
+        listTasks: async (status) => {
+          calls.push(status);
+          return [];
+        }
+      }, notesDir));
+      const tasksRead = tools.find((tool) => tool.definition.name === "tasks_read")!;
+
+      await tasksRead.execute({ status: "all" }, context);
+
+      expect(calls).toEqual(["all"]);
+    });
+
+    it("fails closed on an invalid status — never calls the source", async () => {
+      let called = false;
+      const tools = buildMcpServeTools(baseDeps({
+        listTasks: async (_status) => {
+          called = true;
+          return [];
+        }
+      }, notesDir));
+      const tasksRead = tools.find((tool) => tool.definition.name === "tasks_read")!;
+
+      await expect(tasksRead.execute({ status: "garbage" }, context)).rejects.toThrow(/must be one of/iu);
       expect(called).toBe(false);
     });
   });
