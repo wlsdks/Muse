@@ -9,11 +9,13 @@
  * the typed errors, and `createMcpMuseTool` all live in `index.ts`;
  * this file imports them back.
  *
- * Two private helpers come over because they were only used by
- * the manager:
+ * One private helper comes over because it was only used by the
+ * manager:
  *   - closeConnectionQuietly (best-effort connection cleanup
  *     after failed health checks)
- *   - toErrorMessage (Error.message / String fallback)
+ *
+ * `toErrorMessage` (Error.message / String fallback) lives in
+ * `./error-utils.js`, shared with `transport.ts` and `index.ts`.
  */
 
 import { createHash } from "node:crypto";
@@ -22,6 +24,7 @@ import { delimiter, join as joinPath } from "node:path";
 
 import type { MuseTool } from "@muse/tools";
 
+import { toErrorMessage } from "./error-utils.js";
 import {
   InMemoryMcpServerStore,
   McpConnectionError,
@@ -719,10 +722,6 @@ async function closeConnectionQuietly(connection: McpConnection): Promise<void> 
   } catch {
     // Best-effort cleanup after failed MCP health checks.
   }
-}
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function auditReason(reasons: readonly string[]): string {

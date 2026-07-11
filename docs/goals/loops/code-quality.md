@@ -21,7 +21,8 @@
 | packages/autoconfigure | fire 11 | 방문 |
 | packages/shared | fire 11 | 방문 (사실상 CLEAN — 고아 docstring 1건만 큐) |
 | packages/stores | fire 13 | 방문 |
-| 기타 packages/* | – | 미방문 (tools/mcp/messaging/proactivity 등) |
+| packages/mcp | fire 15 | 방문 |
+| 기타 packages/* | – | 미방문 (tools/messaging/proactivity 등) |
 
 ## 대기 발견 큐
 
@@ -50,6 +51,9 @@
 - 같은 클래스 의심: resolveDotMusePath 폴백(~/.muse)을 기본으로 읽는 다른 "빈 env" 테스트가 더 있는지 스캔 후보 (autoconfigure/api 전반)
 - ~~recall-hits RMW race~~ → fire 14 검증 결과 **오탐** (recordRecallHits는 이미 recordQueues per-file 직렬화 완비, prior.then(op,op) 패턴). 재제안 금지
 - ~~multi-agent buildOrchestrationResponse 144줄 분해~~ → fire 14 집행 완료 (indexOf O(n²) 제거 보너스 포함)
+- 🔒 보안성 후보 (fire 15, 동작 변경이라 루프 밖 — 진안 확인 권장): ①mcp redactMcpSecrets가 Bearer만 가림 (Basic/X-API-Key/token= 쿼리 미커버) ②manager.ts:216 fingerprint 검증 반환 null-가드 부재
+- mcp McpManager 730줄 (lifecycle+health+catalog+audit 혼재) → 클래스 분리 후보 (대형, 신중)
+- ⚠ repo 공유 stash 잔존: stash@{0} autostash (context-aux-summary 작업 사본 — main에 8ed66e2b3로 이미 안착 확인, 팝 안 된 잔여물). 이 루프는 건드리지 않음 — 드랍은 진안 판단
 - stores 대형 파일 분해 후보: personal-episodes-store 554줄(저장+분석 혼재), weakness-ledger 485줄, playbook-store 413줄(저장+리워드 엔진)
 - stores 동시성 스트레스 테스트 3파일(consent/veto/objectives-concurrent)은 머신 부하시 false-timeout — 알려진 클래스, 부하 낮으면 green (fire 13 확인)
 - autoconfigure buildLoopbackTools 207줄·buildRuntimeToolRegistry 279줄 → runtime-assembly와 같은 패턴 분해 후보
@@ -82,3 +86,4 @@
 | 12 | autoconfigure (큐 집행) + 머지 | ①main 충돌 해소: settings-routes(9플래그 main측)+p1-seam(main측+우리의 강한 endpoint-집합 단언 보존 — 양쪽이 같은 낡은 테스트를 각자 고친 경합) ②buildInboxContextProvider 테스트 격리: 크리덴셜 파일을 빈 tmp로 고정, 실머신 ~/.muse/messaging.json 토큰 누수 차단 | 충돌 2파일 5/5 ✓ · autoconfigure.test 62/62 ✓ (실토큰 있는 머신에서 green) · build ✓ · lint 0 ✓ |
 | 13 | packages/stores | 15벌 토큰-동일 quarantineCorruptStore를 store-quarantine.ts 한 벌로 통합(파일 15개 수정, fs 죽은 import 3건 동반 제거) + 직접 단위테스트 4건; 부수리 main발 lint error(messaging-setup-routes 죽은 매개변수) 제거 | stores build ✓ · quarantine 4/4 ✓ · messaging 15/15 ✓ · 동시성 3파일 저부하 8/8 ✓(고부하 flake=알려진 클래스) · lint 0 ✓ |
 | 14 | multi-agent (큐 집행) + 머지 | ①recall-hits RMW race NO-SHIP(오탐 — 이미 직렬화 완비) ②main 충돌 해소(messaging-setup-routes lint 수정 경합 — main측 _options 채택, 분기 최소화) ③buildOrchestrationResponse 144→48줄: 4 헬퍼(projectWorkerOutputs/buildCompletedParts/synthesizeAndVerify/detectFanInIssues) 순수 재배치 + indexOf O(n²)→O(n) | multi-agent 334/334 ✓ · lint 0 ✓ (fable 재검증) |
+| 15 | packages/mcp | toErrorMessage 3벌(manager/transport/index) → error-utils.ts 통합 + index.ts 408→343줄(createMcpMuseTool·redactMcpSecrets를 mcp-tool-factory.ts로 순수 이동, 재export로 공개 표면 불변); 보안성 발견 2건은 동작 변경이라 큐로 | mcp build ✓ · 779/779 ✓ · lint 0 ✓ (fable 재검증) |
