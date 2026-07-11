@@ -34,7 +34,8 @@
 - apps/cli program-helpers.ts 886줄 45+ exports (HTTP/config/auth/출력 혼재) → 분리 후보
 - agent-core는 미머지 agent-core-enhance 브랜치(~22슬라이스)와 충돌 위험 → 그 브랜치가 정리될 때까지 이 루프에서 보류
 - packages/domain-tools loopback-notes.ts 736줄 (6도구+judge+walk 혼재) / loopback-calendar.ts 576줄 / loopback-reminders.ts 509줄 → 분리 후보
-- ⚠ 사전존재 red: packages/domain-tools test/event-reminder-link.test.ts "delete removes the linked reminder…" — dueAt 2시간 오프셋, 머신 TZ/DST 의존 단언. 테스트를 TZ 고정으로 결정론화하는 수리 후보 (fire 2에서 발견, 무관 확인)
+- ~~사전존재 red: event-reminder-link.test.ts~~ → fire 6에서 해결. 정정: TZ-의존이 아니라 **시한폭탄 테스트**였음 (절대날짜 픽스처 2026-06-10이 리졸버의 now-30d 창을 07-10에 벗어남; update가 event-not-found 에러를 반환하는데 테스트가 미단언 → 하류 assert에서 엉뚱하게 실패)
+- 같은 시한폭탄 패턴 스캔 후보: 절대날짜 픽스처 + 실시계 창(resolveEventForAction류)을 함께 쓰는 다른 테스트가 있는지 저장소-폭 grep (다음 fire 후보)
 - 루프 운영 교훈: sonnet 워커 프롬프트에 "git stash 금지" 명시할 것 (fire 2 워커가 사전존재 확인에 stash 사용 — 잔여물 없이 끝났지만 규칙 위반; fire 3부터 명시 적용됨)
 - packages/recall present.ts:23 date-sort가 feeds-store의 compareFeedEntriesNewestFirst와 불일치 (unparseable date를 0 취급) → 동작 변경이라 이 루프 범위 밖, 별도 버그픽스 후보로 기록
 - packages/recall select.ts 514줄 (memory/contacts/evidence 혼재) → 분리 후보
@@ -52,3 +53,4 @@
 | 3 | packages/recall | present.ts 967→771줄: build*ContextBlock 10개+safeField를 context-blocks.ts(199줄)로 순수 이동(index 재export로 공개 API 불변, 임포터 12파일 갱신) + chunk-lookup 3벌을 chunks.ts findChunkByNote로 통합 | recall build ✓ · 607/607 ✓ · cli build ✓ · lint 0 ✓ (fable 재검증) |
 | 4 | packages/memory | in-memory/file 두 store가 중복하던 forget() 결정 로직(키 canonicalize 해석+kind 네임스페이스 스코핑)을 순수 헬퍼 resolveForgetTarget로 통합, WHY 주석 한 벌화 + 직접 단위테스트 8건 | memory build ✓ · 685/685 ✓ · lint 0 ✓ (fable 재검증) |
 | 5 | apps/cli + domain-tools | 이력-마커 sweep 34건(goal/P-번호, 테스트 제목·docstring·--help 텍스트) — WHY 보존 재작성, 파일 rename 2건(p11-email-contacts-seam→email-contacts-seam, p8-seam→situational-briefing-seam); 외부 업스트림 레퍼런스(ollama#13337/PR#6279)와 ReConcile round 시맨틱은 정당 판정 유지 | cli build ✓ · dt build ✓ · cli 1019/1019 ✓ · dt 451/452(red=알려진 TZ flake) · lint 0 ✓ |
+| 6 | domain-tools (큐 집행) | 시한폭탄 테스트 해체: event-reminder-link 통합 케이스가 절대날짜 픽스처로 리졸버 창(now-30d)을 벗어나 침묵 실패 — Date-only fake timer로 고정 + update/delete 반환값 단언 3곳 보강 (제품 코드 불변) | UTC/KST/NY 3-TZ 5/5 ✓ · domain-tools 전체 791/791 최초 완전 green ✓ · lint 0 ✓ |
