@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canDisconnect, providerStatus, requiresHomeserver } from "./integrations-logic.js";
+import { canDisconnect, daemonBadge, providerStatus, requiresHomeserver } from "./integrations-logic.js";
 
 import type { MessagingSetupProvider } from "../api/types.js";
 
@@ -49,5 +49,31 @@ describe("canDisconnect", () => {
     expect(canDisconnect({ ...base, configured: true, source: "file" })).toBe(true);
     expect(canDisconnect({ ...base, configured: true, source: "env" })).toBe(false);
     expect(canDisconnect(base)).toBe(false);
+  });
+});
+
+describe("daemonBadge", () => {
+  const flag = (enabled: boolean, running?: boolean) => ({
+    enabled,
+    key: "MUSE_TELEGRAM_POLL_ENABLED",
+    label: "Telegram inbound polling",
+    ...(running !== undefined ? { running } : {})
+  });
+
+  it("enabled + running → ok 'running'", () => {
+    expect(daemonBadge(flag(true, true))).toEqual({ labelKey: "int.daemon.running", tone: "ok" });
+  });
+
+  it("enabled but NOT running → warn (the truthful lying-badge fix)", () => {
+    expect(daemonBadge(flag(true, false))).toEqual({ labelKey: "int.daemon.enabledNotRunning", tone: "warn" });
+  });
+
+  it("disabled → neutral 'off' regardless of running info", () => {
+    expect(daemonBadge(flag(false, false))).toEqual({ labelKey: "int.daemon.off", tone: "neutral" });
+    expect(daemonBadge(flag(false))).toEqual({ labelKey: "int.daemon.off", tone: "neutral" });
+  });
+
+  it("enabled without running info keeps the plain 'on' (older servers)", () => {
+    expect(daemonBadge(flag(true))).toEqual({ labelKey: "int.daemon.on", tone: "ok" });
   });
 });

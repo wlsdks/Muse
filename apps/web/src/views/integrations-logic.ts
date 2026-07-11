@@ -34,3 +34,25 @@ export function canDisconnect(provider: MessagingSetupProvider): boolean {
 export function requiresHomeserver(providerId: string): boolean {
   return providerId === "matrix";
 }
+
+export interface DaemonBadgeView {
+  readonly tone: "ok" | "warn" | "neutral";
+  readonly labelKey: "int.daemon.running" | "int.daemon.enabledNotRunning" | "int.daemon.on" | "int.daemon.off";
+}
+
+/**
+ * Truthful daemon badge: `enabled` is only the flag; `running` (when the
+ * server reports it) is the live handle. A flag-on/daemon-dead mismatch
+ * must surface as a warning, never as a green "on".
+ */
+export function daemonBadge(flag: { readonly enabled: boolean; readonly running?: boolean }): DaemonBadgeView {
+  if (!flag.enabled) {
+    return { labelKey: "int.daemon.off", tone: "neutral" };
+  }
+  if (flag.running === undefined) {
+    return { labelKey: "int.daemon.on", tone: "ok" };
+  }
+  return flag.running
+    ? { labelKey: "int.daemon.running", tone: "ok" }
+    : { labelKey: "int.daemon.enabledNotRunning", tone: "warn" };
+}

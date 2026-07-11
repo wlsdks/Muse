@@ -68,6 +68,12 @@ export interface MessagingSetupGate {
     token: string,
     options?: { readonly homeserverUrl?: string }
   ) => Promise<TokenVerification>;
+  /**
+   * Fires after a verified token is persisted AND hot-registered —
+   * the server hooks this to start the provider's ingest daemon so a
+   * UI connect becomes conversational without a restart.
+   */
+  readonly onConnected?: (providerId: string) => void;
 }
 
 function buildProvider(
@@ -151,6 +157,7 @@ export function registerMessagingSetupRoutes(server: FastifyInstance, gate: Mess
     }
     await store.save(provider.id, { token, ...(provider.requiresHomeserverUrl ? { homeserverUrl } : {}) });
     gate.registry.register(buildProvider(provider.id, token, gate.env, provider.requiresHomeserverUrl ? homeserverUrl : undefined));
+    gate.onConnected?.(provider.id);
     return { ok: true, ...(verdict.account ? { account: verdict.account } : {}) };
   });
 

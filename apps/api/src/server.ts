@@ -53,6 +53,7 @@ import { warmUpModelIfConfigured } from "./model-warmup.js";
 import { parseSlackPollChannels, startSlackPollTick } from "./slack-poll-tick.js";
 import { startTelegramPollTick } from "./telegram-poll-tick.js";
 import { startMatrixSyncTick } from "./matrix-sync-tick.js";
+import { createChannelDaemonSupervisor } from "./channel-daemon-supervisor.js";
 import { createInboundAgentRun } from "./inbound-agent-run.js";
 import { startInboundReplyTick } from "./inbound-reply-tick.js";
 import { createThreadedInboundRunner, type InboundAgentRunner } from "@muse/messaging";
@@ -325,6 +326,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   if (options.voice) {
     registerVoiceRoutes(server, { authService, registry: options.voice });
   }
+  // Live channel-daemon registry: truthful running-state for the settings
+  // surface and the hot-start seam for a UI connect (no restart needed).
+  const channelDaemons = createChannelDaemonSupervisor();
+  server.addHook("onClose", async () => {
+    channelDaemons.stopAll();
+  });
+  const ingestStarters: { telegram?: () => void; matrix?: () => void } = {};
+
   if (options.messaging) {
     registerMessagingRoutes(server, {
       authService,
@@ -336,6 +345,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       authService,
       credentialsFile: resolveMessagingCredentialsFile(process.env),
       env: process.env,
+      onConnected: (providerId) => {
+        if (providerId === "telegram" || providerId === "matrix") {
+          ingestStarters[providerId]?.();
+        }
+      },
       registry: options.messaging
     });
   }
@@ -418,7 +432,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     reflectionsFile: options.reflectionsFile ?? resolveReflectionsFile(process.env)
   });
 
-  registerSettingsRoutes(server, { authService });
+  registerSettingsRoutes(server, { authService, daemonStatus: () => channelDaemons.status() });
 
   // Optional Phase B daemon: every MUSE_REMINDER_TICK_MS (default
   // 60s) call runDueReminders. Activates only when the user has
@@ -480,18 +494,24 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // below) the instant something is ingested.
   const inboundReplyTick: { current: (() => Promise<void>) | undefined } = { current: undefined };
   const pollEnabled = isMuseDaemonEnabled(process.env.MUSE_TELEGRAM_POLL_ENABLED);
-  if (
-    pollEnabled
-    && options.telegramInboxFile
-    && options.messaging
-    && options.messaging.has("telegram")
-  ) {
-    // The daemon walks Bot API directly, so it needs the concrete
-    // TelegramProvider (with offset persistence) rather than the
-    // registry's generic fetchInbound — that one reads from the
-    // inbox file once that wiring is in place.
-    const telegram = options.messaging.require("telegram");
-    if (telegram instanceof TelegramProvider) {
+  if (pollEnabled && options.telegramInboxFile && options.messaging) {
+    const telegramInboxFile = options.telegramInboxFile;
+    const messaging = options.messaging;
+    // Callable at boot AND from the setup route's onConnected, so a UI
+    // connect starts ingesting without a server restart. Re-invoking
+    // replaces the previous handle via the supervisor (reconnect-safe).
+    ingestStarters.telegram = () => {
+      if (!messaging.has("telegram")) {
+        return;
+      }
+      // The daemon walks Bot API directly, so it needs the concrete
+      // TelegramProvider (with offset persistence) rather than the
+      // registry's generic fetchInbound — that one reads from the
+      // inbox file once that wiring is in place.
+      const telegram = messaging.require("telegram");
+      if (!(telegram instanceof TelegramProvider)) {
+        return;
+      }
       const pollMsRaw = process.env.MUSE_TELEGRAM_POLL_INTERVAL_MS
         ? Number(process.env.MUSE_TELEGRAM_POLL_INTERVAL_MS)
         : undefined;
@@ -501,22 +521,24 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       // Default 👀 "seen" reaction (Bot API has no read receipts);
       // MUSE_TELEGRAM_ACK_REACTION overrides the emoji, empty disables.
       const ackReaction = process.env.MUSE_TELEGRAM_ACK_REACTION ?? "👀";
-      const pollHandle = startTelegramPollTick({
+      channelDaemons.adopt("telegram-poll", startTelegramPollTick({
         ...(ackReaction.trim().length > 0 ? { ackReaction: ackReaction.trim() } : {}),
-        errorLogger: (message) => server.log.warn(message),
-        inboxFile: options.telegramInboxFile,
+        errorLogger: (message) => {
+          channelDaemons.noteError("telegram-poll", message);
+          server.log.warn(message);
+        },
+        inboxFile: telegramInboxFile,
         ...(pollMsRaw !== undefined ? { intervalMs: pollMsRaw } : {}),
         longPollSeconds: longPollRaw !== undefined && Number.isFinite(longPollRaw) ? longPollRaw : 25,
         logger: (message) => server.log.info(message),
-        onIngested: () => {
+        onIngested: (count) => {
+          channelDaemons.noteIngest("telegram-poll", count);
           void inboundReplyTick.current?.();
         },
         provider: telegram
-      });
-      server.addHook("onClose", async () => {
-        pollHandle.stop();
-      });
-    }
+      }));
+    };
+    ingestStarters.telegram();
   }
 
   // Optional conversational reply daemon: answer
@@ -553,9 +575,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       runner
     });
     inboundReplyTick.current = () => replyHandle.tickOnce();
-    server.addHook("onClose", async () => {
-      replyHandle.stop();
-    });
+    channelDaemons.adopt("inbound-reply", replyHandle);
   }
 
   // Optional daemon: ingest Matrix room messages into matrixInboxFile
@@ -564,38 +584,44 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // posture as the Telegram daemon.
   const matrixReplyTick: { current: (() => Promise<void>) | undefined } = { current: undefined };
   const matrixPollEnabled = isMuseDaemonEnabled(process.env.MUSE_MATRIX_POLL_ENABLED);
-  if (
-    matrixPollEnabled
-    && options.matrixInboxFile
-    && options.messaging
-    && options.messaging.has("matrix")
-  ) {
-    // The daemon walks the Client-Server API directly, so it needs
-    // the concrete MatrixProvider (with since-token persistence)
-    // rather than the registry's generic fetchInbound.
-    const matrix = options.messaging.require("matrix");
-    if (matrix instanceof MatrixProvider) {
+  if (matrixPollEnabled && options.matrixInboxFile && options.messaging) {
+    const matrixInboxFile = options.matrixInboxFile;
+    const messaging = options.messaging;
+    // Same boot-or-hot-start shape as the Telegram starter above.
+    ingestStarters.matrix = () => {
+      if (!messaging.has("matrix")) {
+        return;
+      }
+      // The daemon walks the Client-Server API directly, so it needs
+      // the concrete MatrixProvider (with since-token persistence)
+      // rather than the registry's generic fetchInbound.
+      const matrix = messaging.require("matrix");
+      if (!(matrix instanceof MatrixProvider)) {
+        return;
+      }
       const pollMsRaw = process.env.MUSE_MATRIX_POLL_INTERVAL_MS
         ? Number(process.env.MUSE_MATRIX_POLL_INTERVAL_MS)
         : undefined;
       const longPollRaw = process.env.MUSE_MATRIX_LONG_POLL_SECONDS
         ? Number(process.env.MUSE_MATRIX_LONG_POLL_SECONDS)
         : undefined;
-      const syncHandle = startMatrixSyncTick({
-        errorLogger: (message) => server.log.warn(message),
-        inboxFile: options.matrixInboxFile,
+      channelDaemons.adopt("matrix-sync", startMatrixSyncTick({
+        errorLogger: (message) => {
+          channelDaemons.noteError("matrix-sync", message);
+          server.log.warn(message);
+        },
+        inboxFile: matrixInboxFile,
         ...(pollMsRaw !== undefined ? { intervalMs: pollMsRaw } : {}),
         ...(longPollRaw !== undefined && Number.isFinite(longPollRaw) ? { longPollSeconds: longPollRaw } : {}),
         logger: (message) => server.log.info(message),
-        onIngested: () => {
+        onIngested: (count) => {
+          channelDaemons.noteIngest("matrix-sync", count);
           void matrixReplyTick.current?.();
         },
         provider: matrix
-      });
-      server.addHook("onClose", async () => {
-        syncHandle.stop();
-      });
-    }
+      }));
+    };
+    ingestStarters.matrix();
   }
 
   // Second inbound reply daemon over the Matrix inbox — same
@@ -630,9 +656,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       runner: matrixRunner
     });
     matrixReplyTick.current = () => matrixReplyHandle.tickOnce();
-    server.addHook("onClose", async () => {
-      matrixReplyHandle.stop();
-    });
+    channelDaemons.adopt("matrix-inbound-reply", matrixReplyHandle);
   }
 
   // Optional daemon: poll a user-configured list of

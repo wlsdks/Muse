@@ -10,13 +10,16 @@ const ALL_KEYS = [
   "MUSE_CONFLICT_WATCH_ENABLED",
   "MUSE_PROACTIVE_AGENT_TURN",
   "MUSE_BACKGROUND_REVIEW_ENABLED",
-  "MUSE_KNOWLEDGE_SEARCH_ENABLED"
+  "MUSE_KNOWLEDGE_SEARCH_ENABLED",
+  "MUSE_TELEGRAM_POLL_ENABLED",
+  "MUSE_MATRIX_POLL_ENABLED",
+  "MUSE_INBOUND_REPLY_ENABLED"
 ];
 
 describe("shapeDaemonFlags", () => {
-  it("empty env → all flags disabled, all 6 keys present in order", () => {
+  it("empty env → all flags disabled, all 9 keys present in order", () => {
     const { flags } = shapeDaemonFlags({});
-    expect(flags).toHaveLength(6);
+    expect(flags).toHaveLength(9);
     for (let i = 0; i < ALL_KEYS.length; i++) {
       const flag = flags[i] as DaemonFlagView;
       expect(flag.key).toBe(ALL_KEYS[i]);

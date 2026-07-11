@@ -194,3 +194,28 @@ describe("/api/messaging/setup", () => {
     expect(registry.has("telegram")).toBe(true);
   });
 });
+
+describe("onConnected hot-start hook", () => {
+  it("fires after a verified connect and never on a failed one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-setup-hook-"));
+    const registry = new MessagingProviderRegistry();
+    const connected: string[] = [];
+    const server = Fastify({ logger: false });
+    registerMessagingSetupRoutes(server, {
+      credentialsFile: join(dir, "messaging.json"),
+      env: {},
+      onConnected: (providerId) => {
+        connected.push(providerId);
+      },
+      registry,
+      verifyToken: async (_providerId, token) =>
+        token === "good" ? { ok: true } : { ok: false, reason: "bad token" }
+    });
+
+    await server.inject({ method: "POST", payload: { token: "bad" }, url: "/api/messaging/setup/telegram" });
+    expect(connected).toEqual([]);
+
+    await server.inject({ method: "POST", payload: { token: "good" }, url: "/api/messaging/setup/telegram" });
+    expect(connected).toEqual(["telegram"]);
+  });
+});
