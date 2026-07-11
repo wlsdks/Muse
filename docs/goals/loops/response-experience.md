@@ -114,3 +114,11 @@ ratchet: testFiles +0(기존 파일 7케이스) · fabrication 0(강화) · eval
 리뷰지점: 날짜/시각 숫자 우연 일치로 절 생략 가능(low — factNums상 존재 숫자는 전부 참이라 fabrication 없음, 판정자 수용).
 리스크: 낮음.
 lesson: misgrounding 배터리 transient 헛-FAIL 2번째 관측(fire 1과 동일 클래스, 베이스라인 3회 재실행 전부 그린 + 구조 격리 증명) — 배터리 부하-강건화를 ◦로 승급.
+
+## fire 14 · 2026-07-12 · skill v2.x · (sha pending)
+meta: value-class=reliability · pkg=@muse/proactivity · kind=concurrency · verdict=PASS · firesSinceDrill=5
+ratchet: testFiles +1(followup-firing-lock) · fabrication 0 · eval N/A
+무엇: followup 이중 전송 봉합 — 락 템플릿 3번째 채택(byte-동일 추출, 판정자 diff 확인), 두-데몬 시뮬레이션 5/5 안정 2회.
+왜: 잔여 레이스 4곳의 첫째 — 템플릿 반복으로 소형화.
+리뷰지점: 없음(패턴 확립됨). 잔여: objectives·pattern-notices·proactive-notices.
+리스크: 낮음.
