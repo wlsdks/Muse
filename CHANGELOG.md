@@ -10,6 +10,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Edits keep your file's indentation even when the model's snippet is off.**
+  When Muse edits a file and the text it's matching differs only by
+  indentation (a common slip for the local model), the change now lands with
+  the file's real indentation instead of the model's guess, so an edit no
+  longer quietly re-indents the surrounding code. Muse also recovers from a few
+  more ways the model can mangle quotes in its edit request.
+
 - **Browser tasks now have an action budget so they can't run away.** When Muse
   is driving a web page, the number of state-changing actions it takes (clicks,
   typing, form fills) is capped per task. Once the cap is reached Muse stops

@@ -135,7 +135,9 @@ const LINE_RELAXATIONS: ReadonlyArray<(line: string) => string> = [
 function findFuzzyBlock(
   content: string,
   oldString: string
-): { readonly ok: true; readonly start: number; readonly end: number } | { readonly ok: false; readonly reason: "none" | "ambiguous" } {
+):
+  | { readonly ok: true; readonly start: number; readonly end: number; readonly matchedLines: readonly string[] }
+  | { readonly ok: false; readonly reason: "none" | "ambiguous" } {
   const contentLines = content.split("\n");
   let pattern = oldString.split("\n");
   if (pattern.length > 1 && pattern[pattern.length - 1] === "") {
@@ -165,14 +167,52 @@ function findFuzzyBlock(
       for (let k = 0; k < startLine; k += 1) {
         start += contentLines[k]!.length + 1;
       }
-      const matchedText = contentLines.slice(startLine, startLine + pattern.length).join("\n");
-      return { end: start + matchedText.length, ok: true, start };
+      const matchedLines = contentLines.slice(startLine, startLine + pattern.length);
+      const matchedText = matchedLines.join("\n");
+      return { end: start + matchedText.length, matchedLines, ok: true, start };
     }
     if (hits.length > 1) {
       return { ok: false, reason: "ambiguous" };
     }
   }
   return { ok: false, reason: "none" };
+}
+
+function leadingIndent(line: string): string {
+  return /^[ \t]*/u.exec(line)?.[0] ?? "";
+}
+
+function firstNonEmptyLine(lines: readonly string[]): string | undefined {
+  return lines.find((line) => line.trim().length > 0);
+}
+
+/**
+ * A fuzzy match found the block only after RELAXING indentation, so newString
+ * (written at the model's guessed indent) would corrupt the file if spliced
+ * in verbatim. Re-base each non-blank line onto the file's actual indent,
+ * preserving any indentation the line carries BEYOND oldIndent (nested
+ * blocks). No-op when the indents already agree — the exact and
+ * trailing-whitespace-only match paths never reach here, so they stay
+ * byte-identical to before this existed.
+ */
+function reindentToFile(newString: string, oldIndent: string, fileIndent: string): string {
+  if (oldIndent === fileIndent) {
+    return newString;
+  }
+  return newString
+    .split("\n")
+    .map((line) => {
+      if (line.trim().length === 0) {
+        return line;
+      }
+      const ownIndent = leadingIndent(line);
+      let shared = 0;
+      while (shared < oldIndent.length && shared < ownIndent.length && oldIndent[shared] === ownIndent[shared]) {
+        shared += 1;
+      }
+      return fileIndent + line.slice(shared);
+    })
+    .join("\n");
 }
 
 /** Exact (then unique line-block) match of `oldString`; null when neither hits. */
@@ -193,7 +233,13 @@ function matchAndReplace(content: string, oldString: string, newString: string, 
       ? { ok: false, reason: `old_string fuzzily matches multiple places — use a longer, unique old_string` }
       : null;
   }
-  return { content: content.slice(0, fuzzy.start) + newString + content.slice(fuzzy.end), fuzzy: true, ok: true };
+  const oldFirst = firstNonEmptyLine(oldString.split("\n"));
+  const fileFirst = firstNonEmptyLine(fuzzy.matchedLines);
+  const reindented =
+    oldFirst !== undefined && fileFirst !== undefined
+      ? reindentToFile(newString, leadingIndent(oldFirst), leadingIndent(fileFirst))
+      : newString;
+  return { content: content.slice(0, fuzzy.start) + reindented + content.slice(fuzzy.end), fuzzy: true, ok: true };
 }
 
 /**
@@ -203,6 +249,16 @@ function matchAndReplace(content: string, oldString: string, newString: string, 
  */
 function unescapeWhitespace(text: string): string {
   return text.replace(/\\r\\n|\\n|\\r|\\t/gu, (seq) => (seq === "\\t" ? "\t" : seq === "\\r" ? "\r" : "\n"));
+}
+
+/**
+ * Un-drift the OTHER double-escaping a small model emits alongside whitespace:
+ * a literal `\"` / `\'` / `\\` where the file has a bare `"` / `'` / `\`. Kept
+ * as a separate pass (not folded into `unescapeWhitespace`) so its
+ * newline-collapsing regex stays untouched.
+ */
+function unescapeQuotes(text: string): string {
+  return text.replace(/\\\\|\\"|\\'/gu, (seq) => (seq === "\\\\" ? "\\" : seq === "\\\"" ? "\"" : "'"));
 }
 
 /**
@@ -256,14 +312,17 @@ export function applyEdit(content: string, spec: FsEditSpec): EditOutcome {
   if (direct) {
     return direct;
   }
-  // Exact + line-block both missed. If old_string carries literal `\n`/`\t`
-  // escapes (a double-escaping local model), un-escape old AND new together and
-  // retry once — only adopted when the repaired form actually matches, so a
-  // verbatim backslash-n in source (which the exact pass already caught) is never
-  // rewritten and we never guess a location.
-  const repairedOld = unescapeWhitespace(spec.old_string);
-  if (repairedOld !== spec.old_string) {
-    const repaired = matchAndReplace(content, repairedOld, unescapeWhitespace(spec.new_string), replaceAll);
+  // Exact + line-block both missed. If old_string carries literal `\n`/`\t` or
+  // `\"`/`\'`/`\\` escapes (a double-escaping local model), un-escape old AND
+  // new together and retry — only adopted when the repaired form actually
+  // matches, so verbatim escapes in real source (which the exact pass already
+  // caught) are never rewritten and we never guess a location.
+  for (const repair of [unescapeWhitespace, unescapeQuotes]) {
+    const repairedOld = repair(spec.old_string);
+    if (repairedOld === spec.old_string) {
+      continue;
+    }
+    const repaired = matchAndReplace(content, repairedOld, repair(spec.new_string), replaceAll);
     if (repaired?.ok) {
       return { ...repaired, fuzzy: true };
     }
