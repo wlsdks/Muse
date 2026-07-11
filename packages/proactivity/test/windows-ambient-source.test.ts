@@ -45,3 +45,10 @@ describe("WindowsActiveWindowSource", () => {
     expect(await on.snapshot()).toEqual({ app: "word", clipboard: "copied", window: "doc.docx" });
   });
 });
+
+describe.skipIf(process.platform !== "win32")("real PowerShell foreground snapshot (windows-latest contract)", () => {
+  it("snapshots the real foreground state without throwing", async () => {
+    const signal = await new WindowsActiveWindowSource().snapshot();
+    expect(signal === undefined || typeof signal.app === "string").toBe(true);
+  }, 60_000);
+});
