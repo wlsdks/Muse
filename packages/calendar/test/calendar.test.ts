@@ -19,7 +19,7 @@ import {
   type CalendarProvider
 } from "../src/index.js";
 
-describe("MacOsCalendarProvider osascript spawn timeout", () => {
+describe.skipIf(process.platform === "win32")("MacOsCalendarProvider osascript spawn timeout", () => {
   function hungScript(): string {
     const dir = mkdtempSync(join(tmpdir(), "muse-osascript-hang-"));
     const script = join(dir, "fake-osascript");
