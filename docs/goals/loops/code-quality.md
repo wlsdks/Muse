@@ -27,7 +27,8 @@
 | packages/fs·calendar·scheduler | fire 22 | 방문 |
 | packages/voice·browser·skills | fire 23 | 방문 (browser 슬라이스는 큐) |
 | packages/observability·policy·a2a·mcp-shared | fire 25 | 방문 (a2a CLEAN) |
-| 잔소형 8종 (secrets·cache·resilience·runtime-*·db·auth·prompts) | fire 28 | 방문 (5 CLEAN) — **1차 전수 순회 완성** (messaging만 의도 보류) |
+| 잔소형 8종 (secrets·cache·resilience·runtime-*·db·auth·prompts) | fire 28 | 방문 (5 CLEAN) |
+| packages/macos·mascot·agent-specs·apps/desktop | fire 31 | 방문 (mascot=데이터 응집 정상, desktop=소스 없음) — **전 영역 스캔 완료, messaging만 의도 보류** |
 | 기타 packages/* | – | 미방문 잔여: messaging(main 활발 — 보류)·voice·browser·skills·macos·소형 유틸들 |
 
 ## 대기 발견 큐
@@ -126,3 +127,4 @@
 | 28 | prompts + mcp (잔소형 마감) | 잔소형 8패키지 스캔(5 CLEAN, 정합성 버그 0)으로 1차 전수 순회 완성; prompts index.ts 609→405줄(exemplar retriever 계층 210줄 분리, regex 이스케이프 바이트-보존 확인) + p5-seam 잔존 1케이스 consent-게이트 특정성 복원(evidence 주입, 단언 무변경) | prompts 41/41 ✓ · mcp seam 4파일 14/14 ✓ · agent-core build ✓ · lint 0 ✓ |
 | 29 | cache·resilience·runtime-state (큐 일괄) | barrel 정리 3건: cache-metrics 192줄(가격표까지 — 메트릭 전용 확증) / fallback-strategy 109줄(공유 에러분류는 error-classifier로, CircuitBreakerRegistry는 상태결합이라 잔류 판단) / run-history 641→364줄(구현 2파일 분리, 재export를 index로 올려 역참조 0) — 전 분리가 단방향 의존 달성 | cache 22 · resilience 58 · runtime-state 50 전부 ✓ · autoconfigure+api build ✓ · lint 0 ✓ (identity-비교 0 확인) |
 | 30 | 의미 병합 (main identity-core 낙하) | 루프-분해 3파일과 main 신기능(composeIdentityPrompt 전면 캐스케이드·persona 배선·prompt lab) 경합 해소 — 구조=HEAD·행위=main 원칙: ①runtime-assembly 스케줄러 이중화 제거 + **git 자동-머지가 persona 배선을 buildObservabilityStack에 죽은 코드로 오배치한 침묵 버그 발견·교정**(promptLayerRegistry를 buildAgentRuntime까지 관통 배선) ②notice-synthesis에 composeIdentityPrompt 이식 ③prompts 중복 선언 제거+comparePromptLayers export 보완; identity-core 상시 ~290tok로 인한 테스트 캡 2건 실측 조정 | prompts 72/72 ✓ · autoconfigure 97파일 701/701 ✓ · proactivity 136/136 ✓ · api build ✓ · lint 0 ✓ |
+| 31 | packages/macos (스캔 마감) | 미러 2벌 공통화: TRUTHY_ENV_VALUES+WHY 주석·env 게이트·exec후 에러-매핑(timeout/exitCode/권한힌트/catch)을 mirror-shared.ts로 — 라벨 치환로 출력 문자열 바이트-동일(기존 toContain 단언 무수정 통과가 증거), 각 미러는 preamble만 유지; 기각 1(escapeNoteBodyHtml dead-export 주장 — 테스트 직접 import라 정당), 큐 추가(macos-app-read-tool 480줄 switch 2개·agent-specs evictOverflow 저긴급) | macos 215/215 ✓ · build ✓ · lint 0 ✓ |
