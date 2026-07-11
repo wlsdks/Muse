@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bluetoothShortcutsCheck,
+  brightnessShortcutCheck,
   cloudSyncFolderCheck,
   episodeIndexHealth,
   focusShortcutsCheck,
@@ -102,6 +103,35 @@ describe("bluetoothShortcutsCheck — Bluetooth shortcut presence", () => {
     const warn = bluetoothShortcutsCheck(env, ["BT On"]);
     expect(warn.status).toBe("warn");
     expect(warn.detail).toContain("BT Off");
+  });
+});
+
+describe("brightnessShortcutCheck — Brightness shortcut presence", () => {
+  it("the convention shortcut present → ok", () => {
+    const check = brightnessShortcutCheck({}, ["Morning Routine", "Muse Set Brightness"]);
+    expect(check.status).toBe("ok");
+    expect(check.detail).toContain("Muse Set Brightness");
+  });
+
+  it("missing → warn naming the Set Brightness setup", () => {
+    const check = brightnessShortcutCheck({}, ["Morning Routine"]);
+    expect(check.status).toBe("warn");
+    expect(check.detail).toContain("Set Brightness");
+  });
+
+  it("can't enumerate shortcuts (undefined) → warn 'couldn't list'", () => {
+    const check = brightnessShortcutCheck({}, undefined);
+    expect(check.status).toBe("warn");
+    expect(check.detail).toContain("couldn't list");
+  });
+
+  it("honors MUSE_BRIGHTNESS_SHORTCUT override", () => {
+    const env = { MUSE_BRIGHTNESS_SHORTCUT: "My Bright" };
+    const ok = brightnessShortcutCheck(env, ["My Bright"]);
+    expect(ok.status).toBe("ok");
+    const warn = brightnessShortcutCheck(env, ["Muse Set Brightness"]);
+    expect(warn.status).toBe("warn");
+    expect(warn.detail).toContain("My Bright");
   });
 });
 

@@ -1,7 +1,7 @@
 import { isCalibratedEmbedder, resolveRecallConfidentAt } from "@muse/agent-core";
 import { evaluateLocalOnlyPosture, evaluateWebEgressStatus, LOCAL_FIRST_DEFAULT_MODEL, parseBoolean, resolveDefaultModel, resolveVisionModel } from "@muse/autoconfigure";
 import { resolvePlatformCapabilities } from "@muse/shared";
-import { DEFAULT_BLUETOOTH_OFF_SHORTCUT, DEFAULT_BLUETOOTH_ON_SHORTCUT, DEFAULT_FOCUS_OFF_SHORTCUT, DEFAULT_FOCUS_ON_SHORTCUT } from "@muse/macos";
+import { DEFAULT_BLUETOOTH_OFF_SHORTCUT, DEFAULT_BLUETOOTH_ON_SHORTCUT, DEFAULT_BRIGHTNESS_SHORTCUT, DEFAULT_FOCUS_OFF_SHORTCUT, DEFAULT_FOCUS_ON_SHORTCUT } from "@muse/macos";
 import type { DevFixableWeakness } from "@muse/stores";
 import { promises as fs } from "node:fs";
 import { DEFAULT_EMBED_MODEL } from "./commands-notes-rag.js";
@@ -75,6 +75,30 @@ export function bluetoothShortcutsCheck(
   }
   return {
     detail: `missing ${missing.map((name) => `"${name}"`).join(" + ")} — create in Shortcuts.app with the "Set Bluetooth" action (On/Off), or point MUSE_BLUETOOTH_ON_SHORTCUT / MUSE_BLUETOOTH_OFF_SHORTCUT at existing ones`,
+    status: "warn"
+  };
+}
+
+/**
+ * Whether the single named Brightness shortcut (`mac_system_set` brightness)
+ * exists — mirrors `bluetoothShortcutsCheck`, but for ONE shortcut carrying
+ * Apple's "Set Brightness" action instead of an on/off pair. Only surfaced
+ * when the macOS actuators are enabled.
+ */
+export function brightnessShortcutCheck(
+  env: Record<string, string | undefined>,
+  listOutput: readonly string[] | undefined
+): { readonly detail: string; readonly status: "ok" | "warn" } {
+  const name = env.MUSE_BRIGHTNESS_SHORTCUT?.trim() || DEFAULT_BRIGHTNESS_SHORTCUT;
+  if (listOutput === undefined) {
+    return { detail: `couldn't list Shortcuts — grant Shortcuts access, then create "${name}" (with the "Set Brightness" action) to enable brightness control`, status: "warn" };
+  }
+  const names = new Set(listOutput);
+  if (names.has(name)) {
+    return { detail: `brightness shortcut present ("${name}") — brightness ready`, status: "ok" };
+  }
+  return {
+    detail: `missing "${name}" — create in Shortcuts.app with the "Set Brightness" action, or point MUSE_BRIGHTNESS_SHORTCUT at an existing one`,
     status: "warn"
   };
 }

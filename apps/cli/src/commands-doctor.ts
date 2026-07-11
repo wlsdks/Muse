@@ -20,7 +20,7 @@ import { backgroundStoreFile } from "./commands-background.js";
 import { readProactiveHeartbeatCheck } from "./commands-doctor-heartbeat.js";
 export { heartbeatStatusToCheckStatus, proactiveHeartbeatCheck } from "./commands-doctor-heartbeat.js";
 import { findOllamaModelTag, isOllamaTagsEntry, type OllamaTagsEntry } from "./commands-doctor-ollama.js";
-import { bluetoothShortcutsCheck, focusShortcutsCheck, readNotesIndexEmbedModel } from "./commands-doctor-checks.js";
+import { bluetoothShortcutsCheck, brightnessShortcutCheck, focusShortcutsCheck, readNotesIndexEmbedModel } from "./commands-doctor-checks.js";
 import { listShortcutNames } from "@muse/macos";
 import { embedModelCheck, formatBytes, recallCalibrationCheck } from "./commands-doctor-checks.js";
 export { embedModelCheck } from "./commands-doctor-checks.js";
@@ -527,6 +527,7 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
     const shortcutNames = await listShortcutNames();
     checks.push({ name: "focus shortcuts", ...focusShortcutsCheck(env, shortcutNames) });
     checks.push({ name: "bluetooth shortcuts", ...bluetoothShortcutsCheck(env, shortcutNames) });
+    checks.push({ name: "brightness shortcut", ...brightnessShortcutCheck(env, shortcutNames) });
   }
 
   // Voice loop (STT/TTS) — opt-in, local-only. Report enabled/disabled + the
