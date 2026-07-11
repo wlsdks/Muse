@@ -700,3 +700,154 @@ snapshot/coverage-gate).
 crown-jewel로도 문서섹션으로도 미제시. 스윕 원문(메커니즘 카탈로그 전체·18에이전트)은
 세션 산출물로만 존재 — 이 문서가 채택분의 정본이며, 미채택 메커니즘 재검토는 다음
 delta-scout 주기에.
+
+---
+
+## 10. ★ Fable 품질 판정 + 실행 체크리스트 (2026-07-11)
+
+### 10.1 판정: 집행 가능한 계획서인가? — **YES, 3개 조건부**
+
+**계획서로서 통과.** 근거: (a) 활성 34 슬라이스 전부 참조(reference)/현재(verified)/
+구현(Muse-설계)/수용(게이트) 4요소 완비, (b) false-gap 5 삭제·정련 4로 no-op 제거,
+(c) 하중-주장 21건 file:line 스팟체크(§9), (d) 웨이브 순서가 원칙갭→신뢰성→능력→
+라우팅→마감으로 논리적, (e) 비협상(grounding·fabrication=0·벤더중립·fail-close)이
+모든 슬라이스에 명시. Sonnet 워커가 §10.3 체크리스트로 바로 착수 가능.
+
+**단, 3개 조건(착수 전 반드시 처리):**
+
+1. **L-슬라이스 3개는 단일 커밋 불가 → 서브분할 필수.** D2-S1(seatbelt)·D1-S7
+   (브라우저)·D6-S1(sleep)은 각 3-4 커밋. §10.3에 서브스텝으로 분해함. "L을 한
+   번에"는 리뷰 불가·롤백 불가.
+2. **verify-first 항목은 착수 전 §11 큐에서 먼저 해소.** "Muse 현재"는 2026-07-11
+   스냅샷 — 병행 루프가 이동시켰을 수 있고, 일부는 배선점을 아직 특정 못 함
+   (D3-S2 heartbeat 호출점, D5-S3 게이트 위치 등). 큐 항목이 열린 슬라이스는
+   그 항목부터.
+3. **오탐-리스크 슬라이스는 near-miss 쌍 테스트가 수용의 일부.** D2-S1(정당 명령
+   차단)·D2-S2(정당 heredoc 차단)·D1-S1(정당 반복 차단)은 "막아야 할 것 차단 +
+   막으면 안 되는 것 통과" 양면 테스트 없이는 미완. §10.3에 명시.
+
+### 10.2 발견된 품질 이슈 + 처리 (Fable 리뷰)
+
+| # | 이슈 | 심각도 | 처리 |
+|---|---|---|---|
+| Q1 | L-슬라이스 3개가 단일 커밋 크기 아님 | 높음 | §10.3에서 서브분할 |
+| Q2 | 슬라이스 간 의존성이 웨이브에만 암묵 — 명시 필요 | 중 | §10.4 의존성 표 신설 |
+| Q3 | verify-first 항목이 슬라이스 본문에 흩어짐 | 중 | §11 살아있는 큐로 집약 |
+| Q4 | 일부 수용 기준이 정량 아님("성능 무해") | 낮 | §11-VQ에 벤치 임계 확정 항목 |
+| Q5 | W4가 9슬라이스로 과적(W3=4) | 낮 | 대부분 S라 수용 — 필요시 W4를 W4a/W4b 분할 |
+| Q6 | D3-S7이 W1인데 X-3 파일을 여기서 처음 염(D3-S1/S4는 W2) | 낮 | 안전-우선 순서가 우위 — 유지, 노트만 |
+| Q7 | per-슬라이스 롤백/리스크 열 없음 | 중 | §10.3 각 항목에 리스크 태그 |
+
+### 10.3 실행 체크리스트 (웨이브별 · 슬라이스별)
+
+착수 규칙: 위→아래 순. 각 `[ ]`는 **1 커밋**(L의 서브스텝도 각 1 커밋). 모든
+슬라이스 공통 게이트 = `test:changed` → mutation-RED → lint 0/0 → (에이전트-facing
+이면 eval:tools/해당 배터리 STABLE 3/3, 요청경로면 smoke:live). ⚠=오탐리스크(near-miss
+쌍 테스트 필수), 🔒=fail-close 안전 슬라이스, 📈=eval 래칫 동반.
+
+#### W1 — 원칙 갭 (보안·루프이탈·PID)
+- [ ] **D2-S1a** 🔒 seatbelt 프로파일 생성기(cwd 삽입·이스케이프검증, Rust 순수함수) + 유닛
+- [ ] **D2-S1b** 🔒 runner `MUSE_RUNNER_SANDBOX=seatbelt` 배선 + 실프로세스 탈출 3종 계약 테스트 ⚠(정당명령 오탐 목록 → VQ-9)
+- [ ] **D2-S1c** 🔒 비-macOS "unsupported+경고" 폴백 + `muse doctor` 포스처 체크
+- [ ] **D2-S1d** 📈 eval:adversarial에 sandbox-탈출 케이스 추가(→ D2-S7과 합류 가능)
+- [ ] **D2-S2** 🔒⚠ 셸 토폴로지 패스(치환/heredoc/eval 감지→승인 강등) + 우회·near-miss 쌍
+- [ ] **D1-S1** ⚠ ping-pong+휘발성ID 스트리핑 루프감지(창20/warn6/block10) + 진짜-진행 통과 유닛 + unknown-tool 감지 병합
+- [ ] **D1-S2** post-compaction 루프가드(창3) + 시나리오 유닛
+- [ ] **D2-S6a** 승인 프롬프트 위험-토큰 하이라이트(DS-2 분류기 재사용)
+- [ ] **D2-S6b** write-approval 스테이징 — 기존 `pending-approval-store.ts` CLI 경로 확장(신규 스토어 금지) + no-external-effect 계약
+- [ ] **D3-S7** 🔒 X-3 PID-재사용 kill 가드(OS start-time 대조→불일치시 kill 금지) + 재사용-시뮬 유닛 (→ VQ-8 이식성)
+
+#### W2 — 신뢰성 (컴팩션·예산·서브에이전트·브라우저)
+- [ ] **D1-S3** 단계적 요약(청크→병합, FAIL-OPEN) + 식별자-보존 지시 + 기존 CMP-2 무수정
+- [ ] **D1-S5** 이터레이션 예산 재설계(PTC 계상·서브에이전트 하위예산·소진 명시) + 유닛
+- [ ] **D3-S1** 서브에이전트 depth 강등 + 부모 tool-deny 상속 + mutation
+- [ ] **D3-S2** 단일-run heartbeat 배선(기존 detectStalled 재사용) + fake-clock 유닛 (→ VQ-1 배선점)
+- [ ] **D3-S4** 용량 거부(job 동시상한3) + 부모-헤드룸 요약예산+스필 + 유닛
+- [ ] **D1-S7a** 🔒 브라우저 스냅샷 AX-tree 숫자 refs(@e1…) + 안정성 유닛
+- [ ] **D1-S7b** step-budget+timeout 주입(actions_used N/M 표기) + 소진 유닛
+- [ ] **D1-S7c** pending dialog을 스냅샷 필드로+auto-dismiss
+- [ ] **D1-S7d** 🔒 page 콘텐츠 `<page>` 래핑+미디어지시 defang(인젝션 계약) + 실 e2e (→ VQ-10)
+
+#### W3 — 능력·UX
+- [ ] **D4-S4** 📈 file_edit 결정론 리페어(hermes 9-전략 fuzzy 참조·escape-drift·indent) + eval:computer-task +10%p pass^3
+- [ ] **D4-S1** 📈 `muse mcp serve` 확대(read 다수+write draft-first 프록시+grounded-recall 노출) + groundedSurfaces 35→36
+- [ ] **D4-S2a** macOS Photos 검색/내보내기(M)
+- [ ] **D4-S2b** macOS 앱종료(S) · **D4-S2c** 다크모드(S) · **D4-S2d** 밝기/블루투스(S, Shortcuts) — 각 mac_system_set enum 확장+eval 케이스
+- [ ] **D4-S2e** Apple 연락처 '쓰기'(draft-first 게이트)
+- [ ] **D7-S1** 슬래시 명령 단일소스 레지스트리(chat-ink+CLI 공유) + 중복제거 증명
+
+#### W4 — 라우팅·KO
+- [ ] **D5-S1** privacy routing follow-ups(context-free 툴=로컬 명문화·KO 소유격 토큰·setup 안내) + 기존 20 계약 무수정
+- [ ] **D5-S2** `resolveAuxiliaryModel(task,env)` 통합 리졸버(하위호환·local-only 게이트 통과)
+- [ ] **D5-S3** canUseNativeTools 死코드→실게이트 배선(toolCalling=false→텍스트 프로토콜/명시에러) (→ VQ-2 배선점)
+- [ ] **D5-S4** 명시적 `MUSE_MODEL_FALLBACKS` 체인(게이트 통과·발생 표기·미설정 byte-identical)
+- [ ] **D1-S6** 턴-내 one-shot 회복 상태 통합(동작불변 리팩터)
+- [ ] **D2-S3** 난독화 해제 확장(NFKC/ANSI/홈경로접기 中 실부재분만 — VQ-3 먼저)
+- [ ] **D2-S4** runner stdout→모델 시크릿 마스킹(VQ-4로 미배선 확인 후) + 성능 벤치(VQ 임계)
+- [ ] **D2-S5** calendar 스토어 암호화(reflections 템플릿 재사용) + 라운드트립 3종
+- [ ] **D-KO-S1** ★ truncateUtf16Safe 추출 + 미안전 3곳 배선(history-search:206/213·tool-def-helpers:108·knowledge-corpus:365) (→ VQ-6 TTS)
+
+#### W5 — 기억·마감
+- [ ] **D-E1** 📈 eval 집계 실-강제(pre-push subset 확장·self-eval 커밋훅·CI 결정론분·Tier-0 오염필터) + 훅 실차단 증명 (→ VQ-12 시간예산)
+- [ ] **D6-S1a** sleep-consolidation 결정론 승격 스코어(재-recall·distinct질의·반감기, LLM없음) + 유닛
+- [ ] **D6-S1b** 승격을 draft 제안(proactive 카드)+**자동쓰기-없음 계약**(mutation)
+- [ ] **D6-S1c** 데몬 배선(opt-in) + loop-v2 Sleep 정합
+- [ ] **D6-S2** 연료 파이프라인(browsing auto-sync·recap 연결·주간 real-miss 리포트) — attended
+- [ ] **D6-S3** 메모리 drift 감지(round-trip 해시→차단+.bak, JSON 유지) (→ VQ-7 시나리오)
+- [ ] **D6-S4** provenance 태그(foreground vs 자율)+자율-삭제-금지 계약
+- [ ] **D3-S3** 완료-이벤트 idle-drain 계약 핀(poll≠consumed 구분)
+- [ ] **D3-S6** 📈 eval:orchestration 래칫(D3-S1/S2/S4 케이스·MAST 2+) pass^3
+- [ ] **D2-S7** 📈 eval:adversarial 16→24+(sandbox탈출3·토폴로지3·난독화2, 결정론 가드 검증)
+- [ ] **D7-S3** 스마트-테일 터미널 출력(웹콘솔) + 실브라우저 측정
+- [ ] **D7-S4** desktop 반응성(경과타이머·상태반응) — attended
+
+#### 이연 (착수 전 진안 확인)
+- [ ] **D-KO-S3** i18n 정적 카탈로그 중앙화 (저우선·리팩터 리스크>이득 가능)
+- [ ] **암호화 key-migration 백업** `.plaintext-backup-<ts>` (§8.6.1, 소소)
+
+### 10.4 슬라이스 의존성 (착수 전 확인)
+
+- **D2-S7**(adversarial 확대)은 D2-S1d·S2·S3의 케이스가 입력 → 그 슬라이스들 **후**.
+- **D3-S6**(orchestration 래칫)은 D3-S1/S2/S4 완료 후.
+- **D-E1**(a)는 `eval:agent` 존재 전제(✓ 있음) + 다른 eval 슬라이스가 케이스 공급.
+- **D4-S1**(grounded-recall 노출)은 `streamGroundedRecall` seam 전제(✓ 있음).
+- **D2-S6b**·**D6-S3**·**D-KO-S1**·**D5-S3**은 기존 심볼 재사용 → §11 VQ에서 배선점 확정 후.
+- 나머지는 상호 독립(웨이브 내 순서 무관).
+
+---
+
+## 11. 🔍 추가 검증 필요 — 살아있는 큐 (append-only)
+
+> **규칙**: 슬라이스 착수 전 해당 VQ를 먼저 해소(codegraph/Read/실측). 해소되면
+> `[x]` + 한 줄 결론. **새 검증 필요 항목은 이 섹션 맨 아래에 계속 추가**(날짜+출처).
+> 이 큐가 비면 계획의 불확실성이 0 — 그 전까지 열린 VQ가 있는 슬라이스는 그 VQ부터.
+
+### 착수-차단 VQ (해당 슬라이스 전 필수)
+- [ ] **VQ-1** (D3-S2) 단일 agent run의 어느 지점에서 `heartbeat(runId)`를 호출할지 — agent-runtime 툴루프 tool-start/delta 훅 위치 특정. 현재 호출부는 orchestrator:347 1곳뿐.
+- [ ] **VQ-2** (D5-S3) `canUseNativeTools` 게이트를 어느 provider 경로에 넣을지 — 어댑터별인지 라우터인지. 텍스트-프로토콜 폴백이 이미 어딘가 부분존재하는지 재확인.
+- [ ] **VQ-3** (D2-S3) NFKC·ANSI-strip·홈경로접기 中 실제 부재분 확정(있는 건 skip) — `dangerous-command.ts` normalizeCommandForGuard 재정독.
+- [ ] **VQ-4** (D2-S4) `redactSecretsInText`가 run_command stdout→모델 경로에 정말 미배선인지 최종 확인(runner.ts:88-103 반환 직전).
+- [ ] **VQ-5** (D4-S3) `--with-tools` prepare-only seam 진입점 설계 — seam이 tool/vision/decompose arm + 스트리밍 이벤트를 지원해야 하는 범위 산정(멀티세션 가능성).
+- [ ] **VQ-6** (D-KO-S1) TTS cap 절단 지점(`@muse/voice` truncateForTts)이 surrogate-미안전인지 확인 — 미안전이면 배선 대상에 추가.
+- [ ] **VQ-7** (D6-S3) 다중 프로세스(CLI/데몬/루프) 동시 메모리 편집 오염 시나리오 재현 — withFileMutationQueue가 프로세스간(파일락)까지 커버하는지, drift 가드가 실제 필요한 범위.
+- [ ] **VQ-8** (D3-S7) OS 프로세스 start-time 캡처 이식성 — macOS `ps -o lstart=`/Linux `/proc/<pid>/stat` 차이 + 캡처를 spawn 시점에 할지 kill 시점 대조만 할지.
+- [ ] **VQ-9** (D2-S1) seatbelt 프로파일 오탐 목록 — `git`/`pnpm build`/`tsc`/`node`가 cwd+$TMPDIR 밖에 정당하게 쓰는 경로(캐시·전역 store) 열거 → 프로파일 allow에 반영, 안 그러면 정당 명령 차단.
+- [ ] **VQ-10** (D1-S7) 브라우저 실 e2e 하네스 — detached-Chrome 조립 경로를 실제 구동하는 테스트(project_browser_control 교훈: 조립 안 몰면 거짓 통과).
+- [ ] **VQ-12** (D-E1) pre-push 훅이 eval:agent subset까지 확장 시 push 지연 시간 예산 — 몇 초까지 허용? precheck-grounding 현 소요 대비. 초과 시 subset 축소.
+
+### 정량-확정 VQ (수용 기준의 숫자 채우기)
+- [ ] **VQ-Q1** (D2-S4) 시크릿 마스킹 "성능 무해"의 실측 임계 — 대형 stdout(10MB cap)에서 redact 추가 지연 ms 상한 확정.
+- [ ] **VQ-Q2** (D1-S1) ping-pong 창/임계(창20·warn6·block10)를 gemma4 실 트레이스로 재보정 — 제안값이 정당 반복(재시도 루프)을 오탐하는지 실측.
+- [ ] **VQ-Q3** (D6-S1) sleep-consolidation 승격 스코어 임계(반감기·min-recall) — Muse ~/.muse 실데이터 기근 상태에서 의미있는 값인지(연료 VQ-7과 연동).
+
+### 저가치·조건부 VQ (필요성부터 판정)
+- [ ] **VQ-11** orphaned-pipe 드레인(X-3) — Muse detached-node spawn이 손자-파이프 hang에 실제 취약한지. 취약하면 슬라이스 승격, 아니면 폐기.
+- [ ] **VQ-13** connection-epoch 무효화(웹콘솔/SSE) — 재연결 후 stale 결과 적용 레이스가 Muse 웹콘솔에 실재하는지. 실재만 슬라이스화.
+- [ ] **VQ-14** request coalescing(웹콘솔 동시 fetch) — 단일사용자라 동시성 낮음, 실측 후 판정.
+
+### 전략-레벨 오픈 질문 (진안 결정)
+- [ ] **VQ-S1** eval 성적표 A→A+ 복원은 D-E1 하나에 달림 — GitHub CI에 로컬 Ollama가 없어 "라이브 게이트"는 구조적으로 pre-push 로컬 훅에 머문다. 클라우드 러너에 self-hosted Ollama를 붙일지(비용/복잡도) vs 로컬-훅으로 충분하다 볼지.
+- [ ] **VQ-S2** D6(sleep-consolidation)은 연료(~/.muse 실데이터) 없이는 실효 0 — 연료 확보(D6-S2, 실사용)가 D6-S1보다 먼저여야 하는지 순서 재고.
+- [ ] **VQ-S3** W4 과적(9슬라이스) — W4a(라우팅 D5)·W4b(보안마감 D2-S3/S4/S5+KO)로 분할할지.
+
+<!-- 새 VQ는 이 줄 위에 "- [ ] **VQ-N** (슬라이스) 내용 — 발견 날짜/출처" 형식으로 추가 -->
