@@ -55,7 +55,7 @@ ratchet: testFiles +1(prompt-escape 이동) · fabrication 0 · eval N/A(ack 경
 리뷰지점: --json은 raw 덤프(로컬 read-only, 수용); 5개 루프의 직접-전송 경로는 기존 관례대로 미중화(backlog에 명시 유지).
 리스크: 낮음 — 중화는 subtractive, clean text byte-동일 pin.
 
-## fire 7 · 2026-07-12 · skill v2.x · (sha pending)
+## fire 7 · 2026-07-12 · skill v2.x · ccc729af6
 meta: value-class=refinement · pkg=@muse/proactivity · kind=rationale-refinement · verdict=PASS · firesSinceDrill=7
 ratchet: testFiles +0(6 테스트 재작성+2 pin) · fabrication 0 · eval N/A
 무엇: 체크인 절을 "(N일 전)"→"(7/5에 남기신 약속)" 절대날짜로 — 지연 배달 하향-오차 클래스 제거, 이전-연도는 연도 포함, 클럭-스큐에도 잘못된 연도 embellishment 없음(판정자 프로브 확인).
