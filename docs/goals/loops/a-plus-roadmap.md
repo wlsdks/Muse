@@ -96,7 +96,7 @@ ratchet: 로드맵 잔여 [ ] = 21/36 · self-eval pass · fabrication 0 · mult
 - 리뷰지점: Opus가 순수 규칙 가드 전수(0/neg/NaN/Inf/frac→항상 양의정수≥3)·행동 배선(워커=[5,5,5]·synthesis=10·args.metadata 무mutation)·부모추출 안전(uncapped→5)·mutation-RED 양방향·형제-감사 진실성 확인.
 - 리스크: orchestrator.ts(SupervisorAgent)·commands-board도 부모 metadata 상속(같은 클래스)이나 서버측·maxTools 관례 부재로 backlog follow-up(◦). 다음 D3-S1이 서브에이전트 depth 강등이라 인접.
 
-## fire 12 · 2026-07-11 · skill v2.x · <commit-pending>
+## fire 12 · 2026-07-11 · skill v2.x · f7d546f63
 meta: slice=D3-S1a · wave=W2 · pkg=@muse/multi-agent+apps/cli · kind=recursion-bound · verdict=PASS · firesSinceDrill=3
 ratchet: 로드맵 잔여 [ ] = 21/37 · self-eval pass · fabrication 0 · multi-agent 34 test(+depth) · MUSE_BOARD_MAX_DEPTH env
 - 무엇: 보드 태스크 depth 강등. AgentTask에 옵셔널 depth(부모0·서브 depth+1), resolveBoardMaxDepth(MUSE_BOARD_MAX_DEPTH 기본1·floor1), expandTaskIntoSubtasks가 depth≥maxDepth면 no-op(재분해 거부). CLI board expand 배선. 첫 분해는 여전히 허용(재-expand만 차단).
