@@ -13,6 +13,11 @@ export interface PrivacyRequestInput {
    * request — notes chunks, memory facts, persona, personal-store sections,
    * or conversation history that contains user data. This alone is
    * decisive: it wins over every text signal below.
+   *
+   * Note on persona specifically: a persona preamble is a fixed, authored
+   * string (not raw user data), yet it still counts as personal context here
+   * — it reveals the user's chosen persona/relationship framing, so a turn
+   * carrying it is kept local same as one carrying notes or memory facts.
    */
   readonly hasPersonalContext: boolean;
   readonly query: string;
@@ -24,6 +29,17 @@ export interface PrivacyRequestInput {
   readonly memoryValues?: readonly string[];
   /** Output of the existing PII input-guard detector (`findPii`). */
   readonly piiDetected?: boolean;
+  /**
+   * True when this request will invoke tools (calendar, memory, notes,
+   * home, etc). Tools are conduits to personal data, so a tool-bearing
+   * request is kept local regardless of how context-free its text reads —
+   * the fail-close principle is "no personal-data conduit rides a cloud
+   * request". Defense-in-depth: the chat surface also strips tools
+   * structurally from its cloud turn (`buildCloudTurnRequest`), so this
+   * signal codifies the same principle as a policy-layer guard for every
+   * caller, not the only place it is enforced.
+   */
+  readonly usesTools?: boolean;
 }
 
 export interface PrivacyClassificationResult {
@@ -48,7 +64,14 @@ const EN_PERSONAL_MARKER_PATTERNS: readonly RegExp[] = [
 // substrings — no common Korean word contains "내가", "나의", "저의", "제가",
 // or "우리" as a false-positive prefix the way 내일 ("tomorrow")/내용
 // ("content")/안내 ("notice") contain a bare "내".
-const KO_PERSONAL_SUBSTRING_MARKERS: readonly string[] = ["내가", "나의", "저의", "제가", "우리"];
+// "내꺼"/"제꺼" are colloquial contracted forms of "내 거"/"제 거" ("my
+// thing") — unambiguous as substrings because they use 꺼 (aspirated), not
+// 거. Do NOT add 내거/제거 (unaspirated 거): 제거 means "removal/delete" and
+// 내거 is not a standalone false-positive-free token in the same way — 거
+// alone collides with real words (내일 "tomorrow", 안내 "notice", 내용
+// "content" via 내; 제안 "proposal", 제품 "product" via 제) the way 꺼 never
+// does.
+const KO_PERSONAL_SUBSTRING_MARKERS: readonly string[] = ["내가", "나의", "저의", "제가", "우리", "내꺼", "제꺼"];
 
 // The single-syllable KO pronouns 내/제 ("my"/"me") are NOT safe as bare
 // substrings: 내일 (tomorrow), 내용 (content), 안내 (notice/guide), 제안
@@ -105,7 +128,8 @@ function matchedQueryMarker(query: string): string | undefined {
  * Classify a request and name the signal that decided it — the reason
  * string is surfaced to the user ("Muse shows its work"). Checked in
  * descending order of certainty: caller-declared personal context, then
- * PII, then a remembered-fact reference, then a text marker. Unsure (no
+ * declared tool usage (same tier — a declared capability, not a text guess),
+ * then PII, then a remembered-fact reference, then a text marker. Unsure (no
  * signal fires) resolves to `"context-free"` only because every prior check
  * failed to find a reason to keep it local — the fail-close default lives
  * in `resolvePrivacyRoutedModel`, not here.
@@ -115,6 +139,12 @@ export function explainRequestPrivacy(input: PrivacyRequestInput): PrivacyClassi
     return {
       classification: "personal",
       reason: "request carries personal context (notes, memory, persona, or conversation history)"
+    };
+  }
+  if (input.usesTools) {
+    return {
+      classification: "personal",
+      reason: "request may invoke tools that read personal data (calendar, memory, notes, home) — kept local"
     };
   }
   if (input.piiDetected) {
@@ -153,6 +183,8 @@ export interface PrivacyRoutedModelArgs {
   readonly hasPersonalContext: boolean;
   readonly memoryValues?: readonly string[];
   readonly piiDetected?: boolean;
+  /** See `PrivacyRequestInput.usesTools` — tool-bearing requests stay local. */
+  readonly usesTools?: boolean;
   readonly defaultModel: string;
   readonly env: Readonly<Record<string, string | undefined>>;
 }
@@ -201,7 +233,8 @@ export function resolvePrivacyRoutedModel(args: PrivacyRoutedModelArgs): Privacy
     hasPersonalContext: args.hasPersonalContext,
     memoryValues: args.memoryValues,
     piiDetected: args.piiDetected,
-    query: args.query
+    query: args.query,
+    usesTools: args.usesTools
   });
 
   if (classification === "context-free") {

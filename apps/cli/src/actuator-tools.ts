@@ -528,7 +528,8 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
         ...(env.MUSE_FOCUS_ON_SHORTCUT?.trim() ? { focusOnShortcut: env.MUSE_FOCUS_ON_SHORTCUT.trim() } : {}),
         ...(env.MUSE_FOCUS_OFF_SHORTCUT?.trim() ? { focusOffShortcut: env.MUSE_FOCUS_OFF_SHORTCUT.trim() } : {}),
         ...(env.MUSE_BLUETOOTH_ON_SHORTCUT?.trim() ? { bluetoothOnShortcut: env.MUSE_BLUETOOTH_ON_SHORTCUT.trim() } : {}),
-        ...(env.MUSE_BLUETOOTH_OFF_SHORTCUT?.trim() ? { bluetoothOffShortcut: env.MUSE_BLUETOOTH_OFF_SHORTCUT.trim() } : {})
+        ...(env.MUSE_BLUETOOTH_OFF_SHORTCUT?.trim() ? { bluetoothOffShortcut: env.MUSE_BLUETOOTH_OFF_SHORTCUT.trim() } : {}),
+        ...(env.MUSE_BRIGHTNESS_SHORTCUT?.trim() ? { brightnessShortcut: env.MUSE_BRIGHTNESS_SHORTCUT.trim() } : {})
       }),
       createMacScreenshotTool(),
       createMacClipboardSetTool(),

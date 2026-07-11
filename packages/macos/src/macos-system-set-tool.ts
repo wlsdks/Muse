@@ -6,7 +6,7 @@ import { defaultShortcutsRunner, type ShortcutsRunner } from "./macos-shortcut-t
 
 // ── Tier 1: mac_system_set (volume / mute / sleep / Wi-Fi / Focus / quit app) ─────
 
-const SYSTEM_SETTINGS = ["volume", "mute", "unmute", "display_sleep", "sleep", "wifi_on", "wifi_off", "focus_on", "focus_off", "bluetooth_on", "bluetooth_off", "quit_app", "dark_mode_on", "dark_mode_off"] as const;
+const SYSTEM_SETTINGS = ["volume", "mute", "unmute", "display_sleep", "sleep", "wifi_on", "wifi_off", "focus_on", "focus_off", "bluetooth_on", "bluetooth_off", "quit_app", "dark_mode_on", "dark_mode_off", "brightness"] as const;
 type SystemSetting = (typeof SYSTEM_SETTINGS)[number];
 
 /**
@@ -27,6 +27,15 @@ export const DEFAULT_FOCUS_OFF_SHORTCUT = "Muse Focus Off";
  */
 export const DEFAULT_BLUETOOTH_ON_SHORTCUT = "Muse Bluetooth On";
 export const DEFAULT_BLUETOOTH_OFF_SHORTCUT = "Muse Bluetooth Off";
+
+/**
+ * macOS also has no official CLI for display brightness, so this mirrors the
+ * Bluetooth shortcut fallback: a NAMED user Shortcut carrying Apple's own
+ * "Set Brightness" action, with the requested level passed in as the
+ * shortcut's input (not on/off — a 0–100 value). Overridable via
+ * MUSE_BRIGHTNESS_SHORTCUT.
+ */
+export const DEFAULT_BRIGHTNESS_SHORTCUT = "Muse Set Brightness";
 
 /**
  * True when a `shortcuts run` stderr says the named shortcut doesn't exist. The
@@ -59,6 +68,16 @@ export function bluetoothShortcutSetupMessage(name: string, on: boolean): string
   );
 }
 
+/** Actionable one-time setup message shown when the Brightness shortcut is missing. */
+export function brightnessShortcutSetupMessage(name: string): string {
+  return (
+    `Shortcut "${name}" not found. Create it once: open Shortcuts.app → New Shortcut → ` +
+    `name it exactly "${name}" → add the "Set Brightness" action → set its value to ` +
+    `"Shortcut Input" (so the number Muse passes becomes the brightness). ` +
+    `(Or point MUSE_BRIGHTNESS_SHORTCUT at a shortcut you already have.)`
+  );
+}
+
 export interface MacSystemSetToolDeps {
   readonly osascript?: MacOsascriptRunner;
   readonly pmset?: (args: readonly string[]) => Promise<MacCommandResult>;
@@ -68,6 +87,7 @@ export interface MacSystemSetToolDeps {
   readonly focusOffShortcut?: string;
   readonly bluetoothOnShortcut?: string;
   readonly bluetoothOffShortcut?: string;
+  readonly brightnessShortcut?: string;
 }
 
 export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseTool {
@@ -79,6 +99,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
   const focusOffShortcut = deps.focusOffShortcut?.trim() || DEFAULT_FOCUS_OFF_SHORTCUT;
   const bluetoothOnShortcut = deps.bluetoothOnShortcut?.trim() || DEFAULT_BLUETOOTH_ON_SHORTCUT;
   const bluetoothOffShortcut = deps.bluetoothOffShortcut?.trim() || DEFAULT_BLUETOOTH_OFF_SHORTCUT;
+  const brightnessShortcut = deps.brightnessShortcut?.trim() || DEFAULT_BRIGHTNESS_SHORTCUT;
   return {
     definition: {
       description:
@@ -86,16 +107,17 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         "'display_sleep' (screen off now), 'sleep' (put the whole Mac to sleep), 'wifi_on', 'wifi_off', " +
         "'focus_on' (turn ON Do Not Disturb / a Focus mode), 'focus_off' (turn it OFF), " +
         "'bluetooth_on' (turn ON Bluetooth), 'bluetooth_off' (turn it OFF), " +
-        "'quit_app' (quit an app — needs `app`), or 'dark_mode_on' / 'dark_mode_off' " +
-        "(turn macOS Dark Mode on/off). " +
+        "'quit_app' (quit an app — needs `app`), 'dark_mode_on' / 'dark_mode_off' " +
+        "(turn macOS Dark Mode on/off), or 'brightness' (needs `value` 0–100, dims/brightens the display). " +
         "Use when the user asks to set/raise/lower the volume, mute/unmute, sleep the screen or the Mac, " +
         "turn Wi-Fi on/off, turn Do Not Disturb / Focus on or off, turn Bluetooth on or off, quit/close a " +
-        "named app, or switch Dark Mode / Light Mode / appearance on or off — e.g. " +
+        "named app, switch Dark Mode / Light Mode / appearance on or off, or dim/brighten the screen — e.g. " +
         "'set the volume to 30', 'mute the sound', 'turn off wifi', 'turn on do not disturb', " +
         "'enable focus mode', 'turn on bluetooth', 'turn off bluetooth', 'quit Safari', 'turn on dark mode', " +
-        "'switch to light mode', " +
+        "'switch to light mode', 'set brightness to 40', 'dim the screen', " +
         "'볼륨 50으로 해줘', '와이파이 꺼줘', '방해금지 켜줘', " +
-        "'집중모드 꺼줘', '블루투스 켜줘', '블투 꺼줘', 'Safari 종료해줘', '메모장 닫아줘', '다크모드 켜줘', '화면 어둡게 해줘'. Do NOT use it to control music " +
+        "'집중모드 꺼줘', '블루투스 켜줘', '블투 꺼줘', 'Safari 종료해줘', '메모장 닫아줘', '다크모드 켜줘', '화면 어둡게 해줘', " +
+        "'화면 밝기 60으로 해줘', '화면 밝게 해줘'. Do NOT use it to control music " +
         "playback (that is mac_media_control) or to run a user-named Shortcut (that is mac_shortcut_run).",
       domain: "system",
       groundedArgs: ["value"],
@@ -108,7 +130,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
             type: "string"
           },
           value: {
-            description: "Volume level 0–100 — REQUIRED only when setting is 'volume', e.g. 30. Ignored otherwise.",
+            description: "Volume or brightness level 0–100 — REQUIRED when setting is 'volume' or 'brightness', e.g. 30. Ignored otherwise.",
             type: "number"
           },
           app: {
@@ -125,7 +147,8 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         "focus", "집중", "집중모드", "방해금지", "방해 금지", "dnd", "do not disturb",
         "bluetooth", "블루투스", "블투",
         "quit", "종료", "닫아", "close app",
-        "dark mode", "다크모드", "다크 모드", "어둡게", "light mode", "라이트모드", "appearance"
+        "dark mode", "다크모드", "다크 모드", "어둡게", "light mode", "라이트모드", "appearance",
+        "brightness", "밝기", "화면 밝기", "밝게", "dim", "화면 밝게"
       ],
       name: "mac_system_set",
       risk: "execute"
@@ -245,6 +268,32 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
           return { reason: `osascript failed: ${result.stderr.trim().slice(0, 300)}`, set: false };
         }
         return { set: true, setting };
+      }
+      if (setting === "brightness") {
+        const raw = args["value"];
+        if (typeof raw !== "number" || !Number.isFinite(raw)) {
+          return { set: false, reason: "setting 'brightness' requires a numeric 'value' between 0 and 100" };
+        }
+        const level = Math.max(0, Math.min(100, Math.round(raw)));
+        let result: MacCommandResult;
+        try {
+          result = await shortcuts(["run", brightnessShortcut, "--input-path", "-", "--output-path", "-"], String(level));
+        } catch (cause) {
+          return { reason: `shortcuts spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+        }
+        if (result.timedOut) {
+          return { reason: "shortcuts run timed out", set: false };
+        }
+        if (result.exitCode !== 0) {
+          const stderr = result.stderr.trim();
+          return {
+            reason: isMissingShortcutError(stderr)
+              ? brightnessShortcutSetupMessage(brightnessShortcut)
+              : stderr.length > 0 ? stderr.slice(0, 500) : `shortcuts exited with code ${result.exitCode?.toString() ?? "null"}`,
+            set: false
+          };
+        }
+        return { set: true, setting, shortcut: brightnessShortcut, value: level };
       }
       let script: string;
       let echoValue: number | undefined;

@@ -63,6 +63,20 @@ export function planCloudSetup(providerId: string, env: NodeJS.ProcessEnv, model
   return { defaultModel, keyPresent, localOnlyDisabled, provider, requiredExports };
 }
 
+/**
+ * Guidance shown after a cloud setup so the user knows privacy-tiered routing exists: with
+ * `MUSE_PRIVACY_ROUTING=true`, only context-free requests ride the cloud model — anything
+ * carrying persona/memory/PII/possessive markers stays local (`@muse/policy`
+ * `resolvePrivacyRoutedModel`). `MUSE_LOCAL_ONLY=true` still overrides everything to local.
+ */
+export function cloudPrivacyRoutingGuidance(cloudModel: string): string {
+  return `Privacy-tiered routing (optional): set MUSE_PRIVACY_ROUTING=true and MUSE_CLOUD_MODEL=${cloudModel}
+to send ONLY context-free requests to the cloud model — anything with your persona, memory,
+PII, or possessive markers ("my", "I") stays on the LOCAL model instead.
+MUSE_LOCAL_ONLY=true still overrides all of this back to fully local.
+`;
+}
+
 export function registerSetupCloudCommand(program: Command, io: ProgramIO, helpers: SetupCloudHelpers): void {
   const setupRoot = program.commands.find((cmd) => cmd.name() === "setup");
   if (!setupRoot) {
@@ -101,5 +115,6 @@ Examples:
         for (const line of plan.requiredExports) io.stdout(`  ${line}\n`);
       }
       io.stdout("\nLocal stays the shipped default; this only applies while MUSE_LOCAL_ONLY=false. Revert anytime: muse setup local\n");
+      io.stdout(`\n${cloudPrivacyRoutingGuidance(plan.defaultModel)}`);
     });
 }
