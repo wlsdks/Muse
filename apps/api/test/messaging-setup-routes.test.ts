@@ -221,7 +221,7 @@ describe("onConnected hot-start hook", () => {
 });
 
 describe("POST /api/messaging/setup/:providerId/test-send", () => {
-  function buildWithOwner() {
+  function buildWithOwner(_options: { readonly owner?: string } = {}) {
     const dir = mkdtempSync(join(tmpdir(), "muse-testsend-"));
     const sent: { destination: string; text: string }[] = [];
     const registry = new MessagingProviderRegistry([{
@@ -267,5 +267,42 @@ describe("POST /api/messaging/setup/:providerId/test-send", () => {
     const { server } = buildWithOwner();
     const response = await server.inject({ method: "POST", url: "/api/messaging/setup/smoke-signals/test-send" });
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe("pairing surface", () => {
+  it("GET exposes the paired owner chat per provider", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-pair-ui-"));
+    const ownersFile = join(dir, "channel-owners.json");
+    const { adoptChannelOwner } = await import("../src/channel-owner-store.js");
+    await adoptChannelOwner(ownersFile, "telegram", "8303165569");
+    const server = Fastify({ logger: false });
+    registerMessagingSetupRoutes(server, {
+      credentialsFile: join(dir, "messaging.json"),
+      env: { MUSE_CHANNEL_OWNERS_FILE: ownersFile },
+      registry: new MessagingProviderRegistry(),
+      verifyToken: async () => ({ ok: true })
+    });
+    const response = await server.inject({ method: "GET", url: "/api/messaging/setup" });
+    const body = response.json() as { providers: { id: string; pairedOwner?: string }[] };
+    expect(body.providers.find((p) => p.id === "telegram")?.pairedOwner).toBe("8303165569");
+    expect(body.providers.find((p) => p.id === "discord")?.pairedOwner).toBeUndefined();
+  });
+
+  it("DELETE …/pairing resets the owner so the NEXT chat re-pairs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-pair-reset-"));
+    const ownersFile = join(dir, "channel-owners.json");
+    const { adoptChannelOwner, readChannelOwner } = await import("../src/channel-owner-store.js");
+    await adoptChannelOwner(ownersFile, "telegram", "8303165569");
+    const server = Fastify({ logger: false });
+    registerMessagingSetupRoutes(server, {
+      credentialsFile: join(dir, "messaging.json"),
+      env: { MUSE_CHANNEL_OWNERS_FILE: ownersFile },
+      registry: new MessagingProviderRegistry(),
+      verifyToken: async () => ({ ok: true })
+    });
+    const response = await server.inject({ method: "DELETE", url: "/api/messaging/setup/telegram/pairing" });
+    expect(response.statusCode).toBe(200);
+    expect(await readChannelOwner(ownersFile, "telegram")).toBeUndefined();
   });
 });
