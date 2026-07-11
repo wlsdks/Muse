@@ -47,7 +47,7 @@ ratchet: testFiles +0(기존 테스트파일 확장 5케이스) · fabrication 0
 리뷰지점: 지연 배달 시 나이가 downtime만큼 하향-오차(판정: bounded 근사, fabrication 아님) — 절대날짜 절 후속 ◦ 큐잉.
 리스크: 낮음 — runDueCheckins·게이트 무접촉.
 
-## fire 6 · 2026-07-12 · skill v2.x · (sha pending)
+## fire 6 · 2026-07-12 · skill v2.x · 191ef7bb7
 meta: value-class=security-hardening · pkg=@muse/proactivity+agent-core+recall · kind=security-review · verdict=PASS · firesSinceDrill=6
 ratchet: testFiles +1(prompt-escape 이동) · fabrication 0 · eval N/A(ack 경로 무접촉)
 무엇: digest 렌더 시점 injection-span 중화 — 단일 렌더 함수(formatDigestItemLine)가 flush·CLI 양표면 커버, recap과 동일 조합(escapeSystemPromptMarkers∘neutralizeInjectionSpans); 저장은 verbatim 유지(감사성). prompt-escape 헬퍼 recall→agent-core 이동(의존 방향 정리, byte-동일+re-export 무파손).
