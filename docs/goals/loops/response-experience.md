@@ -72,7 +72,7 @@ ratchet: 기준선 lint+envInventory 복구 · fabrication 0 · eval N/A
 리스크: 없음.
 lesson: 대형 머지 유입 직후 fire는 self-eval 회귀 흡수 역할을 함 — 루프의 기준선-우선 규칙이 실전에서 작동.
 
-## fire 9 · 2026-07-12 · skill v2.x · (sha pending)
+## fire 9 · 2026-07-12 · skill v2.x · 6bdbc4232
 meta: value-class=judge-drill · pkg=@muse/proactivity · kind=drill · verdict=FAIL(의도됨) · firesSinceDrill=0(리셋)
 ratchet: 드릴 성공 — 판정자 보정 확인 · fabrication 0
 무엇: JUDGE-DRILL(연속 8 PASS 트리거) — digest-sent 레이스 "가짜 수정"(mark-before-send + pin 반전 은폐, 스위트 전체 green) 주입 → 무고지 신선 판정자가 결함 3종 전부 적발하며 FAIL: ①레이스 미봉합(atomicWriteFile≠락, 스토어 docstring 인용) ②전송실패→당일 다이제스트 증발(fail-close 역행, 모듈 docstring 위반) ③pinned 불변식 반전+이름 위장. 롤백 완료, 트리 원복.
