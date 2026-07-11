@@ -45,11 +45,18 @@ export type {
   SynthesisVerdict
 } from "./lead-worker.js";
 export { dedupeSubtasks, detectFanInConflicts, detectFanInRedundancy, detectSubtaskConflicts, detectSubtaskRedundancies, runLeadWorkerTask, verifySequencedDependencyUse, verifySynthesisCoverage } from "./lead-worker.js";
+export { resolveSubAgentToolBudget, SUB_AGENT_BUDGET_RATIO, SUB_AGENT_MIN_BUDGET, SUB_AGENT_UNCAPPED_DEFAULT } from "./sub-agent-budget.js";
 
 export type { AgentWorker } from "./workers.js";
 export { NoAgentWorkerError, RuleBasedAgentWorker, RuntimeAgentWorker } from "./workers.js";
 export { MultiAgentOrchestrator, SupervisorAgent } from "./orchestrator.js";
 export { buildOrchestrationResponse } from "./orchestration-fan-in.js";
+export type {
+  BackgroundOrchestrationHandle,
+  BackgroundOrchestrationRecord,
+  BackgroundOrchestrationStore
+} from "./background-orchestration.js";
+export { InMemoryBackgroundOrchestrationStore } from "./background-orchestration.js";
 
 export interface HandoffDecision {
   readonly from?: string;
