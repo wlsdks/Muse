@@ -3,7 +3,7 @@
 Theme: 어시스턴트 응답 경험 지속 개선 (채널 대화 리듬 · 개입 예산/다이제스트 · 원터치 veto 기반).
 Registered 2026-07-12 by 진안 직접 요청 (20m cron, verified-fire → main FF push opt-in).
 
-## fire 1 · 2026-07-12 · skill v2.x · (commit sha in backlog line)
+## fire 1 · 2026-07-12 · skill v2.x · 00d97dad1
 meta: value-class=new-capability · pkg=@muse/agent-core+cli+api · kind=i18n-parity · verdict=PASS · firesSinceDrill=1
 ratchet: testFiles +2 · fabrication 0 · eval:channel-rhythm 14/14 (judge re-run, baseline AND diff)
 무엇: 캔드 casual 응답 한국어 패리티 — CASUAL_RESPONSES_KO + containsHangul, casualResponseFor(kind, korean=false) 기본값 EN byte-identical; CLI ask fast-path + 채널 casual fast-path 양표면 배선.
