@@ -80,7 +80,7 @@ ratchet: 로드맵 잔여 [ ] = 23/35 · self-eval pass · fabrication 0 · agen
 - 리뷰지점: Opus가 설계편차(reactive→proactive: 정상종료 cap-딱맞음 시 낭비 round-trip 회피) 정당성·엄격 budget게이트·종료보장·기존 agent-runtime 테스트 tightening(loosening 아님)·one-shot 구조적-inert 정직주장 확인. mutation-RED 양방향.
 lesson: ★워커도 공유 main서 `git stash`를 씀(D1-S3 작업 쓸림→무손실 복구, 이미 커밋됨) — worker 브리핑에 "git stash 절대 금지, cp/git-apply로 격리" 명시 필요. proactive 주입이 reactive+continue보다 나음(정상종료 낭비 round-trip 회피). 이 루프의 격리 워크트리 이전이 근본해결(진안 결정 대기).
 
-## fire 10 · 2026-07-11 · skill v2.x · <commit-pending>
+## fire 10 · 2026-07-11 · skill v2.x · fe1b505c1
 meta: slice=D1-S5b1 · wave=W2 · pkg=@muse/agent-core · kind=invariant-lock · verdict=PASS · firesSinceDrill=1
 ratchet: 로드맵 잔여 [ ] = 22/36 · self-eval pass · fabrication 0 · agent-core tool-plan 6 test(+1 락)
 - 무엇: PTC "프로그래매틱=1" 예산 규칙 명문화. run_tool_plan 1콜=1 예산슬롯(내부 N스텝 무관)이 이미 동작이나 암묵적 → agent-runtime PTC 인터셉트 WHY주석 + 회귀락 테스트(3스텝 실행=effects[a,b,c] ∧ 1슬롯=toolsUsed["run_tool_plan"]). 계상 동작 무변경.
