@@ -1,3 +1,6 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import {
   parseBoolean,
   resolveActionLogFile,
@@ -17,6 +20,7 @@ import { gateChatAnswerGrounding } from "@muse/recall";
 import type { JsonObject } from "@muse/shared";
 import { queryContacts } from "@muse/stores";
 
+import { adoptChannelOwner, parseAllowedChats, readChannelOwner } from "./channel-owner-store.js";
 import { createChannelPendingRecorder } from "./channel-pending-recorder.js";
 import { createChannelRefusalRecorder } from "./channel-refusal-recorder.js";
 import { handleInboundApprovalReply } from "./inbound-approval-handler.js";
@@ -56,9 +60,29 @@ export interface InboundAgentRunOptions {
  *    citation gate as the API /chat surface, so a fabricated citation is
  *    dropped by code before the reply leaves for the channel.
  */
+const UNPAIRED_CHAT_NOTICE =
+  "This bot is a private personal assistant and only talks to its paired owner.";
+
+function resolveChannelOwnersFile(env: MuseEnvironment): string {
+  const override = env.MUSE_CHANNEL_OWNERS_FILE?.trim();
+  if (override && override.length > 0) {
+    return override;
+  }
+  return join(homedir(), ".muse", "channel-owners.json");
+}
+
 export function createInboundAgentRun(options: InboundAgentRunOptions): ThreadedAgentRun {
   const { agentRuntime, env, model, registry } = options;
   return async ({ messages, providerId, source }) => {
+    // Pairing gate FIRST — a public bot handle is discoverable by
+    // anyone, so an un-paired chat is refused deterministically before
+    // any approval handling or agent turn can touch personal state.
+    const ownersFile = resolveChannelOwnersFile(env);
+    const owner = (await readChannelOwner(ownersFile, providerId))
+      ?? (await adoptChannelOwner(ownersFile, providerId, source));
+    if (source !== owner && !parseAllowedChats(env.MUSE_CHANNEL_ALLOWED_CHATS).has(`${providerId}:${source}`)) {
+      return UNPAIRED_CHAT_NOTICE;
+    }
     // A bare "yes" approving a pending channel refusal gets a
     // deterministic ack pointing at `muse approvals approve` rather
     // than a confused agent turn on the word "yes".

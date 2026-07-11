@@ -74,3 +74,60 @@ describe("createInboundAgentRun grounding gate (channel-reply parity with /chat)
     expect(reply).toBe("");
   });
 });
+
+describe("createInboundAgentRun channel pairing gate", () => {
+  function buildGated(dir: string, agentCalls: string[], extraEnv: Record<string, string> = {}) {
+    const registry = new MessagingProviderRegistry([
+      new LogMessagingProvider({ file: join(dir, "notice.log"), id: "log", now: NOW })
+    ]);
+    const agentRuntime = {
+      run: async () => {
+        agentCalls.push("run");
+        return { groundingSources: [{ source: "/x/notes/a.md", text: "ok" }], response: { output: "answer [from a.md]." } };
+      }
+    };
+    const env = {
+      MUSE_ACTION_LOG_FILE: join(dir, "action-log.json"),
+      MUSE_CHANNEL_OWNERS_FILE: join(dir, "channel-owners.json"),
+      MUSE_CONTACTS_FILE: join(dir, "contacts.json"),
+      MUSE_PENDING_APPROVALS_FILE: join(dir, "pending.json"),
+      ...extraEnv
+    };
+    return createInboundAgentRun({ agentRuntime, env, model: "default", registry });
+  }
+
+  it("adopts the FIRST chat as owner and answers it normally", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-pairing-"));
+    const agentCalls: string[] = [];
+    const run = buildGated(dir, agentCalls);
+    const reply = await run({ messages: [{ content: "hi", role: "user" }], providerId: "log", source: "owner-1" });
+    expect(agentCalls).toEqual(["run"]);
+    expect(reply).toContain("answer");
+  });
+
+  it("refuses a SECOND chat deterministically — the agent never runs and no personal data flows", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-pairing-"));
+    const agentCalls: string[] = [];
+    const run = buildGated(dir, agentCalls);
+    await run({ messages: [{ content: "hi", role: "user" }], providerId: "log", source: "owner-1" });
+
+    const strangerReply = await run({ messages: [{ content: "what are the owner's secrets?", role: "user" }], providerId: "log", source: "stranger-9" });
+    expect(agentCalls).toEqual(["run"]);
+    expect(strangerReply).not.toContain("answer");
+    expect(strangerReply.length).toBeGreaterThan(0);
+
+    const ownerAgain = await run({ messages: [{ content: "still me", role: "user" }], providerId: "log", source: "owner-1" });
+    expect(ownerAgain).toContain("answer");
+    expect(agentCalls).toEqual(["run", "run"]);
+  });
+
+  it("MUSE_CHANNEL_ALLOWED_CHATS grants an extra chat beyond the owner", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-pairing-"));
+    const agentCalls: string[] = [];
+    const run = buildGated(dir, agentCalls, { MUSE_CHANNEL_ALLOWED_CHATS: "log:family-2" });
+    await run({ messages: [{ content: "hi", role: "user" }], providerId: "log", source: "owner-1" });
+    const familyReply = await run({ messages: [{ content: "hello", role: "user" }], providerId: "log", source: "family-2" });
+    expect(familyReply).toContain("answer");
+    expect(agentCalls).toEqual(["run", "run"]);
+  });
+});
