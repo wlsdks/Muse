@@ -2,7 +2,15 @@ import { composeIdentityPrompt } from "./identity-core.js";
 import { cleanBlock, compactLines, compactSections } from "./prompt-text.js";
 
 export { composeIdentityPrompt, MUSE_IDENTITY_CORE } from "./identity-core.js";
-export { composeSurfacePrompt, SURFACE_ROLES, type ComposeSurfaceContext, type MuseSurface } from "./compose.js";
+export {
+  composeSurfacePrompt,
+  composeSurfacePromptSegments,
+  SURFACE_ROLES,
+  type ComposedPromptSegment,
+  type ComposedPromptSegmentLayer,
+  type ComposeSurfaceContext,
+  type MuseSurface
+} from "./compose.js";
 
 export type ResponseFormat = "text" | "json" | "yaml";
 
@@ -586,7 +594,7 @@ function tokenSet(value: string): Set<string> {
   );
 }
 
-function comparePromptLayers(left: PromptLayer, right: PromptLayer): number {
+export function comparePromptLayers(left: PromptLayer, right: PromptLayer): number {
   const priority = (left.priority ?? 100) - (right.priority ?? 100);
   return priority !== 0 ? priority : left.id.localeCompare(right.id);
 }

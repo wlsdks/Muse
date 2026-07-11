@@ -17,6 +17,8 @@
 import { MUSE_IDENTITY_CORE } from "./identity-core.js";
 import {
   buildLayeredSystemPrompt,
+  comparePromptLayers,
+  MUSE_CACHE_BOUNDARY_MARKER,
   type PromptBuildInput,
   type PromptLayer,
   type PromptLayerContext
@@ -143,4 +145,58 @@ export function composeSurfacePrompt(
     { ...parts, basePrompt: parts.basePrompt ?? "", includeCacheBoundary: true },
     layers
   );
+}
+
+export type ComposedPromptSegmentLayer =
+  | "identity"
+  | "personality"
+  | "role"
+  | "rules"
+  | "boundary"
+  | "dynamic-placeholder";
+
+export interface ComposedPromptSegment {
+  readonly layer: ComposedPromptSegmentLayer;
+  readonly text: string;
+  readonly section: "stable" | "dynamic";
+  readonly readOnly?: boolean;
+}
+
+// A recognized caller-layer id maps to its named stack slot; anything else
+// (a future provider-overlay id, a typo) still renders — just bucketed under
+// "rules" rather than silently dropped from the preview.
+const CALLER_LAYER_SEGMENT: Readonly<Record<string, ComposedPromptSegmentLayer>> = {
+  personality: "personality"
+};
+
+/**
+ * Structured twin of `composeSurfacePrompt` for the S3 admin preview
+ * (docs/strategy/prompt-architecture.md) — the same layer set, same order,
+ * but returned as labeled segments instead of one flat string so a UI can
+ * color-code each block. The dynamic section is a single explanatory
+ * placeholder (a preview has no live turn to fill retrieved/tool-result
+ * content with).
+ */
+export function composeSurfacePromptSegments(
+  surface: MuseSurface,
+  ctx: ComposeSurfaceContext = {}
+): readonly ComposedPromptSegment[] {
+  const callerLayers = [...(ctx.layers ?? [])].sort(comparePromptLayers);
+
+  return [
+    { layer: "identity", readOnly: true, section: "stable", text: MUSE_IDENTITY_CORE },
+    ...callerLayers.map((layer) => ({
+      layer: CALLER_LAYER_SEGMENT[layer.id] ?? ("rules" as const),
+      section: "stable" as const,
+      text: layer.content
+    })),
+    { layer: "role", section: "stable", text: SURFACE_ROLES[surface] },
+    { layer: "boundary", readOnly: true, section: "dynamic", text: MUSE_CACHE_BOUNDARY_MARKER },
+    {
+      layer: "dynamic-placeholder",
+      readOnly: true,
+      section: "dynamic",
+      text: "(this surface's live turn adds retrieved notes / tool results / memory here)"
+    }
+  ];
 }

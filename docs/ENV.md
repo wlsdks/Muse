@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **521** variables.
+Total: **522** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -85,7 +85,7 @@ Total: **521** variables.
 | `MUSE_BUDGET_MONTHLY_LIMIT_USD` | packages/autoconfigure |
 | `MUSE_BUDGET_WARNING_PERCENT` | packages/autoconfigure |
 | `MUSE_CACHE_BOUNDARY` | packages/prompts |
-| `MUSE_CACHE_BOUNDARY_MARKER` | packages/prompts |
+| `MUSE_CACHE_BOUNDARY_MARKER` | apps/api, packages/prompts |
 | `MUSE_CACHE_ENABLED` | packages/autoconfigure |
 | `MUSE_CACHE_MAX_SIZE` | packages/autoconfigure |
 | `MUSE_CACHE_TTL_MS` | packages/autoconfigure |
@@ -214,7 +214,7 @@ Total: **521** variables.
 | `MUSE_HOOK_TRACE_MAX_ENTRIES` | packages/autoconfigure |
 | `MUSE_HUD` | apps/cli |
 | `MUSE_HUD_SEGMENTS` | apps/cli |
-| `MUSE_IDENTITY_CORE` | packages/prompts |
+| `MUSE_IDENTITY_CORE` | apps/api, packages/prompts |
 | `MUSE_IDENTITY_VERIFY_ROUNDS` | apps/api |
 | `MUSE_IDLE_LEARNING_ENABLED` | apps/cli |
 | `MUSE_INBOUND_AUTO_APPROVE` | apps/api |
@@ -334,6 +334,7 @@ Total: **521** variables.
 | `MUSE_PERSONA` | apps/cli |
 | `MUSE_PERSONA_FILE` | apps/cli |
 | `MUSE_PERSONA_MAX_ENTRIES` | apps/cli |
+| `MUSE_PERSONA_MD_FILE` | packages/autoconfigure, packages/recall |
 | `MUSE_PIPER_PATH` | packages/autoconfigure |
 | `MUSE_PIPER_VOICE` | apps/cli, packages/autoconfigure |
 | `MUSE_PLAN_CACHE` | packages/autoconfigure |
