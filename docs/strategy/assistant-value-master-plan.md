@@ -52,30 +52,37 @@ half-off behind opt-in flags. Engine: a Ferrari. State: parked with the cover on
 - ✓ user-model gap2 S1 (learned-slot vocabulary single-sourced in `@muse/recall`).
 - ✓ SURFACE_ROLES: `chat` placeholder → real assistant contract (knows-you,
   lead-with-answer, clarify-vs-assume, abstain+offer, action-confirmation echo,
-  once-only anticipation); `ask` model-agnostic. (gated on the live identity
-  battery staying 12/12)
+  once-only anticipation); `ask` model-agnostic. Live identity battery 12/12;
+  behavioral probes confirm abstain+offer / no-false-done / lead-with-answer.
+- ✓ **T1-① Value legibility** — one deterministic, env-aware, job-grouped
+  capability describer (`@muse/prompts/capability-describer.ts`) answers "what
+  can you do?" on ALL meta surfaces (CLI ask + chat + NEW Telegram parity),
+  replacing three notes-only strings. Honest ("connected" vs "available — set X"),
+  drift-locked to COMMAND_STUBS, scope-disciplined (group turns never leak the
+  owner's armed-integration config).
+- ✓ **T1-② API/channel user-model fix** — the live `[User Memory]` block no longer
+  demotes the learned model: "soft hints, not directives" → honour prefs / steer
+  to goals / NEVER propose vetoed + a data-firewall line; `.slice(0,max)` →
+  `.slice(-max)` (stops dropping newly-learned facts); veto/goal split into their
+  own lists; every value escaped. Slot vocab moved down to `@muse/agent-core`
+  (recall re-exports). Live-verified: a stored veto:coffee → no coffee suggested.
+- ✓ **T2-⑤ Default personality layer wired** — a fresh install (no persona.md) now
+  gets Muse's warm bluebird character instead of a blank voice; identity battery
+  12/12 with it active.
 
-### Tier 1 — highest value, answers the user's stated pains
-- **T1-① Value legibility** — generate the "what can you do?" answer from the
-  command manifest + armed-actuator state, grouped by job, environment-aware
-  ("email: connected" vs "run `muse auth gmail`"); wire Telegram meta parity.
-  Deterministic so it stays honest as the product grows.
-  WHERE: `ask-fast-paths.ts` META_RESPONSE, `chat-fast-path-format.ts`,
-  `command-manifest.ts`, `inbound-agent-run.ts`.
-- **T1-② API/channel user-model fix** — kill "soft hints, not directives";
-  `.slice(0, max)` → `.slice(-max)`; thread vetoes/goals as their own sub-lists
-  and the contested/provisional/stale marks; escape memory values like the other
-  surfaces. WHERE: `packages/agent-core/src/runtime-helpers.ts:~332-361`.
-
-### Tier 2
+### Remaining (ranked; NOT shipped this session)
 - **T2-③ Self-improvement defaults** — default-on the SAFE daemon subset
   (contradiction decay, consolidation) with the existing probation/learning-pause
   brakes + channel notice. Prove with a correction-decay analogue of
-  `verify-experience-delta.mjs`.
+  `verify-experience-delta.mjs`. **USER-GATED**: default-on autonomous background
+  learning is a privacy/behavior posture decision, deliberately left for 진안 to
+  call — the machinery is real and verified (that was the audit's finding); only
+  the default flip is the open decision.
 - **T2-④ `muse auth gmail`** — guided OAuth + refresh-token store (encrypted
-  secrets store exists) to unlock the built email/triage/sync domain.
-- **T2-⑤ Wire the dead default personality layer** — absent persona.md →
-  `defaultPersonaLayer()` (warm/humor character) instead of `undefined`.
+  secrets store exists) to unlock the already-built email/triage/sync domain. A
+  large new surface (OAuth loopback flow) — scoped as its own future slice.
+- Follow-up (flagged): `buildPersonaSnapshot` (the compaction-summary path) still
+  uses `slice(0,)` and doesn't split/escape vetoes — the T1-② twin, not yet done.
 
 ### Tier 3 — polish / follow-on
 - Cross-domain chain v1 (conflict → propose reschedule → draft message).
