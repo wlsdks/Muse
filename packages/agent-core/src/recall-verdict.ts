@@ -126,7 +126,16 @@ export const REVERIFY_SYSTEM_PROMPT =
 // alone; a redacted span only ever fails SAFE (the judge sees less support, so
 // it cannot wrongly UPGRADE a weak answer to grounded).
 const GRADER_COERCION_PATTERNS: readonly RegExp[] = [
-  /(?:^|[.\n:;!?]\s*)(?:reply|respond|answer|output|print|return|say|write|mark|grade|rate|score|classify)\b[^.\n]{0,40}?\b(?:yes|no|supported|grounded|pass|passes|correct)\b/gimu,
+  // A clause-initial reply-imperative aimed at the judge. `correct` is NOT a
+  // target word — it collides with legit prose ("return the correct value").
+  /(?:^|[.\n:;!?]\s*)(?:reply|respond|answer|output|print|return|say|write|mark|grade|rate|score|classify|conclude)\b[^.\n]{0,40}?\b(?:yes|no|supported|grounded|pass|passes)\b/gimu,
+  // "you should/must answer yes" — the imperative verb is not clause-initial.
+  /\byou\s+(?:should|must|will|need to|have to|shall)\s+(?:answer|reply|respond|say|output|conclude|return|mark|grade)\b[^.\n]{0,20}?\b(?:yes|supported|grounded)\b/giu,
+  // A forged verdict statement ("verdict: supported", "grounded=true").
+  /\b(?:verdict|conclusion)\b[^.\n]{0,12}?\b(?:yes|supported|grounded)\b|\b(?:supported|grounded)\s*[:=]\s*true\b/giu,
+  // Korean analog — the reverify prompt is EXPLICITLY cross-lingual, so a
+  // Korean "예/네라고 답하라 / 지지된다고 답" coerces the same judge.
+  /(?:["']?(?:예|네)["']?\s*(?:라고|이라고|라)?\s*(?:답변?|대답|응답|말)|(?:지지|근거\s*있)(?:된다|한다)?\s*고?\s*(?:답변?|대답|응답))/gu,
   /\bnote to (?:the )?(?:grader|judge|grading|evaluator|reviewer|verifier|assistant|model)\b/giu
 ];
 
