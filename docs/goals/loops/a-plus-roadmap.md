@@ -397,3 +397,12 @@ ratchet: 로드맵 잔여 [ ] = 16/65(D-KO-S1 체크) · self-eval pass · fabri
 - 리뷰지점: Opus PASS — 양boundary 정확(head cap mid-emoji→lone-high 드롭, start mid-pair→lone-low 드롭, 결과 lone-surrogate regex 스캔 clean)·한글(BMP 단일유닛) byte-identical·truncateErrorBody 위임 byte-identical(기존 테스트 무수정 green)·4사이트 실배선(213 middle은 sliceUtf16Safe)·surrounding 로직 무변경(…/... append, tts cut)·mutation-RED 양방향(드롭 제거→emoji+truncateErrorBody 위임증명 둘 다 RED).
 - 리스크: 낮음. byte-identical-when-safe(한글/ASCII 무변경). ★KO 우선 슬라이스. 배치(진안 5-10 슬라이스 지시) 5번째=마지막 — 이후 origin/main push + cron 964ac861 중단 예정. 다음(루프 재개 시) = D-E1(eval 집계 실-강제).
 - lesson: 안전-절단 패턴이 한 함수(truncateErrorBody)에 인라인으로 있으면 shared 헬퍼로 추출→위임(byte-identical 검증)+미안전 사이트 배선이 중복제거+커버리지를 동시 달성. UTF-16 안전은 head-truncation(후행 lone-high)뿐 아니라 substring(선행 lone-low)도 필요 — sliceUtf16Safe로 양boundary 커버.
+
+## fire 47 · 2026-07-12 · skill v2.x · a01296db9
+meta: slice=D1-S6b · wave=W4 · pkg=none(docs) · kind=already-satisfied-determination · verdict=PASS(NO_TARGET) · firesSinceDrill=5
+ratchet: 로드맵 잔여 [ ] = 15/65(D1-S6b 체크) · self-eval pass(envInventory baseline-repair) · fabrication 0 · 코드변경 0
+- 무엇: ①기준선 envInventory red(foreign apps/api WIP env)→docs:env baseline-repair. ②D1-S6b 판정: 독립 Opus 적대판정 NO_TARGET — D1-S6 전제("Muse 개별회복 산재 raw flag→double-fire")가 현 코드서 거짓. 5개 회복 분기 전부 이미 at-most-once(false-done runResistingFalseDone 단일 비루프 호출·reverify ReverifyNudgeTracker.nudged per-turn·post-compaction/ping-pong 터미널 return+전용 Guard 클래스·attributed-repair 단일패스). 강제 배선은 무동작변경 인위적 리팩터(진안 "관련없는 리팩터 금지"). already-satisfied로 표기(코드변경 0).
+- 왜: D1-S6a가 프리미티브를 제공했으나, 실배선 대상(가드 없는 회복 재발화)이 실재하지 않음. 인위적 redundant 배선은 fabrication/inflation과 같은 안티패턴 — honest하게 "이미 캡슐화됨" 판정이 옳음(D4-S1b verify-mcp already-registered 선례).
+- 리뷰지점: 독립 Opus가 5개 분기의 recovery ACTION(detector 아님)을 적대적으로 추적 — 모두 단일 비루프 호출 or 터미널 return or 전용 stateful tracker로 bounded. self-판정 아님(maker≠judge: Done 판정을 독립 evaluator가). OneShotRecoveryState는 미래 신규 회복분기용 프리미티브로 존속.
+- 리스크: 없음(코드변경 0). 로드맵 전제가 코드현실과 어긋난 케이스를 honest하게 close. 다음 = D-E1(📈 eval 집계 실-강제, VQ-12 시간예산 참조).
+- lesson: 로드맵 슬라이스의 전제(산재 flag)가 코드 현실(이미 tracker 캡슐화)과 다르면, 인위적 배선으로 슬라이스를 "채우지" 말고 독립 evaluator에게 실타깃 유무를 적대판정시켜 already-satisfied를 honest하게 close. 프리미티브(D1-S6a)는 미래용으로 남김. "관련없는 리팩터 금지"는 무동작변경 배선도 포함.
