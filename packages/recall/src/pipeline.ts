@@ -146,6 +146,16 @@ export interface GroundedRecallExtras {
    * validates) in ahead of the fabrication check. Absent ⇒ no-op (byte-identical).
    */
   readonly normalizeAnswer?: (text: string) => string;
+  /**
+   * Replaces the notes `contextBlock` when `notesUnavailable` — the retrieval
+   * endpoint failed and no ad-hoc chunk covered for it (see `prepareRecall`'s
+   * `notesUnavailable` derivation). Lets a caller surface an honest "search
+   * unavailable this turn" line instead of the generic `buildNoteContextBlock`
+   * empty-corpus string. Absent ⇒ byte-identical to today (the plain
+   * `buildNoteContextBlock(...)` output is used whether or not notes are
+   * available).
+   */
+  readonly notesUnavailableContextBlock?: string;
 }
 
 export interface GroundedRecallInput {
@@ -254,7 +264,7 @@ export type GroundedRecallEvent =
   | { readonly type: "answer-delta"; readonly text: string }
   | { readonly type: "result"; readonly result: GroundedRecallResult };
 
-interface PreparedRecall {
+export interface PreparedGroundedRecall {
   readonly systemPrompt: string;
   readonly allowedNotes: readonly string[];
   readonly scored: readonly ScoredChunk[];
@@ -262,14 +272,40 @@ interface PreparedRecall {
   readonly notesUnavailable: boolean;
 }
 
+/**
+ * The narrow, retrieval-side-only input `prepareRecall`/`prepareGroundedRecall`
+ * need — a caller that only wants the prepare stage (a `--with-tools` agent
+ * run that feeds its own `agentRuntime.run`, not the seam's generate callback)
+ * supplies this directly instead of the full `GroundedRecallInput` (which also
+ * carries `answerModel`/`temperature`/`generateAnswer`/`streamAnswer`, none of
+ * which the prepare stage touches).
+ */
+export interface PrepareRecallInput {
+  readonly query: string;
+  readonly sources: GroundedRecallSources;
+  readonly options: Pick<GroundedRecallOptions, "embedModel" | "topK" | "scope">;
+  readonly embedFn: GroundedRecallRuntime["embedFn"];
+  readonly extras?: GroundedRecallExtras;
+}
+
+function toPrepareRecallInput(input: GroundedRecallInput): PrepareRecallInput {
+  return {
+    embedFn: input.runtime.embedFn,
+    extras: input.extras,
+    options: { embedModel: input.options.embedModel, scope: input.options.scope, topK: input.options.topK },
+    query: input.query,
+    sources: input.sources
+  };
+}
+
 /** Retrieval + context + prompt — everything before the model speaks. */
-async function prepareRecall(input: GroundedRecallInput): Promise<PreparedRecall> {
-  const { query, sources, options, runtime } = input;
+async function prepareRecall(input: PrepareRecallInput): Promise<PreparedGroundedRecall> {
+  const { embedFn, extras, options, query, sources } = input;
   const topK = options.topK ?? 6;
 
   const { embedModel, files: indexFiles } = await resolveIndexForModel(sources.notesIndexFile, options.embedModel);
   const retrieval = await retrieveAndRankNotes({
-    embedFn: runtime.embedFn,
+    embedFn,
     embedModel: embedModel ?? "",
     indexFiles,
     json: true,
@@ -284,14 +320,14 @@ async function prepareRecall(input: GroundedRecallInput): Promise<PreparedRecall
   // fold into the retrieved set BEFORE dedup, exactly like a real retrieval
   // hit — they must be cited as note-class evidence, not a separate section.
   // Absent/empty ⇒ `rawScored` is the exact `retrieval.scored` reference.
-  const extraChunks = input.extras?.extraChunks ?? [];
+  const extraChunks = extras?.extraChunks ?? [];
   const rawScored = extraChunks.length > 0 ? [...retrieval.scored, ...extraChunks] : retrieval.scored;
 
   // Drop provable near-duplicates first (highest-ranked survives) before the
   // confidence framing reads the set — mirrors the CLI's `commands-ask.ts`
   // composition. Off by default so an extras-free caller's framing input is
   // the exact `retrieval.scored` it always was.
-  const dedupedScored = input.extras?.refineChunks
+  const dedupedScored = extras?.refineChunks
     ? dedupNearDuplicateChunks(rawScored, cosine)
     : rawScored;
   const framing = notesGroundingFraming(dedupedScored, query, retrieval.preGapScored, embedModel);
@@ -299,29 +335,43 @@ async function prepareRecall(input: GroundedRecallInput): Promise<PreparedRecall
   // higher-scoring but explicitly-superseded chunk back ahead of its current
   // counterpart — so the stale demotion `retrieveAndRankNotes` already applied
   // once must run again on the reorder's OUTPUT, not before it.
-  const contextChunks = input.extras?.refineChunks
+  const contextChunks = extras?.refineChunks
     ? demoteStale(reorderForLongContext(dedupedScored), (c) => c.chunk.text)
     : dedupedScored;
   const contradictions = await detectEvidenceContradictions(
     contextChunks.map((s: ScoredChunk) => ({ cosine: s.score, score: s.score, source: s.file, text: s.chunk.text })),
-    (text) => runtime.embedFn(text, embedModel ?? "")
+    (text) => embedFn(text, embedModel ?? "")
   ).catch(() => [] as const);
-  const contextBlock = buildNoteContextBlock(contextChunks, contradictions, sources.notesDir, input.extras?.untrustedNoteSources);
-  const extraSections = input.extras?.contextSections ?? [];
+  // Ad-hoc chunks are note-class evidence found THIS turn — notes are no
+  // longer "unavailable" once any (index retrieval OR ad-hoc) contributed.
+  const notesUnavailable = retrieval.notesUnavailable && extraChunks.length === 0;
+  const contextBlock = notesUnavailable && extras?.notesUnavailableContextBlock !== undefined
+    ? extras.notesUnavailableContextBlock
+    : buildNoteContextBlock(contextChunks, contradictions, sources.notesDir, extras?.untrustedNoteSources);
+  const extraSections = extras?.contextSections ?? [];
 
   return {
     allowedNotes: [...new Set(contextChunks.map((s) => relativizeNoteSource(s.file, sources.notesDir)))],
-    // Ad-hoc chunks are note-class evidence found THIS turn — notes are no
-    // longer "unavailable" once any (index retrieval OR ad-hoc) contributed.
-    notesUnavailable: retrieval.notesUnavailable && extraChunks.length === 0,
+    notesUnavailable,
     scored: contextChunks,
-    systemPrompt: (input.extras?.composeSystemPrompt ?? composeDefaultRecallSystemPrompt)({ contextBlock, extraSections, framing }),
+    systemPrompt: (extras?.composeSystemPrompt ?? composeDefaultRecallSystemPrompt)({ contextBlock, extraSections, framing }),
     verdict: framing.verdict
   };
 }
 
+/**
+ * The prepare-only entry point — retrieval + context + system prompt, with no
+ * model call. `muse ask --with-tools` (and any caller that feeds its own
+ * `agentRuntime.run` rather than the seam's generate callback) uses this to
+ * reuse the SAME retrieval/dedup/reorder/context-block pipeline `streamGroundedRecall`
+ * uses, instead of a hand-maintained copy.
+ */
+export async function prepareGroundedRecall(input: PrepareRecallInput): Promise<PreparedGroundedRecall> {
+  return prepareRecall(input);
+}
+
 /** The deterministic gates over the full raw answer — shared by both entry points. */
-function finalizeRecall(raw: string, prepared: PreparedRecall, input: GroundedRecallInput): GroundedRecallResult {
+function finalizeRecall(raw: string, prepared: PreparedGroundedRecall, input: GroundedRecallInput): GroundedRecallResult {
   // Only a category the caller EXPLICITLY declared here can survive the gate —
   // an undeclared category falls back to `enforceAnswerCitations`'s own `?? []`,
   // so a citation in it is stripped exactly like a fabricated note citation.
@@ -380,7 +430,7 @@ function finalizeRecall(raw: string, prepared: PreparedRecall, input: GroundedRe
  * buffered generation is used and the single delta is the already-gated answer.
  */
 export async function* streamGroundedRecall(input: GroundedRecallInput): AsyncGenerator<GroundedRecallEvent> {
-  const prepared = await prepareRecall(input);
+  const prepared = await prepareRecall(toPrepareRecallInput(input));
   yield {
     groundedChunkCount: prepared.scored.length,
     notesUnavailable: prepared.notesUnavailable,
