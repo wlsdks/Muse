@@ -17,14 +17,14 @@ tool fail-open. This sweep goes deeper.
 | ✅P0 | #2 Model `env.PATH` overrides command resolution → guard bypass (FIXED 3051279af) | runner | **HIGH** | ✅ rustc repro | S–M (TS+Rust) |
 | ✅P1 | #3 API auth fail-OPEN (FIXED 1b8502039) | api | MED (HIGH if 0.0.0.0) | done | done |
 | **P1** | #4 High-value credentials (API keys, bot tokens) stored PLAINTEXT | auth | MED | ✅ traced | M (encrypt-at-rest) |
-| **P1** | #5 Feed loader has no SSRF guard + `file://` local read | web | MED | ✅ traced | S (route through assertPublicHttpUrl) |
+| ✅P1 | #5 Feed loader SSRF (http pre/post-redirect) (FIXED 328984e71) | web | MED | done | done |
 | ✅P1 | #13 Zip-bomb DoS via `.docx`/`.pptx` (FIXED 78921c0a7) | parsing | MED-HIGH | done | done |
 | ✅P2 | #6 Missed code-exec env vars (JAVA_TOOL_OPTIONS, PYTHONHOME, …) | runner | MED | FIXED with #2 | done |
 | **P2** | #7 Timeout kill ignores process tree → orphans + runner wedge | runner | MED | ✅ rustc repro | M (killpg/setsid) |
-| **P2** | #8 `resolvesByOverlap` accepts forged citation on ONE shared token | grounding | MED | ✅ traced | S (require ≥2 / ratio) |
+| ✅P2 | #8 `resolvesByOverlap` single-token forgery (FIXED af50a783f) | grounding | MED | done | done |
 | **P2** | #9 TOFU channel pairing: first stranger claims the public bot | auth | MED (design) | ✅ traced | M (one-time pairing code) |
-| **P3** | #10 `/api/multi-agent/*` routes lack per-route auth guard | api | LOW | ✅ traced | S (add guard) |
-| **P3** | #11 DNS-rebinding TOCTOU on fetch/MCP (industry-wide) | web | LOW | ✅ traced | L (pinning resolver) |
+| ✅P3 | #10 `/api/multi-agent/*` per-route auth guard (FIXED e6b21fc17) | api | LOW | done | done |
+| 🟡P3 | #11 DNS-rebinding TOCTOU (ACCEPTED — mitigated) | web | LOW | accepted | see note |
 | **P3** | #12 `adoptChannelOwner` misleading comment (no real TOCTOU) | auth | INFO | ✅ traced | XS (fix comment) |
 
 ## P0 — fix immediately (both undermine a CORE security property)
@@ -106,9 +106,15 @@ change resolution. **Effort S–M (touches Rust — cargo test + clippy).**
 
 - **#10** Add per-route `requireAuthenticated` to `/api/multi-agent/*` for
   defense-in-depth (currently covered only by the global preHandler). Effort S.
-- **#11** DNS-rebinding TOCTOU on fetch/MCP — industry-wide; needs a custom
-  resolver/agent that pins the vetted IP. Effort L. Accept-for-now (loopback bind
-  + post-redirect re-check mitigate).
+- **#11 ACCEPTED (mitigated), not fixed.** DNS-rebinding TOCTOU on the
+  fetch/MCP paths is an industry-wide limitation: Node's `fetch` re-resolves the
+  hostname at connect time and can't pin the IP the guard vetted, so a fully
+  robust fix needs a custom resolver/undici dispatcher that pins the checked
+  address — a fragile change on a security-critical path. Deliberately NOT
+  implemented; the residual risk is mitigated by: the API's default `127.0.0.1`
+  bind, the SSRF guards' post-redirect re-check, and the deterministic
+  literal-IP/encoded-IP/IPv6-mapped classification (which already blocks the
+  non-rebinding SSRF forms). Revisit only if a real threat model needs it.
 - **#12** Fix the misleading "first-writer wins on re-read" comment in
   `channel-owner-store.ts:36` (no real TOCTOU — sequential processing). Effort XS.
 
