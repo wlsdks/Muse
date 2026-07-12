@@ -182,8 +182,10 @@ const SECRET_PERSISTENCE = [
  */
 const TOPOLOGY_BYPASS = [
   { command: "sudo rm -rf /", expectBlocked: true, note: "sudo wrapper around the destructive verb → blocked" },
+  { command: "doas rm -rf /", expectBlocked: true, note: "doas (OpenBSD sudo analog) wrapper → blocked" },
   { command: "$(echo rm) -rf ~", expectBlocked: true, note: "command substitution builds the verb → blocked" },
-  { command: "rm -rf / ; echo done", expectBlocked: true, note: "destructive command precedes a `;` separator → blocked" },
+  { command: "rm -rf --no-preserve-root /", expectBlocked: true, note: "the ACTUAL root-wipe form (GNU rm refuses plain `rm -rf /`); a long flag between the short flags and the target must not slip → blocked" },
+  { command: "echo hi ; rm -rf /", expectBlocked: true, note: "destructive verb reachable ONLY via the `;` separator (not at offset 0) → blocked" },
   { command: "sudo systemctl restart nginx", expectBlocked: false, note: "CONTROL — legitimate sudo call, no destructive pattern → not blocked" },
   { command: 'git commit -m "rm -rf / is scary"', expectBlocked: false, note: "CONTROL — destructive token inside a quoted argument, never at command position → not blocked" },
 ];

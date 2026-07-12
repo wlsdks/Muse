@@ -43,12 +43,20 @@ const TERM = "(?:[\\s;&|)`\\x00]|$)";
 
 // Anchor for a command-POSITION rule: the `\x00` sentinel `markCommandStarts`
 // inserts before each real (quote-aware) command word, optionally followed by
-// a `sudo`/`env` wrapper (with their flags + one flag-argument each). Because
-// the sentinel is only ever inserted OUTSIDE quotes, a dangerous-looking token
-// inside a quoted argument is never anchored, so it never matches.
+// a `sudo`/`doas`/`env` wrapper (with their flags + one flag-argument each).
+// Because the sentinel is only ever inserted OUTSIDE quotes, a dangerous-looking
+// token inside a quoted argument is never anchored, so it never matches.
 const CMD_START =
-  "\\x00(?:sudo\\s+(?:-[^\\s]+\\s+(?:[^\\s-]\\S*\\s+)?){0,6})?" +
+  "\\x00(?:(?:sudo|doas)\\s+(?:-[^\\s]+\\s+(?:[^\\s-]\\S*\\s+)?){0,6})?" +
   "(?:env\\s+(?:[A-Za-z_][A-Za-z0-9_]*=[^\\s]*\\s+){0,6})?";
+
+// A run of shell flags between the verb and its target. It MUST accept both
+// short (`-rf`) AND long (`--no-preserve-root`) flags: GNU `rm -rf /` is
+// refused by rm itself, so the form that actually wipes a root filesystem is
+// `rm -rf --no-preserve-root /` — a long flag sitting between the short flags
+// and the target. Matching only single-dash flags here let that real
+// root-wipe command through. `\s+` delimits each token (no ReDoS).
+const FLAGS = "(?:--?[a-z][a-z-]*\\s+)*";
 
 // Decode/transform pipeline whose output is piped INTO a shell at command
 // position (the `\x00` before the shell name proves it is a real command, not
@@ -62,10 +70,10 @@ function atCmd(body: string, reason: string): readonly [RegExp, string] {
 const RULES: readonly (readonly [RegExp, string])[] = [
   // --- Recursive force-delete of root / home (command-position anchored). ---
   atCmd(
-    "rm\\s+(?:-[a-z]*\\s+)*-?[a-z]*\\b[rf][a-z]*\\s+(?:-[a-z]+\\s+)*(?:\\/|~|\\$\\{?HOME\\}?)(?:\\/\\*?)?" + TERM,
+    "rm\\s+" + FLAGS + "-?[a-z]*\\b[rf][a-z]*\\s+" + FLAGS + "(?:\\/|~|\\$\\{?HOME\\}?)(?:\\/\\*?)?" + TERM,
     "recursive delete of root or home directory"
   ),
-  atCmd("rm\\s+(?:-[a-z]+\\s+)*\\/\\*", "recursive delete of a root glob"),
+  atCmd("rm\\s+" + FLAGS + "\\/\\*", "recursive delete of a root glob"),
   // GNU long-flag abbreviation: `--recursive`/`--force` (and any unambiguous
   // prefix — `--recur`, `--forc`, `--r`, `--f`; these are the ONLY rm long
   // options starting with r / f) resolve via getopt-long. Target must follow
@@ -80,7 +88,7 @@ const RULES: readonly (readonly [RegExp, string])[] = [
   atCmd("wipefs\\b[^\\n]{0,400}?\\/dev\\/", "wipe filesystem signatures from a device"),
   // --- Recursive permission / ownership change of root or home. ---
   atCmd(
-    "chmod\\s+(?:-[a-z]+\\s+)*-?[a-zA-Z]*\\bR[a-zA-Z]*\\s+(?:[0-7]{3,4}|[ugoa]*[+=][rwxXst]+)\\s+(?:\\/\\*?|~\\/?|\\$\\{?HOME\\}?)" + TERM,
+    "chmod\\s+" + FLAGS + "-?[a-zA-Z]*\\bR[a-zA-Z]*\\s+" + FLAGS + "(?:[0-7]{3,4}|[ugoa]*[+=][rwxXst]+)\\s+(?:\\/\\*?|~\\/?|\\$\\{?HOME\\}?)" + TERM,
     "recursive permission change of root or home"
   ),
   // chmod's only long option beginning `rec` is `--recursive` (`--reference`
@@ -90,7 +98,7 @@ const RULES: readonly (readonly [RegExp, string])[] = [
     "recursive permission change of root or home (long flag)"
   ),
   atCmd(
-    "chown\\s+(?:-[a-z]+\\s+)*-?[a-zA-Z]*\\bR[a-zA-Z]*\\s+\\S+\\s+(?:\\/\\*?|~\\/?|\\$\\{?HOME\\}?)" + TERM,
+    "chown\\s+" + FLAGS + "-?[a-zA-Z]*\\bR[a-zA-Z]*\\s+" + FLAGS + "\\S+\\s+(?:\\/\\*?|~\\/?|\\$\\{?HOME\\}?)" + TERM,
     "recursive ownership change of root or home"
   ),
   atCmd(

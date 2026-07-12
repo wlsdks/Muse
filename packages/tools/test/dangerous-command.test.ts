@@ -290,3 +290,32 @@ describe("mutation checks — hardening layers are load-bearing", () => {
     expect(normalizeCommandForGuard("r\x1b[0mm -rf /").some((v) => /rm -rf \//u.test(v))).toBe(true);
   });
 });
+
+describe("adversarial: long-flag interspersed root-wipe + doas wrapper", () => {
+  it("blocks the ACTUAL root-wipe form (--no-preserve-root) in any flag position", () => {
+    // `rm -rf /` is refused BY rm itself; the form that truly wipes a root
+    // filesystem is `rm -rf --no-preserve-root /`. A long flag between the
+    // short flags and the target must not slip the guard.
+    blocks("rm -rf --no-preserve-root /");
+    blocks("rm --no-preserve-root -rf /");
+    blocks("rm -rf --no-preserve-root /*");
+    blocks("rm -r -f --no-preserve-root /");
+    blocks("sudo rm -rf --no-preserve-root /");
+  });
+  it("blocks a doas-wrapped catastrophic command (doas is the OpenBSD sudo analog)", () => {
+    blocks("doas rm -rf /");
+    blocks("doas rm -rf --no-preserve-root /");
+    blocks("doas chmod -R 777 /");
+  });
+  it("blocks chmod/chown -R of root/home with an interspersed long flag", () => {
+    blocks("chmod --verbose -R 777 /");
+    blocks("chmod -R --verbose 777 /");
+    blocks("chown -R --verbose me:grp /");
+  });
+  it("does NOT over-block long flags on safe targets or a help query", () => {
+    passes("rm --help /");
+    passes("rm -rf ./build");
+    passes("chmod -R 755 ./dist");
+    passes("chmod -R 700 ~/.ssh/keys");
+  });
+});
