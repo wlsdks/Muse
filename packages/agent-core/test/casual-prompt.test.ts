@@ -96,6 +96,40 @@ describe("classifyCasualPrompt — pure social prompts only (precision-first)", 
   it("never misclassifies a long prompt as casual (the 30-char content guard)", () => {
     expect(classifyCasualPrompt("hello, could you summarise my meeting notes from yesterday")).toBeNull();
   });
+
+  it("classifies Hangul-compatibility-jamo shorthands (ㅎㅇ/ㅎ2 hi, ㄱㅅ thanks, ㅂㅂ/ㅂ2/ㅃㅇ/ㅌㅌ bye)", () => {
+    expect(classifyCasualPrompt("ㅎㅇ")).toBe("greeting");
+    expect(classifyCasualPrompt("ㅎ2")).toBe("greeting");
+    expect(classifyCasualPrompt("ㄱㅅ")).toBe("thanks");
+    expect(classifyCasualPrompt("ㅂㅂ")).toBe("farewell");
+    expect(classifyCasualPrompt("ㅂ2")).toBe("farewell");
+    expect(classifyCasualPrompt("ㅃㅇ")).toBe("farewell");
+    expect(classifyCasualPrompt("ㅌㅌ")).toBe("farewell");
+  });
+
+  it("classifies a bare social word with a trailing vocative (\"고마워 뮤즈\", \"ㅎㅇ 뮤즈\", \"잘자 뮤즈야\")", () => {
+    expect(classifyCasualPrompt("고마워 뮤즈")).toBe("thanks");
+    expect(classifyCasualPrompt("고마워요 뮤즈야")).toBe("thanks");
+    expect(classifyCasualPrompt("thanks muse")).toBe("thanks");
+    expect(classifyCasualPrompt("ㅎㅇ 뮤즈")).toBe("greeting");
+    expect(classifyCasualPrompt("안녕 뮤즈야")).toBe("greeting");
+    expect(classifyCasualPrompt("hey muse")).toBe("greeting");
+    expect(classifyCasualPrompt("잘자 뮤즈야")).toBe("farewell");
+    expect(classifyCasualPrompt("바이 뮤즈")).toBe("farewell");
+  });
+
+  it("does NOT classify the approval shorthand \"ㅇㅋ\" as casual (it's a distinct approval word, not a greeting)", () => {
+    expect(classifyCasualPrompt("ㅇㅋ")).toBeNull();
+    expect(classifyCasualPrompt("ㅇㅋ 뮤즈")).toBeNull();
+  });
+
+  it("does NOT classify a veto/stop word as casual, even with a vocative appended", () => {
+    // "그만" (stop) must stay null so the veto path (channel-side, upstream of
+    // casual classification) is the one that handles it — never mistaken for
+    // small talk just because a "뮤즈" vocative was appended.
+    expect(classifyCasualPrompt("그만")).toBeNull();
+    expect(classifyCasualPrompt("그만 뮤즈")).toBeNull();
+  });
 });
 
 describe("classifyMetaPrompt — questions ABOUT Muse itself (precision-first)", () => {

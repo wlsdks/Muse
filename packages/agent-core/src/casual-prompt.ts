@@ -16,10 +16,22 @@
 
 export type CasualPromptKind = "greeting" | "thanks" | "farewell";
 
+// Appended to every group so a trailing vocative ("고마워 뮤즈", "ㅎㅇ 뮤즈",
+// "잘자 뮤즈야") still matches — the base alternation stays name-free, and a
+// bare social word (no vocative) is unaffected since the whole group is
+// optional. `[!~.]*` re-admits trailing punctuation the caller may not have
+// stripped (normalizeSocialPrompt already strips it, so this is a no-op
+// after normalization but keeps the group correct standalone).
+const VOCATIVE_SUFFIX = "(?:\\s?(?:뮤즈|muse)(?:야|아|님|씨)?)?[!~.]*";
+
 const CASUAL_PATTERNS: ReadonlyArray<{ readonly kind: CasualPromptKind; readonly re: RegExp }> = [
-  { kind: "greeting", re: /^(hi+|hey+|hello+|helo|yo|hiya|howdy|sup|gm|good morning|good evening|good afternoon|안녕|안녕하세요|하이|헬로|여보세요|좋은\s?아침|좋은\s?저녁|좋은\s?밤|좋은\s?오후|좋은\s?하루|굿모닝|굿이브닝)( there| muse|이야|이에요|예요|요|입니다|하세요)?$/u },
-  { kind: "thanks", re: /^(thanks?|thank you|thanks a lot|thank u|thx|ty|tysm|cheers|much appreciated|appreciate it|고마워|고마워요|고맙습니다|감사|감사해|감사해요|감사합니다|땡큐|수고(했어|했어요|하셨어요|해)?)$/u },
-  { kind: "farewell", re: /^(bye+|bye bye|goodbye|good bye|see you|see ya|see you later|cya|later|good ?night|take care|잘있어|잘 있어|안녕히|안녕히 계세요|잘가|잘 가|바이|다음에 봐|잘\s?자(요|라)?|굿나잇|굿밤|푹\s?자(요)?)$/u }
+  // ㅎㅇ/ㅎ2 are jamo-shorthand for "하이" (hi) — HANGUL_RE (casual-prompt-responses.ts)
+  // now covers compatibility jamo so these also get the Korean canned reply.
+  { kind: "greeting", re: new RegExp(`^(hi+|hey+|hello+|helo|yo|hiya|howdy|sup|gm|good morning|good evening|good afternoon|안녕|안녕하세요|하이|헬로|여보세요|좋은\\s?아침|좋은\\s?저녁|좋은\\s?밤|좋은\\s?오후|좋은\\s?하루|굿모닝|굿이브닝|ㅎㅇ|ㅎ2)( there|이야|이에요|예요|요|입니다|하세요)?${VOCATIVE_SUFFIX}$`, "u") },
+  // ㄱㅅ is jamo-shorthand for "감사" (thanks).
+  { kind: "thanks", re: new RegExp(`^(thanks?|thank you|thanks a lot|thank u|thx|ty|tysm|cheers|much appreciated|appreciate it|고마워|고마워요|고맙습니다|감사|감사해|감사해요|감사합니다|땡큐|수고(했어|했어요|하셨어요|해)?|ㄱㅅ)${VOCATIVE_SUFFIX}$`, "u") },
+  // ㅂㅂ/ㅂ2/ㅃㅇ/ㅌㅌ are jamo-shorthand for "바이(바이)" / "빠이" (bye).
+  { kind: "farewell", re: new RegExp(`^(bye+|bye bye|goodbye|good bye|see you|see ya|see you later|cya|later|good ?night|take care|잘있어|잘 있어|안녕히|안녕히 계세요|잘가|잘 가|바이|다음에 봐|잘\\s?자(요|라)?|굿나잇|굿밤|푹\\s?자(요)?|ㅂㅂ|ㅂ2|ㅃㅇ|ㅌㅌ)${VOCATIVE_SUFFIX}$`, "u") }
 ];
 
 function normalizeSocialPrompt(query: string): string {

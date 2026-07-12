@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { RULE_FOLLOWUP_FUTURE_HORIZON_MS, extractFollowupPromises } from "../src/followup-detector.js";
+import { RULE_FOLLOWUP_FUTURE_HORIZON_MS, detectUnscheduledRememberIntent, extractFollowupPromises } from "../src/followup-detector.js";
 
+// Wednesday (getDay() === 3).
 const now = new Date("2026-05-13T10:00:00.000Z");
 
 describe("extractFollowupPromises — future-horizon sanity bound", () => {
@@ -270,5 +271,208 @@ describe("extractFollowupPromises — multi-promise + dedupe", () => {
     expect(extractFollowupPromises("I'll think about it.", { now })).toHaveLength(0);
     expect(extractFollowupPromises("Sounds good!", { now })).toHaveLength(0);
     expect(extractFollowupPromises("", { now })).toHaveLength(0);
+  });
+});
+
+describe("extractFollowupPromises — Korean weekday (false-done reminder root, rule 1a)", () => {
+  it("resolves a bare weekday to its next occurrence this week, default morning hour", () => {
+    const hit = extractFollowupPromises("금요일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-weekday");
+    expect(hit).toBeDefined();
+    expect(hit?.confidence).toBe("low");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 4, 15, 9, 0, 0, 0));
+  });
+
+  it("honours an explicit clock time on the weekday (24h number) — high confidence", () => {
+    const hit = extractFollowupPromises("금요일 15시에 알려줄게요.", { now }).find((p) => p.kind === "korean-weekday");
+    expect(hit).toBeDefined();
+    expect(hit?.confidence).toBe("high");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 4, 15, 15, 0, 0, 0));
+  });
+
+  it("다음주/담주 FORCES next week even though the weekday is still ahead this week", () => {
+    const nextJu = extractFollowupPromises("다음주 금요일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-weekday");
+    expect(nextJu?.scheduledFor).toEqual(new Date(2026, 4, 22, 9, 0, 0, 0));
+    const damJu = extractFollowupPromises("담주 금요일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-weekday");
+    expect(damJu?.scheduledFor).toEqual(new Date(2026, 4, 22, 9, 0, 0, 0));
+  });
+
+  it("이번주 behaves like the unqualified default (this week if still ahead)", () => {
+    const hit = extractFollowupPromises("이번주 금요일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-weekday");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 4, 15, 9, 0, 0, 0));
+  });
+
+  it("boundary: 오늘이 금요일인데 '금요일' — still ahead today vs already passed today", () => {
+    const fridayMorning = new Date(2026, 4, 15, 0, 0, 0, 0); // Friday, before the 9am default slot
+    const stillAhead = extractFollowupPromises("금요일에 확인해서 알려드릴게요.", { now: fridayMorning }).find((p) => p.kind === "korean-weekday");
+    expect(stillAhead?.scheduledFor).toEqual(new Date(2026, 4, 15, 9, 0, 0, 0)); // today
+
+    const fridayAfternoon = new Date(2026, 4, 15, 15, 0, 0, 0); // Friday, after the 9am default slot has passed
+    const alreadyPassed = extractFollowupPromises("금요일에 확인해서 알려드릴게요.", { now: fridayAfternoon }).find((p) => p.kind === "korean-weekday");
+    expect(alreadyPassed?.scheduledFor).toEqual(new Date(2026, 4, 22, 9, 0, 0, 0)); // next Friday
+  });
+
+  it("maps every weekday character to its getDay() index (mutation guard)", () => {
+    const cases: ReadonlyArray<[string, number]> = [
+      ["일요일에 확인해서 알려드릴게요.", 0], ["월요일에 확인해서 알려드릴게요.", 1],
+      ["화요일에 확인해서 알려드릴게요.", 2], ["수요일에 확인해서 알려드릴게요.", 3],
+      ["목요일에 확인해서 알려드릴게요.", 4], ["금요일에 확인해서 알려드릴게요.", 5],
+      ["토요일에 확인해서 알려드릴게요.", 6]
+    ];
+    for (const [text, day] of cases) {
+      const hit = extractFollowupPromises(text, { now }).find((p) => p.kind === "korean-weekday");
+      expect(hit, text).toBeDefined();
+      expect(hit?.scheduledFor.getDay(), text).toBe(day);
+    }
+  });
+});
+
+describe("extractFollowupPromises — English weekday (mirrors the Korean rule)", () => {
+  it("resolves a bare weekday to its next occurrence this week, default morning hour", () => {
+    const hit = extractFollowupPromises("I'll check back Friday.", { now }).find((p) => p.kind === "weekday");
+    expect(hit?.confidence).toBe("low");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 4, 15, 9, 0, 0, 0));
+  });
+
+  it("honours an explicit `at H(:MM)? (am|pm)?` on the weekday — high confidence with meridiem", () => {
+    const hit = extractFollowupPromises("Let's meet this Friday at 3pm.", { now }).find((p) => p.kind === "weekday");
+    expect(hit?.confidence).toBe("high");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 4, 15, 15, 0, 0, 0));
+  });
+
+  it("`next <weekday>` FORCES next week even when today IS that weekday", () => {
+    const hit = extractFollowupPromises("I'll follow up next Wednesday.", { now }).find((p) => p.kind === "weekday");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 4, 20, 9, 0, 0, 0));
+  });
+
+  it("boundary: today IS the named weekday — still ahead vs already passed", () => {
+    const wedMorning = new Date(2026, 4, 13, 0, 0, 0, 0); // Wednesday, before the 9am default slot
+    const stillAhead = extractFollowupPromises("I'll ping you Wednesday.", { now: wedMorning }).find((p) => p.kind === "weekday");
+    expect(stillAhead?.scheduledFor).toEqual(new Date(2026, 4, 13, 9, 0, 0, 0)); // today
+
+    const wedEvening = new Date(2026, 4, 13, 19, 0, 0, 0); // Wednesday, after the 9am default slot has passed
+    const alreadyPassed = extractFollowupPromises("I'll ping you Wednesday.", { now: wedEvening }).find((p) => p.kind === "weekday");
+    expect(alreadyPassed?.scheduledFor).toEqual(new Date(2026, 4, 20, 9, 0, 0, 0)); // next Wednesday
+  });
+
+  it("rejects a 12-hour-clock contradiction on the weekday time instead of rolling to the wrong hour", () => {
+    expect(extractFollowupPromises("next Friday at 15pm", { now }).filter((p) => p.kind === "weekday")).toHaveLength(0);
+  });
+});
+
+describe("extractFollowupPromises — Korean absolute date (false-done reminder root, rule 1b)", () => {
+  it("an unqualified day still ahead this month schedules THIS month", () => {
+    const hit = extractFollowupPromises("20일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-absolute-date");
+    expect(hit?.confidence).toBe("low");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 4, 20, 9, 0, 0, 0));
+  });
+
+  it("an unqualified day already PAST this month rolls to next month", () => {
+    const hit = extractFollowupPromises("5일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-absolute-date");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 5, 5, 9, 0, 0, 0));
+  });
+
+  it("다음달 FORCES next month even when the day is still ahead this month", () => {
+    const hit = extractFollowupPromises("다음달 20일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-absolute-date");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 5, 20, 9, 0, 0, 0));
+  });
+
+  it("explicit `N월 N일` still ahead THIS year schedules this year", () => {
+    const hit = extractFollowupPromises("7월 5일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-absolute-date");
+    expect(hit?.scheduledFor).toEqual(new Date(2026, 6, 5, 9, 0, 0, 0));
+  });
+
+  it("explicit `N월 N일` already PAST this year rolls to next year", () => {
+    const hit = extractFollowupPromises("3월 5일에 확인해서 알려드릴게요.", { now }).find((p) => p.kind === "korean-absolute-date");
+    expect(hit?.scheduledFor).toEqual(new Date(2027, 2, 5, 9, 0, 0, 0));
+  });
+
+  it("boundary: 12월 → 1월 — 다음달 in December rolls into January of NEXT year", () => {
+    const decemberNow = new Date(2026, 11, 20, 10, 0, 0, 0);
+    const hit = extractFollowupPromises("다음달 5일에 확인해서 알려드릴게요.", { now: decemberNow }).find((p) => p.kind === "korean-absolute-date");
+    expect(hit?.scheduledFor).toEqual(new Date(2027, 0, 5, 9, 0, 0, 0));
+  });
+
+  it("boundary: 31일 없는 달 — an unqualified day that doesn't exist in the current month is DROPPED, not rolled to a different month", () => {
+    const aprilNow = new Date(2026, 3, 10, 10, 0, 0, 0); // April has 30 days
+    const result = extractFollowupPromises("31일에 확인해서 알려드릴게요.", { now: aprilNow });
+    expect(result.filter((p) => p.kind === "korean-absolute-date")).toHaveLength(0);
+  });
+
+  it("rejects a day outside 1-31 — no match", () => {
+    const result = extractFollowupPromises("45일에 확인해서 알려드릴게요.", { now });
+    expect(result.filter((p) => p.kind === "korean-absolute-date")).toHaveLength(0);
+  });
+
+  it("rejects an explicit month/day that is never a valid calendar date (Feb 30)", () => {
+    const result = extractFollowupPromises("2월 30일에 확인해서 알려드릴게요.", { now });
+    expect(result.filter((p) => p.kind === "korean-absolute-date")).toHaveLength(0);
+  });
+
+  it("does NOT re-classify a relative-days phrase (`N일 뒤/후/이내`) as an absolute date", () => {
+    const after = extractFollowupPromises("3일 후에 확인해서 알려드릴게요.", { now });
+    expect(after.filter((p) => p.kind === "korean-absolute-date")).toHaveLength(0);
+    expect(after.some((p) => p.kind === "korean-relative-days")).toBe(true);
+
+    const within = extractFollowupPromises("5일 이내에 정리해 드릴게요.", { now });
+    expect(within.filter((p) => p.kind === "korean-absolute-date")).toHaveLength(0);
+  });
+});
+
+describe("extractFollowupPromises — the two audited sim utterances now schedule a real followup", () => {
+  it("\"다음달 5일 딸 생일 기억해줘\" — the assistant's confirming echo schedules a korean-absolute-date followup", () => {
+    const text = "네, 다음달 5일에 따님 생신 꼭 기억해서 알려드릴게요!";
+    const result = extractFollowupPromises(text, { now });
+    expect(result.some((p) => p.kind === "korean-absolute-date")).toBe(true);
+    // Also survives the production commissive gate (the echo carries "알려드릴게요").
+    const gated = extractFollowupPromises(text, { now, requireCommissive: true });
+    expect(gated.some((p) => p.kind === "korean-absolute-date")).toBe(true);
+  });
+
+  it("\"금요일에 GPU 서버 예약 리마인드\" — the assistant's confirming echo schedules a korean-weekday followup", () => {
+    const text = "네, 금요일에 GPU 서버 예약 리마인드 해드릴게요!";
+    const result = extractFollowupPromises(text, { now });
+    expect(result.some((p) => p.kind === "korean-weekday")).toBe(true);
+    const gated = extractFollowupPromises(text, { now, requireCommissive: true });
+    expect(gated.some((p) => p.kind === "korean-weekday")).toBe(true);
+  });
+
+  it("the SAME date phrase with no commitment verb is dropped under the production (requireCommissive) gate", () => {
+    // A factual mention ("...is on the 5th"), not a promise — must not auto-schedule.
+    const gated = extractFollowupPromises("다음달 5일이 회의입니다.", { now, requireCommissive: true });
+    expect(gated.filter((p) => p.kind === "korean-absolute-date")).toHaveLength(0);
+  });
+});
+
+describe("detectUnscheduledRememberIntent — the honest-caveat signal for a date the rule detector can't yet resolve", () => {
+  it("true for a remember-request that pairs a marker with a date-ish token", () => {
+    for (const q of [
+      "다음달 5일 딸 생일 기억해줘",
+      "금요일에 GPU 서버 예약 리마인드",
+      "모레 병원 예약 잊지마",
+      "설날에 세뱃돈 준비하는거 잊지 않게 알려줘",
+      "내일모레 회의 있는거 기억해줘",
+      "글피 마감인거 잊지마"
+    ]) {
+      expect(detectUnscheduledRememberIntent(q), q).toBe(true);
+    }
+  });
+
+  it("false when EITHER the remember marker OR the date-ish token is missing (conservative, no false positives on plain chat)", () => {
+    for (const q of [
+      "고마워",
+      "오늘 날씨 어때?",
+      "내 노트 요약해줘",
+      "기억해줘", // marker, no date
+      "다음달에 뭐 하지", // date-ish, no marker
+      "회의 일정 추가해줘", // action request, no remember marker
+      "5분 뒤에 알려줘" // has a date-ish digit+일? no — "분" not "일"; no marker either sense
+    ]) {
+      expect(detectUnscheduledRememberIntent(q), q).toBe(false);
+    }
+  });
+
+  it("false for empty / whitespace input", () => {
+    expect(detectUnscheduledRememberIntent("")).toBe(false);
+    expect(detectUnscheduledRememberIntent("   ")).toBe(false);
   });
 });

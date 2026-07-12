@@ -43,8 +43,10 @@ export {
   type InMemoryAgentInitiatedNoticeBrokerOptions
 } from "./agent-initiated-notice.js";
 export {
+  detectUnscheduledRememberIntent,
   extractFollowupPromises,
   hasCommissiveForce,
+  hasKoreanCommissiveForce,
   type ExtractFollowupPromisesOptions,
   type FollowupPromise
 } from "./followup-detector.js";
