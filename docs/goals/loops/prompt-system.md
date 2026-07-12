@@ -181,7 +181,7 @@ ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · agen
 리뷰지점: over-hedge가 핵심 리스크(아는 것도 hedge하면 회귀) — 힌트 문구를 "현재 날짜 이후 최신 사건"으로 스코프해 "대한민국 수도"엔 미발동. Opus 라이브 2종 confident 확인.
 리스크/백로그: (A) 개선은 부분적(모델 지식-컷오프 자체는 못 고침, honesty-lead만). (B) 정적 라인이 [Active Context] 동적 섹션에 있음(캐시 관점 minor, 날짜 caveat라 co-locate 합당). (C) colorize 회귀(fire17 flag)·감사 갭 ①②③④ 여전히 backlog.
 
-## fire 19 · 2026-07-12 · <commit>
+## fire 19 · 2026-07-12 · c28ce21ec
 meta: value-class=moat-enforcement · pkg=ci(github-workflows)+scripts · kind=ci-wiring · verdict=PASS(opus, 완전결정론 게이트) · firesSinceDrill=8
 probe: 8-axis 라이브(암산 방법·우선순위 프레임워크·무례유저·동음이의·반사실·다중제약·복합감정·자기지식). 7/10 GOOD(암산·Eisenhower·무례유저 침착·반사실 추론·다중제약 3개 다 지킴·합격했는데 안 기쁨 복합감정 검증·화낼 줄 아냐 정직). 프로버 WEAK 3: (1)반사실 응답 truncation — 재현 시 1515자 완결(환경 노이즈, fire5/9/13 재발) (2)메뉴 2개만·(3)책 clarification generic = 주관적 UX. → 라이브 DRY(재현성 결정론 결함 없음).
 ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · self-eval:test에 ci-drift-gates.test.mjs 2/2 추가
