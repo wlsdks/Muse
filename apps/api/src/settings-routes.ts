@@ -14,6 +14,7 @@ export interface DaemonFlagView {
   readonly running?: boolean;
   readonly lastIngestAtIso?: string;
   readonly lastError?: string;
+  readonly lastErrorAtIso?: string;
 }
 
 export interface DaemonFlagsResponse {
@@ -39,6 +40,7 @@ export type DaemonStatusSource = () => Readonly<Record<string, {
   readonly running: boolean;
   readonly lastIngestAtIso?: string;
   readonly lastError?: string;
+  readonly lastErrorAtIso?: string;
 }>>;
 
 export function shapeDaemonFlags(
@@ -54,7 +56,8 @@ export function shapeDaemonFlags(
       enabled: settings[key] ?? parseBoolean(env[key], dflt),
       ...(status && supervisorName ? { running: status[supervisorName]?.running ?? false } : {}),
       ...(status?.[supervisorName ?? ""]?.lastIngestAtIso ? { lastIngestAtIso: status[supervisorName ?? ""]?.lastIngestAtIso } : {}),
-      ...(status?.[supervisorName ?? ""]?.lastError ? { lastError: status[supervisorName ?? ""]?.lastError } : {})
+      ...(status?.[supervisorName ?? ""]?.lastError ? { lastError: status[supervisorName ?? ""]?.lastError } : {}),
+      ...(status?.[supervisorName ?? ""]?.lastErrorAtIso ? { lastErrorAtIso: status[supervisorName ?? ""]?.lastErrorAtIso } : {})
     }))
   };
 }

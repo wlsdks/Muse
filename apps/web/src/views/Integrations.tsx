@@ -3,11 +3,12 @@ import { useState } from "react";
 
 import { AsyncBlock, Badge, Button, Card, Icon, Tooltip } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
+import { severityTone, sortChecks, worstSeverity } from "./doctor-logic.js";
 import { canDisconnect, daemonBadge, providerStatus, requiresHomeserver } from "./integrations-logic.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { StringKey } from "../i18n/strings.js";
-import type { DaemonFlagsResponse, MessagingConnectResponse, MessagingSetupProvider, MessagingSetupResponse } from "../api/types.js";
+import type { DaemonFlagsResponse, DoctorResponse, MessagingConnectResponse, MessagingSetupProvider, MessagingSetupResponse } from "../api/types.js";
 
 const GUIDE_STEPS: Readonly<Record<string, number>> = { discord: 4, line: 3, matrix: 3, slack: 4, telegram: 3 };
 const DAEMON_KEYS = ["MUSE_TELEGRAM_POLL_ENABLED", "MUSE_MATRIX_POLL_ENABLED", "MUSE_INBOUND_REPLY_ENABLED"] as const;
@@ -62,6 +63,8 @@ export function IntegrationsView({ client }: { client: ApiClient }) {
       <p className="muted" style={{ marginTop: 4 }}>
         {t("int.subtitle")}
       </p>
+
+      <DoctorCard client={client} />
 
       <Card title={t("int.how")} className="lifted" >
         <p className="subtle" style={{ fontSize: 13, margin: 0 }}>
@@ -133,6 +136,88 @@ export function IntegrationsView({ client }: { client: ApiClient }) {
         {t("int.security")}
       </p>
     </div>
+  );
+}
+
+/**
+ * One-click self-diagnosis: the deterministic /api/doctor checks with a
+ * fix button per repairable issue (e.g. "channel connected but the reply
+ * daemon is off — Muse reads but never answers"). The fix POST reuses the
+ * same persist+live-apply seam as the daemon toggles below.
+ */
+function DoctorCard({ client }: { client: ApiClient }) {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+
+  const doctor = useQuery({
+    queryFn: () => client.get<DoctorResponse>("/api/doctor"),
+    queryKey: ["doctor", client.baseUrl],
+    refetchInterval: 60_000
+  });
+  const fix = useMutation({
+    mutationFn: (fixId: string) => client.post<{ appliedLive: boolean }>("/api/doctor/fix", { id: fixId }),
+    onSuccess: () => {
+      for (const key of ["doctor", "daemon-flags", "messaging-setup"]) {
+        void queryClient.invalidateQueries({ queryKey: [key, client.baseUrl] });
+      }
+    }
+  });
+
+  const checks = sortChecks(doctor.data?.checks ?? []);
+  const overall = worstSeverity(checks);
+  const issueCount = checks.filter((check) => check.severity !== "ok").length;
+
+  return (
+    <Card
+      title={t("int.doctor")}
+      className="lifted"
+      action={
+        <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+          {doctor.data && (
+            <Badge tone={severityTone(overall)}>
+              {overall === "ok" ? t("int.doctor.healthy") : t("int.doctor.issues", { n: String(issueCount) })}
+            </Badge>
+          )}
+          <Button variant="ghost" size="sm" disabled={doctor.isFetching} onClick={() => void doctor.refetch()}>
+            {t("int.doctor.rerun")}
+          </Button>
+        </div>
+      }
+    >
+      <p className="subtle" style={{ fontSize: 13, marginTop: 0 }}>
+        {t("int.doctor.sub")}
+      </p>
+      <AsyncBlock loading={doctor.isLoading} error={doctor.error} empty={checks.length === 0}>
+        {checks.map((check) => (
+          <div className="row" key={check.id}>
+            <div className="row-main">
+              <div className="row-title">{check.title}</div>
+              <div className="row-meta">{check.detail}</div>
+            </div>
+            <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+              <Badge tone={severityTone(check.severity)} dot={check.severity !== "ok"}>
+                {check.severity === "ok" ? "OK" : check.severity === "warn" ? "!" : "!!"}
+              </Badge>
+              {check.fix && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={fix.isPending}
+                  onClick={() => fix.mutate(check.fix?.id ?? "")}
+                >
+                  {fix.isPending ? t("int.doctor.fixing") : check.fix.label}
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </AsyncBlock>
+      {doctor.data && (
+        <p className="subtle mono" style={{ fontSize: 11, marginBottom: 0, marginTop: 10 }}>
+          server {doctor.data.version} · pid {doctor.data.pid.toString()}
+        </p>
+      )}
+    </Card>
   );
 }
 

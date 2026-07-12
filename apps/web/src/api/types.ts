@@ -414,6 +414,20 @@ export interface DaemonFlagsResponse {
   flags: DaemonFlagView[];
 }
 
+export interface DoctorCheck {
+  readonly id: string;
+  readonly severity: "ok" | "warn" | "error";
+  readonly title: string;
+  readonly detail: string;
+  readonly fix?: { readonly id: string; readonly label: string };
+}
+export interface DoctorResponse {
+  readonly version: string;
+  readonly pid: number;
+  readonly startedAtIso: string;
+  readonly checks: readonly DoctorCheck[];
+}
+
 interface ReflectionView {
   id: string;
   insight: string;

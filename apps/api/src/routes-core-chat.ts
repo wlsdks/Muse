@@ -3,6 +3,7 @@
 import { parseBoolean } from "@muse/autoconfigure";
 import type { FastifyInstance } from "fastify";
 
+import { serverBuildId, serverStartedAtIso } from "./build-info.js";
 import { ChatRateLimiter, clientKeyFromRequest } from "./chat-rate-limiter.js";
 import {
   createOpenApiDocument,
@@ -17,7 +18,13 @@ export function registerCoreRoutes(
   server: FastifyInstance,
   apiRouteMethods: ReadonlyMap<string, ReadonlySet<string>>
 ): void {
-  const healthPayload = { service: "muse-api", status: "ok" };
+  const healthPayload = {
+    pid: process.pid,
+    service: "muse-api",
+    startedAtIso: serverStartedAtIso(),
+    status: "ok",
+    version: serverBuildId()
+  };
   server.get("/health", async () => healthPayload);
   server.get("/api/health", async () => healthPayload);
 

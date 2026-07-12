@@ -16,6 +16,7 @@ export interface ChannelDaemonStatus {
   readonly lastIngestAtIso?: string;
   readonly lastIngestCount?: number;
   readonly lastError?: string;
+  readonly lastErrorAtIso?: string;
 }
 
 export interface ChannelDaemonSupervisor {
@@ -34,6 +35,7 @@ interface DaemonState {
   lastIngestAtIso?: string;
   lastIngestCount?: number;
   lastError?: string;
+  lastErrorAtIso?: string;
 }
 
 export function createChannelDaemonSupervisor(): ChannelDaemonSupervisor {
@@ -59,7 +61,9 @@ export function createChannelDaemonSupervisor(): ChannelDaemonSupervisor {
       return daemons.get(name)?.handle !== undefined;
     },
     noteError(name, message) {
-      state(name).lastError = message;
+      const entry = state(name);
+      entry.lastError = message;
+      entry.lastErrorAtIso = new Date().toISOString();
     },
     noteIngest(name, count) {
       const entry = state(name);
@@ -74,7 +78,8 @@ export function createChannelDaemonSupervisor(): ChannelDaemonSupervisor {
             running: entry.handle !== undefined,
             ...(entry.lastIngestAtIso ? { lastIngestAtIso: entry.lastIngestAtIso } : {}),
             ...(entry.lastIngestCount !== undefined ? { lastIngestCount: entry.lastIngestCount } : {}),
-            ...(entry.lastError ? { lastError: entry.lastError } : {})
+            ...(entry.lastError ? { lastError: entry.lastError } : {}),
+            ...(entry.lastErrorAtIso ? { lastErrorAtIso: entry.lastErrorAtIso } : {})
           }
         ])
       );

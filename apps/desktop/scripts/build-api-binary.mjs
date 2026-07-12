@@ -8,10 +8,15 @@ const repoRoot = resolve(import.meta.dir, "../../..");
 const entry = resolve(repoRoot, "apps/api/dist/index.js");
 const outfile = process.argv[2] ?? resolve(repoRoot, "apps/desktop/.build/muse-api-bin");
 
+// Bake the build id in at compile time so /api/health reports it and the
+// desktop's ServerReusePolicy can tell this binary from a stale one.
+const buildId = (process.env.MUSE_BUILD_ID ?? "").trim();
+
 const result = await Bun.build({
   entrypoints: [entry],
   target: "bun",
-  compile: { outfile }
+  compile: { outfile },
+  ...(buildId ? { define: { "process.env.MUSE_BUILD_ID": JSON.stringify(buildId) } } : {})
 });
 
 if (!result.success) {

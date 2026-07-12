@@ -53,7 +53,10 @@ echo "building web UI…"
 [ -f "$REPO/apps/web/dist/index.html" ] || { echo "web build missing (apps/web/dist)" >&2; exit 1; }
 rm -rf "$RES/web"; cp -R "$REPO/apps/web/dist" "$RES/web"
 echo "building self-contained API binary…"
-bun "$PWD/scripts/build-api-binary.mjs" "$RES/muse-api-bin"
+# One build id ties the api binary (baked into /api/health) to this bundle's
+# Info.plist (MuseBuildId) — the desktop reuses a running server only on match.
+BUILD_ID="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)-$(date +%Y%m%d%H%M%S)"
+MUSE_BUILD_ID="$BUILD_ID" bun "$PWD/scripts/build-api-binary.mjs" "$RES/muse-api-bin"
 chmod +x "$RES/muse-api-bin"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -68,6 +71,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>${EXE}</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleVersion</key><string>1</string>
+  <key>MuseBuildId</key><string>${BUILD_ID}</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>

@@ -67,6 +67,7 @@ import { registerSchedulerRoutes } from "./scheduler-routes.js";
 import { registerAccountabilityRoutes } from "./accountability-routes.js";
 import { registerSelfImprovementRoutes } from "./self-improvement-routes.js";
 import { registerJourneyRoutes } from "./journey-routes.js";
+import { registerDoctorRoutes } from "./doctor-routes.js";
 import { registerSettingsRoutes } from "./settings-routes.js";
 import { registerActiveContextRoutes } from "./active-context-routes.js";
 import { registerIdentityTaglineRoutes } from "./identity-tagline-routes.js";
@@ -457,8 +458,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     authoredSkillsDir: options.authoredSkillsDir ?? resolveAuthoredSkillsDir(process.env)
   });
 
-  registerSettingsRoutes(server, {
-    applyDaemonToggle: (key, enabled) => {
+  const applyDaemonToggle = (key: string, enabled: boolean): boolean => {
       switch (key) {
         case "MUSE_TELEGRAM_POLL_ENABLED":
           if (!enabled) {
@@ -483,15 +483,27 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           replyStarters.telegram?.();
           replyStarters.matrix?.();
           return channelDaemons.isRunning("inbound-reply") || channelDaemons.isRunning("matrix-inbound-reply");
-        default:
-          // Non-channel daemons read their flag at boot only — the
-          // persisted toggle applies on the next restart.
-          return false;
-      }
-    },
+      default:
+        // Non-channel daemons read their flag at boot only — the
+        // persisted toggle applies on the next restart.
+        return false;
+    }
+  };
+
+  registerSettingsRoutes(server, {
+    applyDaemonToggle,
     authService,
     daemonSettingsFile,
     daemonStatus: () => channelDaemons.status()
+  });
+
+  registerDoctorRoutes(server, {
+    applyDaemonToggle,
+    authService,
+    daemonSettingsFile,
+    daemonStatus: () => channelDaemons.status(),
+    ...(options.messaging ? { messaging: options.messaging } : {}),
+    ...(options.telegramInboxFile ? { telegramInboxFile: options.telegramInboxFile } : {})
   });
 
   // Optional Phase B daemon: every MUSE_REMINDER_TICK_MS (default
