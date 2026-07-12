@@ -142,7 +142,7 @@ ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · agen
 리뷰지점: 과억제 리스크(fail-close 아니지만 요청이 짧게 잘릴라)를 Opus가 적대검증 — ?로 질문 앵커깨짐·요청은 명령형 종결·SUBSTANTIAL 가드. misses는 문법이상 dangling("알려줘 좋다")뿐(비자연, non-blocker).
 리스크/백로그: eval:adversarial는 이번 fire서 Ollama idle-timeout으로 STALL(출력 0, 코드회귀 아님·[[project_smoke_live_stall]]). 이 슬라이스는 must-refuse/secret 케이스와 결정론적 직교(musing 분류가 안전거절에 영향 불가)라 무영향 자명; Opus가 full suite 3027/3027 무회귀 확인, fire 13 baseline 26/26. lesson: 라이브 eval 병렬 실행은 Ollama 경합/idle-timeout으로 stall — fire당 라이브 배터리는 순차로, 직교 슬라이스면 결정론 논증으로 대체.
 
-## fire 15 · 2026-07-12 · <commit>
+## fire 15 · 2026-07-12 · 941225087
 meta: value-class=context-engineering · pkg=@muse/agent-core · kind=context-injection · verdict=PASS(opus adversarial) · firesSinceDrill=4
 probe: 8-axis 라이브(넘버드리스트·시간모호·중간지시·이중부정·자기참조·단위추론·간결명령 예의·반복질문). 7/8 GOOD. WEAK: 반복 "지금 몇 시야?"가 호출마다 모순 시각(7:52 AM vs 3:53 PM) — 환각 시계.
 ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · agent-core 3029 tests · self-eval 무회귀
