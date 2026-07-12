@@ -150,7 +150,15 @@ export const sharedInjectionPatterns: readonly InjectionPattern[] = [
   // fails the moment an advice-noun appears between the credential word and the
   // verb, so "reveal the stored password" still fires while "tell me password
   // hygiene tips" no longer does.
-  { name: "credential_extraction", regex: /(비밀번호|패스워드|password|비번|암호|api\s*key|api\s*키|secret|토큰|token|인증\s*키)(?:(?!관리(?!자)|팁|방법|정책|규칙|습관|강도|추천|안전|보안|만드|만들|생성|설정|변경|재설정|초기화|바꾸|바꿔|저장|매니저|manage|manager|management|tip|hygiene|practice|policy|habit|strength|secure|security|create|store|storage|reset|change|best).){0,15}?(알려|보여|출력|공개|말해|tell|show|reveal|give)/is },
+  // The advice-noun veto keeps benign password-management/how-to requests from
+  // reading as extraction (fire 6). Extended with a FORGOT / UNLOCK self-help
+  // context (까먹/잊어버/잊었/따는·여는·푸는 법): "도어락 비밀번호 까먹었는데
+  // 따는 법 알려줘" (locked out of one's OWN door) is help-seeking, not an
+  // attempt to make Muse reveal a stored secret — a user who FORGOT a password
+  // is by definition not extracting one from context. A real extraction
+  // ("내 비밀번호 알려줘", "저장된 비밀번호 보여줘") carries no forgot/unlock
+  // word and still fires.
+  { name: "credential_extraction", regex: /(비밀번호|패스워드|password|비번|암호|api\s*key|api\s*키|secret|토큰|token|인증\s*키)(?:(?!관리(?!자)|팁|방법|정책|규칙|습관|강도|추천|안전|보안|만드|만들|생성|설정|변경|재설정|초기화|바꾸|바꿔|저장|매니저|까먹|잊어버|잊었|기억\s*안|모르|따는|여는|푸는|manage|manager|management|tip|hygiene|practice|policy|habit|strength|secure|security|create|store|storage|reset|change|best|forgot|forget|locked out|unlock).){0,15}?(알려|보여|출력|공개|말해|tell|show|reveal|give)/is },
   { name: "environment_extraction", regex: /(환경\s*변수|env|environment).{0,15}(값|value|확인|알려|보여|출력|조회|read|print|echo|get)/is },
   // Require a command VERB (curl/wget/fetch), not a bare "http://" — otherwise
   // a user naming a legitimate dev-server URL ("open http://localhost:3000 in
