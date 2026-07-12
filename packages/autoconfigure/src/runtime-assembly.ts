@@ -354,10 +354,10 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   // or absent persona.md is fail-open here — see resolveRuntimePersonaLayerSync.
   const personaFilePath = resolvePersonaFilePath(env);
   const promptLayerRegistry = new InMemoryPromptLayerRegistry();
-  const startupPersonaLayer = resolveRuntimePersonaLayerSync(personaFilePath);
-  if (startupPersonaLayer) {
-    promptLayerRegistry.register(startupPersonaLayer);
-  }
+  // Absent/invalid persona.md now yields the default bluebird personality
+  // layer (not undefined), so every install registers a warm character rather
+  // than running the flagship chat surface with no personality at all.
+  promptLayerRegistry.register(resolveRuntimePersonaLayerSync(personaFilePath));
   // The explicit persona.md `register` setting (docs/strategy/
   // prompt-architecture.md §4) — WINS over per-turn 반말/존댓말 detection in
   // applyPromptLayers. Same fail-open posture as the layer load above: an

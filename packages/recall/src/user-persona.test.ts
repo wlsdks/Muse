@@ -231,9 +231,9 @@ describe("loadUserPersona / loadUserPersonaSync", () => {
 });
 
 describe("resolveRuntimePersonaLayer / resolveRuntimePersonaLayerSync — fail-open runtime path", () => {
-  it("returns undefined when no persona.md exists", async () => {
-    expect(await resolveRuntimePersonaLayer(join(dir, "nope.md"))).toBeUndefined();
-    expect(resolveRuntimePersonaLayerSync(join(dir, "nope.md"))).toBeUndefined();
+  it("falls back to the default bluebird layer when no persona.md exists (fresh install has character, not a blank voice)", async () => {
+    expect(await resolveRuntimePersonaLayer(join(dir, "nope.md"))).toEqual(defaultPersonaLayer());
+    expect(resolveRuntimePersonaLayerSync(join(dir, "nope.md"))).toEqual(defaultPersonaLayer());
   });
 
   it("returns the real layer for a valid file", async () => {

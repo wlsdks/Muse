@@ -252,21 +252,24 @@ export function loadUserPersonaSync(filePath: string = resolvePersonaFilePath())
 }
 
 /**
- * Runtime convenience: absent file -> no personality layer (undefined);
- * invalid file -> fail OPEN to the default bluebird layer rather than
- * blocking the turn — a broken persona.md is a cosmetic regression, not a
- * reason to break chat/ask. The typed `reason` a broken file produces is
+ * Runtime convenience: absent OR invalid file -> the default bluebird
+ * personality layer (warm, understated, an occasional light joke) rather than
+ * NO character. A fresh install with no persona.md previously got `undefined`
+ * here, so the flagship chat surface ran with zero personality while the
+ * bluebird/tagline surfaces had one — Muse read as a generic voice box. Fail
+ * OPEN to the default so every install has a consistent warm character (a user
+ * persona.md still overrides it). The typed `reason` a broken file produces is
  * for `loadUserPersona`'s caller (the save/preview API), not this path.
  */
-export async function resolveRuntimePersonaLayer(filePath: string = resolvePersonaFilePath()): Promise<PromptLayer | undefined> {
+export async function resolveRuntimePersonaLayer(filePath: string = resolvePersonaFilePath()): Promise<PromptLayer> {
   const result = await loadUserPersona(filePath);
-  if (!result.exists) return undefined;
+  if (!result.exists) return defaultPersonaLayer();
   return result.ok ? result.layer : defaultPersonaLayer();
 }
 
-export function resolveRuntimePersonaLayerSync(filePath: string = resolvePersonaFilePath()): PromptLayer | undefined {
+export function resolveRuntimePersonaLayerSync(filePath: string = resolvePersonaFilePath()): PromptLayer {
   const result = loadUserPersonaSync(filePath);
-  if (!result.exists) return undefined;
+  if (!result.exists) return defaultPersonaLayer();
   return result.ok ? result.layer : defaultPersonaLayer();
 }
 
