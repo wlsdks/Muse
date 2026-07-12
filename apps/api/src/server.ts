@@ -648,7 +648,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
             : {}),
           env,
           model: ackModel,
-          registry: messaging
+          registry: messaging,
+          userMemoryStore: options.userMemoryStore
         }),
         threadFile: `${telegramInboxFile}.threads.json`
       });
@@ -742,7 +743,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
             : {}),
           env,
           model: ackModel,
-          registry: messaging
+          registry: messaging,
+          userMemoryStore: options.userMemoryStore
         }),
         threadFile: `${matrixInboxFile}.threads.json`
       });
