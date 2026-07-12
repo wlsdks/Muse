@@ -256,6 +256,15 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
   // off rather than converting the UTC iso — the latter it does unreliably.
   // The UTC iso stays for any machine/date math the model may need.
   lines.push(`now=${snapshot.localDisplay} (${snapshot.weekday}, ${snapshot.timezone}) [utc ${snapshot.nowIso}]`);
+  // Knowledge-cutoff honesty, anchored to the date above: a 12B trained before
+  // now confidently calls a PAST-dated event "아직 안 일어났다/발표 안 됐다" (a
+  // live probe: "2025년 노벨문학상 누가 받았어?" on 2026-07 → "아직 발표 안 됐어").
+  // Tell it to lead with honesty instead of a confident future-tense error.
+  lines.push(
+    "지식 한계: 위 현재 날짜 이후에 학습되지 않은 최신 사건은 네 지식에 없을 수 있다. "
+    + "현재 날짜보다 과거의 일을 \"아직 안 일어났다\"거나 \"아직 발표 안 됐다\"고 단정하지 말고, "
+    + "확실하지 않으면 \"그건 내 지식 이후일 수 있어 — 확실하지 않아\"라고 정직하게 말하라."
+  );
   if (snapshot.workingHours) {
     const status = snapshot.isWorkingHours === undefined
       ? "unknown"

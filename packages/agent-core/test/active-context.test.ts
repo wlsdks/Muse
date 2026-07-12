@@ -24,6 +24,21 @@ describe("renderActiveContextSection", () => {
     expect(rendered).toContain("Monday");
   });
 
+  it("carries a knowledge-cutoff honesty hint anchored to the current date", () => {
+    // A 12B calls a PAST-dated event "아직 안 일어났다" (measured live); the
+    // hint tells it to lead with "확실하지 않아" instead of a future-tense error.
+    const snapshot: ActiveContextSnapshot = {
+      localHour: 12,
+      localDisplay: "2026-05-11 12:00",
+      nowIso: fixedNow.toISOString(),
+      timezone: "UTC",
+      weekday: "Monday"
+    };
+    const rendered = renderActiveContextSection(snapshot);
+    expect(rendered).toContain("지식 한계");
+    expect(rendered).toContain("확실하지 않아");
+  });
+
   it("includes working_hours and in_window status", () => {
     const snapshot: ActiveContextSnapshot = {
       isWorkingHours: true,
