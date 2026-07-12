@@ -6,7 +6,7 @@ import { MUSE_IDENTITY_CORE, SURFACE_ROLES } from "@muse/prompts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { NOTES_INDEX_SCHEMA_VERSION } from "./notes-index.js";
-import { runGroundedRecall, type GroundedRecallInput, type ScoredChunk } from "./pipeline.js";
+import { prepareGroundedRecall, runGroundedRecall, streamGroundedRecall, type GroundedRecallInput, type ScoredChunk } from "./pipeline.js";
 
 const EMBED_MODEL = "test-embedder";
 
@@ -376,5 +376,56 @@ describe("runGroundedRecall — extras (the ask→seam retrofit enabling slice)"
       sources: { notesDir, notesIndexFile: indexFile }
     });
     expect(seenSystem).toContain("EXTERNAL/UNVERIFIED");
+  });
+});
+
+describe("prepareGroundedRecall — the prepare-only entry point (--with-tools convergence, Slice 1)", () => {
+  it("matches streamGroundedRecall's own prepare stage exactly — same systemPrompt, scored, verdict, notesUnavailable", async () => {
+    const prepared = await prepareGroundedRecall({
+      embedFn: fakeEmbed,
+      options: { embedModel: EMBED_MODEL, topK: 3 },
+      query: "what MTU does my VPN use?",
+      sources: { notesDir, notesIndexFile: indexFile }
+    });
+
+    let seenRetrieval: { readonly scored: readonly ScoredChunk[]; readonly verdict: "confident" | "ambiguous" | "none"; readonly notesUnavailable: boolean } | undefined;
+    let seenSystem = "";
+    for await (const event of streamGroundedRecall({
+      ...input("ok"),
+      runtime: { embedFn: fakeEmbed, generateAnswer: async ({ system }) => { seenSystem = system; return "ok"; } }
+    })) {
+      if (event.type === "retrieval") seenRetrieval = event;
+    }
+
+    expect(prepared.systemPrompt).toEqual(seenSystem);
+    expect(prepared.scored).toEqual(seenRetrieval?.scored);
+    expect(prepared.verdict).toEqual(seenRetrieval?.verdict);
+    expect(prepared.notesUnavailable).toEqual(seenRetrieval?.notesUnavailable);
+  });
+
+  it("notesUnavailableContextBlock absent ⇒ the default '(no relevant notes found)' string (byte-identical to today)", async () => {
+    const throwingEmbed = async (): Promise<number[]> => { throw new Error("embed endpoint down"); };
+    const prepared = await prepareGroundedRecall({
+      embedFn: throwingEmbed,
+      options: { embedModel: EMBED_MODEL, topK: 3 },
+      query: "what MTU does my VPN use?",
+      sources: { notesDir, notesIndexFile: indexFile }
+    });
+    expect(prepared.notesUnavailable).toBe(true);
+    expect(prepared.systemPrompt).toContain("(no relevant notes found)");
+  });
+
+  it("notesUnavailableContextBlock present ⇒ replaces the contextBlock with the caller's own string", async () => {
+    const throwingEmbed = async (): Promise<number[]> => { throw new Error("embed endpoint down"); };
+    const prepared = await prepareGroundedRecall({
+      embedFn: throwingEmbed,
+      extras: { notesUnavailableContextBlock: "(notes search unavailable this turn — answer from the other grounding sources)" },
+      options: { embedModel: EMBED_MODEL, topK: 3 },
+      query: "what MTU does my VPN use?",
+      sources: { notesDir, notesIndexFile: indexFile }
+    });
+    expect(prepared.notesUnavailable).toBe(true);
+    expect(prepared.systemPrompt).toContain("(notes search unavailable this turn — answer from the other grounding sources)");
+    expect(prepared.systemPrompt).not.toContain("(no relevant notes found)");
   });
 });
