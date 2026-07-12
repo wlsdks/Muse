@@ -12,6 +12,7 @@ const context = (messages: AgentRunContext["input"]["messages"] = [], metadata: 
 });
 
 const baseSnapshot: ActiveContextSnapshot = {
+  localDisplay: "2026-01-01 09:00",
   nowIso: "2026-01-01T09:00:00Z",
   weekday: "Thursday",
   timezone: "UTC",

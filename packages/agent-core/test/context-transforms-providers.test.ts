@@ -24,7 +24,7 @@ const throwing = () => {
 };
 
 describe("resolveActiveContextSnapshot", () => {
-  const snapshot: ActiveContextSnapshot = { nowIso: "2026-01-01T09:00:00Z", weekday: "Thursday", timezone: "UTC", localHour: 9 };
+  const snapshot: ActiveContextSnapshot = { localDisplay: "2026-01-01 09:00", nowIso: "2026-01-01T09:00:00Z", weekday: "Thursday", timezone: "UTC", localHour: 9 };
 
   it("returns undefined when no provider is configured", async () => {
     expect(await resolveActiveContextSnapshot(context(), undefined)).toBeUndefined();

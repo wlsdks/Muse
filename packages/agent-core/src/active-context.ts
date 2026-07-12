@@ -60,6 +60,8 @@ interface RoutineHint {
 
 export interface ActiveContextSnapshot {
   readonly nowIso: string;
+  /** Pre-computed LOCAL wall-clock time ("2026-07-12 15:54") — what the model reads. */
+  readonly localDisplay: string;
   readonly weekday: string;
   readonly timezone: string;
   readonly localHour: number;
@@ -227,6 +229,7 @@ export class DefaultActiveContextProvider implements ActiveContextProvider {
       activeTask,
       currentFocus,
       isWorkingHours: workingHours ? isWorkingHours(now, workingHours, formatted.timezone) : undefined,
+      localDisplay: formatted.localDisplay,
       localHour: formatted.localHour,
       nowIso: formatted.iso,
       reminders,
@@ -249,7 +252,10 @@ export function renderActiveContextSection(snapshot: ActiveContextSnapshot | und
     return undefined;
   }
   const lines: string[] = ["[Active Context]"];
-  lines.push(`now=${snapshot.nowIso} (${snapshot.weekday}, ${snapshot.timezone})`);
+  // LOCAL wall-clock time first (pre-converted in code) so the model reads it
+  // off rather than converting the UTC iso — the latter it does unreliably.
+  // The UTC iso stays for any machine/date math the model may need.
+  lines.push(`now=${snapshot.localDisplay} (${snapshot.weekday}, ${snapshot.timezone}) [utc ${snapshot.nowIso}]`);
   if (snapshot.workingHours) {
     const status = snapshot.isWorkingHours === undefined
       ? "unknown"

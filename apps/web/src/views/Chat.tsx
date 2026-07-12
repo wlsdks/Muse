@@ -7,6 +7,7 @@ import { Markdown } from "../components/markdown.js";
 import { Button, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { readToken } from "../lib/token-storage.js";
+import { shouldStickToBottom } from "./chat-autoscroll.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { StringKey, Translate } from "../i18n/index.js";
@@ -81,7 +82,17 @@ export function ChatEmptyState({
 export function ChatView({ client }: { client: ApiClient }) {
   const { t } = useI18n();
   const token = readToken();
-  const { activeTool, error, pending, reset, send, turns } = useChatStream(client.baseUrl, token);
+  const { activeTool, error, pending, reset, send, thinking, turns } = useChatStream(client.baseUrl, token);
+  const [elapsedS, setElapsedS] = useState(0);
+  useEffect(() => {
+    if (!pending) {
+      setElapsedS(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => setElapsedS(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [pending]);
   const voice = useVoice(client.baseUrl, token);
   const [draft, setDraft] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
@@ -89,8 +100,24 @@ export function ChatView({ client }: { client: ApiClient }) {
   const composerWrapRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const spokenRef = useRef<number>(turns.length);
+  const stickToBottomRef = useRef(true);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    stickToBottomRef.current = shouldStickToBottom({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight
+    });
+  };
 
   useEffect(() => {
+    if (!stickToBottomRef.current) {
+      return;
+    }
     scrollRef.current?.scrollTo({ behavior: "smooth", top: scrollRef.current.scrollHeight });
   }, [turns, activeTool]);
 
@@ -125,7 +152,7 @@ export function ChatView({ client }: { client: ApiClient }) {
 
   return (
     <div className="chat" style={{ margin: "-24px", height: "calc(100% + 48px)" }}>
-      <div className="chat-scroll" ref={scrollRef}>
+      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         <div className="chat-thread">
           <ChatEmptyState hasMessages={turns.length > 0} onPickStarter={pickStarter} />
           {turns.map((turn, i) => (
@@ -136,7 +163,14 @@ export function ChatView({ client }: { client: ApiClient }) {
                   turn.text ? (
                     <Markdown text={turn.text} />
                   ) : pending ? (
-                    <span className="spinner" />
+                    <span className="thinking-line">
+                      <span className="spinner" />
+                      {thinking || elapsedS > 0 ? (
+                        <span className="subtle" style={{ fontSize: 13 }}>
+                          {t("chat.thinking")}{elapsedS >= 3 ? ` · ${elapsedS}s` : ""}
+                        </span>
+                      ) : null}
+                    </span>
                   ) : null
                 ) : (
                   turn.text

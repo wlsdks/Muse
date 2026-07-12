@@ -40,6 +40,14 @@ describe("formatCurrentTime", () => {
     const seoulMidnight = new Date("2026-05-11T15:00:00.000Z");
     expect(formatCurrentTime(seoulMidnight, "Asia/Seoul").localHour).toBe(0);
   });
+
+  it("pre-computes the LOCAL wall-clock display, converting UTC in code (not the model)", () => {
+    // 08:30 UTC = 17:30 Seoul. The model must never do this conversion itself.
+    expect(formatCurrentTime(fixed, "Asia/Seoul").localDisplay).toBe("2026-05-11 17:30");
+    expect(formatCurrentTime(fixed, "UTC").localDisplay).toBe("2026-05-11 08:30");
+    // Crossing the date line: 15:00 UTC = 00:00 next day (12th) in Seoul.
+    expect(formatCurrentTime(new Date("2026-05-11T15:00:00.000Z"), "Asia/Seoul").localDisplay).toBe("2026-05-12 00:00");
+  });
 });
 
 describe("isWorkingHours", () => {

@@ -11,6 +11,16 @@ export interface FormattedTime {
   readonly timezone: string;
   readonly weekday: string;
   readonly localHour: number;
+  /**
+   * The LOCAL wall-clock time pre-computed in `timezone`, e.g.
+   * "2026-07-12 15:54". `iso` is UTC (`…Z`), so handing the model only
+   * `iso` + a timezone LABEL forces it to do the UTC→local conversion — a
+   * 12B does that unreliably (measured: "지금 몇 시야?" returned 07:52 once,
+   * 15:54 another time for the same instant). Per the repo's own rule
+   * (do TZ math in code, never in the model), the renderer surfaces THIS
+   * pre-converted local string so the model just reads it off.
+   */
+  readonly localDisplay: string;
 }
 
 const FALLBACK_TIMEZONE = "UTC";
@@ -44,10 +54,28 @@ export function formatCurrentTime(now: Date, timezone?: string): FormattedTime {
   const localHour = Number.parseInt(hourPart, 10);
   return {
     iso: now.toISOString(),
+    localDisplay: formatLocalDisplay(now, tz),
     localHour: Number.isFinite(localHour) ? localHour : 0,
     timezone: tz,
     weekday
   };
+}
+
+// "2026-07-12 15:54" in `tz` — the model reads the local wall-clock time
+// directly instead of converting the UTC `iso`. h23 keeps midnight as 00, not
+// 24. Sortable YYYY-MM-DD HH:mm is unambiguous across locales.
+function formatLocalDisplay(now: Date, tz: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone: tz,
+    year: "numeric"
+  }).formatToParts(now);
+  const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
 }
 
 export function isWorkingHours(

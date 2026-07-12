@@ -469,3 +469,30 @@ ratchet: 로드맵 잔여 [ ] = 9/65(D3-S3 체크) · self-eval pass(envInventor
 - 리뷰지점: Opus PASS — busy→미삽입(idleRef awaits 후 재체크, setTurns는 drained>0만)·deferred 미손실(seen-marking consume 후, 통합테스트가 busy중 미표시 AND 다음 poll 재출현 양쪽 검증=non-vacuous)·공통케이스 보존(59 무수정)·mutation flips 양쪽(순수+통합 둘 다 RED)·순수 헬퍼 진짜 순수.
 - 리스크: 낮음. 공통 idle-path 무변경, busy-fetch 엣지만 defer(fix). UI 로직을 순수 헬퍼로 추출해 React 렌더 없이 계약 유닛화. 다음 = D3-S6(eval:orchestration 래칫, 📈) 또는 D2-S7(eval:adversarial 확장, 📈). D-E1b/c 공유 훅 신중 이연.
 - lesson: UI(useEffect) 안의 계약은 결정 로직을 순수 헬퍼로 추출하면 React 렌더 없이 유닛화 가능(+풀-컴포넌트 통합 1개로 배선 검증). async 사이 상태 플립(busy) 갭은 "소비 시점 재체크"로 닫되, dedup-marking(seen)을 소비 후로 옮겨야 deferred가 손실 안 됨(marked-but-never-shown이 fix보다 나쁜 버그). verify-first가 로드맵 "핀"을 "fix+핀"으로 격상.
+
+## fire 55 · 2026-07-12 · skill v2.x · fea5d5bd9
+meta: slice=D2-S7 · wave=W5 · pkg=scripts(eval-adversarial) · kind=safety-battery-expansion · verdict=PASS · firesSinceDrill=4
+ratchet: 로드맵 잔여 [ ] = 7/65(D2-S7 체크) · self-eval pass · fabrication 0 · 결정론-가드 배터리 10→19 케이스(topology +5·obfuscation +4) · eval:adversarial 9/9 라이브 통과
+- 무엇: ①기준선 green. ②로드맵 순서 위→아래 다음 미체크 = D2-S7(D-E1b/c는 공유 push/commit 훅이라 신중 이연 유지, D6-S2는 attended skip). ③eval:adversarial에 결정론-가드 카테고리 2종 추가: `TOPOLOGY_BYPASS`(sudo-wrap·command-substitution·`;`-separator + control 2)·`OBFUSCATION`(`$IFS` word-split·NFKC fullwidth homoglyph + control 2). 각 케이스=순수 `classifyDangerousCommand(command).dangerous === expectBlocked`(solveDangerousCommandCase/scoreDangerousCommandCase), Ollama-independent·no-skip. ★워커가 mutation-RED 데모용 collapseIfs 중성화를 **복원 안 하고 종료**→가드 파손 상태 발견→cp백업 없이 Edit로 정확 복원(byte-identical), 재-mutation-RED 정식 수행(중성화→`rm${IFS}` RED→cp복원→green).
+- 왜: 로드맵 W5 마감 — 자기-원칙(결정론 가드가 막는 걸 코드로 검증, 모델 거부 의존 금지)의 배터리 커버리지 확대. 토폴로지/난독화 우회는 8B 모델 거부에 맡기면 KO 등에서 새는 클래스라 결정론 가드가 진짜 방어선이고, 그 방어선을 회귀 테스트로 잠금.
+- 리뷰지점: Opus 독립 평가자 PASS — 행동검증(dangerous boolean 실채점, 비-tautological)·control이 over-block 반증(따옴표/주석 속 rm 미차단)·결정론 라우팅(model-refusal 아님)·no-skip(항상 실행)·guard source 무수정(byte-identical)·주석정책 위반 0. mutation-RED 독립 재확인(dist 중성화→RED, 복원).
+- 리스크: 낮음. 테스트-only(가드 코드 미변경, 커버리지만 확대). self-eval `adversarialCases` 프록시는 `prompt:`-키만 세어 `command:`-키 신규는 미증가(기존 SANDBOX/SECRET 동일 설계=회귀 아님). 다음 = D3-S6(eval:orchestration 래칫 📈) 또는 D7-S3(스마트-테일+실브라우저). D-E1b/c(공유 push/commit 훅) 신중 이연 지속.
+- lesson: ★서브에이전트 워커가 mutation-RED 데모용 프로덕션 가드 변경을 **복원 않고 비정상 종료**할 수 있다 — 워커 리포트가 비정상("standing by")이면 반드시 `git diff <프로덕션 파일>`로 잔존 mutation 검사 후 복원(보안 가드는 특히). eval 배터리에 `command:`-키 결정론 케이스를 더해도 self-eval `adversarialCases`(`prompt:`-키 카운트)는 안 움직이는 게 정상(설계 일관성) — 프록시 미증가를 회귀로 오인 말 것.
+
+## fire 56 · 2026-07-12 · skill v2.x · 89360c2d8
+meta: slice=D3-S6 · wave=W5 · pkg=scripts(verify-orchestration) · kind=orchestration-battery-ratchet · verdict=PASS · firesSinceDrill=5
+ratchet: 로드맵 잔여 [ ] = 6/65(D3-S6 체크) · self-eval pass · fabrication 0 · eval:orchestration MAST 2모드+용량 pass^3 편입(라이브 모델 fan-in 유지)
+- 무엇: ①기준선 green. ②로드맵 다음 액션가능 = D3-S6(D-E1b/c 공유 push/commit 훅 신중 이연, D6-S2 attended skip). ③verify-first: eval:orchestration(verify-orchestration.mjs)+orchestrator 소스 정독으로 라이브-검증 가능 seam 확인(`workerTimeoutMs`→failed·`maxWorkers`→slice절단·result.results[]). 결정론 rule-based 워커로 MAST 2모드(step-repetition=각 워커 1회·unaware-of-termination=행워커 workerTimeoutMs 명시종료+bounded)+D3-S4 용량거부(maxWorkers=2<3→2실행·excess부재)를 pass^3(MUSE_EVAL_REPEAT 기본3, 단일실패→exit1)로 편입. 기존 라이브 모델 fan-in 케이스 유지, Ollama-down시 결정론 케이스는 실행·게이트. product code 무변경.
+- 왜: 로드맵 "eval:orchestration 래칫(MAST 2+·D3-S1/S2/S4·pass^3)". 멀티에이전트는 coordination으로 실패(MAST)—step-repetition·종료미인지가 상위 모드. 결정론 케이스라 pass^3 안정(타이머 레이스 단일 green 불신). 기존 orchestrator 행동을 채점(신규 가드 아님).
+- 리뷰지점: Opus 독립 PASS — mutation-RED 3/3 non-vacuous(각 어서션 기대 뒤집기→RED, md5 byte복원)·어서션이 실 orchestrator 동작 일치(withDeadline 리젝 문자열·slice 절단·step status=completed|failed)·pass^3 실게이트(단일 iteration 실패→exit1)·skip 시맨틱(결정론 케이스는 Ollama-down도 게이트)·주석정책 clean(D3-S4 슬라이스마커 제거).
+- 리스크: 낮음. 테스트-only(orchestrator src 무변경). 발견: step-level status는 completed|failed만, `timed-out`은 opt-in SubAgentRunRegistry에만(어서션은 failed로). 다음 = D7-S3(스마트-테일 터미널+실브라우저) 또는 D-KO-S3(i18n 카탈로그, 저우선). D-E1b/c(공유 훅) 신중 이연 지속.
+- lesson: 멀티에이전트 MAST 배터리 래칫은 결정론 rule-based 워커로 orchestrator seam(workerTimeoutMs·maxWorkers)을 직접 구동하면 LLM 없이 pass^3 안정 검증 가능 — 실 `withDeadline`/`selectWorkers` 경로를 mock 없이 채점. 어서션 문자열(deadline error·status enum)은 소스에서 실값 확인 후 박아야(추측 금지). 주석에 슬라이스ID(D3-S4) 넣지 말 것(정책 위반, 커밋 전 스캔으로 적발).
+
+## fire 57 · 2026-07-12 · skill v2.x · a336479e5
+meta: slice=D7-S3 · wave=W5 · pkg=apps/web · kind=ux-smart-tail-scroll · verdict=PASS · firesSinceDrill=6
+ratchet: 로드맵 잔여 [ ] = 5/65(D7-S3 체크) · self-eval pass · fabrication 0 · apps/web +1 유닛파일(chat-autoscroll, 7 test) · 실브라우저 측정 PASS
+- 무엇: ①기준선 green. ②로드맵 다음 액션가능 = D7-S3(D-E1b/c 공유훅 이연, D6-S2/D7-S4 attended skip). ③verify-first: Chat.tsx line 103-105가 turns/activeTool 변경마다 무조건 하단 스크롤=위로 읽는 중 매 토큰 yank. 순수 shouldStickToBottom(하단거리≤80) 추출+유닛+Chat.tsx 배선(stickToBottomRef 기본true=마운트점프·onScroll이 실지오메트리로 갱신·이펙트 stick일때만). ④실브라우저 측정(chrome-devtools, dist preview:4747, tall 40 주입): 실오버플로·하단 stick true·위로300px stick false·바운드·blowout0.
+- 왜: 로드맵 "스마트-테일(웹콘솔)+실브라우저 측정", hermes terminal-output 패턴. 스트리밍 중 위로 읽으면 매 토큰 하단으로 끌려가 방해=UX 파손. 하단근처만 tail이 표준 해법.
+- 리뷰지점: Opus 독립 PASS — 공식 correct(distance≤threshold, `<=`경계·overscroll)·배선 정확(마운트점프 보존·early-return이 yank 차단·onScroll이 같은 ref)·무관동작 무변경(+18/-1)·mutation-RED 2종 non-vacuous·실측이 레이아웃불변+결정입력 증명(numbers). 한계: turns-이펙트는 백엔드 없이 브라우저서 트리거 불가→지오메트리/결정은 실측, 이펙트-게이팅은 코드리뷰+유닛(정직한 분할).
+- 리스크: 낮음. apps/web UI-only(Vite island, TS ref graph 밖). 유저-가시=CHANGELOG 추가. 발견: 스무스-스크롤 애니 중 단발 stick=false 자가치유(스트리밍 델타는 <threshold라 무영향, Opus 확인). 다음 = D-KO-S3(i18n 카탈로그, 저우선·리팩터리스크>이득) — 남은 액션가능 큐 D-E1b/c(공유훅 이연)·attended 제외 시 D-KO-S3만.
+- lesson: 웹 UI 스크롤 슬라이스는 결정 로직을 순수 함수로 추출→유닛(mutation-RED)+실브라우저로 실 지오메트리 측정(scrollHeight/scrollTop/clientHeight)이 정석. React state(turns) 이펙트는 백엔드 없이 브라우저서 못 트리거하니, 이펙트가 소비하는 지오메트리/결정을 실측하고 이펙트-게이팅은 코드리뷰+유닛으로 분할하는 게 정직(가짜 e2e 만들지 말 것). testing.md UI규칙=numbers 측정.
