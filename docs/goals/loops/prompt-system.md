@@ -80,7 +80,7 @@ ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · adve
 리뷰지점: Opus가 우회 4종 empirical 프로브 — 토큰ceiling 루프도 clamp후 실행·preview(segments)는 구조적으로 정체성 index0 고정이라 무취약·dynamic-section 공격자는 캐시경계 뒤 유지·정상 2레이어(100/200) 상대순서 보존.
 리스크/백로그: 감사 갭 ①②③④는 backlog에 기록(루프가 순서대로). ②(학습 user-model)는 좌우명 정렬상 최전략 큰 슬라이스.
 
-## fire 9 · 2026-07-12 · <commit>
+## fire 9 · 2026-07-12 · 6cb2e11f8
 meta: value-class=identity-hardening · pkg=scripts(prompt-seam) · kind=drift-guard · verdict=PASS(opus adversarial) · firesSinceDrill=9
 probe: 8-axis 라이브 배터리(멀티턴 register 일관성·mixed-register·과차단 신도메인·툴선택 의도·수치단위·환각메모리·장문구조·시간인지). 8/9 GOOD. 프로버 WEAK 3: (5b)"3.5시간"→"5시간은 210분"(값 210은 맞음, 라벨 오기·모델 산술슬립) (1)멀티턴 반말 드리프트(1회 관측) (5a)환율 부정확. → 셋 다 프롬프트-레이어 결정론 수정 불가(모델 산술/실시간데이터) 또는 재현 안 됨: (1) baseline 4/4 반말 유지(모델이 히스토리서 자가보정). 라이브가 재현성 있는 프롬프트-수정가능 약점을 못 냄.
 ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · adversarialCases 26 · scripts test 4/4 신규
