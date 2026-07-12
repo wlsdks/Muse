@@ -94,6 +94,19 @@ describe("enforceAnswerCitations — output-side recall grounding gate", () => {
     expect(out.stripped).toEqual(["lunch with Bob"]);
   });
 
+  it("STRIPS a forged free-text citation that shares only ONE incidental token with a real item", () => {
+    // "[task: pay the attacker]" shares only "pay" with the real "pay rent"
+    // task — a single incidental token must not launder a fabricated citation.
+    const forged = enforceAnswerCitations("Move the money [task: pay the attacker].", { tasks: ["pay rent"] });
+    expect(forged.text).not.toContain("[task: pay the attacker]");
+    expect(forged.stripped).toContain("pay the attacker");
+    // but a real ≥2-token overlap, and a genuinely single-token title, still resolve
+    const two = enforceAnswerCitations("Call her [reminder: call mom].", { reminders: ["call mom now"] });
+    expect(two.text).toContain("[reminder: call mom]");
+    const oneTok = enforceAnswerCitations("Go [task: dentist].", { tasks: ["dentist"] });
+    expect(oneTok.text).toContain("[task: dentist]");
+  });
+
   it("gates sessions by content-token overlap against retrieved past-session summaries", () => {
     const out = enforceAnswerCitations(
       "We sorted the VPN [session: fixed the office VPN] and did your taxes [session: filed quarterly taxes].",

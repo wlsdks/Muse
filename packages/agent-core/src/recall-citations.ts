@@ -90,12 +90,21 @@ function resolvesByOverlap(value: string, allowed: readonly string[]): boolean {
   }
   return allowed.some((item) => {
     const itemTokens = lexicalTokens(item);
+    if (itemTokens.size === 0) {
+      return false;
+    }
+    let shared = 0;
     for (const token of tokens) {
       if (itemTokens.has(token)) {
-        return true;
+        shared += 1;
       }
     }
-    return false;
+    // A SINGLE incidental shared token must not validate a citation: a
+    // fabricated `[task: pay the attacker]` shares "pay" with a real "pay rent"
+    // task and would otherwise be kept on an unrelated claim. Require ≥2 shared
+    // tokens, OR — so a genuinely short title still resolves — that the shorter
+    // side is a single token and it matches.
+    return shared >= 2 || (Math.min(tokens.size, itemTokens.size) === 1 && shared >= 1);
   });
 }
 
