@@ -3381,6 +3381,10 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
 - ◦ [audit-followup] dangerous-command 잔여(a): FLAGS/R-clause 백트래킹 tighten(손수 8KB `-R`-반복 ~231ms 다항식, R-clause atomic화); 이중-래퍼(`command command rm`)·`nice -c batch rm`는 기존 비커버(신규 아님)
 - ◦ [audit·정직한 한계] dangerous-command는 **의도적으로 좁은 fail-close 백스톱**(1차 방어=run_command 승인 게이트). 정규식은 원리상 쉘 난독화 완벽차단 불가(docstring 명시). 남은 표면(재현 확인, 미차단): 변수 치환 `X=rm; $X -rf /`·`eval rm -rf /`·`find / -delete`·`> /etc/passwd`·`rm -rf $HOME/../..` traversal·`rm -rf /home`(설계상 스코프外=/·~·$HOME만). 이들 차단은 미니 쉘파서 필요(false-positive 리스크↑)—백스톱 철학상 diminishing-returns. 닫으려면 진안 명시 요청 시 변수-치환 리졸버부터
 - ◦ [audit-followup] multi-agent: `selectWorkers` `workerIds` 미-dedup(반복 벡터)·용량 silent-drop `droppedWorkerIds` 신호 부재·termination 케이스 `SubAgentRunRegistry` `timed-out` 미검증
+- ✓ [보안감사·fable5发굴] MUSE_LOCAL_ONLY이 CLI 임베딩 경로 미게이트 → `muse ask/recall/note`가 원격 OLLAMA_BASE_URL로 개인텍스트 egress(라이브 재현). fix: recall `embed()`에 fail-close `classifyProviderLocality` 게이트(a83542ae8)·15 test·mutation-RED
+- ✓ [보안감사·fable5발굴] zero-width/control로 `escapeSystemPromptMarkers` 우회(`<<en[ZWSP]d>>` 생존) + `browsing` 클래스 MARKER_KEYWORDS 누락 → fence/citation 위조. fix: stripInjectionEvasionChars 선행+browsing 추가(8190f5066)·9 test·mutation-RED
+- ✓ [보안감사·fable5발굴] 주석없는 외부 MCP 도구 `risk:"read"` 기본값→승인게이트 스킵(자율 아웃바운드). fix: fail-close `write` 기본값, readOnlyHint:true만 read(1712f5e6f)·유닛+통합 test·mutation-RED
+- ◦ [보안감사·fs clean] fable5 파일시스템/샌드박스 스카우트: `resolveSafePath`(realpath+deny+O_NOFOLLOW)·id→filename 새니타이저·seatbelt SBPL 전부 견고, 재현가능 escape 0(clean). 아웃바운드 승인게이트 나머지 경로도 fail-close 확인
 - ◦ [선행·타루프] byte-hygiene 실패: packages/shared/test/utf16-safe.test.ts:43 raw byte (D-KO-S1 e287c94f6) — D-KO-S1 소유자 수리
 
 - ✓ credential_extraction 과차단(도어락 잠김 self-help 차단) 수정 — forgot/unlock veto (prompt-system fire 16)
