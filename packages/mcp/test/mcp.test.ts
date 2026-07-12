@@ -239,7 +239,10 @@ describe("DefaultMcpTransportConnector", () => {
         {
           description: "Ping tool",
           name: "ping",
-          risk: "read"
+          // Un-annotated (no readOnlyHint) → fail-closed to the gated `write`
+          // tier, not the ungated `read` default that let outbound tools skip
+          // the approval gate.
+          risk: "write"
         }
       ]);
       await expect(connection.callTool?.("ping", {})).resolves.toBe("pong");

@@ -285,9 +285,21 @@ function createRemoteRequestInit(server: McpServer): RequestInit | undefined {
   return token ? { headers: { Authorization: `Bearer ${token}` } } : undefined;
 }
 
-function riskFromMcpAnnotations(annotations: unknown): ToolRisk {
+/**
+ * Classify an external MCP tool's risk from its (optional, advisory) MCP
+ * annotations. FAIL-CLOSED: a tool is the ungated `read` tier ONLY when it
+ * EXPLICITLY declares `readOnlyHint: true`. An un-annotated tool — the common
+ * case, since `ToolAnnotations` are optional — defaults to the gated `write`
+ * tier, matching the MCP spec (an unspecified `destructiveHint` is treated as
+ * destructive) and CLAUDE.md's "guards are fail-close". The previous default of
+ * `read` let an un-annotated external tool that posts/sends/creates execute
+ * with no approval — an autonomous third-party action outbound-safety forbids.
+ * Curated presets (Notion/GitHub/…) re-stamp risk downstream via
+ * `withOfficialMcpRisk`, so this only tightens generic/un-curated servers.
+ */
+export function riskFromMcpAnnotations(annotations: unknown): ToolRisk {
   if (!annotations || typeof annotations !== "object" || Array.isArray(annotations)) {
-    return "read";
+    return "write";
   }
 
   const values = annotations as Record<string, unknown>;
@@ -296,11 +308,11 @@ function riskFromMcpAnnotations(annotations: unknown): ToolRisk {
     return "execute";
   }
 
-  if (values.readOnlyHint === false || values.idempotentHint === false) {
-    return "write";
+  if (values.readOnlyHint === true) {
+    return "read";
   }
 
-  return "read";
+  return "write";
 }
 
 function formatMcpToolResult(result: unknown): string | JsonValue {
