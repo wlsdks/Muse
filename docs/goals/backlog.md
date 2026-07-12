@@ -1,5 +1,15 @@
 # Muse dev backlog — the living ledger
 
+- ★ USER-SIM FUEL (2026-07-12, Haiku 페르소나 3종 × 실파이프라인 시뮬레이션 → Opus 아티팩트-우선 교차감사; 도구 scripts/channel-sim.mjs; 상세 감사는 세션 기록):
+  - ◦ [HIGH] false-done 리마인더 — "다음달 5일 딸 생일"/"금요일 GPU" 요청에 모델은 "기억해둘게" 확답하나 followups.json 미생성(요일·절대날짜 파싱 룰 부재, followup-detector.ts는 내일/N시간뒤만); 파싱 실패 시 확답 금지의 결정론 신호 + 요일·절대일자 룰 추가. 정체성(약속=근거) 직결 최우선.
+  - ◦ [HIGH] 자모 인사 오라우팅 — ㅎㅇ/ㅂㅂ가 casual 미스→위임 ack+10초 런("확인했어 다 되면 알려줄게"); HANGUL_RE가 호환자모 제외 + 패턴에 자모 축약형 부재(casual-prompt*.ts).
+  - ◦ [HIGH] 호칭 접미사가 감사/인사 매치 파괴 — "고마워 뮤즈"→위임 ack(바닐라 "고마워"는 3ms canned); greeting/thanks/farewell 3패턴에 trailing 호칭군(뮤즈|muse)(야|님)? 부착.
+  - ◦ [HIGH] 장문 존댓말서 명시적 기억요청 팩트 유실 — 순자의 딸 생일이 팩트 추출조차 안 됨(단문은 됨); "기억해줘/잊지마" 커밋 발화는 결정론 팩트-후보 백스톱.
+  - ◦ [MED] 채널 주간집계가 schedule/tasks 스토어 미참조(userModel.schedule 항상 빈 배열 — 채널 풀런이 일정성 발화를 영속화 안 함).
+  - ◦ [MED] ack(반말)와 풀런(존댓말) 레지스터 불일치 — 한 턴 안에서 충돌; 스레드 최근 발화 레지스터 감지해 3프롬프트 공통 고정.
+  - ◦ [LOW] 휘발성 사실("오늘 저녁 7시")의 durable 승격 + 미요청 self-followup 노이즈; 시효성 표현 제외 + commissive 게이트 KO 확장.
+  - ◦ 시뮬 인프라 개선 — per-turn route+reply 풀 로그 캡처(스레드 12msg 캡이 감사 증거를 자름); 페르소나-로테이션 시뮬 루프는 진안 지시 시 등록.
+
 - ★ RESPONSE-EXPERIENCE (2026-07-12, 진안 직접 요청 — 20m 자율루프 `response-experience`의 전용 큐; 어시스턴트 응답 경험을 계속 더 좋게. 기반: 채널 대화 리듬(잡담 fast-path·복창 ack·인용 완료보고)·개입 예산+다이제스트·원터치 veto, 전부 main 머지됨):
   - ✓ 캔드 casual 응답 한국어 패리티 — response-experience fire 1 (CASUAL_RESPONSES_KO + containsHangul, CLI·채널 양표면)
   - ✓ 프로액티브 알림 근거 한 줄 — pattern-firing 몫: `pattern-detector.ts`의 `buildMatch`/`buildWeeklyTaskMatch`가 이미 근거절을 결정론으로 내장(`(N edits across M days)` / `(N times across M weeks)`, bucket.matches/distinctDays·distinctWeeks에서 verbatim 도출, 모델 호출 없음) — response-experience fire 2에서 확인, mutation-first pin 테스트로 못박음(packages/memory/test/pattern-detector.test.ts 2개 + packages/proactivity/test/pattern-firing-compose.test.ts 1개 강화). ambient/commitment는 미착수 — 아래 두 줄로 이관.
