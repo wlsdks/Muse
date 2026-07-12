@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateWebEgressPosture, isWebEgressAllowed } from "./web-egress-policy.js";
+import { evaluateWebEgressPosture, isInteractiveWebEgressAllowed, isWebEgressAllowed } from "./web-egress-policy.js";
 
 describe("isWebEgressAllowed", () => {
   it("defaults to ON when unset (web tools stay available)", () => {
@@ -15,10 +15,23 @@ describe("isWebEgressAllowed", () => {
     expect(isWebEgressAllowed({ MUSE_WEB_EGRESS: value })).toBe(true);
   });
 
-  it("is independent of MUSE_LOCAL_ONLY (orthogonal egress classes)", () => {
+  it("continues to report the raw MUSE_WEB_EGRESS switch independently of local-only", () => {
     expect(isWebEgressAllowed({ MUSE_LOCAL_ONLY: "true" })).toBe(true);
     expect(isWebEgressAllowed({ MUSE_LOCAL_ONLY: "true", MUSE_WEB_EGRESS: "false" })).toBe(false);
     expect(isWebEgressAllowed({ MUSE_LOCAL_ONLY: "false", MUSE_WEB_EGRESS: "true" })).toBe(true);
+  });
+});
+
+describe("isInteractiveWebEgressAllowed", () => {
+  it("uses only trusted environment posture: MUSE_LOCAL_ONLY=true wins over MUSE_WEB_EGRESS=true", () => {
+    expect(isInteractiveWebEgressAllowed({ MUSE_LOCAL_ONLY: "true", MUSE_WEB_EGRESS: "true" })).toBe(false);
+    expect(isInteractiveWebEgressAllowed({ MUSE_LOCAL_ONLY: "true" })).toBe(false);
+  });
+
+  it("keeps normal and explicit local-only-off web behavior unchanged", () => {
+    expect(isInteractiveWebEgressAllowed({})).toBe(true);
+    expect(isInteractiveWebEgressAllowed({ MUSE_LOCAL_ONLY: "false" })).toBe(true);
+    expect(isInteractiveWebEgressAllowed({ MUSE_LOCAL_ONLY: "false", MUSE_WEB_EGRESS: "off" })).toBe(false);
   });
 });
 

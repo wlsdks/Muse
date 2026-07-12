@@ -27,7 +27,7 @@ export { embedModelCheck } from "./commands-doctor-checks.js";
 export { parseNotesIndexEmbedModel } from "./commands-doctor-checks.js";
 export { findOllamaModelTag } from "./commands-doctor-ollama.js";
 export type { OllamaTagsEntry } from "./commands-doctor-ollama.js";
-export { episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, privacyRoutingCheck, selfLearningCheck, weaknessFuelCheck } from "./commands-doctor-checks.js";
+export { episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, privacyRoutingCheck, selfLearningCheck, weaknessFuelCheck, webEgressCheck } from "./commands-doctor-checks.js";
 export type { LocalCheck } from "./commands-doctor-checks.js";
 import { classifyHomeAlertsConfig, classifyMcpServersField, classifyWebWatchConfig, resolveDoctorWatchIntervalMs, resolveMuseEnvPath } from "./commands-doctor-config.js";
 export { classifyHomeAlertsConfig, classifyMcpServersField, classifyWebWatchConfig, resolveDoctorWatchIntervalMs, resolveMuseEnvPath } from "./commands-doctor-config.js";

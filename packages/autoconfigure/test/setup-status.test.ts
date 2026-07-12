@@ -5,10 +5,28 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { LOCAL_FIRST_DEFAULT_MODEL, resolveDefaultModel } from "../src/autoconfigure-model-provider.js";
-import { buildModelSection, readActuatorReadiness, readConfigDefaultModel, readModelKeyState, readWebSearchEnvSnapshot, resolveVoiceStatus } from "../src/setup-status.js";
+import { buildModelSection, evaluateLocalOnlyPosture, evaluateWebEgressStatus, readActuatorReadiness, readConfigDefaultModel, readModelKeyState, readWebSearchEnvSnapshot, resolveVoiceStatus } from "../src/setup-status.js";
 
 const MISSING_KEYS_FILE = "/dev/null/no-such-keys.json";
 const KEYS_FILE = "/c/models.json";
+
+describe("evaluateWebEgressStatus — scoped local-only wording", () => {
+  it("reports that T2-A1 closes Muse interactive public-web tools without claiming a whole-machine egress audit", () => {
+    const status = evaluateWebEgressStatus({ MUSE_LOCAL_ONLY: "true", MUSE_WEB_EGRESS: "true" });
+    expect(status.enabled).toBe(false);
+    expect(status.detail).toContain("interactive public-web");
+    expect(status.detail).toContain("not a complete all-egress audit");
+  });
+});
+
+describe("evaluateLocalOnlyPosture — scoped MCP closure wording", () => {
+  it("reports T2-A2 external MCP closure without claiming a whole-machine egress audit", () => {
+    const status = evaluateLocalOnlyPosture({ MUSE_LOCAL_ONLY: "true", MUSE_MODEL: "ollama/llama3.2" });
+    expect(status.detail).toContain("T2-A2");
+    expect(status.detail).toContain("external MCP");
+    expect(status.detail).toContain("not a complete all-egress audit");
+  });
+});
 
 describe("buildModelSection — model section mirrors `muse doctor`'s resolver", () => {
   it("fresh box (no MUSE_MODEL, no cloud key, no config) → status ok, names the LOCAL default, no cloud-led hint", () => {

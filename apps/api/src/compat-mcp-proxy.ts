@@ -4,7 +4,7 @@
  * configurable timeout, and parses MCP access policy bodies.
  */
 
-import type { McpServer } from "@muse/mcp";
+import { MCP_EXTERNAL_TRANSPORT_BLOCKED, type McpManager, type McpServer } from "@muse/mcp";
 import { createRunId, type JsonObject } from "@muse/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -63,6 +63,10 @@ export async function proxySwaggerSourceRequest(
     return mcpProxyUnavailable(request, reply, options);
   }
 
+  if (!options.mcp?.manager.isExternalTransportAllowed()) {
+    return mcpExternalTransportBlocked(reply);
+  }
+
   if (method === "GET" && path === "/admin/swagger/spec-sources" && !readBodyString(serverConfig.config, "adminToken")) {
     return reply
       .header("X-Mcp-Admin-Available", "false")
@@ -70,7 +74,7 @@ export async function proxySwaggerSourceRequest(
       .send([]);
   }
 
-  return proxyMcpAdminRequest(reply, serverConfig, method, path, body);
+  return proxyMcpAdminRequest(reply, options.mcp?.manager, serverConfig, method, path, body);
 }
 
 export function swaggerSourcePath(request: FastifyRequest): string {
@@ -105,11 +109,16 @@ function isHttpUrl(value: string): boolean {
 
 export async function proxyMcpAdminRequest(
   reply: FastifyReply,
+  manager: McpManager | undefined,
   serverConfig: McpServer,
   method: "DELETE" | "GET" | "POST" | "PUT",
   path: string,
   body?: JsonObject
 ) {
+  if (!manager?.isExternalTransportAllowed()) {
+    return mcpExternalTransportBlocked(reply);
+  }
+
   const adminUrl = readAdminUrl(serverConfig.config);
 
   if (!adminUrl) {
@@ -161,6 +170,14 @@ export async function proxyMcpAdminRequest(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export function mcpExternalTransportBlocked(reply: FastifyReply) {
+  return reply.status(403).send({
+    code: MCP_EXTERNAL_TRANSPORT_BLOCKED,
+    error: "External MCP transport is disabled by the local-only privacy posture",
+    timestamp: nowIso()
+  });
 }
 
 function parseJsonOrText(text: string): unknown {

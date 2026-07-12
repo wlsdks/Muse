@@ -135,6 +135,54 @@ describe("muse notes ingest --local — pull a local file into the notes corpus"
     expect(existsSync(join(dir, "meeting.md"))).toBe(true);
     expect(readFileSync(join(dir, "meeting.md"), "utf8")).toContain("ship the recap");
   });
+
+  it("rejects --url before fetch, local note save, or provenance write under local-only", async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchCalls: string[] = [];
+    const notesDir = mkdtempSync(join(tmpdir(), "muse-cli-notes-local-only-"));
+    const stderr: string[] = [];
+    process.env.MUSE_NOTES_DIR = notesDir;
+    process.env.MUSE_LOCAL_ONLY = "true";
+    globalThis.fetch = (async (input) => {
+      fetchCalls.push(String(input));
+      return new Response("<title>Must not persist</title><p>body</p>", { status: 200, headers: { "content-type": "text/html" } });
+    }) as typeof globalThis.fetch;
+    try {
+      const io: ProgramIO = { stderr: (message) => { stderr.push(message); }, stdout: () => undefined };
+      const helpers: NotesCommandHelpers = {
+        apiRequest: async () => { throw new Error("API must not run"); },
+        writeOutput: () => undefined
+      };
+      const program = new Command();
+      registerNotesCommands(program, io, helpers);
+      await program.parseAsync(["node", "muse", "notes", "ingest", "--local", "--url", "https://example.test/report"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      delete process.env.MUSE_LOCAL_ONLY;
+    }
+    expect(stderr.join("")).toBe("muse notes ingest: interactive public-web access is blocked by local-only.\n");
+    expect(fetchCalls).toEqual([]);
+    expect(existsSync(join(notesDir, "example.test-report.md"))).toBe(false);
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("does not save a local note when a public URL redirects to a private target", async () => {
+    const originalFetch = globalThis.fetch;
+    const notesDir = mkdtempSync(join(tmpdir(), "muse-cli-notes-redirect-"));
+    const requests: string[] = [];
+    process.env.MUSE_NOTES_DIR = notesDir;
+    globalThis.fetch = (async (input) => {
+      requests.push(String(input));
+      return new Response("redirect body must stay unread", { status: 302, headers: { location: "http://127.0.0.1/private" } });
+    }) as typeof globalThis.fetch;
+    try {
+      await expect(run(["ingest", "--local", "--url", "https://93.184.216.34/start"])).rejects.toThrow(/Could not ingest.*redirected to a blocked host/u);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(requests).toEqual(["https://93.184.216.34/start"]);
+    expect(existsSync(join(notesDir, "93.184.216.34-start.md"))).toBe(false);
+  });
 });
 
 describe("muse notes delete --local — prune a note from the local store", () => {

@@ -18,6 +18,55 @@ describe("registerMcpCommands — serve subcommand", () => {
   });
 });
 
+describe("mcp config commands — local static files only", () => {
+  it("config-show, config-doctor, config-add, and use never call the API", async () => {
+    const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "muse-mcp-config-local-"));
+    const configPath = join(root, "mcp.json");
+    const previous = process.env.MUSE_MCP_CONFIG;
+    const output: string[] = [];
+    let apiCalls = 0;
+
+    function createProgram(): Command {
+      const program = new Command("muse");
+      program.exitOverride();
+      registerMcpCommands(program, {
+        stderr: (line) => output.push(`stderr:${line}`),
+        stdout: (line) => output.push(`stdout:${line}`)
+      }, {
+        apiRequest: async () => { apiCalls += 1; return undefined; },
+        writeOutput: () => undefined
+      });
+      return program;
+    }
+
+    try {
+      writeFileSync(configPath, JSON.stringify({
+        mcpServers: { existing: { command: "node", args: ["server.mjs"] } }
+      }), "utf8");
+      process.env.MUSE_MCP_CONFIG = configPath;
+
+      await createProgram().parseAsync(["node", "muse", "mcp", "config-show", "--json"]);
+      await createProgram().parseAsync(["node", "muse", "mcp", "config-doctor", "--json"]);
+      await createProgram().parseAsync(["node", "muse", "mcp", "config-add", "added", "--command", "node", "--arg", "added.mjs"]);
+      await createProgram().parseAsync(["node", "muse", "mcp", "use", "fetch", "--name", "fetch-local"]);
+
+      const parsed = JSON.parse(readFileSync(configPath, "utf8")) as { mcpServers: Record<string, unknown> };
+      expect(parsed.mcpServers).toHaveProperty("existing");
+      expect(parsed.mcpServers).toHaveProperty("added");
+      expect(parsed.mcpServers).toHaveProperty("fetch-local");
+      expect(apiCalls).toBe(0);
+      expect(output.join("\n")).toContain(configPath);
+    } finally {
+      if (previous === undefined) delete process.env.MUSE_MCP_CONFIG;
+      else process.env.MUSE_MCP_CONFIG = previous;
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+});
+
 describe("mcp add/call --config/--args — invalid JSON is a clean user error, not a bug", () => {
   it("`mcp add --config '{'` throws a clean fix-it Error and never calls the API", async () => {
     let apiCalls = 0;

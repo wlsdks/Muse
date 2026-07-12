@@ -16,7 +16,8 @@ import { basename, join, resolve as pathResolve } from "node:path";
 import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { assertPublicHttpUrl, type HostLookup } from "./web-url-guard.js";
+import { fetchPublicHttpWithRedirects } from "./public-http-redirect.js";
+import type { HostLookup } from "./web-url-guard.js";
 
 export interface WebDownloadToolDeps {
   readonly fetchImpl: typeof fetch;
@@ -102,22 +103,23 @@ export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
       if (url.length === 0) {
         return { reason: "web_download requires a 'url'", saved: false };
       }
-      const vetted = await assertPublicHttpUrl(url, deps.lookup ? { lookup: deps.lookup } : {});
-      if (!vetted.ok) {
-        return { reason: vetted.error, saved: false };
-      }
       let bytes: Buffer;
+      let finalUrl: string;
       try {
-        const response = await deps.fetchImpl(vetted.url.href, { redirect: "follow" });
+        const fetched = await fetchPublicHttpWithRedirects(url, {
+          fetchImpl: deps.fetchImpl,
+          ...(deps.lookup ? { lookup: deps.lookup } : {}),
+          // A download remains a single physical call on a network rejection:
+          // do not inherit the generic read retry/timeout defaults here.
+          retryOptions: { retries: 0, retryOnNetworkError: false, timeoutMs: 0 }
+        });
+        if (!fetched.ok) {
+          return { reason: fetched.message, saved: false };
+        }
+        const response = fetched.response;
+        finalUrl = fetched.finalUrl;
         if (!response.ok) {
           return { reason: `download failed: HTTP ${response.status.toString()}`, saved: false };
-        }
-        // A redirect chain can land on a private host the first guard never saw.
-        if (response.url && response.url !== vetted.url.href) {
-          const finalGuard = await assertPublicHttpUrl(response.url, deps.lookup ? { lookup: deps.lookup } : {});
-          if (!finalGuard.ok) {
-            return { reason: `redirected to a blocked host: ${finalGuard.error}`, saved: false };
-          }
         }
         const tooLarge = (size: number): JsonObject =>
           ({ reason: `file is too large (${Math.round(size / 1024 / 1024).toString()}MB > ${Math.round(maxBytes / 1024 / 1024).toString()}MB cap)`, saved: false });
@@ -152,7 +154,7 @@ export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
       } catch (cause) {
         return { reason: `download failed: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
       }
-      const name = safeDownloadName(typeof args["filename"] === "string" ? args["filename"] : undefined, vetted.url.href);
+      const name = safeDownloadName(typeof args["filename"] === "string" ? args["filename"] : undefined, finalUrl);
       let saved: { name: string; path: string };
       try {
         saved = await writeNonClobbering(downloadDir, name, bytes);

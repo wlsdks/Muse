@@ -13,6 +13,7 @@ import { basename, dirname, extname, join, relative } from "node:path";
 
 import { resolveNotesDir } from "@muse/autoconfigure";
 import { createNotesMcpServer, deriveMirrorNoteTitle, fetchReadableUrl } from "@muse/domain-tools";
+import { isInteractiveWebEgressAllowed, isLocalOnlyEnabled } from "@muse/model";
 import { mirrorNoteToApple } from "@muse/macos";
 import type { Command } from "commander";
 
@@ -446,6 +447,13 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
       const url = options.url?.trim();
       if ((file && url) || (!file && !url)) {
         throw new Error("Provide exactly one source: a <file> argument OR --url <url>");
+      }
+      if (url && !isInteractiveWebEgressAllowed(process.env)) {
+        io.stderr(isLocalOnlyEnabled(process.env)
+          ? "muse notes ingest: interactive public-web access is blocked by local-only.\n"
+          : "muse notes ingest: interactive public-web access is disabled by MUSE_WEB_EGRESS.\n");
+        process.exitCode = 2;
+        return;
       }
       let content: string;
       let notePath: string;

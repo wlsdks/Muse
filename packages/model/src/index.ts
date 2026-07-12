@@ -516,7 +516,9 @@ export {
 } from "./web-search-policy.js";
 
 export {
+  canonicalizeLocalOnlyModelBaseUrl,
   classifyProviderLocality,
+  isLocalOnlyEnabled,
   isLoopbackUrl,
   LocalOnlyViolationError,
   type ProviderLocality
@@ -524,6 +526,7 @@ export {
 
 export {
   evaluateWebEgressPosture,
+  isInteractiveWebEgressAllowed,
   isWebEgressAllowed,
   type WebEgressPosture
 } from "./web-egress-policy.js";

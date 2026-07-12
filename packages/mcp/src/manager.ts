@@ -27,6 +27,7 @@ import type { MuseTool } from "@muse/tools";
 import { toErrorMessage } from "./error-utils.js";
 import {
   InMemoryMcpServerStore,
+  MCP_EXTERNAL_TRANSPORT_BLOCKED,
   McpConnectionError,
   McpSecurityPolicyProvider,
   createMcpMuseTool,
@@ -53,6 +54,8 @@ import { auditMcpServerPackageForMalware } from "./osv-check.js";
 import { auditMcpServerConfig } from "./server-audit.js";
 import { validateMcpServer } from "./validators.js";
 
+const externalTransportBlockedMessage = "External MCP transport is disabled by the local-only privacy posture";
+
 export class McpManager {
   private readonly connector?: McpTransportConnector;
   private readonly now: () => Date;
@@ -60,6 +63,7 @@ export class McpManager {
   private readonly securityPolicyProvider: McpSecurityPolicyProvider;
   private readonly validation: McpServerValidationOptions;
   private readonly osvMalwareCheck?: CheckPackageForMalwareAdvisoryOptions;
+  private readonly externalTransportAllowed: boolean;
   private readonly statuses = new Map<string, McpServerStatus>();
   private readonly connections = new Map<string, McpConnection>();
   private readonly health = new Map<string, McpHealthSnapshot>();
@@ -76,9 +80,15 @@ export class McpManager {
     this.store = options.store ?? store;
     this.validation = options.validation ?? {};
     this.osvMalwareCheck = options.osvMalwareCheck;
+    this.externalTransportAllowed = options.externalTransportAllowed ?? true;
   }
 
   async register(input: McpServerInput): Promise<McpServer | undefined> {
+    if (!this.externalTransportAllowed) {
+      this.markExternalTransportBlocked(input.name);
+      return undefined;
+    }
+
     const policy = await this.securityPolicyProvider.currentPolicy();
 
     if (!(policy.allowedServerNames.length === 0 || policy.allowedServerNames.includes(input.name))) {
@@ -123,6 +133,11 @@ export class McpManager {
   }
 
   async syncRuntimeServer(input: McpServerInput): Promise<McpServer | undefined> {
+    if (!this.externalTransportAllowed) {
+      this.markExternalTransportBlocked(input.name);
+      return undefined;
+    }
+
     const existing = await this.store.findByName(input.name);
 
     if (!existing) {
@@ -141,6 +156,11 @@ export class McpManager {
   }
 
   async initializeFromStore(): Promise<void> {
+    if (!this.externalTransportAllowed) {
+      await this.materializeBlockedStoredServers();
+      return;
+    }
+
     for (const server of await this.store.list()) {
       this.statuses.set(server.name, "pending");
       this.health.set(server.name, this.createHealthSnapshot(server.name, "unknown"));
@@ -152,6 +172,11 @@ export class McpManager {
   }
 
   async connect(name: string): Promise<boolean> {
+    if (!this.externalTransportAllowed) {
+      this.markExternalTransportBlocked(name);
+      return false;
+    }
+
     const server = await this.store.findByName(name);
 
     if (server && !(await this.securityPolicyProvider.isServerAllowed(name))) {
@@ -278,7 +303,16 @@ export class McpManager {
   }
 
   async listServers(): Promise<readonly McpServer[]> {
+    if (!this.externalTransportAllowed) {
+      return this.materializeBlockedStoredServers();
+    }
+
     return this.store.list();
+  }
+
+  /** Immutable construction-time posture used by API compatibility routes too. */
+  isExternalTransportAllowed(): boolean {
+    return this.externalTransportAllowed;
   }
 
   getStatus(name: string): McpServerStatus | undefined {
@@ -290,6 +324,10 @@ export class McpManager {
   }
 
   async healthCheck(name: string): Promise<McpHealthSnapshot> {
+    if (!this.externalTransportAllowed) {
+      return this.markExternalTransportBlocked(name);
+    }
+
     const connection = this.connections.get(name);
 
     if (!connection || this.statuses.get(name) !== "connected") {
@@ -338,10 +376,41 @@ export class McpManager {
   }
 
   async healthCheckAll(): Promise<readonly McpHealthSnapshot[]> {
+    if (!this.externalTransportAllowed) {
+      return (await this.materializeBlockedStoredServers()).map((server) => this.getHealth(server.name));
+    }
+
     return Promise.all((await this.store.list()).map((server) => this.healthCheck(server.name)));
   }
 
   async preflight(name: string): Promise<McpPreflightReport> {
+    if (!this.externalTransportAllowed) {
+      const server = await this.store.findByName(name);
+      const checks: McpPreflightCheck[] = [];
+
+      if (server) {
+        this.markExternalTransportBlocked(server.name);
+        checks.push({
+          code: "server_registered",
+          message: "MCP server is registered",
+          status: "pass"
+        });
+      } else {
+        checks.push({
+          code: "server_registered",
+          message: "MCP server is not registered",
+          status: "fail"
+        });
+      }
+
+      checks.push({
+        code: "external_mcp_transport",
+        message: externalTransportBlockedMessage,
+        status: "fail"
+      });
+      return this.createPreflightReport(name, server ? "disabled" : "failed", checks);
+    }
+
     const server = await this.store.findByName(name);
     const checks: McpPreflightCheck[] = [];
     const status = this.statuses.get(name) ?? (server ? "pending" : "failed");
@@ -396,6 +465,11 @@ export class McpManager {
   }
 
   async reconnect(name: string): Promise<boolean> {
+    if (!this.externalTransportAllowed) {
+      this.markExternalTransportBlocked(name);
+      return false;
+    }
+
     // Carry the accumulated attempt count into the interim snapshot.
     // Without it, a failed reconnect's scheduleReconnect would read 0
     // and reset attempts to 1 every cycle — so the exponential backoff
@@ -411,6 +485,10 @@ export class McpManager {
   }
 
   async reconnectDue(): Promise<readonly McpHealthSnapshot[]> {
+    if (!this.externalTransportAllowed) {
+      return (await this.materializeBlockedStoredServers()).map((server) => this.getHealth(server.name));
+    }
+
     const now = this.now().getTime();
     const due = [...this.health.values()].filter((snapshot) =>
       snapshot.nextReconnectAt !== undefined && snapshot.nextReconnectAt.getTime() <= now
@@ -438,6 +516,10 @@ export class McpManager {
   }
 
   getToolCatalog(name?: string): readonly McpRemoteTool[] {
+    if (!this.externalTransportAllowed) {
+      return [];
+    }
+
     if (name) {
       return this.tools.get(name) ?? [];
     }
@@ -446,6 +528,10 @@ export class McpManager {
   }
 
   toMuseTools(): readonly MuseTool[] {
+    if (!this.externalTransportAllowed) {
+      return [];
+    }
+
     return [...this.connections.entries()].flatMap(([serverName, connection]) =>
       (this.tools.get(serverName) ?? []).map((tool) =>
         createMcpMuseTool(serverName, tool, connection, () => this.ensureLiveConnection(serverName))
@@ -463,6 +549,10 @@ export class McpManager {
    * a permanently-down server.
    */
   private async ensureLiveConnection(name: string): Promise<McpConnectionResolution> {
+    if (!this.externalTransportAllowed) {
+      return { error: externalTransportBlockedMessage };
+    }
+
     const existing = this.connections.get(name);
 
     if (existing && this.statuses.get(name) === "connected" && !isDeadConnection(existing)) {
@@ -497,6 +587,36 @@ export class McpManager {
     return { error: formatDisconnectError(name, disconnectReason, this.health.get(name)?.error) };
   }
 
+  /**
+   * Materialize restart-persisted rows without touching `server.config`.
+   * A false-posture manager never owns a live external connection, so this
+   * intentionally only removes in-memory exposure; it neither closes nor
+   * attempts to validate/connect any stored transport.
+   */
+  private async materializeBlockedStoredServers(): Promise<readonly McpServer[]> {
+    const servers = await this.store.list();
+    for (const server of servers) {
+      this.markExternalTransportBlocked(server.name);
+    }
+    return servers;
+  }
+
+  private markExternalTransportBlocked(name: string): McpHealthSnapshot {
+    this.connections.delete(name);
+    this.tools.delete(name);
+    this.statuses.set(name, "disabled");
+    const snapshot = this.createHealthSnapshot(
+      name,
+      "unhealthy",
+      externalTransportBlockedMessage,
+      0,
+      undefined,
+      MCP_EXTERNAL_TRANSPORT_BLOCKED
+    );
+    this.health.set(name, snapshot);
+    return snapshot;
+  }
+
   private scheduleReconnect(name: string, error: string): McpHealthSnapshot {
     const previous = this.health.get(name);
     const attempts = (previous?.reconnectAttempts ?? 0) + 1;
@@ -512,11 +632,13 @@ export class McpManager {
     status: McpHealthStatus,
     error?: string,
     reconnectAttempts = 0,
-    nextReconnectAt?: Date
+    nextReconnectAt?: Date,
+    errorCode?: string
   ): McpHealthSnapshot {
     return {
       checkedAt: this.now(),
       ...(error ? { error } : {}),
+      ...(errorCode ? { errorCode } : {}),
       ...(nextReconnectAt ? { nextReconnectAt } : {}),
       reconnectAttempts,
       serverName,

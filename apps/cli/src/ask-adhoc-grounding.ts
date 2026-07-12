@@ -15,6 +15,7 @@ import { readFile } from "node:fs/promises";
 
 import { chunkText, lexicalOverlap, lexicalTokens } from "@muse/agent-core";
 import { fetchReadableUrl } from "@muse/domain-tools";
+import { isInteractiveWebEgressAllowed, isLocalOnlyEnabled } from "@muse/model";
 import { looksLikeBinaryContent, selectFilePassages, urlGroundingSource, type IndexChunk } from "@muse/recall";
 
 import { readClipboardText } from "./clipboard-reader.js";
@@ -171,37 +172,43 @@ export async function applyAdHocGrounding(params: {
   // refusal; a fetch failure is reported, never silently grounded-on-nothing.
   if (options.url && options.url.trim().length > 0) {
     const urlLabel = options.url.trim();
-    if (!options.json) {
-      onStderr(`🌐 fetching ${urlLabel}…\n`);
-    }
-    try {
-      const fetched = await fetchReadableUrl(urlLabel, {
+    if (!isInteractiveWebEgressAllowed(process.env)) {
+      onStderr(isLocalOnlyEnabled(process.env)
+        ? "muse: interactive public-web access is blocked by local-only.\n"
+        : "muse: interactive public-web access is disabled by MUSE_WEB_EGRESS.\n");
+    } else {
+      if (!options.json) {
+        onStderr(`🌐 fetching ${urlLabel}…\n`);
+      }
+      try {
+        const fetched = await fetchReadableUrl(urlLabel, {
         maxChars: 60_000,
         // Read an online PDF (a policy doc / paper / manual linked on the web)
         // via the same pdf-parse path `--file <pdf>` uses, instead of refusing it.
         pdfExtractor: async (bytes) => (await parsePdfBuffer(Buffer.from(bytes))).text
       });
-      if (!fetched.ok) {
-        onStderr(`muse: could not fetch --url ${urlLabel} (${fetched.error}) — I won't ground on it.\n`);
-      } else if (fetched.text.trim().length > 0) {
-        const source = urlGroundingSource(fetched.finalUrl);
-        adHocVerifyTargets.set(source, fetched.finalUrl);
+        if (!fetched.ok) {
+          onStderr(`muse: could not fetch --url ${urlLabel} (${fetched.error}) — I won't ground on it.\n`);
+        } else if (fetched.text.trim().length > 0) {
+          const source = urlGroundingSource(fetched.finalUrl);
+          adHocVerifyTargets.set(source, fetched.finalUrl);
         // Honest about a truncated long page — never silently ground on a prefix.
-        if (fetched.truncated) {
-          onStderr(formatUrlTruncationNotice(source, 60_000));
+          if (fetched.truncated) {
+            onStderr(formatUrlTruncationNotice(source, 60_000));
+          }
+          const picked = selectFilePassages(fetched.text, query);
+          for (const passage of picked) {
+            scored.push({ chunk: { chunkIndex: passage.chunkIndex, embedding: [], file: source, text: passage.text }, file: source, score: 1 });
+          }
+          if (picked.length > 0) {
+            notesUnavailable = false;
+          }
+        } else {
+          onStderr(`muse: --url ${urlLabel} returned no readable text — I can't ground on it.\n`);
         }
-        const picked = selectFilePassages(fetched.text, query);
-        for (const passage of picked) {
-          scored.push({ chunk: { chunkIndex: passage.chunkIndex, embedding: [], file: source, text: passage.text }, file: source, score: 1 });
-        }
-        if (picked.length > 0) {
-          notesUnavailable = false;
-        }
-      } else {
-        onStderr(`muse: --url ${urlLabel} returned no readable text — I can't ground on it.\n`);
+      } catch (cause) {
+        onStderr(`muse: could not fetch --url ${urlLabel} (${cause instanceof Error ? cause.message : String(cause)})\n`);
       }
-    } catch (cause) {
-      onStderr(`muse: could not fetch --url ${urlLabel} (${cause instanceof Error ? cause.message : String(cause)})\n`);
     }
   }
 

@@ -81,6 +81,12 @@ describe("buildLoopbackTools — gating", () => {
     expect(bundle.search).toEqual([]);
   });
 
+  it("removes interactive public-web read and search tools under MUSE_LOCAL_ONLY=true before model projection", () => {
+    const bundle = buildLoopbackTools(baseDeps({ env: { MUSE_LOCAL_ONLY: "true" } as LoopbackToolsDeps["env"] }));
+    expect(bundle.webRead).toEqual([]);
+    expect(bundle.search).toEqual([]);
+  });
+
   it("respects MUSE_MATH_ENABLED=false (math is opt-out)", () => {
     const bundle = buildLoopbackTools(baseDeps({ env: { MUSE_MATH_ENABLED: "false" } as LoopbackToolsDeps["env"] }));
     expect(bundle.math).toEqual([]);

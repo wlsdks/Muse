@@ -23,6 +23,7 @@ import {
   parseNotesIndexEmbedModel,
   resolveMuseEnvPath,
   selfLearningCheck,
+  webEgressCheck,
   type OllamaTagsEntry
 } from "./commands-doctor.js";
 import type { WeaknessEntry } from "@muse/stores";
@@ -477,6 +478,15 @@ describe("localOnlyCheck — local-only / no-cloud-egress posture", () => {
     const check = localOnlyCheck({ MUSE_MODEL: "ollama/llama3.2" });
     expect(check.status).toBe("ok");
     expect(check.detail).toContain("off");
+  });
+});
+
+describe("webEgressCheck — scoped local-only public-web posture", () => {
+  it("does not overclaim whole-machine egress containment", () => {
+    const check = webEgressCheck({ MUSE_LOCAL_ONLY: "true", MUSE_WEB_EGRESS: "true" });
+    expect(check.status).toBe("ok");
+    expect(check.detail).toContain("interactive public-web");
+    expect(check.detail).toContain("not a complete all-egress audit");
   });
 });
 

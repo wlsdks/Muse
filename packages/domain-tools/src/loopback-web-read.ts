@@ -1,13 +1,17 @@
 import { extractPdfTextWithPdfjs } from "@muse/fs";
 import type { JsonObject } from "@muse/shared";
 
-import { fetchWithRetry, type RetryOptions } from "@muse/mcp-shared";
+import type { RetryOptions } from "@muse/mcp-shared";
 import type { LoopbackMcpServer } from "@muse/mcp";
 import { readString } from "@muse/mcp";
 import { extractReadableText } from "./web-readable.js";
-import { assertPublicHttpUrl, type HostLookup } from "./web-url-guard.js";
+import { LOCAL_EGRESS_BLOCKED } from "./fetch-readable-url.js";
+import { fetchPublicHttpWithRedirects } from "./public-http-redirect.js";
+import type { HostLookup } from "./web-url-guard.js";
 
 export interface WebReadMcpServerOptions {
+  /** Trusted composition posture; false denies each invocation before parsing or I/O. */
+  readonly interactiveWebEgressAllowed?: boolean;
   /** Hard cap on response body bytes read before extraction. Default 1,048,576 (1MB). */
   readonly maxBytes?: number;
   /** Hard cap on extracted readable-text characters returned to the agent. Default 16,000. */
@@ -117,33 +121,33 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
           "to download a file/binary, or for a page that needs a logged-in browser session.",
         domain: "web",
         execute: async (args): Promise<JsonObject> => {
+          if (options.interactiveWebEgressAllowed === false) {
+            return { error: LOCAL_EGRESS_BLOCKED };
+          }
           const rawUrl = readString(args, "url");
           if (rawUrl === undefined || rawUrl.trim().length === 0) {
             return { error: "url is required" };
           }
-          const guard = await assertPublicHttpUrl(rawUrl.trim(), options.lookup ? { lookup: options.lookup } : {});
-          if (!guard.ok) {
-            return { error: guard.error };
-          }
           let response: Response;
+          let finalUrl: string;
           try {
-            response = await fetchWithRetry(fetchImpl, guard.url.toString(), {
-              timeoutMs,
-              init: { redirect: "follow", headers: { accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } },
-              ...(options.retryOptions ?? {})
+            const fetched = await fetchPublicHttpWithRedirects(rawUrl.trim(), {
+              fetchImpl,
+              init: { headers: { accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } },
+              ...(options.lookup ? { lookup: options.lookup } : {}),
+              retryOptions: {
+                timeoutMs,
+                ...(options.retryOptions ?? {})
+              }
             });
+            if (!fetched.ok) return { error: fetched.message };
+            response = fetched.response;
+            finalUrl = fetched.finalUrl;
           } catch (error) {
             return { error: `fetch failed: ${error instanceof Error ? error.message : String(error)}` };
           }
           if (!response.ok) {
             return { error: `fetch failed: HTTP ${response.status}`, status: response.status };
-          }
-          // A redirect chain can land on a private host the first guard never saw.
-          if (response.url && response.url !== guard.url.toString()) {
-            const finalGuard = await assertPublicHttpUrl(response.url, options.lookup ? { lookup: options.lookup } : {});
-            if (!finalGuard.ok) {
-              return { error: `redirected to a blocked host: ${finalGuard.error}` };
-            }
           }
           const contentType = response.headers.get("content-type");
           // A PDF URL ("summarize this report.pdf link") is extracted locally
@@ -157,7 +161,7 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
                 text: capped ? pdfText.slice(0, maxChars) : pdfText,
                 title: "",
                 truncated: capped || pdfTruncated,
-                url: response.url || guard.url.toString()
+                url: finalUrl
               } satisfies JsonObject;
             } catch (error) {
               return { error: `could not extract PDF text: ${error instanceof Error ? error.message : String(error)}` };
@@ -175,7 +179,7 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
             if (!described.ok || !described.text) {
               return { error: described.error ?? "the vision model could not read the image" };
             }
-            return { text: described.text, title: "", truncated: false, url: response.url || guard.url.toString() } satisfies JsonObject;
+            return { text: described.text, title: "", truncated: false, url: finalUrl } satisfies JsonObject;
           }
           if (!isReadableContentType(contentType)) {
             return { error: `not a readable text page (content-type: ${contentType})` };
@@ -186,7 +190,7 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
             text: extracted.text,
             title: extracted.title ?? "",
             truncated: extracted.truncated || bodyTruncated,
-            url: response.url || guard.url.toString()
+            url: finalUrl
           } satisfies JsonObject;
         },
         inputSchema: {

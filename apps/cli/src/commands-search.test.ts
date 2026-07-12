@@ -1,6 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { parseLimit, scrubResultText } from "./commands-search.js";
+import { Command } from "commander";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { parseLimit, registerSearchCommand, scrubResultText } from "./commands-search.js";
+
+afterEach(() => {
+  delete process.env.MUSE_LOCAL_ONLY;
+  delete process.env.MUSE_NOTES_DIR;
+  process.exitCode = 0;
+});
 
 describe("scrubResultText (web-result → notes scrub)", () => {
   it("collapses whitespace so a multi-line title can't splice a fake markdown heading", () => {
@@ -55,5 +66,31 @@ describe("parseLimit (muse search --limit)", () => {
     expect(() => parseLimit("-5", 10, 50)).toThrow(/got '-5'/u);
     expect(() => parseLimit("0.5", 10, 50)).toThrow(/\[1, 50\]/u);
     expect(() => parseLimit("1O", 10, 50)).toThrow(/got '1O'/u);
+  });
+});
+
+describe("muse search — local-only public-web closure", () => {
+  it("returns before search fetch or --to-notes persistence when MUSE_LOCAL_ONLY=true", async () => {
+    const originalFetch = globalThis.fetch;
+    const fetch = vi.fn(async () => new Response(
+      '<a rel="nofollow" class="result__a" href="https://example.test">Result</a><a class="result__snippet">Snippet</a>',
+      { status: 200 }
+    ));
+    const notesDir = mkdtempSync(join(tmpdir(), "muse-search-local-only-"));
+    const stderr: string[] = [];
+    process.env.MUSE_LOCAL_ONLY = "true";
+    process.env.MUSE_NOTES_DIR = notesDir;
+    globalThis.fetch = fetch as unknown as typeof globalThis.fetch;
+    try {
+      const program = new Command();
+      registerSearchCommand(program, { stderr: (text) => { stderr.push(text); }, stdout: () => undefined });
+      await program.parseAsync(["node", "muse", "search", "latest updates", "--to-notes", "blocked.md"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(stderr.join("")).toBe("muse search: interactive public-web access is blocked by local-only.\n");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(existsSync(join(notesDir, "blocked.md"))).toBe(false);
+    expect(process.exitCode).toBe(2);
   });
 });

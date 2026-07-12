@@ -20,7 +20,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMuseToolsMcpServer } from "@muse/mcp";
 import { InMemoryUserMemoryStore } from "@muse/memory";
 import { LocalDirNotesProvider } from "@muse/domain-tools";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildMcpServeTools, type McpServeDependencies } from "./mcp-serve-tools.js";
 
@@ -84,5 +84,24 @@ describe("muse mcp serve (in-process e2e)", () => {
 
     await client.close();
     await server.close();
+  });
+
+  it("keeps the loopback MCP serve transport in-process with no public-web fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      throw new Error("muse mcp serve must not use fetch for its in-process loopback transport");
+    });
+    const server = createMuseToolsMcpServer({ serverName: "muse", tools: buildMcpServeTools(deps) });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "local-client", version: "1.0.0" });
+
+    try {
+      await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+      await expect(client.listTools()).resolves.toMatchObject({ tools: expect.any(Array) });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+      await client.close();
+      await server.close();
+    }
   });
 });

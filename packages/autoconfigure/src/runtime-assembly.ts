@@ -52,7 +52,7 @@ import {
   type TaskMemoryStore,
   type UserMemoryStore
 } from "@muse/memory";
-import type { ModelProvider } from "@muse/model";
+import { isInteractiveWebEgressAllowed, type ModelProvider } from "@muse/model";
 import {
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
@@ -1173,18 +1173,22 @@ export function requireEnv(env: MuseEnvironment, key: string): string {
  */
 export function createLoopbackMcpToolsFromEnv(env: MuseEnvironment): readonly MuseTool[] {
   const servers: LoopbackMcpServer[] = [];
+  const interactiveWebEgressAllowed = isInteractiveWebEgressAllowed(env);
 
   if (parseBoolean(env.MUSE_LOOPBACK_MCP_ENABLED, false)) {
     const searxngUrl = env.MUSE_SEARXNG_URL?.trim();
     const searxngEngines = env.MUSE_SEARXNG_ENGINES?.trim();
-    servers.push(...createDefaultLoopbackMcpServers({
+    const defaultServers = createDefaultLoopbackMcpServers({
       ...(searxngUrl && searxngUrl.length > 0 ? { searxngUrl } : {}),
       ...(searxngEngines && searxngEngines.length > 0 ? { searxngEngines } : {})
-    }));
+    });
+    servers.push(...(interactiveWebEgressAllowed
+      ? defaultServers
+      : defaultServers.filter((server) => server.name !== "muse.search")));
   }
 
   const fetchHosts = parseCsv(env.MUSE_LOOPBACK_FETCH_HOSTS);
-  if (fetchHosts) {
+  if (fetchHosts && interactiveWebEgressAllowed) {
     servers.push(createFetchMcpServer({ allowedHosts: fetchHosts }));
   }
 

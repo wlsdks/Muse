@@ -25,7 +25,7 @@ import {
   resolveTasksFile,
   type MuseEnvironment
 } from "./index.js";
-import { evaluateWebEgressPosture, isLoopbackUrl } from "@muse/model";
+import { canonicalizeLocalOnlyModelBaseUrl, evaluateWebEgressPosture, isInteractiveWebEgressAllowed, isLocalOnlyEnabled } from "@muse/model";
 
 import { resolveEmbedderBase } from "./embedder-base.js";
 import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
@@ -129,11 +129,16 @@ export interface WebEgressStatusSnapshot {
 }
 
 export function evaluateWebEgressStatus(env: Readonly<Record<string, string | undefined>>): WebEgressStatusSnapshot {
-  const { enabled } = evaluateWebEgressPosture(env);
+  const { enabled: webEgressEnabled } = evaluateWebEgressPosture(env);
+  const enabled = isInteractiveWebEgressAllowed(env);
   return {
     detail: enabled
-      ? "🌐 on (default) — web search / read / download available (independent of local-only)"
-      : "✈️ off — all web egress blocked (MUSE_WEB_EGRESS); the local-LLM guarantee is unaffected",
+      ? "🌐 on (default) — Muse interactive public-web search / read / download available"
+      : isLocalOnlyEnabled(env)
+        ? "🔒 local-only — Muse interactive public-web tools are disabled in T2-A1; this is not a complete all-egress audit"
+        : webEgressEnabled
+          ? "✈️ off — Muse interactive public-web tools unavailable; this is not a complete all-egress audit"
+          : "✈️ off — Muse interactive public-web tools disabled by MUSE_WEB_EGRESS; this is not a complete all-egress audit",
     enabled,
     status: "ok"
   };
@@ -169,10 +174,16 @@ export function evaluateLocalOnlyPosture(env: Readonly<Record<string, string | u
       // yet egresses the user's note/memory text. Mirror the embedder's own
       // construction-time fail-close so doctor surfaces it instead of reporting ok.
       const embedBase = resolveEmbedderBase(env);
-      if (!isLoopbackUrl(embedBase)) {
+      try {
+        canonicalizeLocalOnlyModelBaseUrl("ollama", embedBase);
+      } catch {
         return { detail: `🔒 on, but OLLAMA_BASE_URL points off-box (${embedBase}) — the embedder fails closed, so recall/memory embedding refuses; point OLLAMA_BASE_URL at localhost`, enabled, status: "fail" };
       }
-      return { detail: "🔒 on — cloud LLM + voice egress blocked (fail-closed to local)", enabled, status: "ok" };
+      return {
+        detail: "🔒 on — cloud model + voice egress blocked; Muse interactive public-web tools (T2-A1) and external MCP transports (T2-A2) disabled (not a complete all-egress audit)",
+        enabled,
+        status: "ok"
+      };
     } catch (cause) {
       return { detail: cause instanceof Error ? cause.message : "cloud provider selected under local-only", enabled, status: "fail" };
     }

@@ -10,9 +10,7 @@
  */
 
 import { createCachingEmbedder, normalizeForRecall } from "@muse/agent-core";
-import { isLoopbackUrl, LocalOnlyViolationError } from "@muse/model";
-
-import { parseBoolean } from "./env-parsers.js";
+import { canonicalizeLocalOnlyModelBaseUrl, isLocalOnlyEnabled } from "@muse/model";
 
 export function resolveEmbedderBase(env: Readonly<Record<string, string | undefined>>): string {
   return (env.OLLAMA_BASE_URL?.trim() || "http://127.0.0.1:11434").replace(/\/+$/u, "");
@@ -26,18 +24,12 @@ export function resolveEmbedderBase(env: Readonly<Record<string, string | undefi
 export function createOllamaEmbedder(model: string): (text: string) => Promise<readonly number[]> {
   // Empty / whitespace OLLAMA_BASE_URL is treated as unset (loopback default);
   // shared with the doctor posture so the two never diverge (see resolveEmbedderBase).
-  const base = resolveEmbedderBase(process.env);
-  // Local-only / no-cloud-egress, fail-CLOSED at construction (the same
-  // posture createModelProvider enforces for the chat provider). The chat
-  // gate only fires when the CHAT provider id is `ollama` — it never sees
-  // this embedder's independent OLLAMA_BASE_URL, so a localhost chat model
-  // plus a REMOTE OLLAMA_BASE_URL would silently POST the user's note /
-  // memory / episode text off-box. Refusing here closes that egress hole
-  // before any caller can hand the embedder private text. MUSE_LOCAL_ONLY is
-  // off by default (cloud/remote allowed); a remote embedder is refused only
-  // when the user opts in with MUSE_LOCAL_ONLY=true.
-  if (parseBoolean(process.env.MUSE_LOCAL_ONLY, false) && !isLoopbackUrl(base)) {
-    throw new LocalOnlyViolationError("ollama", base);
+  const configuredBase = resolveEmbedderBase(process.env);
+  const base = isLocalOnlyEnabled(process.env)
+    ? canonicalizeLocalOnlyModelBaseUrl("ollama", configuredBase)
+    : configuredBase;
+  if (!base) {
+    throw new Error("local Ollama embedder requires an explicit base URL");
   }
   // Keep the embed model warm with the SAME knob as the chat model (01717219):
   // grounding embeds the query every turn, so an embed model that cold-reloads

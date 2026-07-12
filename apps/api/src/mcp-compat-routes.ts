@@ -44,6 +44,13 @@ export function registerMcpCompatibilityRoutes(server: FastifyInstance, options:
       return mcpProxyUnavailable(request, reply, options);
     }
 
+    const manager = options.mcp?.manager;
+    if (manager && !manager.isExternalTransportAllowed()) {
+      // Local-only preflight is a diagnostic, not an action: return the
+      // manager-owned blocked report before reading admin URL/token config.
+      return manager.preflight(serverConfig.name);
+    }
+
     const adminUrl = readAdminUrl(serverConfig.config);
 
     if (!adminUrl) {
@@ -57,7 +64,7 @@ export function registerMcpCompatibilityRoutes(server: FastifyInstance, options:
       return reply.header("X-Preflight-Skipped", "no-admin-token").status(204).send();
     }
 
-    return proxyMcpAdminRequest(reply, serverConfig, "GET", "/admin/preflight");
+    return proxyMcpAdminRequest(reply, manager, serverConfig, "GET", "/admin/preflight");
   });
   server.get("/api/mcp/servers/:name/access-policy", async (request, reply) => {
     if (!options.requireAuthenticated(request, reply)) {
@@ -70,7 +77,7 @@ export function registerMcpCompatibilityRoutes(server: FastifyInstance, options:
       return mcpProxyUnavailable(request, reply, options);
     }
 
-    return proxyMcpAdminRequest(reply, serverConfig, "GET", "/admin/access-policy");
+    return proxyMcpAdminRequest(reply, options.mcp?.manager, serverConfig, "GET", "/admin/access-policy");
   });
   server.put("/api/mcp/servers/:name/access-policy", async (request, reply) => {
     if (!options.requireAuthenticated(request, reply)) {
@@ -89,7 +96,7 @@ export function registerMcpCompatibilityRoutes(server: FastifyInstance, options:
       return reply.status(400).send(parsed.error);
     }
 
-    return proxyMcpAdminRequest(reply, serverConfig, "PUT", "/admin/access-policy", parsed.value);
+    return proxyMcpAdminRequest(reply, options.mcp?.manager, serverConfig, "PUT", "/admin/access-policy", parsed.value);
   });
   server.delete("/api/mcp/servers/:name/access-policy", async (request, reply) => {
     if (!options.requireAuthenticated(request, reply)) {
@@ -102,7 +109,7 @@ export function registerMcpCompatibilityRoutes(server: FastifyInstance, options:
       return mcpProxyUnavailable(request, reply, options);
     }
 
-    return proxyMcpAdminRequest(reply, serverConfig, "DELETE", "/admin/access-policy");
+    return proxyMcpAdminRequest(reply, options.mcp?.manager, serverConfig, "DELETE", "/admin/access-policy");
   });
   server.post("/api/mcp/servers/:name/access-policy/emergency-deny-all", async (request, reply) => {
     if (!options.requireAuthenticated(request, reply)) {
@@ -115,7 +122,7 @@ export function registerMcpCompatibilityRoutes(server: FastifyInstance, options:
       return mcpProxyUnavailable(request, reply, options);
     }
 
-    return proxyMcpAdminRequest(reply, serverConfig, "POST", "/admin/access-policy/emergency-deny-all");
+    return proxyMcpAdminRequest(reply, options.mcp?.manager, serverConfig, "POST", "/admin/access-policy/emergency-deny-all");
   });
   server.get("/api/mcp/servers/:name/swagger/sources", async (request, reply) =>
     proxySwaggerSourceRequest(request, reply, options, "GET", "/admin/swagger/spec-sources")

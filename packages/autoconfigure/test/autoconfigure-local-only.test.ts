@@ -42,6 +42,87 @@ describe("createModelProvider — MUSE_LOCAL_ONLY fail-close", () => {
     expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
   });
 
+  it("passes numeric loopback endpoints to the actual Ollama and OpenAI-compatible transports under local-only", async () => {
+    const originalFetch = globalThis.fetch;
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: string | URL) => {
+      urls.push(String(input));
+      if (String(input).includes("/api/chat")) {
+        return new Response(JSON.stringify({ message: { content: "ok" }, model: "ollama/test" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], id: "c1", model: "local/test" }), { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const ollama = createModelProvider({ MUSE_LOCAL_ONLY: "true", MUSE_MODEL: "ollama/test" });
+      await ollama?.generate({ messages: [{ content: "hello", role: "user" }], model: "ollama/test" });
+      const compatible = createModelProvider({
+        MUSE_LOCAL_ONLY: "true",
+        MUSE_MODEL: "local/test",
+        MUSE_MODEL_BASE_URL: "http://localhost:18000/v1"
+      });
+      await compatible?.generate({ messages: [{ content: "hello", role: "user" }], model: "local/test" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(urls).toEqual([
+      "http://127.0.0.1:11434/api/chat",
+      "http://127.0.0.1:18000/v1/chat/completions"
+    ]);
+  });
+
+  it("refuses invalid local-only bases before provider construction or transport fetch, and never invents a generic endpoint", () => {
+    let fetchCalls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response("must not fetch", { status: 500 });
+    }) as typeof globalThis.fetch;
+    try {
+      expect(createModelProvider({
+        MUSE_LOCAL_ONLY: "true",
+        MUSE_MODEL: "lmstudio/test",
+        MUSE_MODEL_PROVIDER_ID: "lmstudio"
+      })).toBeUndefined();
+      for (const baseUrl of [
+        "http://0.0.0.0:11434/v1",
+        "http://foo.localhost:11434/v1",
+        "http://user:pass@localhost:11434/v1",
+        "https://localhost:11434/v1",
+        "http://192.168.1.50:11434/v1",
+        "not a URL"
+      ]) {
+        expect(() => createModelProvider({
+          MUSE_LOCAL_ONLY: "true",
+          MUSE_MODEL: "ollama/test",
+          OLLAMA_BASE_URL: baseUrl
+        }), baseUrl).toThrow(LocalOnlyViolationError);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(fetchCalls).toBe(0);
+  });
+
+  it("does not rewrite an explicit localhost base when local-only is off", async () => {
+    const originalFetch = globalThis.fetch;
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: string | URL) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], id: "c1", model: "local/test" }), { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const provider = createModelProvider({
+        MUSE_LOCAL_ONLY: "false",
+        MUSE_MODEL: "local/test",
+        MUSE_MODEL_BASE_URL: "http://localhost:18000/v1"
+      });
+      await provider?.generate({ messages: [{ content: "hello", role: "user" }], model: "local/test" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(urls).toEqual(["http://localhost:18000/v1/chat/completions"]);
+  });
+
   it("blocks a REMOTE Ollama host under local-only (off-box egress)", () => {
     expect(() => createModelProvider({
       MUSE_MODEL: "ollama/llama3.2",

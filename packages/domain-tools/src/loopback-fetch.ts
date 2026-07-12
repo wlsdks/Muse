@@ -4,6 +4,8 @@ import { fetchWithRetry, type RetryOptions } from "@muse/mcp-shared";
 import type { LoopbackMcpServer } from "@muse/mcp";
 import { readString, readJsonObject } from "@muse/mcp";
 
+import { LOCAL_EGRESS_BLOCKED } from "./fetch-readable-url.js";
+
 /**
  * `muse.fetch` loopback MCP server — bounded HTTP GET/HEAD fetcher.
  *
@@ -16,6 +18,8 @@ import { readString, readJsonObject } from "@muse/mcp";
  */
 
 export interface FetchMcpServerOptions {
+  /** Trusted composition posture; false denies each invocation before parsing or I/O. */
+  readonly interactiveWebEgressAllowed?: boolean;
   /**
    * Hostnames the fetcher is permitted to reach. Empty by default — opt-in
    * required. The check matches `URL.hostname` exactly (no wildcards). For
@@ -177,6 +181,9 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
         description:
           "GETs the URL and returns { status, headers, body, truncated }. URL must be http/https and the hostname must be in the configured allowlist. Body is truncated at maxBodyBytes (default 64KB). Redirects are NOT followed — a 3xx Location to a different host would otherwise bypass the allowlist; allowlist each hop explicitly if you need a redirect chain.",
         execute: async (args): Promise<JsonObject> => {
+          if (options.interactiveWebEgressAllowed === false) {
+            return { error: LOCAL_EGRESS_BLOCKED };
+          }
           const url = readString(args, "url");
           if (url === undefined) {
             return { error: "url is required" };
@@ -227,6 +234,9 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
         description:
           "HEADs the URL and returns { status, headers }. Same allowlist + protocol contract as `get`. Useful for cheap reachability checks without pulling a body.",
         execute: async (args): Promise<JsonObject> => {
+          if (options.interactiveWebEgressAllowed === false) {
+            return { error: LOCAL_EGRESS_BLOCKED };
+          }
           const url = readString(args, "url");
           if (url === undefined) {
             return { error: "url is required" };

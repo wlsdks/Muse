@@ -4,15 +4,14 @@
  * (web search, web page read, web download, web action) is removed from
  * the registry, fail-close, regardless of each tool's own enable flag.
  *
- * It is DELIBERATELY independent of `MUSE_LOCAL_ONLY`, which governs a
- * different egress class — your private data / prompts going to a CLOUD
- * LLM. `MUSE_LOCAL_ONLY` (opt-in) keeps the model local when set; this
- * switch (on by default) controls whether the assistant may fetch a
- * *public* URL or run a *public* search. So a user can keep the local-LLM
- * privacy guarantee AND still search the web (the default), or set
- * `MUSE_WEB_EGRESS=false` for a true zero-outbound posture — the two are
- * orthogonal by design.
+ * `MUSE_WEB_EGRESS` remains the explicit web-only kill switch. Under the
+ * stricter `MUSE_LOCAL_ONLY=true` posture, however, Muse's interactive
+ * public-web tools must also be unavailable. This module owns that trusted
+ * environment-only composition; request metadata and model arguments never
+ * participate in the decision.
  */
+
+import { isLocalOnlyEnabled } from "./local-only-policy.js";
 
 // Canonical falsy-spelling set shared with web-search-policy.ts so the two
 // kill-switch parsers can never drift apart.
@@ -29,6 +28,14 @@ export function isWebEgressAllowed(env: Readonly<Record<string, string | undefin
     return true;
   }
   return !FALSY_BOOLEAN_VALUES.has(raw.trim().toLowerCase());
+}
+
+/**
+ * Trusted interactive-web posture used only at Muse-owned composition and CLI
+ * boundaries. Local-only dominates a permissive `MUSE_WEB_EGRESS` value.
+ */
+export function isInteractiveWebEgressAllowed(env: Readonly<Record<string, string | undefined>>): boolean {
+  return isWebEgressAllowed(env) && !isLocalOnlyEnabled(env);
 }
 
 export interface WebEgressPosture {

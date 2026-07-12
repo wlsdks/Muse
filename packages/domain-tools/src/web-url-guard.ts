@@ -26,6 +26,45 @@ function ipv4ToParts(ip: string): readonly number[] | undefined {
   return nums;
 }
 
+function ipv4MatchesCidr(ip: string, network: string, prefixBits: number): boolean {
+  const address = ipv4ToParts(ip);
+  const base = ipv4ToParts(network);
+  if (!address || !base) return false;
+  const value = address[0]! * 0x1000000 + address[1]! * 0x10000 + address[2]! * 0x100 + address[3]!;
+  const networkValue = base[0]! * 0x1000000 + base[1]! * 0x10000 + base[2]! * 0x100 + base[3]!;
+  const block = 2 ** (32 - prefixBits);
+  return Math.floor(value / block) === Math.floor(networkValue / block);
+}
+
+/**
+ * Bounded public-web address policy, reviewed against the IANA IPv4/IPv6
+ * Special-Purpose registries and RFC 4291 on 2026-07-13. This is intentionally
+ * a code-owned table: unlisted normal global-unicast addresses remain allowed;
+ * it is not a vague "special means blocked" fallback.
+ */
+export const PUBLIC_WEB_ADDRESS_POLICY_REVIEWED_AT = "2026-07-13";
+
+const IPV4_NON_PUBLIC_CIDRS: readonly (readonly [network: string, prefixBits: number])[] = [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8],
+  ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24],
+  ["192.88.99.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24],
+  ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4]
+];
+
+// More-specific IANA globally-reachable allocations win over the false/N/A
+// 192.0.0.0/24 parent. The separate audit rows are intentionally represented
+// in code and tests even though default global-unicast handling would allow them.
+const IPV4_EXPLICIT_PUBLIC_CIDRS: readonly (readonly [network: string, prefixBits: number])[] = [
+  ["192.0.0.9", 32], ["192.0.0.10", 32], ["192.31.196.0", 24],
+  ["192.52.193.0", 24], ["192.175.48.0", 24]
+];
+
+function isNonPublicWebIPv4(ip: string): boolean {
+  if (!ipv4ToParts(ip)) return false;
+  if (IPV4_EXPLICIT_PUBLIC_CIDRS.some(([network, prefixBits]) => ipv4MatchesCidr(ip, network, prefixBits))) return false;
+  return IPV4_NON_PUBLIC_CIDRS.some(([network, prefixBits]) => ipv4MatchesCidr(ip, network, prefixBits));
+}
+
 export function isPrivateIPv4(ip: string): boolean {
   const p = ipv4ToParts(ip);
   if (!p) return false;
@@ -41,9 +80,18 @@ export function isPrivateIPv4(ip: string): boolean {
 }
 
 /** Expand an IPv6 textual form (with `::` compression) into its 8 hextets, or
- *  `undefined` if it isn't a well-formed all-hex address. A trailing dotted-IPv4
- *  (`::ffff:1.2.3.4`) returns `undefined` — that form has its own dotted match. */
+ *  `undefined` if it is malformed. A trailing dotted IPv4 tail is normalized
+ *  first so RFC 4291 mapped/compatible forms share the same classifier. */
 function expandIPv6Hextets(lower: string): number[] | undefined {
+  // URL.hostname normally emits the hexadecimal form, but direct callers and
+  // DNS fixtures may use an RFC 4291 dotted IPv4 tail. Normalize it before the
+  // ordinary 8-hextet parser so mapped/compatible/SIIT policy is exact.
+  const dottedTail = /^(.*:)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/u.exec(lower);
+  if (dottedTail) {
+    const dotted = ipv4ToParts(dottedTail[2]!);
+    if (!dotted) return undefined;
+    lower = `${dottedTail[1]!}${((dotted[0]! << 8) | dotted[1]!).toString(16)}:${((dotted[2]! << 8) | dotted[3]!).toString(16)}`;
+  }
   if (!/^[0-9a-f:]+$/u.test(lower) || (lower.match(/::/gu) ?? []).length > 1) return undefined;
   const parse = (s: string): number[] => (s === "" ? [] : s.split(":").map((g) => Number.parseInt(g, 16)));
   let groups: number[];
@@ -59,6 +107,65 @@ function expandIPv6Hextets(lower: string): number[] | undefined {
   }
   if (groups.length !== 8 || groups.some((g) => !Number.isInteger(g) || g < 0 || g > 0xffff)) return undefined;
   return groups;
+}
+
+function ipv6MatchesCidr(hextets: readonly number[], network: string, prefixBits: number): boolean {
+  const base = expandIPv6Hextets(network);
+  if (!base || hextets.length !== 8) return false;
+  let remaining = prefixBits;
+  for (let index = 0; index < 8 && remaining > 0; index += 1) {
+    const bits = Math.min(16, remaining);
+    const shift = 16 - bits;
+    if ((hextets[index]! >> shift) !== (base[index]! >> shift)) return false;
+    remaining -= bits;
+  }
+  return true;
+}
+
+const IPV6_NON_PUBLIC_CIDRS: readonly (readonly [network: string, prefixBits: number])[] = [
+  ["::", 128], ["::1", 128], ["64:ff9b:1::", 48], ["100::", 64], ["100:0:0:1::", 64],
+  ["2001::", 23], ["2001:db8::", 32], ["2002::", 16], ["3fff::", 20], ["5f00::", 16],
+  ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8]
+];
+
+const IPV6_EXPLICIT_PUBLIC_CIDRS: readonly (readonly [network: string, prefixBits: number])[] = [
+  ["2001:1::1", 128], ["2001:1::2", 128], ["2001:1::3", 128], ["2001:3::", 32],
+  ["2001:4:112::", 48], ["2001:20::", 28], ["2001:30::", 28], ["2620:4f:8000::", 48]
+];
+
+/**
+ * Return true only for a bounded set of address-space destinations that are not
+ * safe public-web targets. DNS resolution here is preflight-only: it does not
+ * pin the later socket connection and must not be described as DNS-rebinding
+ * resistant transport protection.
+ */
+export function isNonPublicWebAddress(ip: string): boolean {
+  const normalized = ip.toLowerCase().replace(/^\[|\]$/gu, "");
+  if (!normalized.includes(":")) return isNonPublicWebIPv4(normalized);
+  const hextets = expandIPv6Hextets(normalized);
+  if (!hextets) return false;
+
+  // IANA true allocations more specific than 2001::/23 are checked before
+  // their false/N/A parent (longest-prefix-first policy).
+  if (IPV6_EXPLICIT_PUBLIC_CIDRS.some(([network, prefixBits]) => ipv6MatchesCidr(hextets, network, prefixBits))) return false;
+
+  // These three legacy forms are intentionally denied regardless of whether
+  // their low 32 bits happen to look globally routable.
+  const compatible = hextets.slice(0, 6).every((part) => part === 0);
+  const mapped = hextets.slice(0, 5).every((part) => part === 0) && hextets[5] === 0xffff;
+  const siit = hextets.slice(0, 4).every((part) => part === 0) && hextets[4] === 0xffff && hextets[5] === 0;
+  if (compatible || mapped || siit) return true;
+
+  // RFC 6052 well-known NAT64 maps only this exact /96 form. Its embedded
+  // IPv4 inherits the same bounded table; no 6to4/other translation inference.
+  const wellKnownNat64 = hextets[0] === 0x64 && hextets[1] === 0xff9b && hextets.slice(2, 6).every((part) => part === 0);
+  if (wellKnownNat64) {
+    const high = hextets[6]!;
+    const low = hextets[7]!;
+    return isNonPublicWebIPv4(`${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`);
+  }
+
+  return IPV6_NON_PUBLIC_CIDRS.some(([network, prefixBits]) => ipv6MatchesCidr(hextets, network, prefixBits));
 }
 
 export function isPrivateIPv6(ip: string): boolean {
@@ -103,16 +210,16 @@ function isBlockedHostname(hostname: string): boolean {
 }
 
 /**
- * Validate that `rawUrl` is an http(s) URL whose host resolves only to
- * public addresses. Use BEFORE fetching, and again on the final URL after
- * any redirect (a 3xx Location can point at a private host).
+ * Validate that `rawUrl` is an http(s) URL whose host resolves only to bounded
+ * public-web addresses. Use immediately before each physical fetch. This is a
+ * DNS preflight check only, not socket pinning or a full DNS-rebinding defence.
  */
 /**
  * The DNS-free half of the guard: protocol + LITERAL loopback/private/link-local
  * IP + blocked hostname. Catches every SSRF vector a model emits as a literal
  * (`http://127.0.0.1`, `http://169.254.169.254`, `file://…`) with no async cost,
- * so a caller that can't await DNS still gets the core protection. The resolved-
- * IP (DNS-rebinding) layer is `assertPublicHttpUrl`.
+ * so a caller that can't await DNS still gets the core protection. The resolved
+ * IP layer in `assertPublicHttpUrl` is still only preflight, not connection pinning.
  */
 export function assertPublicHttpUrlSync(rawUrl: string): UrlGuardResult {
   let url: URL;
@@ -130,6 +237,9 @@ export function assertPublicHttpUrlSync(rawUrl: string): UrlGuardResult {
   }
   if ((url.hostname.includes(":") || ipv4ToParts(hostname)) && isPrivateAddress(hostname)) {
     return { ok: false, error: `refusing to read a private/loopback address: ${url.hostname}` };
+  }
+  if ((url.hostname.includes(":") || ipv4ToParts(hostname)) && isNonPublicWebAddress(hostname)) {
+    return { ok: false, error: `refusing to read a non-public web address: ${url.hostname}` };
   }
   return { ok: true, url };
 }
@@ -174,9 +284,12 @@ export async function assertPublicHttpUrl(rawUrl: string, options: { readonly lo
     if (records.length === 0) {
       return { ok: false, error: `host did not resolve: ${url.hostname}` };
     }
-    const privateHit = records.find((r) => isPrivateAddress(r.address));
-    if (privateHit) {
-      return { ok: false, error: `host resolves to a private address (${privateHit.address}); refusing to read ${url.hostname}` };
+    const nonPublicHit = records.find((r) => isNonPublicWebAddress(r.address));
+    if (nonPublicHit) {
+      if (isPrivateAddress(nonPublicHit.address)) {
+        return { ok: false, error: `host resolves to a private address (${nonPublicHit.address}); refusing to read ${url.hostname}` };
+      }
+      return { ok: false, error: `host resolves to a non-public web address (${nonPublicHit.address}); refusing to read ${url.hostname}` };
     }
   } catch (error) {
     return { ok: false, error: `host did not resolve: ${url.hostname} (${error instanceof Error ? error.message : String(error)})` };

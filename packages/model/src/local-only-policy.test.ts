@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyProviderLocality, isLoopbackUrl, LocalOnlyViolationError } from "./local-only-policy.js";
+import { canonicalizeLocalOnlyModelBaseUrl, classifyProviderLocality, isLoopbackUrl, LocalOnlyViolationError } from "./local-only-policy.js";
 
 describe("isLoopbackUrl", () => {
-  it("treats localhost / 127.x / ::1 / 0.0.0.0 / .localhost as loopback", () => {
+  it("treats localhost / 127.x / ::1 / .localhost as loopback but rejects the wildcard bind address", () => {
     for (const url of [
       "http://localhost:11434",
       "http://127.0.0.1:11434/v1",
       "http://127.5.0.1:8000",
       "http://[::1]:1234",
-      "http://0.0.0.0:8080",
       "http://api.localhost/v1",
       "localhost:11434",
       "127.0.0.1"
     ]) {
       expect(isLoopbackUrl(url), url).toBe(true);
     }
+    expect(isLoopbackUrl("http://0.0.0.0:8080")).toBe(false);
   });
 
   it("treats off-box hosts and junk as NOT loopback", () => {
@@ -30,6 +30,30 @@ describe("isLoopbackUrl", () => {
       "   "
     ]) {
       expect(isLoopbackUrl(url), String(url)).toBe(false);
+    }
+  });
+});
+
+describe("canonicalizeLocalOnlyModelBaseUrl", () => {
+  it("uses the built-in numeric Ollama endpoint and rewrites only exact http localhost to numeric loopback", () => {
+    expect(canonicalizeLocalOnlyModelBaseUrl("ollama", undefined)).toBe("http://127.0.0.1:11434/v1");
+    expect(canonicalizeLocalOnlyModelBaseUrl("ollama", "http://localhost:11435/v1")).toBe("http://127.0.0.1:11435/v1");
+    expect(canonicalizeLocalOnlyModelBaseUrl("openai-compatible", "http://127.4.5.6:8000/v1")).toBe("http://127.4.5.6:8000/v1");
+    expect(canonicalizeLocalOnlyModelBaseUrl("openai-compatible", "http://[::1]:8000/v1")).toBe("http://[::1]:8000/v1");
+  });
+
+  it("refuses host aliases, wildcard binds, credentials, TLS localhost, LAN/public addresses, and malformed bases before a transport exists", () => {
+    for (const baseUrl of [
+      "http://api.localhost:8000/v1",
+      "http://0.0.0.0:8000/v1",
+      "http://[::]:8000/v1",
+      "http://user:pass@localhost:8000/v1",
+      "https://localhost:8000/v1",
+      "http://192.168.1.10:8000/v1",
+      "https://api.example.test/v1",
+      "not a URL"
+    ]) {
+      expect(() => canonicalizeLocalOnlyModelBaseUrl("ollama", baseUrl), baseUrl).toThrow(LocalOnlyViolationError);
     }
   });
 });
@@ -71,7 +95,7 @@ describe("LocalOnlyViolationError", () => {
     expect(err.message).toContain("MUSE_LOCAL_ONLY");
     expect(err.message).toContain("gemini");
     expect(err.message).toContain("ollama/qwen3:8b");
-    expect(err.message).toContain("local-only by default");
+    expect(err.message).toContain("local-only model posture");
     expect(err).toBeInstanceOf(Error);
   });
 });
