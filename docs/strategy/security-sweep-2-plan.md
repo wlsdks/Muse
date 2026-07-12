@@ -15,10 +15,10 @@ tool fail-open. This sweep goes deeper.
 |---|---|---|---|---|---|
 | ✅P0 | #1 Reverify grounding judge reads poisoned evidence RAW (FIXED 3ff0146ff) | grounding | **HIGH** | ✅ traced | S (TS, 1 line + test) |
 | ✅P0 | #2 Model `env.PATH` overrides command resolution → guard bypass (FIXED 3051279af) | runner | **HIGH** | ✅ rustc repro | S–M (TS+Rust) |
-| **P1** | #3 API auth fail-OPEN: `MUSE_REQUIRE_AUTH=true` + no JWT secret = no auth | api | MED (HIGH if 0.0.0.0) | ✅ traced | S (fail-close at boot) |
+| ✅P1 | #3 API auth fail-OPEN (FIXED 1b8502039) | api | MED (HIGH if 0.0.0.0) | done | done |
 | **P1** | #4 High-value credentials (API keys, bot tokens) stored PLAINTEXT | auth | MED | ✅ traced | M (encrypt-at-rest) |
 | **P1** | #5 Feed loader has no SSRF guard + `file://` local read | web | MED | ✅ traced | S (route through assertPublicHttpUrl) |
-| **P1** | #13 Zip-bomb DoS via `.docx`/`.pptx` (unbounded `inflateRawSync`) | parsing | MED-HIGH | ✅ live repro | S (`maxOutputLength` + size cap) |
+| ✅P1 | #13 Zip-bomb DoS via `.docx`/`.pptx` (FIXED 78921c0a7) | parsing | MED-HIGH | done | done |
 | ✅P2 | #6 Missed code-exec env vars (JAVA_TOOL_OPTIONS, PYTHONHOME, …) | runner | MED | FIXED with #2 | done |
 | **P2** | #7 Timeout kill ignores process tree → orphans + runner wedge | runner | MED | ✅ rustc repro | M (killpg/setsid) |
 | **P2** | #8 `resolvesByOverlap` accepts forged citation on ONE shared token | grounding | MED | ✅ traced | S (require ≥2 / ratio) |
