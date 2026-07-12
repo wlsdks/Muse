@@ -1,7 +1,8 @@
 /**
  * eval:channel-rhythm — pins the delegation-ack composer's output quality on
  * the real local model, plus the upstream casual fast-path that keeps it from
- * ever running on small talk.
+ * ever running on small talk, plus the S3 chat fast-path (composer + its
+ * triple-gated classifier) that completes the assistant rhythm.
  *
  * Runs the REAL `createComposeAck` (apps/api) against the local model for a
  * KO+EN delegation-request golden set and grades it with DETERMINISTIC
@@ -11,18 +12,24 @@
  * all resolve without a model). A second scenario asserts
  * `classifyCasualPrompt` (agent-core) matches small-talk strings, proving the
  * deterministic fast-path — not the composer — is what answers them in the
- * product path.
+ * product path. A third scenario runs the REAL `createComposeChatReply` (S3)
+ * against the local model for a small conversational golden set — non-null,
+ * no citation marker, KO prompt → Hangul reply. A fourth scenario asserts
+ * `classifyChannelIntent` (agent-core) routes genuine delegation requests to
+ * "delegation" — the conservative default that keeps the S3 composer from
+ * ever firing on a real ask.
  *
  * LOCAL OLLAMA ONLY (gemma4:12b by default); skips (exit 0) when unreachable.
- * Each delegation case is run MUSE_EVAL_REPEAT times (default 2) and must
+ * Each live-model case is run MUSE_EVAL_REPEAT times (default 2) and must
  * pass every run (pass^k).
  */
 
 import { pathToFileURL } from "node:url";
 
 import { OllamaProvider } from "../packages/model/dist/index.js";
-import { citedSourcesIn, classifyCasualPrompt } from "../packages/agent-core/dist/index.js";
+import { citedSourcesIn, classifyCasualPrompt, classifyChannelIntent } from "../packages/agent-core/dist/index.js";
 import { createComposeAck } from "../apps/api/dist/inbound-ack.js";
+import { createComposeChatReply } from "../apps/api/dist/inbound-chat-reply.js";
 import { runEvalSuite } from "./eval-harness.mjs";
 
 const MODEL = process.env.MUSE_EVAL_MODEL ?? "gemma4:12b";
@@ -32,6 +39,8 @@ const REPEAT = Math.max(1, Math.trunc(Number(process.env.MUSE_EVAL_REPEAT ?? "2"
 
 const DELEGATION_LABEL = "delegation ack (composeAck restates the request, in the user's language)";
 const CASUAL_LABEL = "casual small-talk (classifyCasualPrompt handles it upstream — composer never runs)";
+const CHAT_FASTPATH_LABEL = "chat fast-path (composeChatReply answers conversationally, in the user's language)";
+const CHAT_CLASSIFY_LABEL = "chat-intent classifier (a real delegation request must route to \"delegation\")";
 
 // Each case's `literal` is a token the restatement can't reasonably drop
 // without losing the point of the request — the echo-check proxy for
@@ -55,6 +64,23 @@ const CASUAL_CASES = [
   { note: "KO thanks → casual fast-path", prompt: "고마워요" },
   { note: "EN greeting → casual fast-path", prompt: "hi" },
   { note: "EN thanks → casual fast-path", prompt: "thanks!" }
+];
+
+// S3 chat fast-path golden set — genuine conversational asides that are NOT
+// one of the three canned casual kinds (`classifyCasualPrompt`), so they get
+// the real composeChatReply single-inference reply in the product path.
+const CHAT_FASTPATH_CASES = [
+  { language: "ko", note: "KO tired-mood smalltalk", prompt: "오늘 좀 피곤하네 ㅋㅋ" },
+  { language: "ko", note: "KO how-are-you smalltalk", prompt: "요즘 어때?" },
+  { language: "ko", note: "KO casual lunch decision + laughter", prompt: "점심 뭐 먹지 ㅋㅋ" },
+  { language: "en", note: "EN tired-mood smalltalk", prompt: "I'm so tired today lol" }
+];
+
+// A genuine delegation request must route to "delegation" — the classifier's
+// safe default — so the S3 composer never even runs on a real ask.
+const CHAT_CLASSIFY_DELEGATION_CASES = [
+  { note: "KO reminder-set delegation", prompt: "내일 아침 회의 리마인더 설정해줘" },
+  { note: "EN reminder-set delegation", prompt: "remind me to call mom tomorrow" }
 ];
 
 async function ollamaReachable() {
@@ -106,6 +132,28 @@ function scoreCasual(kind, testCase) {
     : { ok: false, detail: `classifyCasualPrompt returned null for "${testCase.prompt}" — would fall through to the composer` };
 }
 
+function scoreChatReply(reply, testCase) {
+  if (typeof reply !== "string" || reply.length === 0) {
+    return { ok: false, detail: `composeChatReply returned ${reply === null ? "null (PASS sentinel / guard rejected / timed out / errored)" : "empty"}` };
+  }
+  if (reply.length > 400) {
+    return { ok: false, detail: `chat reply too long (${reply.length} chars): ${reply}` };
+  }
+  if (testCase.language === "ko" && !/[가-힣]/u.test(reply)) {
+    return { ok: false, detail: `KO prompt but chat reply has no Hangul: ${reply}` };
+  }
+  if (citedSourcesIn(reply).length > 0 || /\[[^\]]*:/u.test(reply)) {
+    return { ok: false, detail: `chat reply contains a citation marker: ${reply}` };
+  }
+  return { ok: true, detail: `chat reply: ${reply}` };
+}
+
+function scoreChatClassifyDelegation(intent, testCase) {
+  return intent === "delegation"
+    ? { ok: true, detail: `classifyChannelIntent → delegation (the S3 composer never runs on this real ask)` }
+    : { ok: false, detail: `classifyChannelIntent returned "${intent}" for "${testCase.prompt}" — a real ask would wrongly get the chat fast-path` };
+}
+
 async function main() {
   if (!(await ollamaReachable())) {
     console.log(`eval:channel-rhythm skipped — Ollama (${OLLAMA_BASE}) or model ${MODEL} unreachable. Start \`ollama serve\` with ${MODEL}.`);
@@ -113,18 +161,29 @@ async function main() {
   }
   const provider = new OllamaProvider({ defaultModel: MODEL });
   const composeAck = createComposeAck({ model: MODEL, modelProvider: provider });
+  const composeChatReply = createComposeChatReply({ model: MODEL, modelProvider: provider });
 
-  const solve = async (testCase, scenario) =>
-    scenario.label === CASUAL_LABEL ? classifyCasualPrompt(testCase.prompt) : composeAck({ latestUserText: testCase.prompt });
-  const score = (observed, testCase, scenario) =>
-    scenario.label === CASUAL_LABEL ? scoreCasual(observed, testCase) : scoreAck(observed, testCase);
+  const solve = async (testCase, scenario) => {
+    if (scenario.label === CASUAL_LABEL) return classifyCasualPrompt(testCase.prompt);
+    if (scenario.label === CHAT_CLASSIFY_LABEL) return classifyChannelIntent(testCase.prompt);
+    if (scenario.label === CHAT_FASTPATH_LABEL) return composeChatReply({ latestUserText: testCase.prompt, thread: [] });
+    return composeAck({ latestUserText: testCase.prompt });
+  };
+  const score = (observed, testCase, scenario) => {
+    if (scenario.label === CASUAL_LABEL) return scoreCasual(observed, testCase);
+    if (scenario.label === CHAT_CLASSIFY_LABEL) return scoreChatClassifyDelegation(observed, testCase);
+    if (scenario.label === CHAT_FASTPATH_LABEL) return scoreChatReply(observed, testCase);
+    return scoreAck(observed, testCase);
+  };
 
   const { gate } = await runEvalSuite({
     name: "eval:channel-rhythm",
     repeat: REPEAT,
     scenarios: [
       { cases: DELEGATION_CASES, label: DELEGATION_LABEL },
-      { cases: CASUAL_CASES, label: CASUAL_LABEL }
+      { cases: CASUAL_CASES, label: CASUAL_LABEL },
+      { cases: CHAT_FASTPATH_CASES, label: CHAT_FASTPATH_LABEL },
+      { cases: CHAT_CLASSIFY_DELEGATION_CASES, label: CHAT_CLASSIFY_LABEL }
     ],
     score,
     solve,

@@ -279,6 +279,7 @@ export {
 } from "./attributed-repair.js";
 export { actionToolRan, answerClaimsAction, answerPromisesAction, classifyActionRequest, classifyCasualPrompt, classifyContactLookup, classifyCorpusOverview, classifyMetaPrompt, classifyReminderListQuery, classifyTaskListQuery, isUnbackedActionClaim, requestsToolAction, type CasualPromptKind } from "./casual-prompt.js";
 export { casualResponseFor, containsHangul } from "./casual-prompt-responses.js";
+export { CHANNEL_CHAT_MAX_LENGTH, classifyChannelIntent, type ChannelIntent } from "./chat-intent.js";
 export {
   buildLanguageMirrorLayer,
   buildRegisterBrevityLayer,

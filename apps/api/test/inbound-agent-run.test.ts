@@ -832,3 +832,240 @@ describe("createInboundAgentRun delegation ack (S2)", () => {
     expect(calls).toEqual([]);
   });
 });
+
+// Conversational fast-path (S3, completing the assistant rhythm): a message
+// classifyChannelIntent reads as pure smalltalk gets ONE single-inference
+// reply — no ack, no full agent run — but stays behind every earlier gate
+// (pairing/approval/veto/casual) and is TRIPLE fail-open (flag off / no
+// composer / classifier says delegation / composer returns null all fall
+// through unchanged to the existing ack + full-run path).
+describe("createInboundAgentRun chat fast-path (S3)", () => {
+  function buildChat(
+    dir: string,
+    opts: {
+      readonly composeChatReply?: (input: {
+        readonly latestUserText: string;
+        readonly thread: readonly { readonly role: "user" | "assistant"; readonly content: string }[];
+      }) => Promise<string | null>;
+      readonly composeAck?: (input: { readonly latestUserText: string }) => Promise<string | null>;
+      readonly extraEnv?: Record<string, string>;
+    } = {}
+  ) {
+    const calls: string[] = [];
+    const registry = new MessagingProviderRegistry([
+      new LogMessagingProvider({ file: join(dir, "notice.log"), id: "log", now: NOW })
+    ]);
+    const agentRuntime = {
+      run: async () => {
+        calls.push("run");
+        return { groundingSources: [{ source: "/x/notes/a.md", text: "ok" }], response: { output: "answer [from a.md]." } };
+      }
+    };
+    const env = {
+      MUSE_ACTION_LOG_FILE: join(dir, "action-log.json"),
+      MUSE_CHANNEL_OWNERS_FILE: join(dir, "channel-owners.json"),
+      MUSE_CONTACTS_FILE: join(dir, "contacts.json"),
+      MUSE_PENDING_APPROVALS_FILE: join(dir, "pending.json"),
+      ...opts.extraEnv
+    };
+    const composeChatReply = opts.composeChatReply
+      ? async (input: { readonly latestUserText: string; readonly thread: readonly { readonly role: "user" | "assistant"; readonly content: string }[] }) => {
+          calls.push(`composeChatReply:${input.latestUserText}`);
+          return opts.composeChatReply!(input);
+        }
+      : undefined;
+    const composeAck = opts.composeAck
+      ? async (input: { readonly latestUserText: string }) => {
+          calls.push(`composeAck:${input.latestUserText}`);
+          return opts.composeAck!(input);
+        }
+      : undefined;
+    const run = createInboundAgentRun({
+      agentRuntime,
+      ...(composeAck ? { composeAck } : {}),
+      ...(composeChatReply ? { composeChatReply } : {}),
+      env,
+      model: "default",
+      registry
+    });
+    return { calls, run };
+  }
+
+  const CHAT_TEXT = "오늘 좀 피곤하네 ㅋㅋ";
+  const DELEGATION_TEXT = "내일 오후 3시에 치과 예약 잡아줘";
+
+  it("a chat-classified message: composeChatReply is called and its (gated) reply is returned — no ack, no agentRuntime.run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, {
+      composeAck: async () => "should never run",
+      composeChatReply: async () => "아이고 피곤하겠다! 얼른 쉬어~"
+    });
+    const reply = await run({
+      messages: [{ content: CHAT_TEXT, role: "user" }],
+      notify: async () => {
+        throw new Error("notify should never be called for the chat fast-path");
+      },
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(reply).toBe("아이고 피곤하겠다! 얼른 쉬어~");
+    expect(calls).toEqual([`composeChatReply:${CHAT_TEXT}`]);
+  });
+
+  it("a delegation-classified message: composeChatReply is NEVER invoked, and the normal ack + run path proceeds", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, {
+      composeAck: async () => "on it — I'll report back",
+      composeChatReply: async () => "should never run"
+    });
+    const reply = await run({
+      messages: [{ content: DELEGATION_TEXT, role: "user" }],
+      notify: async (text) => {
+        calls.push(`notify:${text}`);
+      },
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(calls).toEqual([`composeAck:${DELEGATION_TEXT}`, "notify:on it — I'll report back", "run"]);
+    expect(reply).toContain("answer");
+  });
+
+  it("composeChatReply returning null (fail-open): falls through to the ack + full run, NOT a chat reply", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, {
+      composeAck: async () => "on it — I'll report back",
+      composeChatReply: async () => null
+    });
+    const reply = await run({
+      messages: [{ content: CHAT_TEXT, role: "user" }],
+      notify: async (text) => {
+        calls.push(`notify:${text}`);
+      },
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(calls).toEqual([`composeChatReply:${CHAT_TEXT}`, `composeAck:${CHAT_TEXT}`, "notify:on it — I'll report back", "run"]);
+    expect(reply).toContain("answer");
+  });
+
+  it("composeChatReply throwing (fail-open): falls through to the ack + full run", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, {
+      composeAck: async () => "on it — I'll report back",
+      composeChatReply: async () => {
+        throw new Error("model unavailable");
+      }
+    });
+    const reply = await run({
+      messages: [{ content: CHAT_TEXT, role: "user" }],
+      notify: async (text) => {
+        calls.push(`notify:${text}`);
+      },
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(calls).toEqual([`composeChatReply:${CHAT_TEXT}`, `composeAck:${CHAT_TEXT}`, "notify:on it — I'll report back", "run"]);
+    expect(reply).toContain("answer");
+  });
+
+  it("MUSE_CHANNEL_CHAT=false → composeChatReply is never invoked, even for a chat-classified message", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, {
+      composeAck: async () => "on it — I'll report back",
+      composeChatReply: async () => "should never run",
+      extraEnv: { MUSE_CHANNEL_CHAT: "false" }
+    });
+    const reply = await run({
+      messages: [{ content: CHAT_TEXT, role: "user" }],
+      notify: async (text) => {
+        calls.push(`notify:${text}`);
+      },
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(calls).toEqual([`composeAck:${CHAT_TEXT}`, "notify:on it — I'll report back", "run"]);
+    expect(reply).toContain("answer");
+  });
+
+  it("no composeChatReply provided → the flag being on is harmless, ack + run proceeds normally", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, { composeAck: async () => "on it — I'll report back" });
+    const reply = await run({
+      messages: [{ content: CHAT_TEXT, role: "user" }],
+      notify: async (text) => {
+        calls.push(`notify:${text}`);
+      },
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(calls).toEqual([`composeAck:${CHAT_TEXT}`, "notify:on it — I'll report back", "run"]);
+    expect(reply).toContain("answer");
+  });
+
+  it("the chat reply runs through the SAME gate as the full path — a CITATION-SHAPED string is stripped (citation-stripping backstop, not general fabrication defense)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { run } = buildChat(dir, {
+      composeChatReply: async () => "그건 900,000원이야 [from notes/rent.md]."
+    });
+    const reply = await run({
+      messages: [{ content: CHAT_TEXT, role: "user" }],
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(reply).not.toContain("900,000");
+  });
+
+  it("BOUNDARY: with empty evidence, gateChatAnswerGrounding is NOT fabrication=0 — an UNCITED invented fact passes through unchanged (the real defense here is composeChatReply's own no-facts prompt + PASS sentinel + the conservative classifier, NOT this gate)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { run } = buildChat(dir, {
+      // No citation marker at all — the gate has nothing to check an
+      // uncited claim against with an empty evidence list, so it cannot
+      // catch this even if it were false. That's WHY the composer's
+      // system prompt (createComposeChatReply) is what actually forbids
+      // inventing facts on this path, not this gate.
+      composeChatReply: async () => "그건 900,000원이야."
+    });
+    const reply = await run({
+      messages: [{ content: CHAT_TEXT, role: "user" }],
+      providerId: "log",
+      scope: "direct",
+      source: "owner-1"
+    });
+
+    expect(reply).toBe("그건 900,000원이야.");
+  });
+
+  it("gate ordering: casual 'hi' is answered by the S1 canned reply, never the chat composer", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, { composeChatReply: async () => "should never run" });
+    const reply = await run({ messages: [{ content: "hi", role: "user" }], providerId: "log", scope: "direct", source: "owner-1" });
+
+    expect(reply).toBe(casualResponseFor("greeting"));
+    expect(calls).toEqual([]);
+  });
+
+  it("gate ordering: an unpaired stranger's chat-shaped message still gets the pairing refusal, never a chat reply", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-chat-"));
+    const { calls, run } = buildChat(dir, { composeChatReply: async () => "should never run" });
+    await run({ messages: [{ content: DELEGATION_TEXT, role: "user" }], providerId: "log", scope: "direct", source: "owner-1" }); // adopts owner
+    calls.length = 0;
+    const strangerReply = await run({ messages: [{ content: CHAT_TEXT, role: "user" }], providerId: "log", scope: "direct", source: "stranger-9" });
+
+    expect(strangerReply).toBe("This bot is a private personal assistant and only talks to its paired owner.");
+    expect(calls).toEqual([]);
+  });
+});

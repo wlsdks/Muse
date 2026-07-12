@@ -59,6 +59,7 @@ import { createChannelDaemonSupervisor } from "./channel-daemon-supervisor.js";
 import { readDaemonSettingsSync, resolveDaemonSettingsFile } from "./daemon-settings-store.js";
 import { createComposeAck } from "./inbound-ack.js";
 import { createInboundAgentRun } from "./inbound-agent-run.js";
+import { createComposeChatReply } from "./inbound-chat-reply.js";
 import { startInboundReplyTick } from "./inbound-reply-tick.js";
 import { createThreadedInboundRunner, type InboundAgentRunner } from "@muse/messaging";
 
@@ -635,7 +636,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         run: createInboundAgentRun({
           agentRuntime,
           ...(options.modelProvider
-            ? { composeAck: createComposeAck({ model: ackModel, modelProvider: options.modelProvider }) }
+            ? {
+                composeAck: createComposeAck({ model: ackModel, modelProvider: options.modelProvider }),
+                composeChatReply: createComposeChatReply({ model: ackModel, modelProvider: options.modelProvider })
+              }
             : {}),
           env,
           model: ackModel,
@@ -726,7 +730,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         run: createInboundAgentRun({
           agentRuntime,
           ...(options.modelProvider
-            ? { composeAck: createComposeAck({ model: ackModel, modelProvider: options.modelProvider }) }
+            ? {
+                composeAck: createComposeAck({ model: ackModel, modelProvider: options.modelProvider }),
+                composeChatReply: createComposeChatReply({ model: ackModel, modelProvider: options.modelProvider })
+              }
             : {}),
           env,
           model: ackModel,
