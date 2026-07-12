@@ -3416,3 +3416,4 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
   - S2 ◦ Anthropic cache_control breakpoint(splitPromptCacheBoundary+AnthropicPromptCache 연결, 1024토큰 최소, 툴정의 포함) — 진안 승인
   - S3 ◦ (선택) Gemini implicit + 2번째 breakpoint
 역할: 계획=Fable/Opus, 구현=Opus(설계/red)·Sonnet(정형), 슬라이스마다 라이브검증+독립 Opus 게이트+commit/push.
+- ◦ injection-provenance S3b — extend taint gate to write-risk actuators (memory/contacts/recall/notes/calendar); requires first-party-source classification to broaden the trusted-haystack (a user store is a trusted origin, not untrusted tool output) + a new gate seam (write tools not always gated). [gap3 injection]

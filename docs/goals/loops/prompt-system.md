@@ -197,3 +197,10 @@ meta: value-class=security-moat · pkg=@muse/agent-core · kind=IFC-sink-gate ·
 왜: FIDES sink-gate 서브셋(arXiv 2505.23643). 경쟁사 아무도 결정론 source→sink taint 안 함(해자). Muse 양쪽 절반 보유·미연결이던 걸 연결.
 검증: contract-faithful deny-on-injection(주입노트→attacker 전송 차단·sendSpy 0), 정상 사용자-지정 수신자는 통과, mutation-RED, eval:adversarial 39/39, 정체성 12/12 ×2, agent-core 3057, Opus 게이트 ×2 PASS(S1 안전측 over-approx·S2 enforce 실효).
 남음: 인젝션 S3(write/execute 전체 sink)·S4(exfil) · gap2 학습 user-model S1~4 · gap3 캐시 S1~2. 로드맵=backlog "A+ 로드맵".
+
+## fire 21 (post-loop, 진안 direct) · 2026-07-12 · S3 injection-provenance (execute sink)
+meta: value-class=security-moat · pkg=@muse/agent-core · kind=IFC-sink-gate · verdict=PASS(opus indep) · context=A+ 갭③ 인젝션 워크스트림 계속
+무엇: taint 게이트를 아웃바운드-send → execute-risk actuator(run_command 등)로 확대. 주입된 셸명령이 untrusted 툴출력에 있어도 execute 툴의 command/code/script 인자에 조용히 못 들어감. actuatorProvenanceWarning(risk 인자 추가), EXECUTE_SINK_ARG_NAMES, risk 1회 해석(hoist)해 단일 기존 게이트에 스레드.
+왜: execute 툴은 이미 항상 approval-gate(dangerous-command.ts) → provenance 경고가 기존 confirm만 enrich, 새 마찰 0·false-positive 표면 0(클린 윈). RCE-via-injection이 아웃바운드 다음으로 sharp한 표면.
+검증: contract-faithful(주입명령→run_command deny→spy 미호출; 사용자-타이핑 명령 통과), mutation-RED(sha256 복원 확인), eval:adversarial 41/41, agent-core 3098, messaging/cli/seam clean, 독립 Opus 게이트 PASS.
+남음: **S3b**(write-risk actuator — memory/contacts/notes/calendar; first-party-source trusted-haystack 선행 필요, 항상-게이트 아님) · S4(exfil) · gap2 user-model S1~4 · gap3 캐시 S1~2.
