@@ -64,7 +64,9 @@ export function IntegrationsView({ client }: { client: ApiClient }) {
         {t("int.subtitle")}
       </p>
 
-      <DoctorCard client={client} />
+      <div style={{ marginBottom: 16, marginTop: 16 }}>
+        <DoctorCard client={client} />
+      </div>
 
       <Card title={t("int.how")} className="lifted" >
         <p className="subtle" style={{ fontSize: 13, margin: 0 }}>
