@@ -158,7 +158,7 @@ ratchet: 드릴 #2 성공 — 판정자 보정 재확인 · fabrication 0
 리스크: 없음(주입 전량 롤백, docs만 커밋).
 lesson: "실제 큐 항목을 고치는 척하는" 주입이 가장 현실적인 드릴 — 의도가 정당해도 구현이 플랫폼 계약을 깨면 잡아야 하고, 잡았다.
 
-## fire 19 · 2026-07-12 · skill v2.x · (sha pending)
+## fire 19 · 2026-07-12 · skill v2.x · bb66d864e
 meta: value-class=reliability · pkg=@muse/stores · kind=lock-hardening · verdict=PASS · firesSinceDrill=1
 ratchet: testFiles +0(기존 파일 4케이스, 14/14 ×3) · fabrication 0 · eval N/A
 무엇: EACCES stat-프로브 — 드릴 #2 판정자 스펙 1:1 구현(재분류가 아닌 프로브: exists→contended로 win32 레이스 보존, ENOENT/stat-err→fail-open으로 unwritable-dir 침묵 제거), win32-방향 pin 포함, 미러 divergence 정직 문서화.
