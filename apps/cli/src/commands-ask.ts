@@ -185,9 +185,11 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // down — degrade to "no notes grounding" and still answer
       // from tasks + calendar + memory + general knowledge.
       // Notes RAG core: embed → rank/MMR → graph-augment → second-hop. See
-      // ask-note-retrieval.ts. `scored`/`notesUnavailable` stay reassignable —
-      // ad-hoc grounding and contact dedup both mutate `scored`, and ad-hoc
-      // grounding clears `notesUnavailable`.
+      // ask-note-retrieval.ts. `scored` stays reassignable — ad-hoc grounding
+      // and contact dedup both mutate it. `notesUnavailable` is read-only: it
+      // seeds the ad-hoc call, and downstream notes-unavailability is handled
+      // inside `prepareGroundedRecall` (notesUnavailableContextBlock), so the
+      // ad-hoc result no longer needs to be captured back here.
       const askStages = createStageTimer();
       const retrieval = await retrieveAndRankNotes({
         embedModel,
@@ -200,7 +202,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         topK
       });
       let scored = retrieval.scored;
-      let notesUnavailable = retrieval.notesUnavailable;
+      const notesUnavailable = retrieval.notesUnavailable;
       const { queryVec, splitClauses, subqueryEmbeddings } = retrieval;
       // The "open to verify" target for an AD-HOC grounding source whose receipt
       // would otherwise point at a fabricated `.muse/notes/<source>` path: the
@@ -214,7 +216,10 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // seam re-retrieves those itself).
       const preAdHocChunkCount = scored.length;
 
-      const adHoc = await applyAdHocGrounding({
+      // Side-effect call: pushes ad-hoc grounding entries into `scored` IN PLACE
+      // and fills `adHocVerifyTargets`. Its returned notesUnavailable is no
+      // longer read here (see the note above) — don't capture the result.
+      await applyAdHocGrounding({
         adHocVerifyTargets,
         notesUnavailable,
         onStderr: (text) => { io.stderr(text); },
@@ -222,7 +227,6 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         query,
         scored
       });
-      notesUnavailable = adHoc.notesUnavailable;
 
       // Second-brain grounding: past-session episodes (auto-refreshed + untrusted-
       // tagged), recent feed headlines, and the user's own reflections. Each store

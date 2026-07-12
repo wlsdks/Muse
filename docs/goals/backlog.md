@@ -3366,3 +3366,6 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
 - ◦ [선행·타루프] byte-hygiene 실패: packages/shared/test/utf16-safe.test.ts:43 raw byte (D-KO-S1 e287c94f6) — D-KO-S1 소유자 수리
 
 - ✓ credential_extraction 과차단(도어락 잠김 self-help 차단) 수정 — forgot/unlock veto (prompt-system fire 16)
+
+- ✓ apps/cli lint 회귀 수리(prefer-const·no-useless-assignment) — prompt-system fire 17
+- ◦ [선행·CRITICAL·타루프] colorize가 NO_COLOR/non-TTY/plain 모드서 ANSI emit — 7 테스트 실패(tty-color·muse-banner·program), CLI/code-quality 루프 소유
