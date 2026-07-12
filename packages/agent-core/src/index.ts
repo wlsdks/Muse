@@ -528,6 +528,7 @@ export type { AgentCheckpointState } from "./checkpoint.js";
 export { applyReranking, rerankTopK, type RerankProvider } from "./reranking.js";
 
 export { GuardBlockedError, ModelRoutingError, ModelToolCallingUnsupportedError, OutputGuardBlockedError } from "./errors.js";
+export { OneShotRecoveryState } from "./one-shot-recovery-state.js";
 
 export {
   MAX_PLAN_STEPS,
