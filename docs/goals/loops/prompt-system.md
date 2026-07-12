@@ -141,3 +141,13 @@ ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · agen
 라이브: "오늘 날씨 좋다"→29자 no-offer("진짜네, 기분 좋게 하루 시작하기 딱"), "이 노래 좋다"→30자 no-offer(되물음), "404가 뭐야?"(팩트질문)→123자 "더 자세히?" 유지(타깃 수정). mutation-RED(MUSING 제거→musing 테스트 FAIL). Opus: 실요청 퀵소트 441자 무손상·자연 요청/질문 전부 casual=false·detail-suppression 우선.
 리뷰지점: 과억제 리스크(fail-close 아니지만 요청이 짧게 잘릴라)를 Opus가 적대검증 — ?로 질문 앵커깨짐·요청은 명령형 종결·SUBSTANTIAL 가드. misses는 문법이상 dangling("알려줘 좋다")뿐(비자연, non-blocker).
 리스크/백로그: eval:adversarial는 이번 fire서 Ollama idle-timeout으로 STALL(출력 0, 코드회귀 아님·[[project_smoke_live_stall]]). 이 슬라이스는 must-refuse/secret 케이스와 결정론적 직교(musing 분류가 안전거절에 영향 불가)라 무영향 자명; Opus가 full suite 3027/3027 무회귀 확인, fire 13 baseline 26/26. lesson: 라이브 eval 병렬 실행은 Ollama 경합/idle-timeout으로 stall — fire당 라이브 배터리는 순차로, 직교 슬라이스면 결정론 논증으로 대체.
+
+## fire 15 · 2026-07-12 · <commit>
+meta: value-class=context-engineering · pkg=@muse/agent-core · kind=context-injection · verdict=PASS(opus adversarial) · firesSinceDrill=4
+probe: 8-axis 라이브(넘버드리스트·시간모호·중간지시·이중부정·자기참조·단위추론·간결명령 예의·반복질문). 7/8 GOOD. WEAK: 반복 "지금 몇 시야?"가 호출마다 모순 시각(7:52 AM vs 3:53 PM) — 환각 시계.
+ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · agent-core 3029 tests · self-eval 무회귀
+무엇: 근본원인 = [Active Context]가 시각을 UTC ISO(`now=…T06:54:00Z (Asia/Seoul)`)로 줘서 12B가 UTC→로컬 변환을 직접 해야 함(가끔 틀림). Muse 자체 규칙 [[project_tool_time_field_naming]]("TZ math는 코드에") 위배. 수정: formatCurrentTime에 localDisplay(코드서 tz 변환한 로컬 벽시계 "YYYY-MM-DD HH:mm") 추가, renderActiveContextSection이 `now=<로컬> (weekday, tz) [utc <iso>]`로 로컬 우선 표시. resolver는 여전히 UTC iso 받음(date math용).
+왜: 우선순위 (c) 시간대 인지. 시계가 리마인더·스케줄·"지금 뭐 하기 좋아"의 기반. 다양성: agent-core지만 kind=context-injection(fire14 prompt-layer와 다름).
+라이브: 실제 17:03/17:26 KST일 때 모델이 "오후 5시 3분"/"5시 26분" 3/3 일관·정확(전엔 9h UTC 오프셋 환각). formatCurrentTime 코드변환 정확(08:30Z→Seoul 17:30·날짜선넘김 00:00 다음날). mutation-RED(tz→UTC로 바꾸면 localDisplay 테스트 FAIL).
+리뷰지점: localDisplay를 required로 추가→23 테스트 픽스처가 미준수→일괄 갱신(형제-감사: Opus가 짚은 3개 포함 전부 localDisplay 채워 now=undefined 트랩 제거). resolver가 UTC iso 유지하는지 Opus 확인.
+리스크/백로그: han/kana 언어 미러링(fire7 flag)·감사 갭 ①②③④(캐시경계·학습user-model·provenance·CI)는 여전히 backlog.
