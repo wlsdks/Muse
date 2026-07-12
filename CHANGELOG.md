@@ -8,7 +8,38 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+## [0.2.39] - 2026-07-12
+
+Chat now answers **as it thinks**: live token streaming through the citation
+gate, plus a day of self-diagnosis, agent-cockpit, and interface work below
+(v0.2.33–v0.2.38 mark the intermediate milestones of this wave).
+
 ### Added
+
+- **Chat streams its answer live.** The reply now renders token by token as the
+  local model generates it — with the same fabrication gate intact: every
+  in-flight `[from …]` citation is checked against this turn's real evidence
+  before it can appear, and the gated final answer remains authoritative.
+- **The chat shows it's alive instantly.** The moment you send, a "생각 중…"
+  indicator with an elapsed-seconds counter appears (the server's first stream
+  frame leaves at 0.0s), replacing the dead spinner during long local-model turns.
+
+### Fixed
+
+- **Streaming no longer freezes on the first character.** A latent transcript
+  bug replaced the draft bubble by object identity, so only the first update
+  ever rendered — exposed by real token streaming and fixed with a regression lock.
+- **Settings tells the truth now.** The setup-status card read fields the API
+  never returned (everything showed 미설정) and the active model read the wrong
+  key (showed —); both now follow the real contracts — gemma4 and five ready
+  capabilities show correctly.
+- **Two console errors on every page are gone.** The web shell still requested
+  Google Fonts (blocked by CSP, against the ships-offline rule) and a CSP-blocked
+  inline style; fonts removed, pre-paint background moved into the stylesheet.
+- **Leftover test tasks swept.** Nineteen stale "테스트 …" items were removed
+  from the real task list.
+
+### Also in this wave (shipped continuously since v0.2.32)
 
 - **Encrypting your calendar now keeps a recovery backup.** The first time your
   local calendar switches to encrypted-at-rest, Muse saves a private
@@ -271,6 +302,62 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   Cloud answers still pass the same deterministic grounding gate, and the ☁️
   marker is display-only — never persisted into chat history. Both chat
   surfaces now share one cloud-leg implementation (`createChatCloudTurn`).
+
+## [0.2.38] - 2026-07-12
+
+**The agents get a cockpit.** Everything the multi-agent engine could already
+do becomes manageable outside the terminal:
+
+- New 에이전트 view: run an orchestration (sequential/parallel, background),
+  watch every live sub-agent run, and **stop one mid-flight** — cancellation
+  now exists on every surface, takes the whole worker tree down, and can never
+  be resurrected by a late-settling model call.
+- Orchestration history survives server restarts (durable, bounded audit file).
+- The task board is fully manageable from the web: add, start, complete, retry,
+  approve/reject reviews (draft-first), delete.
+- Swarm-shared know-how gets an approval queue in the web — inbound stays inert
+  until you promote it into an execute-gated skill or reject it.
+- Graceful shutdown gained a hard deadline, so a hung drain can no longer leave
+  a zombie server holding the Telegram connection against its replacement.
+
+## [0.2.37] - 2026-07-12
+
+**Interface system pass.** One shared-design-system wave that lifts every view:
+a vertical-rhythm safety net (cards can never collide again), skeleton loading,
+staggered entrance, breathing live-status dots, sidebar micro-interactions, a
+task-count pill, action-guiding empty-state copy in both languages, and the
+Settings page reorganized so every section explains itself in plain language
+(connection demoted to "advanced").
+
+## [0.2.36] - 2026-07-12
+
+**One-click self-diagnosis.** The 연동 tab gained a 상태 진단 card that finds —
+and fixes with one click — the usual reasons Muse goes quiet (reply daemon off
+with a message backlog, multi-instance bot conflicts, Ollama down). Underneath:
+the desktop app now refuses to reuse a stale API server (build-id gate +
+automatic replacement), and the full app window is draggable again.
+
+## [0.2.35] - 2026-07-12
+
+**Muse interrupts less, and you're in control.** Unasked notices share one
+budget (2/hour, 6/day) with the overflow delivered as an evening digest
+(`muse digest`); replying "그만" teaches per-source silence, and un-vetoing is
+real — the latest decision wins.
+
+## [0.2.34] - 2026-07-11
+
+**Channel conversations feel human.** Small talk gets a fast path (no tool
+machinery for a greeting), delegated work is acknowledged by echoing back what
+Muse understood, completions report with citations, and a channel-rhythm eval
+battery guards it all in CI.
+
+## [0.2.33] - 2026-07-11
+
+**Messenger channels go live.** Connect Telegram (and Matrix) from a one-click
+integrations tab — the token is verified live against the platform before it's
+saved, only the paired owner's chat reaches the agent, long-polling +
+typing/👀 make it feel real-time, and every channel reply passes the same
+grounding + citation gate as the rest of Muse.
 
 ## [0.2.32] - 2026-07-10
 
