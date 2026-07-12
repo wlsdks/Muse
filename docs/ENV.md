@@ -117,6 +117,7 @@ Total: **553** variables.
 | `MUSE_CHANNEL_CHAT` | apps/api |
 | `MUSE_CHANNEL_GROUP_ENABLED` | apps/api |
 | `MUSE_CHANNEL_OWNERS_FILE` | apps/api |
+| `MUSE_CHANNEL_PAIRING_CODES_FILE` | apps/api |
 | `MUSE_CHAT_AUTO_REINDEX` | apps/cli |
 | `MUSE_CHAT_GROUNDING` | apps/cli |
 | `MUSE_CHAT_HISTORY_WINDOW` | apps/cli |

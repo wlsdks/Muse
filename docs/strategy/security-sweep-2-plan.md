@@ -22,10 +22,10 @@ tool fail-open. This sweep goes deeper.
 | ✅P2 | #6 Missed code-exec env vars (JAVA_TOOL_OPTIONS, PYTHONHOME, …) | runner | MED | FIXED with #2 | done |
 | ✅P2 | #7 Timeout kill ignores process tree → orphans + runner wedge (FIXED 71dcfed0c) | runner | MED | done | done |
 | ✅P2 | #8 `resolvesByOverlap` single-token forgery (FIXED af50a783f) | grounding | MED | done | done |
-| **P2** | #9 TOFU channel pairing: first stranger claims the public bot | auth | MED (design) | ✅ traced | M (one-time pairing code) |
+| ✅P2 | #9 TOFU channel pairing (FIXED 246c1a831 — one-time pairing code, attempt-capped + constant-time) | auth | MED (design) | done | done |
 | ✅P3 | #10 `/api/multi-agent/*` per-route auth guard (FIXED e6b21fc17) | api | LOW | done | done |
 | 🟡P3 | #11 DNS-rebinding TOCTOU (ACCEPTED — mitigated) | web | LOW | accepted | see note |
-| **P3** | #12 `adoptChannelOwner` misleading comment (no real TOCTOU) | auth | INFO | ✅ traced | XS (fix comment) |
+| ✅P3 | #12 `adoptChannelOwner` misleading comment (FIXED 246c1a831 — corrected to the real single-process guarantee) | auth | INFO | done | done |
 
 ## P0 — fix immediately (both undermine a CORE security property)
 
@@ -107,8 +107,18 @@ change resolution. **Effort S–M (touches Rust — cargo test + clippy).**
   citation on ONE shared content token. Tighten to ≥2 tokens or a coverage ratio.
   Partially defended on ask (coverage floor) and unreachable on chat (notes-only).
   Effort S.
-- **#9** Replace TOFU bot pairing with a one-time pairing code shown in the web
-  console (already a tracked TODO). Effort M.
+- **#9 FIXED.** TOFU bot pairing replaced with a one-time pairing code:
+  `channel-owner-store.ts` generates a 6-digit code (`getOrCreatePairingCode`,
+  cryptographically random), exposed via the authenticated
+  `GET /api/messaging/setup` (web console Integrations) and
+  `muse messaging pairing-code <provider>`. `createInboundAgentRun` no longer
+  auto-adopts the first 1:1 message — adoption requires
+  `verifyPairingCodeAttempt` to match in constant time
+  (`timingSafeEqual`), is single-use (consumed on match), and is
+  attempt-capped (`PAIRING_CODE_MAX_ATTEMPTS`, code invalidated after 5 wrong
+  guesses). An already-paired owner (pre-existing owners file) is preserved
+  unchanged. Shared/group scope and the approval-reply/veto fences are
+  untouched.
 
 ## P3 — backlog / accept
 
@@ -123,8 +133,10 @@ change resolution. **Effort S–M (touches Rust — cargo test + clippy).**
   bind, the SSRF guards' post-redirect re-check, and the deterministic
   literal-IP/encoded-IP/IPv6-mapped classification (which already blocks the
   non-rebinding SSRF forms). Revisit only if a real threat model needs it.
-- **#12** Fix the misleading "first-writer wins on re-read" comment in
-  `channel-owner-store.ts:36` (no real TOCTOU — sequential processing). Effort XS.
+- **#12 FIXED.** The misleading "first-writer wins on re-read" comment in
+  `channel-owner-store.ts` (there was no re-read) now states the real
+  guarantee: single-process sequential inbound processing, not a
+  standalone race guard.
 
 ## Confirmed DEFENDED (no action) — recorded so we don't re-scout
 
