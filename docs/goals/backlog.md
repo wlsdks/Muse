@@ -3369,6 +3369,7 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
 - ◦ [audit-followup] calendar 크로스-프로세스 파일 락(inline O_EXCL, `FileUserMemoryStore.withFileLock` 미러): 백업-레이스 ciphertext·백업 read IO-error fail-open·기존 unlocked lost-update 동시 마감(auditor TOP FIX, 락 테스트 포함)
 - ✓ [audit] dangerous-command verb-split + 래퍼 우회 마감: (b) quote/backslash(`\rm`·`'rm'`·`r''m`·`rm -r\f`) `stripShellQuoting`(공백 포함 인용은 미-unwrap→`git commit -m "rm -rf /"` 보존)·(c) 래퍼 command/exec/nohup/nice/ionice/timeout/time/xargs/setsid/stdbuf CMD_START 추가; 43 test·mutation-RED·false-positive 0(68 legit)·ReDoS ≤6.5ms·Opus PASS
 - ◦ [audit-followup] dangerous-command 잔여(a): FLAGS/R-clause 백트래킹 tighten(손수 8KB `-R`-반복 ~231ms 다항식, R-clause atomic화); 이중-래퍼(`command command rm`)·`nice -c batch rm`는 기존 비커버(신규 아님)
+- ◦ [audit·정직한 한계] dangerous-command는 **의도적으로 좁은 fail-close 백스톱**(1차 방어=run_command 승인 게이트). 정규식은 원리상 쉘 난독화 완벽차단 불가(docstring 명시). 남은 표면(재현 확인, 미차단): 변수 치환 `X=rm; $X -rf /`·`eval rm -rf /`·`find / -delete`·`> /etc/passwd`·`rm -rf $HOME/../..` traversal·`rm -rf /home`(설계상 스코프外=/·~·$HOME만). 이들 차단은 미니 쉘파서 필요(false-positive 리스크↑)—백스톱 철학상 diminishing-returns. 닫으려면 진안 명시 요청 시 변수-치환 리졸버부터
 - ◦ [audit-followup] multi-agent: `selectWorkers` `workerIds` 미-dedup(반복 벡터)·용량 silent-drop `droppedWorkerIds` 신호 부재·termination 케이스 `SubAgentRunRegistry` `timed-out` 미검증
 - ◦ [선행·타루프] byte-hygiene 실패: packages/shared/test/utf16-safe.test.ts:43 raw byte (D-KO-S1 e287c94f6) — D-KO-S1 소유자 수리
 
