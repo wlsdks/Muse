@@ -1,4 +1,4 @@
-import { casualResponseFor, classifyCasualPrompt, containsHangul, guardAgainstUnbackedActionClaim } from "@muse/agent-core";
+import { casualResponseFor, classifyCasualPrompt, classifyChannelIntent, containsHangul, guardAgainstUnbackedActionClaim } from "@muse/agent-core";
 import {
   parseBoolean,
   resolveActionLogFile,
@@ -54,6 +54,18 @@ export interface InboundAgentRunOptions {
    * that omits it simply never sends an ack, same as the flag being off.
    */
   readonly composeAck?: (input: { readonly latestUserText: string }) => Promise<string | null>;
+  /**
+   * Conversational fast-path composer (S3, `MUSE_CHANNEL_CHAT`). Answers a
+   * message `classifyChannelIntent` reads as pure smalltalk with ONE
+   * single-inference reply instead of the full agent run. Optional — a
+   * caller that omits it simply never takes the fast path, same as the flag
+   * being off. Fail-open: a `null` return (or a throw) falls through to the
+   * normal ack + full-run path, which is the safety net.
+   */
+  readonly composeChatReply?: (input: {
+    readonly latestUserText: string;
+    readonly thread: readonly ThreadTurn[];
+  }) => Promise<string | null>;
 }
 
 /**
@@ -72,7 +84,7 @@ const UNPAIRED_CHAT_NOTICE =
   "This bot is a private personal assistant and only talks to its paired owner.";
 
 export function createInboundAgentRun(options: InboundAgentRunOptions): ThreadedAgentRun {
-  const { agentRuntime, composeAck, env, model, registry } = options;
+  const { agentRuntime, composeAck, composeChatReply, env, model, registry } = options;
   return async ({ messages, providerId, source, scope: rawScope, notify }) => {
     // Conversation-scope capability profile (P7-3, the sequel to TOFU
     // pairing): a group/shared chat gets a STRICTLY narrower posture than
@@ -161,6 +173,43 @@ export function createInboundAgentRun(options: InboundAgentRunOptions): Threaded
     const casualKind = classifyCasualPrompt(latestUserText);
     if (casualKind) {
       return casualResponseFor(casualKind, containsHangul(latestUserText));
+    }
+    // Conversational fast-path (S3, completing the assistant rhythm): a
+    // message `classifyChannelIntent` reads as pure smalltalk — a kind of
+    // turn `classifyCasualPrompt` above does NOT cover (it only matches a
+    // bare greeting/thanks/farewell) — gets ONE single-inference reply
+    // instead of the full ~1min agent pipeline. TRIPLE-GATED and
+    // conservative BY DESIGN (classifyChannelIntent defaults to
+    // "delegation" — see chat-intent.ts): a chat message misrouted to
+    // delegation only costs latency (the ack + full run below still answers
+    // it correctly), so this branch fails open at every step — a `null`
+    // reply, a throw, or the flag being off all fall through unchanged to
+    // the ack + full-run path, the safety net.
+    if (
+      parseBoolean(env.MUSE_CHANNEL_CHAT, true)
+      && composeChatReply
+      && classifyChannelIntent(latestUserText) === "chat"
+    ) {
+      const chatReply = await composeChatReply({ latestUserText, thread: messages }).catch(() => null);
+      if (chatReply !== null) {
+        // Run the SAME gate the full agent path applies below
+        // (gateChatAnswerGrounding), but be precise about what it buys on
+        // THIS path: with an empty evidence list (no tool ran for a chat-
+        // only turn) it is a CITATION-STRIPPING BACKSTOP ONLY — it drops a
+        // sentence that cites a source, but an UNCITED invented fact passes
+        // it untouched (there is nothing to check it against). This is NOT
+        // fabrication=0 for this branch. The real anti-fabrication controls
+        // here are upstream: `createComposeChatReply`'s system prompt
+        // forbids inventing facts/schedules/memories and hands a real ask
+        // back via the "PASS" sentinel, its guard rejects any citation
+        // marker outright, and `classifyChannelIntent` is conservative
+        // enough that a genuine recall/lookup question never reaches this
+        // branch in the first place (chat-intent.ts). This call stays here
+        // only so a stray citation-shaped string still gets stripped, same
+        // as the full path.
+        const chatGate = gateChatAnswerGrounding({ answer: chatReply, evidence: [], question: latestUserText });
+        return chatGate.answer;
+      }
     }
     // Delegation ack (S2, "the assistant rhythm"): a non-casual request is a
     // delegation, so restate it as an early second-channel confirmation
