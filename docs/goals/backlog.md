@@ -3330,4 +3330,4 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
 - ✓ D5-S2 2026-07-12 — resolveAuxiliaryModel(task,env) 통합 리졸버(autoconfigure, additive·미배선): precedence MUSE_AUX_<TASK>_MODEL > legacy(MUSE_VISION_MODEL·MUSE_RECALL_EMBED_MODEL) > session; 로컬-우선 fail-close 게이트(personal-context/local-only면 cloud aux 거부→session, keptLocalForPrivacy). 11 유닛·mutation-RED 양방향·docs:env 5·Opus PASS(locality 실검증·resolveVisionModel 무변경). 콜사이트 마이그레이션=follow-up. 다음 = D5-S3(canUseNativeTools 死코드 배선)
 
 - ✓ credential_extraction 인젝션 오탐(비밀번호 관리 팁 차단) 수정 — prompt-system fire 6
-- ◦ 언어 미러링: 영어 입력에 한국어 응답 — 영어턴만 미러링하는 dynamic PromptLayer (prompt-system 발굴)
+- ✓ 언어 미러링: 비-한국어 입력에 그 언어로 답하는 결정론 PromptLayer(buildLanguageMirrorLayer) — prompt-system fire 7
