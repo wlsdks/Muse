@@ -153,6 +153,12 @@ function zipCentralEntries(buffer: Buffer): ZipEntry[] {
   return entries;
 }
 
+// A single .docx/.pptx part decompresses to at MOST this. Generous for any real
+// document part, but a hard ceiling on a DEFLATE bomb: without it, a ~500 KB
+// crafted file inflates to gigabytes (measured ~1000:1) and OOMs / hangs the
+// process. Over-cap ⇒ the part is skipped, not read (graceful, never a crash).
+const MAX_ZIP_ENTRY_BYTES = 50 * 1024 * 1024;
+
 /** Decompress one central-directory entry. Only the two methods a .docx/.pptx
  *  ever uses are handled: store (0) and raw-DEFLATE (8, via Node's zlib). */
 function inflateZipEntry(buffer: Buffer, entry: ZipEntry): Buffer | null {
@@ -163,10 +169,17 @@ function inflateZipEntry(buffer: Buffer, entry: ZipEntry): Buffer | null {
   const dataStart = entry.localOffset + 30 + localFnLen + localExtraLen;
   const compressed = buffer.subarray(dataStart, dataStart + entry.compSize);
   if (entry.method === 0) {
-    return compressed;
+    // Store has no amplification, but still refuse a pathologically large part.
+    return compressed.byteLength > MAX_ZIP_ENTRY_BYTES ? null : compressed;
   }
   if (entry.method === 8) {
-    return inflateRawSync(compressed);
+    try {
+      // maxOutputLength bounds the decompression: a bomb exceeding it throws a
+      // RangeError instead of allocating unbounded memory — caught → skip.
+      return inflateRawSync(compressed, { maxOutputLength: MAX_ZIP_ENTRY_BYTES });
+    } catch {
+      return null;
+    }
   }
   return null;
 }

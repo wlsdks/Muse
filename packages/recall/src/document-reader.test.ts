@@ -334,6 +334,17 @@ describe("isDocxDocument / docxToText — ground a Word .docx on its body text",
     expect(() => docxToText(notDocx, "/x/fake.docx")).toThrow(/readable \.docx/u);
   });
 
+  it("refuses a zip-bomb .docx (a part that decompresses past the cap) instead of OOM/hanging", () => {
+    // 60 MB of one byte deflates to a few KB but exceeds the 50 MB per-part cap,
+    // so inflate throws (RangeError) → the part is skipped → no readable
+    // word/document.xml → a FAST throw, never the multi-GB / multi-minute inflate.
+    const bomb = makeZip([{ name: "word/document.xml", data: Buffer.alloc(60 * 1024 * 1024, 0x20) }]);
+    expect(bomb.length).toBeLessThan(200 * 1024);
+    const start = Date.now();
+    expect(() => docxToText(bomb, "/x/bomb.docx")).toThrow(/readable \.docx/u);
+    expect(Date.now() - start).toBeLessThan(3000);
+  });
+
   it("the folder walk collects .docx alongside the other reader formats", async () => {
     expect(SUPPORTED_DOC_EXT.has(".docx")).toBe(true);
     const dir = await mkdtemp(join(tmpdir(), "muse-docx-"));
