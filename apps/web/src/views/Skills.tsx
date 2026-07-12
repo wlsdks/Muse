@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { AsyncBlock, Badge, Button, Card } from "../components/ui.js";
+import { AsyncBlock, Badge, Button, Card, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { canAdjustReward, rewardDelta, summarizeSkills } from "./skill-list.js";
 
@@ -36,7 +36,7 @@ export function SkillsView({ client }: { client: ApiClient }) {
       </p>
 
       <div style={{ marginTop: 16 }}>
-        <AsyncBlock loading={skills.isLoading} error={skills.error} empty={entries.length === 0}>
+        <AsyncBlock loading={skills.isLoading} error={skills.error} empty={entries.length === 0} emptyLabel={t("skills.listEmpty")} emptyHint={t("skills.listEmptyHint")} emptyIcon={<Icon.brain />}>
           {entries.map((entry, idx) => (
             <div key={`${entry.name}:${idx}`} style={{ marginBottom: 10 }}>
               <Card>

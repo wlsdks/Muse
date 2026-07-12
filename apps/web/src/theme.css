@@ -245,12 +245,21 @@ button {
   background: var(--surface-1);
   color: var(--ink-muted);
 }
+.nav-item:hover .nav-icon {
+  color: var(--ink);
+  opacity: 1;
+}
+.nav-item:active {
+  transform: scale(0.985);
+}
 .nav-item.active {
   background: var(--accent-softer);
   color: var(--ink);
   font-weight: 600;
 }
-/* A slim accent bar marks the active view — the Toss/Linear left indicator. */
+/* A slim accent bar marks the active view — the Toss/Linear left indicator.
+   It grows in when the view activates; a static bar reads as decoration,
+   a grown one as response. */
 .nav-item.active::before {
   content: "";
   position: absolute;
@@ -261,6 +270,12 @@ button {
   height: 18px;
   border-radius: var(--r-pill);
   background: var(--primary-hover);
+  animation: navIndicator 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes navIndicator {
+  from {
+    height: 0;
+  }
 }
 .nav-item.active .nav-icon {
   color: var(--primary-hover);
@@ -281,8 +296,19 @@ button {
 .nav-badge {
   margin-left: auto;
   font-size: 11px;
-  color: var(--ink-tertiary);
+  font-weight: 600;
+  color: var(--ink-subtle);
   font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  padding: 1px 7px;
+  line-height: 1.5;
+}
+.nav-item.active .nav-badge {
+  color: var(--primary-hover);
+  background: var(--accent-softer);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
 }
 
 .sidebar-foot {

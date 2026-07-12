@@ -78,6 +78,8 @@ export function TodayView({ client, onNavigate }: { client: ApiClient; onNavigat
             loading={brief.isLoading}
             error={brief.error}
             empty={tasks.length === 0}
+            emptyLabel={t("today.tasksEmpty")}
+            emptyHint={t("today.tasksEmptyHint")}
             emptyIcon={<Icon.task />}
             emptyAction={
               onNavigate
@@ -100,6 +102,8 @@ export function TodayView({ client, onNavigate }: { client: ApiClient; onNavigat
             loading={brief.isLoading}
             error={brief.error}
             empty={events.length === 0}
+            emptyLabel={t("today.calendarEmpty")}
+            emptyHint={t("today.calendarEmptyHint")}
             emptyIcon={<Icon.calendar />}
             emptyAction={
               onNavigate
@@ -128,6 +132,8 @@ export function TodayView({ client, onNavigate }: { client: ApiClient; onNavigat
             loading={brief.isLoading}
             error={brief.error}
             empty={reminders.length === 0}
+            emptyLabel={t("today.remindersEmpty")}
+            emptyHint={t("today.remindersEmptyHint")}
             emptyIcon={<Icon.bell />}
             emptyAction={
               onNavigate

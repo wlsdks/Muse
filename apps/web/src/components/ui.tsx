@@ -190,6 +190,7 @@ export function AsyncBlock({
   error,
   empty,
   emptyLabel,
+  emptyHint,
   emptyIcon,
   emptyAction,
   children
@@ -198,6 +199,7 @@ export function AsyncBlock({
   error?: unknown;
   empty?: boolean;
   emptyLabel?: ReactNode;
+  emptyHint?: ReactNode;
   emptyIcon?: ReactNode;
   emptyAction?: EmptyAction;
   children: ReactNode;
@@ -215,7 +217,7 @@ export function AsyncBlock({
   }
   if (empty) {
     return (
-      <Empty icon={emptyIcon} action={emptyAction}>
+      <Empty icon={emptyIcon} hint={emptyHint} action={emptyAction}>
         {emptyLabel ?? t("common.empty")}
       </Empty>
     );

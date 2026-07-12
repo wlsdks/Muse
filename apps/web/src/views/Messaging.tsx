@@ -93,7 +93,7 @@ export function MessagingView({ client }: { client: ApiClient }) {
             </Button>
           }
         >
-          <AsyncBlock loading={inbox.isLoading} error={inbox.error} empty={(inbox.data?.inbound.length ?? 0) === 0}>
+          <AsyncBlock loading={inbox.isLoading} error={inbox.error} empty={(inbox.data?.inbound.length ?? 0) === 0} emptyLabel={t("msg.inboxEmpty")} emptyHint={t("msg.inboxEmptyHint")} emptyIcon={<Icon.mail />}>
             {(inbox.data?.inbound ?? []).map((m, i) => (
               <div className="row" key={m.id ?? i}>
                 <div className="row-main">

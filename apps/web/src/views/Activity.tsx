@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { AsyncBlock, Badge, Card } from "../components/ui.js";
+import { AsyncBlock, Badge, Card, Icon } from "../components/ui.js";
 import { useI18n, type Translate } from "../i18n/index.js";
 
 import type { ApiClient } from "../api/client.js";
@@ -47,7 +47,7 @@ export function ActivityView({ client }: { client: ApiClient }) {
 
       <div style={{ marginTop: 16 }}>
         <Card title={t("activity.recentRuns")} count={runs.length}>
-          <AsyncBlock loading={history.isLoading} error={history.error} empty={runs.length === 0}>
+          <AsyncBlock loading={history.isLoading} error={history.error} empty={runs.length === 0} emptyLabel={t("act.runsEmpty")} emptyHint={t("act.runsEmptyHint")} emptyIcon={<Icon.activity />}>
             {runs.map((r, i) => (
               <div className="row" key={r.runId ?? i}>
                 <div className="row-main">
@@ -66,7 +66,7 @@ export function ActivityView({ client }: { client: ApiClient }) {
 
       <div style={{ marginTop: 16 }}>
         <Card title={t("activity.proactive")} count={notices.length}>
-          <AsyncBlock loading={proactive.isLoading} error={proactive.error} empty={notices.length === 0}>
+          <AsyncBlock loading={proactive.isLoading} error={proactive.error} empty={notices.length === 0} emptyLabel={t("act.noticesEmpty")} emptyHint={t("act.noticesEmptyHint")} emptyIcon={<Icon.bell />}>
             <div className="notice-feed">
               {notices.map((n, i) => (
                 <div className="notice" key={n.id ?? i}>
