@@ -90,7 +90,7 @@ ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · adve
 리뷰지점: 브로드닝 전 후보패턴을 레포 전수스캔해 FP 0 선확인(감사 A의 "브로드 패턴 FP 이력" 경고 반영). 대문자 Muse 고정으로 @muse/ 경로 무플래그, `i` 플래그 배제로 "musing" 무플래그.
 리스크/백로그: (A) 3인칭("이 어시스턴트는 뮤즈입니다")·부사삽입("You are now Muse")은 미포착 — Opus가 acceptable scope 판정(가드 목적=1/2인칭 자기주장 드리프트). (B) [선행·무관] reflection-guard.test.mjs 실패 = packages/proactivity/src/proactive-notice-loop.ts의 options.reverify( 마커 누락(동시 proactivity 리팩터). 이 루프 밖 — proactivity 소유자에게 flag.
 
-## fire 10 · 2026-07-12 · <commit>
+## fire 10 · 2026-07-12 · fb0a99ddb
 meta: value-class=regression-fix · pkg=docs(ENV) · kind=inventory-drift · verdict=deterministic(check:env) · firesSinceDrill=10(DRILL DEFERRED)
 probe: 라이브 프로브 없음 — baseline `pnpm self-eval`이 envInventory:fail로 회귀(규칙 ① 회귀-우선이 이번 fire를 결정). 회귀 원인: 동시 루프/PR#58(agent-core-split)이 `MUSE_CHANNEL_CHAT`(apps/api) 변수를 추가하며 docs/ENV.md를 안 따라감.
 ratchet: identity 12/12 ×2(PR#58 새 baseline서 확인) · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · envInventory fail→pass · testFiles 1404
