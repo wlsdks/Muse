@@ -89,3 +89,12 @@ ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · adve
 행동 acceptance: 패러프레이즈 7종 flagged + benign 12종(@muse/prompts·"you are musing"·amuse·museName 등) NOT flagged + 하위호환(원 리터럴 2개) + buildSystemPrompt 감지. 레포 0 FP(브로드닝 전수스캔), mutation-RED(2리터럴로 되돌리면 패러프레이즈 테스트 FAIL). Opus 12/12 FP-트랩 통과 확인.
 리뷰지점: 브로드닝 전 후보패턴을 레포 전수스캔해 FP 0 선확인(감사 A의 "브로드 패턴 FP 이력" 경고 반영). 대문자 Muse 고정으로 @muse/ 경로 무플래그, `i` 플래그 배제로 "musing" 무플래그.
 리스크/백로그: (A) 3인칭("이 어시스턴트는 뮤즈입니다")·부사삽입("You are now Muse")은 미포착 — Opus가 acceptable scope 판정(가드 목적=1/2인칭 자기주장 드리프트). (B) [선행·무관] reflection-guard.test.mjs 실패 = packages/proactivity/src/proactive-notice-loop.ts의 options.reverify( 마커 누락(동시 proactivity 리팩터). 이 루프 밖 — proactivity 소유자에게 flag.
+
+## fire 10 · 2026-07-12 · <commit>
+meta: value-class=regression-fix · pkg=docs(ENV) · kind=inventory-drift · verdict=deterministic(check:env) · firesSinceDrill=10(DRILL DEFERRED)
+probe: 라이브 프로브 없음 — baseline `pnpm self-eval`이 envInventory:fail로 회귀(규칙 ① 회귀-우선이 이번 fire를 결정). 회귀 원인: 동시 루프/PR#58(agent-core-split)이 `MUSE_CHANNEL_CHAT`(apps/api) 변수를 추가하며 docs/ENV.md를 안 따라감.
+ratchet: identity 12/12 ×2(PR#58 새 baseline서 확인) · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · envInventory fail→pass · testFiles 1404
+무엇: `pnpm docs:env`로 ENV.md 재생성 — MUSE_CHANNEL_CHAT 1행 추가, Total 550→551. check:env fail→pass, self-eval 그린 복구.
+왜: 규칙 ① — red self-eval baseline은 모든 fire를 막으므로 회귀 수리가 최우선. 결정론 문서 재생성이라 acceptance=check:env 통과 자체(heavyweight Opus 게이트 불요, "결정적 게이트 1차").
+리스크/백로그: firesSinceDrill=10 도달했으나 이번 fire가 회귀에 밀려 JUDGE-DRILL을 못 함 → **다음 clean-baseline fire가 반드시 judge-drill**(고의 나쁜 슬라이스→게이트 FAIL 확인→롤백→진짜 fix). 미루기 불가.
+lesson: 동시 루프가 env 변수를 추가하면 docs/ENV.md 드리프트로 다른 루프의 self-eval baseline이 red가 된다 — regression-first가 이를 자동 흡수하지만, 원인은 그 변수를 추가한 PR/루프가 docs:env를 안 돌린 것.
