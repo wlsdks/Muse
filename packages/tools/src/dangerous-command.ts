@@ -48,7 +48,12 @@ const TERM = "(?:[\\s;&|)`\\x00]|$)";
 // token inside a quoted argument is never anchored, so it never matches.
 const CMD_START =
   "\\x00(?:(?:sudo|doas)\\s+(?:-[^\\s]+\\s+(?:[^\\s-]\\S*\\s+)?){0,6})?" +
-  "(?:env\\s+(?:[A-Za-z_][A-Za-z0-9_]*=[^\\s]*\\s+){0,6})?";
+  "(?:env\\s+(?:[A-Za-z_][A-Za-z0-9_]*=[^\\s]*\\s+){0,6})?" +
+  // Exec-modifier wrappers that pass their argument command straight through
+  // (`command`/`exec` bypass shell functions/aliases; `timeout 5`, `nice -n
+  // 10`, `xargs -0` prefix a real command). They only anchor a rule when a
+  // catastrophic TARGET follows, so wrapping a benign command never false-fires.
+  "(?:(?:command|exec|nohup|setsid|nice|ionice|timeout|time|stdbuf|xargs)\\s+(?:(?:--?\\S+|\\d\\S*)\\s+){0,4})?";
 
 // A run of shell flags between the verb and its target. It MUST accept both
 // short (`-rf`) AND long (`--no-preserve-root`) flags: GNU `rm -rf /` is
@@ -313,6 +318,19 @@ function markCommandStarts(command: string): string {
   return parts.join("");
 }
 
+// The shell removes a backslash that escapes an ordinary character (`\rm` still
+// runs `rm`, bypassing an alias) and collapses quotes WITHIN a word (`r''m`,
+// `'rm'` → `rm`). Undo both so an obfuscated verb reconstitutes for the anchor.
+// Only a quote wrapping a SINGLE word (no internal space) is unwrapped, so a
+// genuinely quoted argument like `git commit -m "rm -rf /"` — which contains
+// spaces — is left intact and never anchored as a command.
+function stripShellQuoting(command: string): string {
+  return command
+    .replace(/\\([A-Za-z0-9/~])/gu, "$1")
+    .replace(/(['"])\1/gu, "")
+    .replace(/(^|[\s;&|`])(['"])([^\s'"]+)\2/gu, "$1$3");
+}
+
 /**
  * Produce the normalized command variants the guard scans. Pure and
  * deterministic. For each of the cleaned command and its
@@ -325,10 +343,12 @@ export function normalizeCommandForGuard(command: string): readonly string[] {
   const deobfuscated = stripAnsiEscapes(normalizeCommandNfkc(command)).replace(/\x00/gu, "");
   const cleaned = collapseIfs(stripCommentsOutsideQuotes(stripLineContinuations(deobfuscated)));
   const variants = new Set<string>([cleaned, markCommandStarts(cleaned)]);
-  const resolved = resolveEchoSubstitutions(cleaned);
-  if (resolved !== cleaned) {
-    variants.add(resolved);
-    variants.add(markCommandStarts(resolved));
+  for (const form of [cleaned, resolveEchoSubstitutions(cleaned)]) {
+    const dequoted = stripShellQuoting(form);
+    for (const variant of [form, dequoted]) {
+      variants.add(variant);
+      variants.add(markCommandStarts(variant));
+    }
   }
   return [...variants];
 }

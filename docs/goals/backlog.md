@@ -3367,7 +3367,8 @@ Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ M
 - ✓ [audit] 웹 채팅 스마트-테일 OFF-래치 수정: 스트리밍 follow smooth→auto(smooth 중간 scroll 이벤트가 빠른 스트림서 stick=false 래치→미회복); 실브라우저 확인(auto=1이벤트·distance0)
 - ✓ [audit] `MUSE_EVAL_REPEAT=0/NaN`이 eval:orchestration 게이트를 0회 실행으로 무력화 → finite/min≥1 floor
 - ◦ [audit-followup] calendar 크로스-프로세스 파일 락(inline O_EXCL, `FileUserMemoryStore.withFileLock` 미러): 백업-레이스 ciphertext·백업 read IO-error fail-open·기존 unlocked lost-update 동시 마감(auditor TOP FIX, 락 테스트 포함)
-- ◦ [audit-followup] dangerous-command 잔여: (a) FLAGS/R-clause 백트래킹 tighten(손수 8KB `-R`-반복 ~231ms 다항식, R-clause atomic화)·(b) quote/backslash verb-split(`\rm`·`r''m`)·(c) command/exec/nice/timeout 래퍼
+- ✓ [audit] dangerous-command verb-split + 래퍼 우회 마감: (b) quote/backslash(`\rm`·`'rm'`·`r''m`·`rm -r\f`) `stripShellQuoting`(공백 포함 인용은 미-unwrap→`git commit -m "rm -rf /"` 보존)·(c) 래퍼 command/exec/nohup/nice/ionice/timeout/time/xargs/setsid/stdbuf CMD_START 추가; 43 test·mutation-RED·false-positive 0(68 legit)·ReDoS ≤6.5ms·Opus PASS
+- ◦ [audit-followup] dangerous-command 잔여(a): FLAGS/R-clause 백트래킹 tighten(손수 8KB `-R`-반복 ~231ms 다항식, R-clause atomic화); 이중-래퍼(`command command rm`)·`nice -c batch rm`는 기존 비커버(신규 아님)
 - ◦ [audit-followup] multi-agent: `selectWorkers` `workerIds` 미-dedup(반복 벡터)·용량 silent-drop `droppedWorkerIds` 신호 부재·termination 케이스 `SubAgentRunRegistry` `timed-out` 미검증
 - ◦ [선행·타루프] byte-hygiene 실패: packages/shared/test/utf16-safe.test.ts:43 raw byte (D-KO-S1 e287c94f6) — D-KO-S1 소유자 수리
 

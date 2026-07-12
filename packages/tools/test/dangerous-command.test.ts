@@ -319,3 +319,38 @@ describe("adversarial: long-flag interspersed root-wipe + doas wrapper", () => {
     passes("chmod -R 700 ~/.ssh/keys");
   });
 });
+
+describe("adversarial: quote/backslash verb-splitting + exec-modifier wrappers", () => {
+  it("blocks a verb disguised by a leading backslash or in-word quotes", () => {
+    // The shell strips `\` before an ordinary char and collapses in-word
+    // quotes, so all of these still execute `rm -rf /`.
+    blocks("\\rm -rf /");
+    blocks("'rm' -rf /");
+    blocks('"rm" -rf /');
+    blocks("r''m -rf /");
+    blocks("rm -r\\f /");
+    blocks("rm -rf \\/");
+    blocks("'rm' -rf --no-preserve-root /");
+  });
+  it("blocks a catastrophic verb behind an exec-modifier wrapper", () => {
+    blocks("command rm -rf /");
+    blocks("exec rm -rf /");
+    blocks("nohup rm -rf /");
+    blocks("nice -n 10 rm -rf /");
+    blocks("timeout 5 rm -rf /");
+    blocks("xargs rm -rf /");
+    blocks("sudo timeout 5 rm -rf /");
+  });
+  it("does NOT over-block a real quoted argument or a wrapped benign command", () => {
+    // A quote wrapping a phrase WITH spaces is a genuine argument, never a
+    // verb — the anchoring must leave these alone.
+    passes('git commit -m "rm -rf / is scary"');
+    passes("echo 'rm -rf /'");
+    passes("grep 'rm -rf /' notes.txt");
+    passes("cp 'my file' /tmp/");
+    passes("timeout 5 curl http://example.com");
+    passes("command ls -la");
+    passes("nice -n 10 make build");
+    passes("xargs -0 grep foo");
+  });
+});
