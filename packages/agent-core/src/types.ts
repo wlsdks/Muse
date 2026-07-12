@@ -8,6 +8,7 @@ export interface AgentSpecResolver {
 import type { JsonObject } from "@muse/shared";
 import type { ToolExecutionResult } from "@muse/tools";
 import type { ToolApprovalGate } from "./agent-runtime-types.js";
+import type { TaintLedger } from "./taint-ledger.js";
 
 /**
  * Public runtime interface types for `@muse/agent-core` submodules to share.
@@ -66,6 +67,14 @@ export interface AgentRunContext {
   readonly input: AgentRunInput;
   readonly startedAt: Date;
   readonly agentSpec?: AgentSpecResolution;
+  /**
+   * Run-scoped taint ledger — every untrusted tool/MCP/sub-agent result is
+   * recorded here (at the `capToolOutput` chokepoint) so the injection-
+   * provenance gate can tell whether an outbound-send arg derived from
+   * untrusted tool output rather than the user's own message. Shared by
+   * reference across the run's derived contexts (created once per run).
+   */
+  readonly taintLedger?: TaintLedger;
 }
 
 export type GuardDecision =

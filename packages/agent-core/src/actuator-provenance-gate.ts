@@ -8,6 +8,56 @@ export interface ActuatorProvenanceResult {
 }
 
 /**
+ * The OUTBOUND-SEND actuator class — tools that transmit content to a THIRD
+ * PARTY (email, channel message, web POST, a standing-objective act). This is
+ * the highest-blast-radius sink and the only class the provenance gate covers
+ * in this slice; write/execute actuators that mutate LOCAL state (home
+ * automation, calendar, notes) are deliberately excluded and widen in a later
+ * slice. Mirrors the CLI's `OUTBOUND_ACTUATORS` allowlist minus the home /
+ * smart-home entries (those don't send content and their args aren't message
+ * sinks). agent-core can't import the CLI list, so the send subset is declared
+ * here.
+ */
+export const OUTBOUND_SEND_TOOL_NAMES: readonly string[] = [
+  "email_send",
+  "web_action",
+  "muse.messaging.send",
+  "objective.act"
+];
+
+/**
+ * The argument keys on an outbound-send tool that carry content to the third
+ * party (recipient / subject / body / link). The taint check is restricted to
+ * these so an incidental untrusted token in a non-sink arg (e.g. an internal
+ * id) never trips the gate.
+ */
+export const OUTBOUND_SEND_SINK_ARG_NAMES: readonly string[] = [
+  "to",
+  "recipient",
+  "cc",
+  "bcc",
+  "subject",
+  "body",
+  "text",
+  "message",
+  "url"
+];
+
+/**
+ * Human-readable reason naming each tainted arg and the untrusted source it
+ * traces to — surfaced on the draft-first confirm so the user sees WHY a send
+ * was flagged ("`to` traces to untrusted tool:web_fetch, not your message").
+ */
+export function describeProvenanceTaint(result: ActuatorProvenanceResult): string {
+  return result.taintedArgs
+    .map(({ name, sources }) => {
+      const origin = sources.length > 0 ? sources.join(", ") : "untrusted tool output";
+      return `\`${name}\` traces to untrusted ${origin}, not your message`;
+    })
+    .join("; ");
+}
+
+/**
  * Deterministic derivation check for ONE argument value — the sink-gate half
  * of a FIDES-style taint gate (arXiv 2505.23643): does this value carry a
  * content token that came from untrusted (tool-output-derived) text and is

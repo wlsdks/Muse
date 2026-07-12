@@ -62,6 +62,13 @@ import {
 import type { ActiveContextProvider, ActiveContextSnapshot } from "./active-context.js";
 import { applyAttachmentContext as applyAttachmentContextFn } from "./attachment-context.js";
 import { joinUserMessages } from "./internals.js";
+import {
+  checkActuatorProvenance,
+  describeProvenanceTaint,
+  OUTBOUND_SEND_SINK_ARG_NAMES,
+  OUTBOUND_SEND_TOOL_NAMES
+} from "./actuator-provenance-gate.js";
+import { createTaintLedger } from "./taint-ledger.js";
 import { groundToolArguments } from "./tool-argument-grounding.js";
 import { executeToolPlan, parseToolPlan, type ToolPlan, type ToolPlanExecutor, type ToolPlanResult } from "./tool-plan.js";
 import type { ToolExemplar } from "./tool-exemplars.js";
@@ -355,7 +362,8 @@ export class AgentRuntime {
       agentSpec: specApplied.agentSpec,
       input: specApplied.input,
       runId: input.runId ?? createRunId(),
-      startedAt: new Date()
+      startedAt: new Date(),
+      taintLedger: createTaintLedger()
     };
     const runSpan = this.tracer.startSpan("muse.agent.run", {
       "model.requested": input.model,
@@ -425,7 +433,8 @@ export class AgentRuntime {
       agentSpec: specApplied.agentSpec,
       input: specApplied.input,
       runId: input.runId ?? createRunId(),
-      startedAt: new Date()
+      startedAt: new Date(),
+      taintLedger: createTaintLedger()
     };
     const runSpan = this.tracer.startSpan("muse.agent.stream", {
       "model.requested": input.model,
@@ -1029,6 +1038,30 @@ export class AgentRuntime {
     };
   }
 
+  /**
+   * Provenance warning for an OUTBOUND-SEND call whose sink args derive from
+   * untrusted tool output (the run's taint ledger) rather than the user's own
+   * messages this run. Returns `undefined` for anything that isn't an
+   * outbound-send tool, when the ledger is empty/absent, or when no sink arg is
+   * tainted — so ordinary sends and non-send tools carry no extra friction.
+   */
+  private outboundProvenanceWarning(
+    context: AgentRunContext,
+    toolCall: ModelToolCall
+  ): string | undefined {
+    const ledger = context.taintLedger;
+    if (!ledger || !OUTBOUND_SEND_TOOL_NAMES.includes(toolCall.name)) {
+      return undefined;
+    }
+    const check = checkActuatorProvenance({
+      args: toolCall.arguments ?? {},
+      ledger,
+      sinkArgNames: OUTBOUND_SEND_SINK_ARG_NAMES,
+      trustedHaystack: joinUserMessages(context.input.messages)
+    });
+    return check.untrustedDerived ? describeProvenanceTaint(check) : undefined;
+  }
+
   private async executeToolCall(
     context: AgentRunContext,
     toolCall: ModelToolCall,
@@ -1079,6 +1112,17 @@ export class AgentRuntime {
 
     await this.invokeHooks("beforeTool", context, toolCall);
 
+    // Injection-provenance gate (outbound-send class only): if this outbound
+    // actuator's sink args (to/subject/body/url) carry content that traces to
+    // UNTRUSTED tool output and NOT to the user's own message, the send must
+    // not proceed silently — a poisoned tool result must never supply a send's
+    // arguments on the agent's own judgement (outbound-safety.md, FIDES-style
+    // taint gate arXiv:2505.23643). The warning is threaded INTO the single
+    // draft-first confirm below (no second prompt); with no confirm path at
+    // all it fail-closes. Computed BEFORE the gate so it enriches that one gate
+    // call rather than adding a second one.
+    const provenanceWarning = this.outboundProvenanceWarning(context, toolCall);
+
     const approvalGate = context.input.toolApprovalGate ?? this.toolApprovalGate;
     if (approvalGate) {
       const risk = this.resolveToolRisk(toolCall.name);
@@ -1088,7 +1132,8 @@ export class AgentRuntime {
           risk,
           runId: context.runId,
           toolCall,
-          userId: metadataString(context.input.metadata, "userId")
+          userId: metadataString(context.input.metadata, "userId"),
+          ...(provenanceWarning ? { provenanceWarning } : {})
         });
       } catch (error) {
         // Fail-close: a throwing gate (e.g. a corrupt
@@ -1105,6 +1150,15 @@ export class AgentRuntime {
         await this.invokeHooks("afterTool", context, executed);
         return executed;
       }
+    } else if (provenanceWarning) {
+      // A tainted outbound send with NO approval gate has no draft-first
+      // confirm to route to — fail-close, never a silent send.
+      const executed = blockedToolResult(
+        toolCall,
+        `Error: outbound send blocked (injection-provenance): ${provenanceWarning}. Confirm this content explicitly before sending.`
+      );
+      await this.invokeHooks("afterTool", context, executed);
+      return executed;
     }
 
     // Deterministic arg repair + validation (tool-calling.md): first losslessly
