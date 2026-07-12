@@ -22,7 +22,11 @@ const CASUAL_RESPONSES_KO: Record<CasualPromptKind, string> = {
   thanks: "천만에!"
 };
 
-const HANGUL_RE = /[가-힣]/u;
+// [가-힣] alone misses Hangul COMPATIBILITY JAMO (U+3131-318E) — the bare
+// consonant/vowel letters used in shorthands like "ㅎㅇ" (hi) or "ㅂㅂ" (bye),
+// which carry no full syllable. Without this range a jamo-only turn reads as
+// non-Korean and gets the English canned reply.
+const HANGUL_RE = /[가-힣ㄱ-ㆎ]/u;
 
 /** True when `text` contains at least one Hangul syllable — the deterministic signal for a Korean turn. */
 export function containsHangul(text: string): boolean {

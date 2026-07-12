@@ -1,8 +1,19 @@
-import { casualResponseFor, classifyCasualPrompt, classifyChannelIntent, containsHangul, guardAgainstUnbackedActionClaim } from "@muse/agent-core";
+import { randomBytes } from "node:crypto";
+
+import {
+  casualResponseFor,
+  classifyCasualPrompt,
+  classifyChannelIntent,
+  containsHangul,
+  extractFollowupPromises,
+  guardAgainstUnbackedActionClaim,
+  sanitizeFollowupSummary
+} from "@muse/agent-core";
 import {
   parseBoolean,
   resolveActionLogFile,
   resolveContactsFile,
+  resolveFollowupsFile,
   resolveLastProactiveDeliveryFile,
   resolvePendingApprovalsFile,
   type MuseEnvironment
@@ -19,7 +30,7 @@ import {
 } from "@muse/messaging";
 import { gateChatAnswerGrounding } from "@muse/recall";
 import type { JsonObject } from "@muse/shared";
-import { queryContacts } from "@muse/stores";
+import { queryContacts, readFollowups, upsertFollowup, type PersistedFollowup } from "@muse/stores";
 
 import { adoptChannelOwner, parseAllowedChats, readChannelOwner, resolveChannelOwnersFile } from "./channel-owner-store.js";
 import { createChannelPendingRecorder } from "./channel-pending-recorder.js";
@@ -27,6 +38,7 @@ import { createChannelRefusalRecorder } from "./channel-refusal-recorder.js";
 import { loadChatPersonaSnapshot } from "./chat-persona-snapshot.js";
 import { handleInboundApprovalReply } from "./inbound-approval-handler.js";
 import { handleInboundVetoReply } from "./inbound-veto-handler.js";
+import { detectUnscheduledRememberIntent } from "./remember-intent.js";
 import { resolveProactiveTrustFile } from "./tick-daemons.js";
 
 /**
@@ -91,6 +103,138 @@ export interface InboundAgentRunOptions {
  */
 const UNPAIRED_CHAT_NOTICE =
   "This bot is a private personal assistant and only talks to its paired owner.";
+
+// False-done backstop (the guard layer, not the parser): when the user asked
+// Muse to remember something date-shaped this turn and NO followup actually
+// got persisted, the model's reply can still confidently promise ("기억해둘게,
+// 미리 알려줄게") — a false-done. This caveat is CODE-appended, never model
+// text, so it can never be dropped by a bad generation.
+const REMEMBER_CAVEAT_KO =
+  "라고 했지만, 지금 이 형식의 날짜 알림은 예약이 안 됐어 — '8월 5일 아침에 알려줘'처럼 다시 말해줘!";
+const REMEMBER_CAVEAT_EN =
+  "— but a reminder for that wasn't actually scheduled in this format. Try phrasing it like 'remind me on August 5th morning'!";
+
+function appendUnscheduledRememberCaveat(output: string, latestUserText: string): string {
+  const caveat = containsHangul(latestUserText) ? REMEMBER_CAVEAT_KO : REMEMBER_CAVEAT_EN;
+  return output.length === 0 ? caveat : `${output}\n\n${caveat}`;
+}
+
+/**
+ * FIX N1 confirmation echo — CODE-appended (never model text) proof that a
+ * followup actually got scheduled from the USER's own ask, so it can't be
+ * faked by a model that happens to echo a date back. The date it names comes
+ * straight from the PERSISTED followup's resolved `scheduledFor`, never from
+ * the model's reply.
+ */
+function formatScheduledConfirmationDate(date: Date, hangul: boolean): string {
+  return hangul
+    ? `${date.getMonth() + 1}월 ${date.getDate()}일`
+    : date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+}
+
+function appendScheduledConfirmation(output: string, scheduledFor: Date, latestUserText: string): string {
+  const hangul = containsHangul(latestUserText);
+  const label = formatScheduledConfirmationDate(scheduledFor, hangul);
+  const confirmation = hangul ? `📌 ${label} 알림 잡아뒀어!` : `📌 Reminder set for ${label}!`;
+  return output.length === 0 ? confirmation : `${output}\n\n${confirmation}`;
+}
+
+function userSideFollowupId(): string {
+  return `fu_u_${randomBytes(7).toString("hex")}`;
+}
+
+// A minute-granularity match: the rule detector resolves to whole-minute
+// precision (setHours(h, m, 0, 0)) and both the user-side extraction below
+// and the runtime's own followup-capture-hook (scanning the ASSISTANT's
+// echo) resolve the SAME calendar expression to the same instant, so an
+// exact-minute match is proof they're the same commitment, not a coincidence.
+function sameScheduledMinute(a: Date, b: Date): boolean {
+  return Math.abs(a.getTime() - b.getTime()) < 60_000;
+}
+
+/**
+ * "Did this turn actually schedule a followup?" — observed the least invasive
+ * way reachable from apps/api: the runtime hook that captures a self-followup
+ * promise (`packages/agent-core`'s `followup-capture-hook.ts`) lives inside
+ * `agentRuntime.run()`, which is an opaque dependency here (built + wired in
+ * `packages/autoconfigure`, out of this worker's scope) — its `afterComplete`
+ * hook is `await`ed before `run()` resolves, so by the time this returns, any
+ * followup persisted THIS turn is already on disk. Rather than widen
+ * `InboundAgentRuntime`'s return type (which every fake in every existing
+ * test would then need to grow), this compares the SAME user's
+ * `readFollowups` "scheduled" count immediately before vs. after the call —
+ * a strictly-increased count is proof a followup was captured this turn.
+ * Read-only (never creates the file) and userId-scoped, so it costs nothing
+ * on a machine with no followups store yet and never confuses one user's
+ * turn with another's.
+ */
+async function readScheduledFollowupsFor(followupsFile: string, userId: string): Promise<readonly PersistedFollowup[]> {
+  const followups = await readFollowups(followupsFile).catch(() => []);
+  return followups.filter((followup) => followup.userId === userId && followup.status === "scheduled");
+}
+
+async function countScheduledFollowups(followupsFile: string, userId: string): Promise<number> {
+  return (await readScheduledFollowupsFor(followupsFile, userId)).length;
+}
+
+/**
+ * FIX N1 — deterministic USER-side scheduling: the assistant's own text
+ * echoing a commissive promise is a coin-flip (the runtime's
+ * followup-capture-hook only scans `response.output`), so this extracts
+ * straight from the USER's ask and persists it through the SAME store the
+ * hook uses (`upsertFollowup`) — scheduling no longer depends on the model
+ * happening to restate the date back.
+ *
+ * Order/dedup: called AFTER `agentRuntime.run()` (so the runtime's own
+ * capture hook — if it also fired off a commissive assistant echo THIS turn
+ * — has already persisted its entry). `upsertFollowup` only dedupes by
+ * `id` (random per call), and the hook's own within-call dedup never sees
+ * across-call state, so scheduling user-side FIRST would NOT have been
+ * deduped by the hook — this reads the post-run store and skips creating a
+ * duplicate itself whenever an existing scheduled entry already lands on
+ * the same resolved minute.
+ *
+ * Returns the resolved time of the first user-side promise found (whether
+ * freshly persisted here or already covered by the runtime's own capture)
+ * so the caller can build a confirmation echo — `undefined` when the raw
+ * user text carries no date the rule detector can resolve.
+ */
+async function scheduleUserSideFollowups(
+  followupsFile: string,
+  userId: string,
+  latestUserText: string,
+  now: Date
+): Promise<Date | undefined> {
+  const promises = extractFollowupPromises(latestUserText, { now, requireCommissive: false });
+  if (promises.length === 0) {
+    return undefined;
+  }
+  const alreadyScheduled = await readScheduledFollowupsFor(followupsFile, userId);
+  let firstScheduled: Date | undefined;
+  for (const promise of promises) {
+    if (firstScheduled === undefined) {
+      firstScheduled = promise.scheduledFor;
+    }
+    const duplicate = alreadyScheduled.some((existing) =>
+      sameScheduledMinute(new Date(existing.scheduledFor), promise.scheduledFor));
+    if (duplicate) {
+      continue;
+    }
+    const followup: PersistedFollowup = {
+      createdAt: now.toISOString(),
+      id: userSideFollowupId(),
+      kind: promise.kind,
+      scheduledFor: promise.scheduledFor.toISOString(),
+      status: "scheduled",
+      summary: sanitizeFollowupSummary(promise.originalText),
+      userId
+    };
+    // Fail-open per promise (parity with the runtime capture hook) — one
+    // bad write must not block the rest, or fail the turn.
+    await upsertFollowup(followupsFile, followup).catch(() => undefined);
+  }
+  return firstScheduled;
+}
 
 export function createInboundAgentRun(options: InboundAgentRunOptions): ThreadedAgentRun {
   const { agentRuntime, composeAck, composeChatReply, env, model, registry, userMemoryStore } = options;
@@ -241,16 +385,26 @@ export function createInboundAgentRun(options: InboundAgentRunOptions): Threaded
         await notify(ack).catch(() => undefined);
       }
     }
+    // The channel identity is the user-memory scope for this chat, so the
+    // auto-extract hook grows the knows-you model from channel
+    // conversations. A SHARED chat gets a DISTINCT scope
+    // (`{providerId}:shared:{source}`), never the owner's own
+    // `{providerId}:{source}` id: personal facts must never inject into a
+    // group turn, and group chatter must never pollute the owner's user
+    // model.
+    const runUserId = scope === "shared" ? `${providerId}:shared:${source}` : `${providerId}:${source}`;
+    // False-done backstop setup (see `countScheduledFollowups` doc comment):
+    // only bother reading the followups store at all when this turn actually
+    // LOOKS like a remember-with-a-date ask — the overwhelmingly common case
+    // (a normal question, an action request with no date, small talk) never
+    // touches the followups file.
+    const rememberIntent = detectUnscheduledRememberIntent(latestUserText);
+    const followupsFile = resolveFollowupsFile(env);
+    const turnNow = new Date();
+    const scheduledBefore = rememberIntent ? await countScheduledFollowups(followupsFile, runUserId) : 0;
     const result = await agentRuntime.run({
       messages,
-      // The channel identity is the user-memory scope for this chat, so
-      // the auto-extract hook grows the knows-you model from channel
-      // conversations. A SHARED chat gets a DISTINCT scope
-      // (`{providerId}:shared:{source}`), never the owner's own
-      // `{providerId}:{source}` id: personal facts must never inject into
-      // a group turn, and group chatter must never pollute the owner's
-      // user model.
-      metadata: { userId: scope === "shared" ? `${providerId}:shared:${source}` : `${providerId}:${source}` },
+      metadata: { userId: runUserId },
       model,
       toolApprovalGate: createChannelApprovalGate({
         providerId,
@@ -296,6 +450,26 @@ export function createInboundAgentRun(options: InboundAgentRunOptions): Threaded
       firstResult: { response: { output: gate.answer }, toolsUsed: result.toolsUsed ?? [] },
       query: latestUserText
     });
-    return honest.response.output;
+    if (!rememberIntent) {
+      return honest.response.output;
+    }
+    // FIX N1 — deterministic user-side scheduling runs BEFORE the caveat
+    // check, so the caveat's before/after count naturally sees whatever it
+    // scheduled: no separate branch, no double-append. `turnNow` anchors
+    // BOTH this extraction and the confirmation echo below to the same
+    // instant.
+    const scheduledFromUser = await scheduleUserSideFollowups(followupsFile, runUserId, latestUserText, turnNow);
+    // The user asked to remember something date-shaped — confirm a followup
+    // actually landed THIS turn (the count strictly grew) before trusting
+    // the model's own claim; a same-or-lower count means NEITHER the
+    // assistant's echo NOR the user-side extraction above scheduled
+    // anything, so the reply gets the honest caveat appended by code.
+    const scheduledAfter = await countScheduledFollowups(followupsFile, runUserId);
+    if (scheduledAfter > scheduledBefore) {
+      return scheduledFromUser
+        ? appendScheduledConfirmation(honest.response.output, scheduledFromUser, latestUserText)
+        : honest.response.output;
+    }
+    return appendUnscheduledRememberCaveat(honest.response.output, latestUserText);
   };
 }

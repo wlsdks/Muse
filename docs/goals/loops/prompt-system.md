@@ -190,3 +190,17 @@ ratchet: identity 12/12 ×2 · MODEL_LEAK 0 · SYCOPHANT 0 · seam clean · self
 행동 acceptance: meta-test가 실제 ci.yml 내용을 regex 검증(선언-only 아님)+mutation-RED(스텝 제거→테스트 FAIL). 배선된 두 가드가 real 확인(prompt-seam이 "I am Muse" 패러프레이즈 포착·secret-guard가 무가드 write툴 포착, 각 유닛테스트 4/4·7/7). ci.yml YAML 유효(yaml@2.9.0 파싱, 스텝 올바른 잡/순서).
 리뷰지점: CI-config는 GitHub Actions를 로컬서 못 돌리므로 meta-test(실제 yml 파싱)+배선된 가드의 자체 테스트가 로컬 authoritative 증명. Opus가 두 가드의 real-ness를 위반 주입으로 확인.
 리스크/백로그: 감사 갭 ①(캐시경계)②(학습user-model)③(provenance)는 여전히 backlog·colorize 회귀(fire17)도. lesson: 프로버 truncation 주장은 재현 필수 — 느린 로컬모델 스트리밍 히컵을 defect로 오인(fire5/9/13/19).
+
+## fire 20 (post-loop, 진안 direct) · 2026-07-12 · S1+S2 injection-provenance
+meta: value-class=security-moat · pkg=@muse/agent-core · kind=IFC-sink-gate · verdict=PASS(opus ×2) · context=루프 종료 후 A+ 3갭 로드맵 착수
+무엇: 감사 갭③(인젝션 정적regex→provenance) 워크스트림 S1+S2. S1(a640e416d)=기반 모듈(taint-ledger·actuator-provenance-gate·provenance-tokens 추출)+24 유닛. S2(dde1b648b)=아웃바운드 sink 배선 — capToolOutput서 unwrapToolData 기록, executeToolCall서 아웃바운드 인자 untrusted-유래면 단일 기존 게이트에 provenance 경고 스레드(이중게이트 없음)·게이트 없으면 fail-close.
+왜: FIDES sink-gate 서브셋(arXiv 2505.23643). 경쟁사 아무도 결정론 source→sink taint 안 함(해자). Muse 양쪽 절반 보유·미연결이던 걸 연결.
+검증: contract-faithful deny-on-injection(주입노트→attacker 전송 차단·sendSpy 0), 정상 사용자-지정 수신자는 통과, mutation-RED, eval:adversarial 39/39, 정체성 12/12 ×2, agent-core 3057, Opus 게이트 ×2 PASS(S1 안전측 over-approx·S2 enforce 실효).
+남음: 인젝션 S3(write/execute 전체 sink)·S4(exfil) · gap2 학습 user-model S1~4 · gap3 캐시 S1~2. 로드맵=backlog "A+ 로드맵".
+
+## fire 21 (post-loop, 진안 direct) · 2026-07-12 · S3 injection-provenance (execute sink)
+meta: value-class=security-moat · pkg=@muse/agent-core · kind=IFC-sink-gate · verdict=PASS(opus indep) · context=A+ 갭③ 인젝션 워크스트림 계속
+무엇: taint 게이트를 아웃바운드-send → execute-risk actuator(run_command 등)로 확대. 주입된 셸명령이 untrusted 툴출력에 있어도 execute 툴의 command/code/script 인자에 조용히 못 들어감. actuatorProvenanceWarning(risk 인자 추가), EXECUTE_SINK_ARG_NAMES, risk 1회 해석(hoist)해 단일 기존 게이트에 스레드.
+왜: execute 툴은 이미 항상 approval-gate(dangerous-command.ts) → provenance 경고가 기존 confirm만 enrich, 새 마찰 0·false-positive 표면 0(클린 윈). RCE-via-injection이 아웃바운드 다음으로 sharp한 표면.
+검증: contract-faithful(주입명령→run_command deny→spy 미호출; 사용자-타이핑 명령 통과), mutation-RED(sha256 복원 확인), eval:adversarial 41/41, agent-core 3098, messaging/cli/seam clean, 독립 Opus 게이트 PASS.
+남음: **S3b**(write-risk actuator — memory/contacts/notes/calendar; first-party-source trusted-haystack 선행 필요, 항상-게이트 아님) · S4(exfil) · gap2 user-model S1~4 · gap3 캐시 S1~2.

@@ -62,6 +62,14 @@ import {
 import type { ActiveContextProvider, ActiveContextSnapshot } from "./active-context.js";
 import { applyAttachmentContext as applyAttachmentContextFn } from "./attachment-context.js";
 import { joinUserMessages } from "./internals.js";
+import {
+  checkActuatorProvenance,
+  describeProvenanceTaint,
+  EXECUTE_SINK_ARG_NAMES,
+  OUTBOUND_SEND_SINK_ARG_NAMES,
+  OUTBOUND_SEND_TOOL_NAMES
+} from "./actuator-provenance-gate.js";
+import { createTaintLedger } from "./taint-ledger.js";
 import { groundToolArguments } from "./tool-argument-grounding.js";
 import { executeToolPlan, parseToolPlan, type ToolPlan, type ToolPlanExecutor, type ToolPlanResult } from "./tool-plan.js";
 import type { ToolExemplar } from "./tool-exemplars.js";
@@ -355,7 +363,8 @@ export class AgentRuntime {
       agentSpec: specApplied.agentSpec,
       input: specApplied.input,
       runId: input.runId ?? createRunId(),
-      startedAt: new Date()
+      startedAt: new Date(),
+      taintLedger: createTaintLedger()
     };
     const runSpan = this.tracer.startSpan("muse.agent.run", {
       "model.requested": input.model,
@@ -425,7 +434,8 @@ export class AgentRuntime {
       agentSpec: specApplied.agentSpec,
       input: specApplied.input,
       runId: input.runId ?? createRunId(),
-      startedAt: new Date()
+      startedAt: new Date(),
+      taintLedger: createTaintLedger()
     };
     const runSpan = this.tracer.startSpan("muse.agent.stream", {
       "model.requested": input.model,
@@ -1029,6 +1039,44 @@ export class AgentRuntime {
     };
   }
 
+  /**
+   * Provenance warning for an actuator call whose sink args derive from
+   * untrusted tool output (the run's taint ledger) rather than the user's own
+   * messages this run. Covers two actuator classes: OUTBOUND-SEND tools (sink =
+   * recipient/subject/body/url) and EXECUTE-risk tools (sink = the command/code
+   * payload) — a poisoned tool result must not silently supply a send's
+   * recipient nor an RCE command. Execute-risk tools are already always gated,
+   * so this only enriches that confirm. Returns `undefined` for read/write
+   * non-send tools, when the ledger is empty/absent, or when no sink arg is
+   * tainted — so ordinary calls carry no extra friction.
+   */
+  private actuatorProvenanceWarning(
+    context: AgentRunContext,
+    toolCall: ModelToolCall,
+    risk: "read" | "write" | "execute"
+  ): string | undefined {
+    const ledger = context.taintLedger;
+    if (!ledger) {
+      return undefined;
+    }
+    const isOutboundSend = OUTBOUND_SEND_TOOL_NAMES.includes(toolCall.name);
+    const isExecute = risk === "execute";
+    if (!isOutboundSend && !isExecute) {
+      return undefined;
+    }
+    const sinkArgNames = [
+      ...(isOutboundSend ? OUTBOUND_SEND_SINK_ARG_NAMES : []),
+      ...(isExecute ? EXECUTE_SINK_ARG_NAMES : [])
+    ];
+    const check = checkActuatorProvenance({
+      args: toolCall.arguments ?? {},
+      ledger,
+      sinkArgNames,
+      trustedHaystack: joinUserMessages(context.input.messages)
+    });
+    return check.untrustedDerived ? describeProvenanceTaint(check) : undefined;
+  }
+
   private async executeToolCall(
     context: AgentRunContext,
     toolCall: ModelToolCall,
@@ -1079,16 +1127,30 @@ export class AgentRuntime {
 
     await this.invokeHooks("beforeTool", context, toolCall);
 
+    // Injection-provenance gate (outbound-send OR execute class): if this
+    // actuator's sink args (a send's to/subject/body/url, or an execute tool's
+    // command/code payload) carry content that traces to UNTRUSTED tool output
+    // and NOT to the user's own message, the call must not proceed silently — a
+    // poisoned tool result must never supply a send's recipient nor an RCE
+    // command on the agent's own judgement (outbound-safety.md, FIDES-style
+    // taint gate arXiv:2505.23643). The warning is threaded INTO the single
+    // approval confirm below (no second prompt); with no confirm path at all it
+    // fail-closes. Execute-risk tools are already always gated, so this enriches
+    // that existing confirm. `risk` is resolved once here so both the warning
+    // and the gate call use it — computed BEFORE the gate.
+    const risk = this.resolveToolRisk(toolCall.name);
+    const provenanceWarning = this.actuatorProvenanceWarning(context, toolCall, risk);
+
     const approvalGate = context.input.toolApprovalGate ?? this.toolApprovalGate;
     if (approvalGate) {
-      const risk = this.resolveToolRisk(toolCall.name);
       let decision: ToolApprovalGateDecision;
       try {
         decision = await approvalGate({
           risk,
           runId: context.runId,
           toolCall,
-          userId: metadataString(context.input.metadata, "userId")
+          userId: metadataString(context.input.metadata, "userId"),
+          ...(provenanceWarning ? { provenanceWarning } : {})
         });
       } catch (error) {
         // Fail-close: a throwing gate (e.g. a corrupt
@@ -1105,6 +1167,15 @@ export class AgentRuntime {
         await this.invokeHooks("afterTool", context, executed);
         return executed;
       }
+    } else if (provenanceWarning) {
+      // A tainted actuator call with NO approval gate has no confirm to route
+      // to — fail-close, never a silent send or execute.
+      const executed = blockedToolResult(
+        toolCall,
+        `Error: actuator call blocked (injection-provenance): ${provenanceWarning}. Confirm this content explicitly before proceeding.`
+      );
+      await this.invokeHooks("afterTool", context, executed);
+      return executed;
     }
 
     // Deterministic arg repair + validation (tool-calling.md): first losslessly

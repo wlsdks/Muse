@@ -48,4 +48,21 @@ describe("containsHangul — the deterministic KO-input signal driving the reply
     expect(containsHangul("hi")).toBe(false);
     expect(containsHangul("")).toBe(false);
   });
+
+  it("true for a Hangul COMPATIBILITY JAMO shorthand ('ㅎㅇ') — a bare consonant/vowel turn with no full syllable", () => {
+    // Pre-fix HANGUL_RE was [가-힣] only, which "ㅎㅇ" doesn't hit — the
+    // classifyCasualPrompt greeting matched but got the EN canned reply.
+    expect(containsHangul("ㅎㅇ")).toBe(true);
+    expect(containsHangul("ㅂㅂ")).toBe(true);
+    expect(containsHangul("ㄱㅅ")).toBe(true);
+  });
+
+  it("routes 'ㅎㅇ' to the Korean canned greeting end-to-end (classify + language signal together)", () => {
+    const q = "ㅎㅇ";
+    const kind = classifyCasualPrompt(q);
+    expect(kind).toBe("greeting");
+    const reply = casualResponseFor(kind as CasualPromptKind, containsHangul(q));
+    expect(reply).toBe(casualResponseFor("greeting", true));
+    expect(containsHangul(reply)).toBe(true);
+  });
 });

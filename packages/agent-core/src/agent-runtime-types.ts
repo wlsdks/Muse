@@ -266,6 +266,14 @@ export interface ToolApprovalGateInput {
   readonly risk: ToolRiskLevel;
   readonly userId?: string;
   readonly runId: string;
+  /**
+   * Set by the injection-provenance gate when this outbound-send call's sink
+   * args derive from UNTRUSTED tool output rather than the user's own message.
+   * The draft-first confirm surfaces it so the user sees WHY the send was
+   * flagged; a policy gate may treat its presence as grounds to refuse. When
+   * absent, the call carries no provenance concern.
+   */
+  readonly provenanceWarning?: string;
 }
 
 export interface ToolApprovalGateDecision {

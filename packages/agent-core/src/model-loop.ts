@@ -27,6 +27,7 @@ import type {
 } from "@muse/model";
 
 import { maskStaleToolObservations, type ContextReferenceStore } from "@muse/memory";
+import { unwrapToolData } from "@muse/policy";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
 import { renderToolResults } from "@muse/prompts";
 import type { CheckpointStore } from "@muse/runtime-state";
@@ -513,10 +514,16 @@ async function* runToolBatch(
       // output doesn't blow the context window. Original
       // executed.result.output is left intact for traces / metrics
       // — only the message-bound copy is truncated.
-      const messageContent = withRepetitionNudge(
-        capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars, runner.contextReferenceStore, anchorTerms),
-        isDuplicate
-      );
+      const cappedOutput = capToolOutput(executed.result.output, toolCall.name, runner.maxToolOutputChars, runner.contextReferenceStore, anchorTerms);
+      // Injection-provenance: record the untrusted CONTENT (unwrapped from the
+      // trusted `--- BEGIN TOOL DATA ---` spotlighting envelope, so the
+      // envelope's own generic words don't pollute the taint token set and
+      // false-positive an ordinary send) as an untrusted span, at the single
+      // chokepoint every tool/MCP/sub-agent result passes through. The
+      // outbound-send gate in executeToolCall reads this ledger to block a send
+      // whose args were supplied by a poisoned tool result.
+      context.taintLedger?.recordUntrusted(`tool:${toolCall.name}`, unwrapToolData(cappedOutput));
+      const messageContent = withRepetitionNudge(cappedOutput, isDuplicate);
       toolMessages.push({
         content: messageContent,
         name: toolCall.name,

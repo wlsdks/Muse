@@ -43,8 +43,25 @@ export {
   type InMemoryAgentInitiatedNoticeBrokerOptions
 } from "./agent-initiated-notice.js";
 export {
+  createTaintLedger,
+  type TaintLedger,
+  type UntrustedSpan
+} from "./taint-ledger.js";
+export {
+  argDerivesFromUntrusted,
+  checkActuatorProvenance,
+  describeProvenanceTaint,
+  EXECUTE_SINK_ARG_NAMES,
+  OUTBOUND_SEND_SINK_ARG_NAMES,
+  OUTBOUND_SEND_TOOL_NAMES,
+  type ActuatorProvenanceResult
+} from "./actuator-provenance-gate.js";
+export { contentTokens, contentTokenSet } from "./provenance-tokens.js";
+export {
+  detectUnscheduledRememberIntent,
   extractFollowupPromises,
   hasCommissiveForce,
+  hasKoreanCommissiveForce,
   type ExtractFollowupPromisesOptions,
   type FollowupPromise
 } from "./followup-detector.js";
