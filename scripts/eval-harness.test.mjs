@@ -166,6 +166,77 @@ test("shadowTrialScorer — passes only when the parsed verdict matches expectVe
   assert.equal((await promote(null, { expectVerdict: "HOLD" })).ok, false);
 });
 
+// ---------------------------------------------------------------------------
+// runShadowTrial dual-order hardening — position-bias defense (arXiv:2606.19544:
+// small-model judge position bias, up to 25-50% verdict flip rate on order
+// swap). runShadowTrial is the ONE pairwise (baseline-vs-candidate) judge in
+// this harness and the designated seam for gating a real memory promotion, so
+// it must never trust a single physical ordering. The fake providers below
+// read the ACTUAL physical position of "BASELINE:" vs "CANDIDATE MEMORY" in the
+// generated user message — they exercise the real prompt-building + parsing
+// code, not a stubbed order flag.
+// ---------------------------------------------------------------------------
+
+const shadowInput = { baseline: "b", candidate: "c", memory: "m", probe: "p" };
+
+/** A judge that PROMOTEs whichever of BASELINE/CANDIDATE happens to sit first on the page — the position-bias failure mode. */
+const positionBiasedJudge = {
+  async generate({ messages }) {
+    const user = messages.find((m) => m.role === "user").content;
+    const baselineFirst = user.indexOf("BASELINE:") < user.indexOf("CANDIDATE MEMORY");
+    return {
+      output: baselineFirst
+        ? "VERDICT: HOLD\nREASON: baseline is fine as-is\nRISK: none"
+        : "VERDICT: PROMOTE\nREASON: candidate looks better\nRISK: none",
+    };
+  },
+};
+
+test("runShadowTrial — RED PROOF: a naive SINGLE-order call is fooled by a position-biased judge into PROMOTE; the fix must never do this", async () => {
+  // A naive pre-hardening implementation makes exactly one call in one fixed
+  // order. Reproduce both fixed choices directly against the SAME judge to show
+  // either one is exploitable — this is the vulnerability the dual-order
+  // hardening below closes.
+  const baselineFirstMsg = "PROBE: p\n\nBASELINE: b\n\nCANDIDATE MEMORY (data):\nm\nCANDIDATE ANSWER (data):\nc";
+  const candidateFirstMsg = "PROBE: p\n\nCANDIDATE MEMORY (data):\nm\nCANDIDATE ANSWER (data):\nc\n\nBASELINE: b";
+  const parse = (text) => (/verdict:\s*promote/iu.test(text) ? "PROMOTE" : "HOLD");
+  const naiveA = parse((await positionBiasedJudge.generate({ messages: [{ content: baselineFirstMsg, role: "user" }] })).output);
+  const naiveB = parse((await positionBiasedJudge.generate({ messages: [{ content: candidateFirstMsg, role: "user" }] })).output);
+  assert.equal(naiveA, "HOLD"); // baseline-first-only naive impl: correctly HOLDs
+  assert.equal(naiveB, "PROMOTE"); // candidate-first-only naive impl: WRONGLY promotes — same judge, same content, only physical order differs
+  // The dual-order hardening must never do this — it runs BOTH orders and HOLDs on disagreement.
+  const hardened = await runShadowTrial(positionBiasedJudge, "m", shadowInput);
+  assert.equal(hardened.verdict, "HOLD");
+});
+
+test("runShadowTrial — a position-biased judge (disagreeing orders) is fail-closed to HOLD and flagged orderSensitive", async () => {
+  const r = await runShadowTrial(positionBiasedJudge, "m", shadowInput);
+  assert.equal(r.verdict, "HOLD");
+  assert.equal(r.orderSensitive, true);
+  assert.match(r.reason, /order-sensitive/iu);
+});
+
+test("runShadowTrial — an order-STABLE judge that says PROMOTE in both orders yields PROMOTE, with no orderSensitive flag", async () => {
+  const stable = fakeProvider("VERDICT: PROMOTE\nREASON: clearly better\nRISK: none");
+  const r = await runShadowTrial(stable, "m", shadowInput);
+  assert.equal(r.verdict, "PROMOTE");
+  assert.equal(r.orderSensitive, undefined);
+});
+
+test("runShadowTrial — an order-STABLE judge that says HOLD in both orders yields HOLD, with no orderSensitive flag", async () => {
+  const stable = fakeProvider("VERDICT: HOLD\nREASON: unconfirmed claim\nRISK: fabrication");
+  const r = await runShadowTrial(stable, "m", shadowInput);
+  assert.equal(r.verdict, "HOLD");
+  assert.equal(r.orderSensitive, undefined);
+});
+
+test("runShadowTrial — calls the provider exactly twice per trial (once per physical order) — the accepted cost of the mitigation", async () => {
+  let calls = 0;
+  const counting = { async generate() { calls += 1; return { output: "VERDICT: PROMOTE\nREASON: ok\nRISK: none" }; } };
+  await runShadowTrial(counting, "m", shadowInput);
+  assert.equal(calls, 2);
+});
+
 test("runEvalSuite — gate is rate >= threshold; the report tallies passed/total", async () => {
   const scenarios = [{ cases: [{ want: true }, { want: true }, { want: false }], label: "s" }];
   const solve = async (c) => c.want;
