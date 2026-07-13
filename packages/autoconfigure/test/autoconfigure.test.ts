@@ -427,12 +427,15 @@ describe("autoconfigure", () => {
 
   it("wires working-budget compaction into the AgentRuntime by default", async () => {
     // autoconfigure wires workingBudgetTokens on ConversationTrimOptions,
-    // computing it as 40% of nominal by default. The composed layered
-    // system prompt (identity core + surface role, ~500 tokens) now rides
-    // in the compaction estimate, so the nominal window is sized to 1000:
-    // the working budget (40% = 400) is exceeded by prompt+messages
-    // (~650) while the hard cap (990 after the output reserve) is not —
-    // a "hard_limit" trigger would mean we mis-wired the field.
+    // computing it as 40% of nominal by default. The composed layered system
+    // prompt rides in the compaction estimate, and it GREW (the flagship chat
+    // role became a real behavioural contract and a fresh install now gets the
+    // default personality layer), so a nominal window sized for the old prompt
+    // tips straight past the hard cap and reports `hard_limit` — which would
+    // read as a mis-wiring when it is only the window being too small for the
+    // prompt. Size the window so the intended regime is exercised: the working
+    // budget (40%) is exceeded by prompt+messages while the hard cap (after the
+    // output reserve) is not.
     const assembly = createMuseRuntimeAssembly({
       env: {
         // Disable the Context Engineering Phase 1 system-prompt
@@ -442,7 +445,7 @@ describe("autoconfigure", () => {
         // `[Active Context]` block alone, which isn't what this
         // test is exercising.
         MUSE_ACTIVE_CONTEXT_ENABLED: "false",
-        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "1000",
+        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "2000",
         MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
         MUSE_MODEL: "diagnostic/smoke",
         MUSE_MODEL_PROVIDER_ID: "diagnostic"
@@ -484,7 +487,12 @@ describe("autoconfigure", () => {
     const assembly = createMuseRuntimeAssembly({
       env: {
         MUSE_ACTIVE_CONTEXT_ENABLED: "false",
-        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "1000",
+        // 2000, not 1000: the composed system prompt grew (real chat contract +
+        // default personality layer), and a window sized for the old prompt puts
+        // the prompt ALONE past the hard cap — so this test would report
+        // `hard_limit` and look like a broken disable switch when nothing about
+        // the switch changed.
+        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "2000",
         MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
         MUSE_LLM_WORKING_BUDGET_TOKENS: "0",
         MUSE_MODEL: "diagnostic/smoke",

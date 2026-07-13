@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { isInjectableStrategy, PLAYBOOK_AVOID_BELOW, type CorrectionPolarity } from "@muse/agent-core";
-import { readPlaybook, recordPlaybookStrategy, setLearningPaused, type PlaybookEntry } from "@muse/stores";
+import { readPlaybook, recordPlaybookStrategy, setLearningPaused, type PlaybookEntry, queryPlaybook } from "@muse/stores";
 import type { ModelProvider } from "@muse/model";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -24,7 +24,7 @@ const modelProvider: Pick<ModelProvider, "generate"> = {
 };
 
 const injected = (over: Partial<PlaybookEntry> = {}): PlaybookEntry => ({
-  createdAt: "2026-06-01T00:00:00Z", id: `inj-${randomUUID()}`, origin: "grounded",
+  createdAt: "2026-06-01T00:00:00Z", id: `inj-${randomUUID()}`, origin: "distilled",
   probation: false, reward: 3, text: "Give thorough, detailed multi-paragraph answers.", userId: "u", ...over
 });
 
@@ -116,5 +116,41 @@ describe("decayContradictedStrategies — sign-safe autonomous correction-decay"
     expect(decayed).toEqual([]);
     expect(calls).toBe(0);
     expect((await readPlaybook(file))[0]!.reward).toBe(3);
+  });
+});
+
+/**
+ * Independent-review regression pin: while the decay gate's cosine floor sat
+ * above the reachable band it had NEVER fired, so nothing could be unlearned.
+ * The moment it was calibrated, an offhand correction could silently unlearn a
+ * rule the USER wrote ("Never send an email without showing me the text first"
+ * → decayed to the avoid floor by "just send it directly"). Origin is the guard:
+ * unattended decay may only touch what Muse itself inferred.
+ */
+describe("decayContradictedStrategies — never unlearns what the USER authored", () => {
+  it("leaves a hand-written (origin:manual) strategy untouched even on a confident CONTRADICT", async () => {
+    const file = freshFile("playbook-manual");
+    const manual = injected({
+      origin: "manual",
+      text: "Never send an email to a third party without showing me the exact text first."
+    });
+    await recordPlaybookStrategy(file, manual);
+    const decayed = await decayContradictedStrategies({
+      ...base(file, async () => "contradict" as const),
+      corrections: ["stop showing me drafts — from now on just send the email directly"]
+    });
+    expect(decayed).toEqual([]);
+    const after = await queryPlaybook(file, "u");
+    expect(after[0]?.reward).toBe(manual.reward);
+  });
+
+  it("leaves an evidence-grounded strategy untouched too", async () => {
+    const file = freshFile("playbook-grounded");
+    await recordPlaybookStrategy(file, injected({ origin: "grounded", text: "Cite the note or file every claim came from." }));
+    const decayed = await decayContradictedStrategies({
+      ...base(file, async () => "contradict" as const),
+      corrections: ["stop citing notes in every answer, it's noisy"]
+    });
+    expect(decayed).toEqual([]);
   });
 });

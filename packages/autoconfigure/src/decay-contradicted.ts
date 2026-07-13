@@ -19,7 +19,7 @@
  *  - BRAKE-FIRST. A paused learner's bank is frozen (no classification, no decay).
  */
 
-import { classifyCorrectionContradiction, isInjectableStrategy, PLAYBOOK_AVOID_BELOW, type CorrectionPolarity } from "@muse/agent-core";
+import { classifyCorrectionContradiction, isInjectableStrategy, isUserAuthoredStrategy, PLAYBOOK_AVOID_BELOW, type CorrectionPolarity } from "@muse/agent-core";
 import type { ModelProvider } from "@muse/model";
 import { adjustPlaybookReward, isLearningPaused, queryPlaybook } from "@muse/stores";
 
@@ -70,7 +70,10 @@ export async function decayContradictedStrategies(deps: DecayContradictedDeps): 
   const bank = await queryPlaybook(deps.playbookFile, deps.userId);
   // INJECTED = the strategies actually steering the agent: injectable per
   // agent-core's gate (non-probation, non-avoided, evidence-gated graduation).
-  const injected = bank.filter(isInjectableStrategy);
+  // NEVER autonomously unlearn a rule the user wrote (origin `manual`) or an
+  // evidence-grounded one — see isUserAuthoredStrategy. Only what Muse itself
+  // inferred is subject to unattended decay.
+  const injected = bank.filter((entry) => isInjectableStrategy(entry) && !isUserAuthoredStrategy(entry));
   if (injected.length === 0) {
     return [];
   }

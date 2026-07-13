@@ -127,21 +127,28 @@ export const DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE = 0.4;
  * a genuine match beats the runner-up by 0.13 (median), while a no-match cue's
  * top-2 sit within 0.038 of each other, because nothing in the bank stands out.
  *
- * 0.05 (credit) admits the clear matches and fail-closes on the ambiguous ones —
+ * 0.10 (credit) admits the clear matches and fail-closes on the ambiguous ones —
+ * including a failure the first calibration missed: in a MIXED-LANGUAGE bank the
+ * embedder's language identity can outrank meaning, so a Korean cue is pulled
+ * toward Korean strategies ("서론 빼고 결론부터 말해" → the KO grounding rule at
+ * margin 0.058, instead of the EN "lead with the answer" rule it means). A 0.05
+ * margin admitted that; 0.10 rejects it while still crediting the genuine
+ * matches, whose median margin is 0.17.
+ *
  * including the case where the nearest strategy is the WRONG one (measured: the
  * single argmax error in the corpus had a 0.023 margin, so the margin gate
  * rejects it rather than mis-crediting). A missed reinforce is the safe
  * direction; a mis-credit replays its error through experience-following
  * (arXiv:2505.16067).
  */
-export const PLAYBOOK_CREDIT_MARGIN = 0.05;
+export const PLAYBOOK_CREDIT_MARGIN = 0.1;
 
 /**
  * The decay margin is STRICTER (0.08) for the same asymmetry the absolute floors
  * encode: a wrong decay of a grounded strategy erodes the cited-recall edge,
  * while a missed decay merely leaves reward flat.
  */
-export const PLAYBOOK_DECAY_CREDIT_MARGIN = 0.08;
+export const PLAYBOOK_DECAY_CREDIT_MARGIN = 0.14;
 
 /**
  * With a SINGLE candidate there is no runner-up, so the margin test is
@@ -166,6 +173,12 @@ export const PLAYBOOK_CREDIT_SOLO_COSINE = 0.35;
  * (never worse than today). Pure over the injected embedder + exported for
  * direct coverage.
  */
+function strategyTextSimilarityById(a: string, b: string, byId: ReadonlyMap<string, string>): number {
+  const textA = byId.get(a);
+  const textB = byId.get(b);
+  return textA === undefined || textB === undefined ? 0 : strategyTextSimilarity(textA, textB);
+}
+
 export async function selectCreditTargetSemantic(
   candidates: readonly { readonly id: string; readonly text: string }[],
   cue: string,
@@ -183,6 +196,8 @@ export async function selectCreditTargetSemantic(
   if (cueVec.length === 0) return undefined;
 
   const scored: { readonly id: string; readonly sim: number }[] = [];
+  const vecById = new Map<string, readonly number[]>();
+  const byId = new Map<string, string>();
   for (const candidate of candidates) {
     let vec: readonly number[];
     try {
@@ -191,6 +206,8 @@ export async function selectCreditTargetSemantic(
       return undefined;
     }
     if (vec.length === 0) continue;
+    vecById.set(candidate.id, vec);
+    byId.set(candidate.id, candidate.text);
     scored.push({ id: candidate.id, sim: cosineSimilarity(cueVec, vec) });
   }
   if (scored.length === 0) return undefined;
@@ -203,10 +220,31 @@ export async function selectCreditTargetSemantic(
     return top.sim >= Math.max(threshold, PLAYBOOK_CREDIT_SOLO_COSINE) ? top.id : undefined;
   }
   if (top.sim < threshold) return undefined;
-  // The margin gate: credit only when ONE strategy clearly stands out. Feedback
-  // that implicates nothing in the bank scores its top-2 within 0.038 of each
-  // other, and a wrong argmax is likewise a near-tie — both fail closed here.
-  return top.sim - scored[1]!.sim >= margin ? top.id : undefined;
+
+  // The runner-up must be a DIFFERENT RULE, not a restatement of the winner.
+  // As the bank grows it accumulates near-duplicate strategies ("keep replies
+  // short" / "be concise"), and a near-duplicate runner-up scores within a
+  // hair of the winner — collapsing the margin and silently switching credit
+  // OFF exactly as the user teaches Muse more (measured: 10/13 credited at a
+  // 5-strategy bank, 3/13 at 30 — back to the broken pre-margin rate). Which of
+  // two restatements absorbs the reward is not a decision worth protecting;
+  // what the margin must protect is "is this feedback about THIS RULE or a
+  // different one". So the comparison runs against the best candidate that is
+  // not a paraphrase of the winner.
+  const distinctRunnerUp = scored
+    .slice(1)
+    .find((entry) => strategyTextSimilarityById(entry.id, top.id, byId) < PLAYBOOK_INJECT_DEDUP_THRESHOLD
+      && cosineSimilarity(vecById.get(entry.id) ?? [], vecById.get(top.id) ?? []) < PLAYBOOK_INJECT_DEDUP_THRESHOLD);
+  if (distinctRunnerUp === undefined) {
+    // Every other candidate restates the winner — there is no competing RULE, so
+    // the margin test has nothing to decide and the absolute floor stands alone
+    // (same reasoning as the sole-candidate path).
+    return top.sim >= Math.max(threshold, PLAYBOOK_CREDIT_SOLO_COSINE) ? top.id : undefined;
+  }
+  // The margin gate: credit only when ONE rule clearly stands out. Feedback that
+  // implicates nothing in the bank scores its top-2 within 0.038 of each other,
+  // and a wrong argmax is likewise a near-tie — both fail closed here.
+  return top.sim - distinctRunnerUp.sim >= margin ? top.id : undefined;
 }
 
 /**

@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ModelProvider } from "@muse/model";
-import { queryPlaybook, recordPlaybookStrategy } from "@muse/stores";
+import { queryPlaybook, recordPlaybookStrategy, setLearningPaused } from "@muse/stores";
 import { describe, expect, it } from "vitest";
 
 import { distillSessionCorrections } from "./chat-distill-corrections.js";
@@ -366,5 +367,44 @@ describe("INJECTED-ID reinforcement credit — reward targets an ACTUALLY-inject
     } finally {
       delete process.env.MUSE_PLAYBOOK_INJECTIONS_FILE;
     }
+  });
+});
+
+/**
+ * Independent-review regression pin: `muse playbook pause` tells the user "Muse
+ * won't learn anything new". The daemon ticks honoured it; THIS path — the one
+ * that runs at the end of every session — did not, so a paused user still had a
+ * new strategy written AND an existing one decayed. The brake is cited as the
+ * reason unattended learning may default to ON, so it has to hold here.
+ */
+describe("distillSessionCorrections — the learning-pause kill switch", () => {
+  it("writes NOTHING and moves NO reward while learning is paused", async () => {
+    const file = await tmpPlaybook();
+    const pauseFile = join(tmpdir(), `muse-pause-${randomUUID()}.json`);
+    await setLearningPaused(pauseFile, true);
+    await recordPlaybookStrategy(file, {
+      createdAt: "2026-05-01T00:00:00.000Z",
+      id: "pb_existing",
+      reward: 3,
+      text: "회의록은 문단으로 정리한다",
+      userId: "stark"
+    });
+
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: stub("회의록은 불릿으로 정리하기"),
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      readEnv: () => ({ MUSE_LEARNING_PAUSE_FILE: pauseFile }) as NodeJS.ProcessEnv,
+      readInjectedIds: async () => new Set<string>(),
+      readLines: async () => correctedSession
+    });
+
+    expect(res.status).toBe("skipped");
+    expect(res.decayed).toEqual([]);
+    expect(res.reinforced).toEqual([]);
+    const saved = await queryPlaybook(file, "stark");
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.reward).toBe(3);
   });
 });

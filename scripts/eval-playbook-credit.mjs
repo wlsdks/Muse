@@ -22,8 +22,10 @@ import {
   DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE,
   PLAYBOOK_CREDIT_MARGIN,
   PLAYBOOK_DECAY_CREDIT_MARGIN,
+  selectCreditTargetLlm,
   selectCreditTargetSemantic
 } from "../packages/agent-core/dist/index.js";
+import { OllamaProvider } from "../packages/model/dist/index.js";
 import { defaultEmbedModel } from "../apps/cli/dist/council-corpus.js";
 import { embed as embedRaw } from "../apps/cli/dist/embed.js";
 
@@ -214,6 +216,71 @@ check(
   decayed <= credited,
   `decay ${decayed} <= credit ${credited}`
 );
+
+// ---- The PRODUCTION selector (model-first) at REAL bank sizes.
+// The first cut of this battery pinned a 5-strategy bank and passed — while the
+// production regime (a bank that grows as the user teaches Muse) silently
+// collapsed: cosine credit falls from 9/11 to 4/11 as near-neighbours crush the
+// margin, and a mis-credit appears. A battery that cannot see the failing regime
+// is not a battery.
+const CHAT_MODEL = process.env.MUSE_EVAL_MODEL ?? "gemma4:12b";
+const modelProvider = new OllamaProvider({ baseUrl: OLLAMA_BASE });
+
+const FILLER = [
+  "Be concise — avoid long paragraphs.", "답변은 간결하게 유지한다.", "No preamble; get to the point.",
+  "출장 일정은 이동 시간까지 포함해서 잡는다.", "리마인더는 근무 시간에만 보낸다.", "Confirm before deleting anything.",
+  "이메일 보내기 전에 초안을 보여준다.", "Always cite the note a claim came from.", "코드 예시는 실행 가능한 형태로 준다.",
+  "회의 요약은 액션 아이템 위주로 쓴다.", "Prefer bullet points for lists of steps.", "존댓말을 기본으로 쓴다.",
+  "Ask one clarifying question when the request is ambiguous.", "주말에는 알림을 보내지 않는다.",
+  "Use the user's timezone for all times.", "Never guess a phone number or email.", "일정 충돌이 있으면 먼저 알려준다.",
+  "Summarize long documents before answering.", "링크는 원문 출처와 함께 제시한다.", "숫자는 천 단위 구분자를 넣는다.",
+  "Explain trade-offs before recommending.", "작업이 끝나면 결과를 한 줄로 확인해준다.", "Do not repeat the question back.",
+  "긴 코드는 파일로 저장하고 경로를 알려준다.", "회의 전에 아젠다를 먼저 확인한다."
+];
+
+// The mis-credit the independent review found on the shipped bank: in a mixed-
+// language bank the embedder's LANGUAGE identity can outrank meaning, so this KO
+// cue was credited to the KO grounding rule instead of the EN answer-first rule.
+const HARD_CUES = [...GENUINE, ["서론 빼고 결론부터 말해", 1]];
+
+for (const size of [5, 30]) {
+  const bank = [...STRATEGIES, ...FILLER.slice(0, Math.max(0, size - STRATEGIES.length))]
+    .map((text, i) => ({ id: `s${i}`, text }));
+  let credited = 0;
+  let mis = 0;
+  for (const [cue, index] of HARD_CUES) {
+    const picked = (await selectCreditTargetLlm(bank, cue, { model: CHAT_MODEL, modelProvider }))
+      ?? (await selectCreditTargetSemantic(bank, cue, embed, DEFAULT_PLAYBOOK_CREDIT_COSINE, PLAYBOOK_CREDIT_MARGIN));
+    if (picked === undefined) continue;
+    if (picked === `s${index}`) {
+      credited++;
+      continue;
+    }
+    // A bank that grows accumulates RESTATEMENTS of the same rule ("Do not repeat
+    // the question back." vs "…no restating the question"). Crediting a
+    // restatement of the intended rule is not a mis-credit — the harm is crediting
+    // a DIFFERENT rule. Grade by meaning, not by record id.
+    const pickedText = bank.find((entry) => entry.id === picked)?.text ?? "";
+    // 0.35 sits between the measured bands: a RESTATEMENT of the same rule
+    // ("Do not repeat the question back." vs "…no restating the question") scores
+    // 0.459, while a genuinely different rule scores 0.235. Two rules stating the
+    // same thing are still cross-distribution enough that they do NOT score like
+    // paraphrases — the recurring lesson.
+    const sim = cosine(await embed(pickedText), await embed(STRATEGIES[index]));
+    if (sim >= 0.35) credited++;
+    else mis++;
+  }
+  check(
+    `production selector @ bank ${size}: a MAJORITY of real feedback is still credited (no collapse as the bank grows)`,
+    credited >= Math.ceil(HARD_CUES.length / 2),
+    `${credited}/${HARD_CUES.length} credited`
+  );
+  check(
+    `production selector @ bank ${size}: ZERO mis-credits`,
+    mis === 0,
+    `${mis} mis-credit(s)`
+  );
+}
 
 console.log(report.join("\n"));
 if (failures.length > 0) {

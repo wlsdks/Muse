@@ -1151,7 +1151,10 @@ describe("muse daemon — unattended self-learning tick", () => {
   const seedInjected = async (env: NodeJS.ProcessEnv): Promise<void> => {
     const now = new Date().toISOString();
     await writePlaybook(env.MUSE_PLAYBOOK_FILE!, [
-      { createdAt: "2026-06-01T00:00:00Z", id: "inj1", lastReinforcedAt: now, origin: "grounded", probation: false, reward: 3, text: "Always give a long, detailed multi-paragraph answer.", userId: "u1" }
+      // origin "distilled" = a strategy MUSE inferred. A user-authored (manual) or
+      // evidence-grounded rule is deliberately NOT decayable by the unattended path
+      // (see isUserAuthoredStrategy) — that is pinned in decay-contradicted.test.ts.
+      { createdAt: "2026-06-01T00:00:00Z", id: "inj1", lastReinforcedAt: now, origin: "distilled", probation: false, reward: 3, text: "Always give a long, detailed multi-paragraph answer.", userId: "u1" }
     ]);
   };
 

@@ -4,6 +4,7 @@ import {
   DEFAULT_PLAYBOOK_CREDIT_COSINE,
   DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE,
   PLAYBOOK_CREDIT_MARGIN,
+  isUserAuthoredStrategy,
   PLAYBOOK_DECAY_CREDIT_MARGIN,
   selectCreditTargetSemantic
 } from "../src/index.js";
@@ -110,8 +111,13 @@ describe("selectCreditTargetSemantic — the margin gate (live-calibrated)", () 
     "s-match": [0.95, 0.31, 0],      // cos ≈ 0.95 → top
     "s-other": [0.30, 0.95, 0],      // cos ≈ 0.30 → runner-up, margin ≈ 0.65
     "cue-ambiguous": [1, 0, 0],
-    "s-near-a": [0.42, 0.91, 0],     // cos ≈ 0.42
-    "s-near-b": [0.40, 0.92, 0]      // cos ≈ 0.40 → margin ≈ 0.02: a near-tie
+    // Two DISTINCT rules (cos(a,b) ≈ 0.17, well under the dedup bar) that happen
+    // to sit almost equally close to the cue — the genuine near-tie the margin
+    // gate exists for. They must not be near-duplicates of each other, or the
+    // dedup path correctly treats them as one rule and the margin has nothing to
+    // decide.
+    "confirm before sending": [0.42, 0.91, 0],  // cos(cue) ≈ 0.42
+    "keep replies brief": [0.40, 0, 0.92]       // cos(cue) ≈ 0.40 → margin ≈ 0.02: a near-tie
   };
   const embed = async (text: string): Promise<readonly number[]> => V[text] ?? [0, 0, 1];
 
@@ -128,7 +134,7 @@ describe("selectCreditTargetSemantic — the margin gate (live-calibrated)", () 
 
   it("credits NOTHING on a near-tie — feedback that implicates nothing scores its top-2 within 0.04", async () => {
     const picked = await selectCreditTargetSemantic(
-      [{ id: "a", text: "s-near-a" }, { id: "b", text: "s-near-b" }],
+      [{ id: "a", text: "confirm before sending" }, { id: "b", text: "keep replies brief" }],
       "cue-ambiguous",
       embed,
       0.3,
@@ -170,5 +176,23 @@ describe("selectCreditTargetSemantic — the margin gate (live-calibrated)", () 
     // ~0.6 (the old 0.55/0.62) rejects nearly all real feedback.
     expect(DEFAULT_PLAYBOOK_CREDIT_COSINE).toBeLessThan(0.4);
     expect(DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE).toBeLessThan(0.45);
+  });
+});
+
+/**
+ * Independent-review regression pins (2026-07-13). The decay gate had never fired
+ * while its floor sat above the reachable band; the moment it was calibrated, an
+ * offhand correction could unlearn a rule the USER wrote. Origin is the guard.
+ */
+describe("isUserAuthoredStrategy — what an unattended process may never unlearn", () => {
+  it("protects a hand-written rule and an evidence-grounded one", () => {
+    expect(isUserAuthoredStrategy({ origin: "manual" })).toBe(true);
+    expect(isUserAuthoredStrategy({ origin: "grounded" })).toBe(true);
+  });
+
+  it("leaves Muse's OWN inferences decayable (that is what unattended decay is for)", () => {
+    expect(isUserAuthoredStrategy({ origin: "distilled" })).toBe(false);
+    expect(isUserAuthoredStrategy({ origin: "reflected" })).toBe(false);
+    expect(isUserAuthoredStrategy({})).toBe(false);
   });
 });

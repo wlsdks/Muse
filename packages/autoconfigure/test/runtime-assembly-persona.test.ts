@@ -41,16 +41,24 @@ describe("createMuseRuntimeAssembly — persona wiring", () => {
     expect(personality?.content).toContain("장난기 있고 따뜻하게 답해줘.");
   });
 
-  it("seeds nothing when no persona.md exists at the resolved path", () => {
+  it("seeds the DEFAULT bluebird personality when no persona.md exists — a fresh install still has a character", () => {
+    // A missing persona.md used to yield NO personality layer, so the flagship
+    // chat surface spoke with zero character on a fresh install. It now fails
+    // OPEN to the default layer (same posture as an invalid file); a user's own
+    // persona.md still overrides it.
     const assembly = createMuseRuntimeAssembly({
       env: { ...DIAGNOSTIC_ENV, MUSE_PERSONA_MD_FILE: join(dir, "does-not-exist.md") }
     });
-    expect(assembly.promptLayerRegistry.resolve({}).find((layer) => layer.id === "personality")).toBeUndefined();
+    const personality = assembly.promptLayerRegistry.resolve({}).find((layer) => layer.id === "personality");
+    expect(personality).toBeDefined();
+    expect(personality?.content.length).toBeGreaterThan(0);
   });
 
   it("the registry stays live-mutable so a save can hot-apply without restart", () => {
     const assembly = createMuseRuntimeAssembly({ env: DIAGNOSTIC_ENV });
-    expect(assembly.promptLayerRegistry.resolve({}).find((layer) => layer.id === "personality")).toBeUndefined();
+    // The default personality is seeded; a save REPLACES it in place.
+    expect(assembly.promptLayerRegistry.resolve({}).find((layer) => layer.id === "personality")?.content)
+      .not.toBe("HOT_APPLIED_XYZ");
 
     assembly.promptLayerRegistry.register({ content: "HOT_APPLIED_XYZ", id: "personality", priority: 0, section: "stable" });
 

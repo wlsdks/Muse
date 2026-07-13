@@ -28,15 +28,16 @@ import {
   extractCurrentSessionTurns,
   isInjectableStrategy,
   isStaleStrategy,
+  selectCreditTargetLlm,
   selectCreditTargetSemantic,
   strategyTextSimilarity,
   type DistillStrategyOptions,
   type SessionBoundaryRef,
   type SessionTurnLine
 } from "@muse/agent-core";
-import { createGateEmbedder, resolvePlaybookFile } from "@muse/autoconfigure";
+import { createGateEmbedder, resolveLearningPauseFile, resolvePlaybookFile } from "@muse/autoconfigure";
 import { errorMessage } from "@muse/shared";
-import { adjustPlaybookReward, queryPlaybook, recordPlaybookStrategy, type PlaybookEntry } from "@muse/stores";
+import { adjustPlaybookReward, isLearningPaused, queryPlaybook, recordPlaybookStrategy } from "@muse/stores";
 
 import { readLastChatHistory, readSessionBoundaries } from "./chat-history.js";
 import { readSessionInjectedIds } from "./playbook-injections.js";
@@ -54,7 +55,6 @@ const REINFORCE_DELTA = 1;
  * Conservative on purpose: an unrelated strategy is never touched, and a
  * cross-script (KO strategy vs EN request) pair scores ~0 and is left alone.
  */
-const DEFAULT_FEEDBACK_THRESHOLD = 0.1;
 
 export interface DistillCorrectionsOptions {
   readonly modelProvider: ModelProviderLike;
@@ -68,7 +68,6 @@ export interface DistillCorrectionsOptions {
   /** A distilled strategy is dropped when this similar to an existing one. Default 0.6. */
   readonly dedupThreshold?: number;
   /** Min similarity for an existing strategy to be the one a correction/approval moves. Default 0.1. */
-  readonly feedbackThreshold?: number;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
   readonly readEnv?: () => NodeJS.ProcessEnv;
@@ -110,6 +109,16 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
   const env = (options.readEnv ?? (() => process.env))();
   const threshold = options.dedupThreshold ?? DEFAULT_DEDUP_THRESHOLD;
 
+  // The learning-pause kill switch. `muse playbook pause` promises the user
+  // "Muse won't learn anything new" — that promise has to hold on THIS path
+  // too, which is the one that actually runs at the end of every session
+  // (the daemon ticks checked it; this did not). It gates BOTH halves: no new
+  // strategy is distilled AND no existing reward moves, since a decay is
+  // unlearning and the pause forbids learning in either direction.
+  if (await isLearningPaused(resolveLearningPauseFile(env as Record<string, string | undefined>))) {
+    return { decayed: [], lowConsistencyRejected: 0, reason: "learning is paused (muse playbook resume)", reinforced: [], status: "skipped" };
+  }
+
   let lines: readonly SessionTurnLine[];
   let boundaries: readonly SessionBoundaryRef[];
   try {
@@ -137,7 +146,6 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
   const playbookFile = options.playbookFile ?? resolvePlaybookFile(env as Record<string, string | undefined>);
   const existing = await queryPlaybook(playbookFile, ownerId);
   const existingTexts = existing.map((entry) => entry.text);
-  const feedbackThreshold = options.feedbackThreshold ?? DEFAULT_FEEDBACK_THRESHOLD;
   const adjustedIds = new Set<string>();
   const embed = options.embed ?? createGateEmbedder(process.env);
   // The ids the injection layer RECORDED for this session (fail-soft: an
@@ -187,17 +195,26 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
     // costlier than a missed reinforce (Memory-R2 arXiv:2605.21768; WEDGE).
     const creditFloor = delta < 0 ? DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE : DEFAULT_PLAYBOOK_CREDIT_COSINE;
     const creditMargin = delta < 0 ? PLAYBOOK_DECAY_CREDIT_MARGIN : PLAYBOOK_CREDIT_MARGIN;
-    let targetId = await selectCreditTargetSemantic(candidates, cue, embed, creditFloor, creditMargin);
-    if (targetId === undefined) {
-      let best: { readonly entry: PlaybookEntry; readonly sim: number } | undefined;
-      for (const entry of candidates) {
-        const sim = strategyTextSimilarity(entry.text, cue);
-        if (sim >= feedbackThreshold && (!best || sim > best.sim)) {
-          best = { entry, sim };
-        }
-      }
-      targetId = best?.entry.id;
-    }
+    // The MODEL decides which rule the feedback is about; cosine is the cheap,
+    // conservative fallback. Measured (bank of 5 → 30 rules, KO+EN):
+    //   cosine: 9/11 → 4/11 credited, and a mis-credit appears at scale
+    //   model : 12/12 → 12/12 credited, 0 mis-credits
+    // Cosine cannot carry this decision as the bank densifies (near-neighbours
+    // crush the margin, and in a mixed-language bank language identity can
+    // outrank meaning). The model is asked one 8-token question and answers NONE
+    // when nothing fits — the same shape as the decay-polarity classifier.
+    // Fail-soft: a model error yields undefined, and the semantic gate (with its
+    // margin) then decides, so the loop never LOSES the old behaviour.
+    const targetId =
+      (await selectCreditTargetLlm(candidates, cue, { model: options.model, modelProvider: options.modelProvider }))
+      ?? (await selectCreditTargetSemantic(candidates, cue, embed, creditFloor, creditMargin));
+    // NO lexical fallback. It used to rescue whatever the semantic gate refused —
+    // with no margin test and the SAME bar for a decay as for a reinforce — so a
+    // cue the semantic gate deliberately fail-closed could still decay a
+    // strategy, which is precisely the fabricated attribution the margin gate
+    // exists to prevent (arXiv:2505.16067). The semantic verdict is now the only
+    // verdict; an embedder that throws already yields `undefined` (fail-soft),
+    // and doing nothing is the correct action when credit cannot be assigned.
     const target = targetId === undefined ? undefined : existing.find((entry) => entry.id === targetId);
     if (!target) {
       return undefined;

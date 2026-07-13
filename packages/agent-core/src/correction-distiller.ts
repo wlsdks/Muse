@@ -516,3 +516,70 @@ function parseDistilledStrategy(raw: string): DistilledStrategy | undefined {
   }
   return tag ? { tag, text } : { text };
 }
+
+const CREDIT_SELECT_SYSTEM_PROMPT =
+  `You decide WHICH of the assistant's rules a user's feedback is about.
+You are given numbered rules and one piece of user feedback.
+Answer with the NUMBER of the rule the feedback is about, or NONE.
+Rules:
+- The feedback must be ABOUT that rule — reinforcing it, or objecting to it.
+- If the feedback is about something none of the rules cover, answer NONE.
+- If two rules could both fit, answer NONE. A wrong attribution is worse than none.
+- Language is irrelevant: feedback in Korean can be about a rule written in English, and vice versa. Judge MEANING, never which language they share.
+Answer with a single number or the word NONE. No other words.`;
+
+export interface SelectCreditTargetLlmOptions {
+  readonly model: string;
+  readonly modelProvider: { generate(request: { messages: readonly ModelMessage[]; model: string; maxOutputTokens?: number; temperature?: number }): Promise<{ output?: string }> };
+  readonly redact?: (text: string) => string;
+}
+
+/**
+ * LLM credit assignment: given the strategies that could have steered this
+ * session and the user's feedback, name the ONE they are about — or NONE.
+ *
+ * Embedding cosine cannot carry this decision alone, and that is a measured
+ * limit, not a tuning gap. A feedback cue and a rule are different text
+ * distributions, so their absolute similarity overlaps with "about nothing here";
+ * as the bank densifies, near-neighbours crush the margin (credit recall
+ * collapses from 10/13 at five rules to 4/11 at thirty) and the argmax itself
+ * starts erring — in a mixed-language bank the embedder's LANGUAGE identity can
+ * outrank meaning, pulling a Korean cue toward Korean rules. The cosine gate is
+ * kept as the cheap, conservative SHORTLIST; the model makes the call, exactly as
+ * it already does for decay polarity (classifyCorrectionContradiction).
+ *
+ * Fail-soft and fail-CLOSED: any error, an unparsable answer, an out-of-range
+ * index, or NONE ⇒ undefined (credit nothing). A wrong attribution replays its
+ * error through experience-following (arXiv:2505.16067); doing nothing does not.
+ */
+export async function selectCreditTargetLlm(
+  candidates: readonly { readonly id: string; readonly text: string }[],
+  cue: string,
+  options: SelectCreditTargetLlmOptions
+): Promise<string | undefined> {
+  if (candidates.length === 0 || cue.trim().length === 0) {
+    return undefined;
+  }
+  const redact = options.redact ?? redactSecretsInText;
+  const numbered = candidates.map((candidate, index) => `${(index + 1).toString()}. ${redact(candidate.text)}`).join("\n");
+  const messages: readonly ModelMessage[] = [
+    { content: CREDIT_SELECT_SYSTEM_PROMPT, role: "system" },
+    { content: `${numbered}\n\nUser feedback: "${redact(cue)}"\nAnswer:`, role: "user" }
+  ];
+  let output: string;
+  try {
+    const response = await options.modelProvider.generate({ maxOutputTokens: 8, messages, model: options.model, temperature: 0 });
+    output = (response.output ?? "").trim().toUpperCase();
+  } catch {
+    return undefined;
+  }
+  if (output.includes("NONE")) {
+    return undefined;
+  }
+  const match = output.match(/\d+/u);
+  if (!match) {
+    return undefined;
+  }
+  const index = Number(match[0]) - 1;
+  return index >= 0 && index < candidates.length ? candidates[index]!.id : undefined;
+}

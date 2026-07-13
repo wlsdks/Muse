@@ -188,3 +188,20 @@ export function isStaleStrategy(strategy: PlaybookStrategy, nowMs?: number): boo
   }
   return true;
 }
+
+/**
+ * Origins that an UNATTENDED process may never decay. A `manual` strategy is a
+ * rule the user wrote themselves; a `grounded` one is evidence-backed. An offhand
+ * correction in one session must not silently unlearn either — the user's own
+ * written rule can only be changed by the user (`muse playbook reward/forget`).
+ *
+ * This became load-bearing the moment the decay gate was calibrated: while its
+ * cosine floor sat above the reachable band the gate had NEVER fired, so nothing
+ * could be unlearned at all; now that a correction genuinely reaches it, the
+ * unattended path must be scoped to what Muse itself inferred.
+ */
+export const USER_AUTHORED_ORIGINS: readonly string[] = ["manual", "grounded"];
+
+export function isUserAuthoredStrategy(entry: { readonly origin?: string }): boolean {
+  return entry.origin !== undefined && USER_AUTHORED_ORIGINS.includes(entry.origin);
+}
