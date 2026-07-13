@@ -38,10 +38,17 @@ Companion to `agent-principles-2026.md` (vendor guidance) and
   composed identity prompt. 9 cases STABLE 3/3; no sycophancy gap surfaced — the
   identity-core anti-flattery line holds under adversarial pressure (honest
   negative finding). adversarialCases 26→35.
-- **P3 — brief-CoT tool-calling A/B (#3). ← NEXT.** Measurement slice; could unlock a
-  selection-accuracy gain on the exact bottleneck (local tool-calling) or confirm the
-  current default with data.
-- **P4 — tool-use-tax audit (#4).** Cheap read-only sweep; likely already clean, worth confirming.
+- **P3 — brief-CoT tool-calling A/B (#3). ◑ INSTRUMENT SHIPPED (agent-reliability fire 3);
+  measurement recording.** eval:tools gains an opt-in `MUSE_EVAL_BRIEF_COT` arm that
+  prepends a bounded (~20-word) reasoning nudge before tool selection; the default
+  (flag unset) is BYTE-IDENTICAL to today's thinking-off eval (deterministically proven
+  + ④b-verified). Live A/B (baseline vs brief-CoT, gemma4:12b) measures whether the
+  nudge raises selection accuracy WITHOUT lowering IrrelAcc. **Finding: <recorded on the
+  live run's completion>.** Decision rule (measure-before-build): HELPS at equal IrrelAcc
+  → P3a adapter mode warranted; HURTS/NEUTRAL → the thinking-off default is CONFIRMED
+  with data and P3a is NOT built (avoid dead infra). Production default unchanged either way.
+- **P4 — tool-use-tax audit (#4). ✓ CLEAN (fire 2).** Tool schemas carry no model-precomputed
+  args (*Iso/duration/offset/epoch); Muse doesn't route pure computation through tools.
 
 ## Sources
 

@@ -450,6 +450,42 @@ export function shadowTrialScorer(provider, model) {
   };
 }
 
+/**
+ * Optional brief-reasoning nudge for the eval:tools solver (arXiv:2604.02155
+ * "Brief Is Better" — a tiny ~8-32 token reasoning budget can improve small-model
+ * tool SELECTION, while long CoT degrades it back below no-CoT). Muse's
+ * production default keeps thinking fully OFF (tool-calling.md rule 6); this
+ * is eval-only measurement scaffolding for the P3 A/B
+ * (docs/strategy/agent-research-findings-2026.md), never a production prompt.
+ * Returns `undefined` when disabled so a caller can `if (section)` it away —
+ * that is what keeps the OFF path byte-identical to no-brief-CoT today.
+ * @param {boolean} enabled
+ * @returns {string|undefined}
+ */
+export function briefCotSystemSection(enabled) {
+  if (!enabled) return undefined;
+  return "First, in AT MOST about 20 words, name which single tool (if any) fits this request and why. "
+    + "Then make the tool call — or make no call if none fits.";
+}
+
+/**
+ * Assemble the eval:tools solver's message array in its canonical order: an
+ * optional brief-reasoning system section (the P3 A/B arm), then an optional
+ * per-case exemplar system section, then the user prompt. Shared by
+ * eval-tool-selection.mjs and pinned directly here so a wiring regression (a
+ * dropped section) shows up as a message-array diff, not just an isolated
+ * flag check.
+ * @param {{prompt:string, exemplarSection?:string, briefCot?:boolean}} opts
+ */
+export function buildToolSelectionMessages({ prompt, exemplarSection, briefCot = false }) {
+  const messages = [];
+  const brief = briefCotSystemSection(briefCot);
+  if (brief) messages.push({ role: "system", content: brief });
+  if (exemplarSection) messages.push({ role: "system", content: exemplarSection });
+  messages.push({ role: "user", content: prompt });
+  return messages;
+}
+
 /** AND a list of `{ok,detail}` scorers; first failure's detail wins, else the last detail. */
 export function combineScorers(...fns) {
   return async (observed, testCase, scenario) => {

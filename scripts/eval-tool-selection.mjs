@@ -22,11 +22,14 @@
  *   pnpm eval:tools                       # gemma4:12b by default
  *   MUSE_EVAL_MODEL=gemma4:12b MUSE_EVAL_THRESHOLD=0.85 pnpm eval:tools
  *   MUSE_EVAL_REPEAT=5 pnpm eval:tools    # run each case 5x; pass only if all pass
+ *   MUSE_EVAL_BRIEF_COT=1 pnpm eval:tools # P3 A/B arm: brief-reasoning nudge before the
+ *                                         # tool call (arXiv:2604.02155); OFF by default —
+ *                                         # unset, the messages sent are byte-identical to today.
  */
 
 import { renderToolExemplarSection, selectToolExemplars } from "../packages/agent-core/dist/index.js";
 import { OllamaProvider } from "../packages/model/dist/index.js";
-import { combineScorers, runEvalSuite, toolScorers } from "./eval-harness.mjs";
+import { buildToolSelectionMessages, combineScorers, runEvalSuite, toolScorers } from "./eval-harness.mjs";
 
 const MODEL = process.env.MUSE_EVAL_MODEL ?? "gemma4:12b";
 const OLLAMA_BASE = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
@@ -35,6 +38,10 @@ const THRESHOLD = Number(process.env.MUSE_EVAL_THRESHOLD ?? "0.85");
 // runs each case N times and counts it as passed only if EVERY run passes —
 // surfacing flaky/borderline selections that a single run would hide.
 const REPEAT = Math.max(1, Math.trunc(Number(process.env.MUSE_EVAL_REPEAT ?? "1")));
+// P3 measurement arm (research doc: "measure before believing; do NOT change
+// the default on the paper alone"). Defaults OFF so eval:tools is unaffected
+// unless a caller explicitly opts in.
+const BRIEF_COT = /^(1|true)$/iu.test(process.env.MUSE_EVAL_BRIEF_COT ?? "");
 
 const SYNTHETIC_TOOLS = [
   { name: "get_weather", description: "Get the current weather for a city. Use when the user asks about weather; do not use otherwise.", inputSchema: { type: "object", properties: { city: { type: "string", description: "City name, e.g. 'Seoul'" } }, required: ["city"] } },
@@ -1559,15 +1566,18 @@ async function main() {
 
   // Solver: elicit the model's one-shot tool selection for a case's prompt.
   // A scenario carrying an exemplarBank gets a per-case few-shot system section
-  // (the 2-3 most similar past request→tool exemplars).
+  // (the 2-3 most similar past request→tool exemplars). When MUSE_EVAL_BRIEF_COT
+  // is unset, buildToolSelectionMessages(briefCot:false) is byte-identical to the
+  // pre-P3 message array — the flag is additive-only, never a default change.
   const solve = async (testCase, scenario) => {
-    const messages = [];
-    if (scenario.exemplarBank) {
-      const section = renderToolExemplarSection(selectToolExemplars(testCase.prompt, scenario.exemplarBank, 3));
-      if (section) messages.push({ role: "system", content: section });
-    }
-    messages.push({ role: "user", content: testCase.prompt });
-    return (await provider.generate({ model: MODEL, messages, tools: scenario.tools, temperature: 0, maxOutputTokens: 160 })).toolCalls ?? [];
+    const exemplarSection = scenario.exemplarBank
+      ? renderToolExemplarSection(selectToolExemplars(testCase.prompt, scenario.exemplarBank, 3))
+      : undefined;
+    const messages = buildToolSelectionMessages({ briefCot: BRIEF_COT, exemplarSection, prompt: testCase.prompt });
+    // The brief-reasoning arm spends some of its budget on the ~20-word tool
+    // justification before the call itself, so it gets a little extra headroom.
+    const maxOutputTokens = BRIEF_COT ? 220 : 160;
+    return (await provider.generate({ model: MODEL, messages, tools: scenario.tools, temperature: 0, maxOutputTokens })).toolCalls ?? [];
   };
   // Scorer: deterministic per-case (selection + args), via the shared harness.
   const score = (toolCalls, testCase) => caseScorer(testCase)(toolCalls);

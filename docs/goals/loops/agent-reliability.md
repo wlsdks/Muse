@@ -24,3 +24,11 @@ ratchet: testFiles +0 (extended existing) · stores 560+SECURITY / proactivity 2
 - **Review point:** ④b 독립 Opus가 MAJOR fail-open 적발 — isConsentActive가 파싱불가 expiresAt를 ACTIVE(영구인가)로 취급(선례 맹목 미러). 자격증명 게이트는 fail-close여야 → `!Number.isNaN(expiry) && …`로 수정 + SECURITY 테스트 추가(손상 timestamp는 findConsent undefined). 뮤테이션으로 load-bearing 확인(fail-open 복원 시 RED). Findings 2-6은 PASS(live enforcement로 fire 1과 범주 다름·back-compat·비-vacuous).
 - **Risk:** grant call-site가 아직 expiresAt 미설정(enforcement live, 부여 UX 후속) — dormant 아님(어떤 경로로든 expiresAt 있으면 즉시 enforce). back-compat: expiresAt 없는 기존 consent는 byte-identical.
 - **lesson:** 선례 미러는 위험프로파일이 같을 때만 — proposed-action의 "unparseable⇒inert"를 credential-authorization에 그대로 옮기면 fail-OPEN. 보안 게이트의 fail 방향은 항상 독립 검증하라(④b가 정확히 잡음). 그리고 scout가 vein 고갈(eval:tools·P4)을 만나면 spin/pad 말고 다른 (pkg,kind)로 즉시 전환 = fire 2가 실제로 ship한 이유.
+
+## fire 3 · 2026-07-14 · <commit-pending>
+meta: value-class=measurement-tooling · pkg=scripts/eval-harness · kind=brief-cot-ab · verdict=PASS(④b) · firesSinceDrill=3
+ratchet: testFiles +0 (extended eval-harness.test) · harness det-test 41/41 · fabrication 0 · live A/B running(local, no budget)
+- **What:** P3 measure-first — eval:tools에 opt-in brief-reasoning arm(MUSE_EVAL_BRIEF_COT). 순수 briefCotSystemSection + buildToolSelectionMessages(eval-harness.mjs, 유닛테스트됨), flag unset이면 message array byte-identical(deep-equal 베이스라인 테스트). 어댑터/thinking-param 무변경 — 프롬프트-프리픽스로만 측정. arXiv:2604.02155.
+- **Why:** brief-CoT가 gemma4 툴선택을 돕는지 측정-우선(논문만으로 기본 안 바꿈). 다양성: fire 1(agent-core/egress)·fire 2(stores/consent)와 다른 (scripts/measurement-tooling)로 전환 — 모노컬처(security 2연속) 탈출. termination·eval:tools IrrelAcc·P4는 scout서 covered/clean 확인, C3/C4는 design-heavy-3rd-security라 defer(backlog decompose 유지).
+- **Review point:** ④b Opus PASS — byte-identical-off를 실제 옛 소스와 대조 검증(eval:tools 게이트 무회귀), ON이 provider.generate 도달(fire-1 drop 아님), production reach 0. Finding 6(tautological RED-proof 테스트) 정리-삭제. 라이브 A/B는 로컬 Ollama라 예산 무관, 백그라운드 실행.
+- **Risk:** finding(측정치)이 이 fire 커밋엔 미포함 — 계측 도구는 즉시 사용가능(usable now, dead infra 아님), A/B 결과는 백그라운드 완료 시 P3 doc에 기록. measure-before-build로 P3a(어댑터) premature 회피.

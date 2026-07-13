@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  briefCotSystemSection,
   buildJudgeUserMessage,
+  buildToolSelectionMessages,
   classifyEvalOutcome,
   combineScorers,
   detectTier0Contamination,
@@ -82,6 +84,51 @@ test("toolScorers.argsPresent — every key present + non-empty; whitespace-only
   assert.equal(miss.ok, false);
   assert.match(miss.detail, /missing\/empty required arg\(s\) \[b, c\]/);
   assert.equal(toolScorers.argsPresent(["a"])([call("t", { a: null })]).ok, false);
+});
+
+// ---------------------------------------------------------------------------
+// P3 brief-CoT A/B scaffolding (arXiv:2604.02155) — eval:tools measurement-only.
+// The wiring in eval-tool-selection.mjs is not imported here (its module runs a
+// live suite at import time); instead this pins the SHARED message-builder both
+// the live script and this test call, so a dropped section shows up as a
+// message-array diff rather than an isolated flag check.
+// ---------------------------------------------------------------------------
+
+test("briefCotSystemSection — undefined when disabled, a bounded instruction string when enabled", () => {
+  assert.equal(briefCotSystemSection(false), undefined);
+  assert.equal(briefCotSystemSection(undefined), undefined);
+  const on = briefCotSystemSection(true);
+  assert.equal(typeof on, "string");
+  assert.match(on, /20 words/);
+  assert.match(on, /tool call/i);
+});
+
+test("buildToolSelectionMessages — briefCot OFF (default, no exemplar) is byte-identical to the pre-P3 baseline message array", () => {
+  const baseline = [{ role: "user", content: "what time is it" }];
+  assert.deepEqual(buildToolSelectionMessages({ prompt: "what time is it" }), baseline);
+  // explicit false is the same as omitting the flag entirely — no silent-default drift
+  assert.deepEqual(buildToolSelectionMessages({ briefCot: false, prompt: "what time is it" }), baseline);
+});
+
+test("buildToolSelectionMessages — briefCot ON prepends the brief-reasoning system section ahead of the user prompt", () => {
+  const messages = buildToolSelectionMessages({ briefCot: true, prompt: "what time is it" });
+  assert.equal(messages.length, 2);
+  assert.equal(messages[0].role, "system");
+  assert.match(messages[0].content, /20 words/);
+  assert.deepEqual(messages[1], { role: "user", content: "what time is it" });
+});
+
+test("buildToolSelectionMessages — canonical order is [brief-CoT, exemplar, user], both sections composable together", () => {
+  const messages = buildToolSelectionMessages({ briefCot: true, exemplarSection: "EXEMPLARS: ...", prompt: "what time is it" });
+  assert.equal(messages.length, 3);
+  assert.equal(messages[0].role, "system");
+  assert.match(messages[0].content, /20 words/);
+  assert.deepEqual(messages[1], { role: "system", content: "EXEMPLARS: ..." });
+  assert.deepEqual(messages[2], { role: "user", content: "what time is it" });
+});
+
+test("buildToolSelectionMessages — an empty-string exemplarSection (falsy) is skipped, matching the pre-P3 `if (section)` guard", () => {
+  assert.deepEqual(buildToolSelectionMessages({ exemplarSection: "", prompt: "x" }), [{ role: "user", content: "x" }]);
 });
 
 test("combineScorers — ANDs scorers, first failure's detail wins, else the last detail", async () => {
