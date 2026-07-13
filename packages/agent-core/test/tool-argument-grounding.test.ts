@@ -221,3 +221,79 @@ describe("groundToolArguments — KO normalization (a real arg must not false-dr
     expect(r.args.location).toBeUndefined();
   });
 });
+
+describe("groundToolArguments — per-field modes (name:mode entries)", () => {
+  describe("email mode — the DOMAIN must vouch, the name-echoing local part cannot", () => {
+    it("drops a fabricated domain even though the local part echoes the contact name", () => {
+      const r = groundToolArguments(
+        { email: "bob@gmail.com", name: "Bob" },
+        ["email:email"],
+        "밥(Bob) 연락처 저장해줘, 전화는 010-1234-5678"
+      );
+      expect(r.dropped).toContain("email");
+      expect(r.args.email).toBeUndefined();
+    });
+    it("keeps an email whose domain the user actually stated", () => {
+      const r = groundToolArguments(
+        { email: "bob@acme.com" },
+        ["email:email"],
+        "save Bob, his email is bob@acme.com"
+      );
+      expect(r.dropped).toEqual([]);
+      expect(r.args.email).toBe("bob@acme.com");
+    });
+    it("keeps a multi-label domain when its registrable labels are all stated", () => {
+      const r = groundToolArguments(
+        { email: "kim@mail.snu.ac.kr" },
+        ["email:email"],
+        "김교수님 메일 kim@mail.snu.ac.kr 저장"
+      );
+      expect(r.dropped).toEqual([]);
+    });
+    it("a non-email-shaped value falls back to the default any-token rule", () => {
+      const r = groundToolArguments({ email: "acme sales desk" }, ["email:email"], "acme 영업팀 메일 저장해줘");
+      expect(r.dropped).toEqual([]);
+    });
+  });
+
+  describe("handle mode — only a literal @body in the utterance vouches", () => {
+    it("drops a handle invented from the bare contact name", () => {
+      const r = groundToolArguments({ handle: "@bob" }, ["handle:handle"], "Bob 저장해줘, 전화 010-1234-5678");
+      expect(r.dropped).toContain("handle");
+    });
+    it("keeps a handle the user literally typed", () => {
+      const r = groundToolArguments({ handle: "@bob" }, ["handle:handle"], "add Bob, telegram @bob");
+      expect(r.dropped).toEqual([]);
+      expect(r.args.handle).toBe("@bob");
+    });
+  });
+
+  describe("date mode — numeric components must each appear (reformat-tolerant)", () => {
+    it("keeps a zero-padded MM-DD reformatted from a KO date", () => {
+      const r = groundToolArguments({ birthday: "05-15" }, ["birthday:date"], "엄마 생일은 5월 15일이야");
+      expect(r.dropped).toEqual([]);
+      expect(r.args.birthday).toBe("05-15");
+    });
+    it("keeps MM-DD stated with an English month name", () => {
+      const r = groundToolArguments({ birthday: "12-25" }, ["birthday:date"], "her birthday is December 25");
+      expect(r.dropped).toEqual([]);
+    });
+    it("drops a birthday whose components the user never stated", () => {
+      const r = groundToolArguments({ birthday: "12-25" }, ["birthday:date"], "밥 연락처 저장, 전화 010-1234-5678");
+      expect(r.dropped).toContain("birthday");
+    });
+    it("drops a YYYY-MM-DD whose year was never stated (partial vouching is not vouching)", () => {
+      const r = groundToolArguments({ birthday: "1990-05-15" }, ["birthday:date"], "생일 5월 15일로 저장");
+      expect(r.dropped).toContain("birthday");
+    });
+    it("keeps a full date when every component was stated", () => {
+      const r = groundToolArguments({ birthday: "1990-05-15" }, ["birthday:date"], "1990년 5월 15일생이야");
+      expect(r.dropped).toEqual([]);
+    });
+  });
+
+  it("an unknown mode suffix falls back to the default rule instead of throwing", () => {
+    const r = groundToolArguments({ note: "강남역" }, ["note:mystery"], "강남역에서 만나기로 함");
+    expect(r.dropped).toEqual([]);
+  });
+});

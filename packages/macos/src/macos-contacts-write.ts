@@ -64,7 +64,10 @@ export function createMacContactsWriteTool(deps: MacContactsWriteToolDeps): Muse
         "as a contact (e.g. 'save Ada's number as a contact', '연락처에 지안 추가해줘'). The user MUST confirm the " +
         "exact contact before it is created; absent confirmation nothing is written. Do NOT use to send a " +
         "message (that is mac_message_send) or to look up an existing contact (that is mac_app_read).",
-      groundedArgs: ["name", "phone", "email"],
+      // email:email — under the ANY-token rule the local part echoes the
+      // contact name (always in the utterance), so an invented domain gets
+      // persisted; domain-aware matching closes that (fire-65 class).
+      groundedArgs: ["name", "phone", "email:email"],
       inputSchema: {
         additionalProperties: false,
         properties: {
