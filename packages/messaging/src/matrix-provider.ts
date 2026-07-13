@@ -271,6 +271,10 @@ export class MatrixProvider implements MessagingProvider {
   async send(message: OutboundMessage): Promise<OutboundReceipt> {
     const outboundText = clampOutboundText(message.text, MATRIX_MAX_TEXT);
     validateOutboundMessage({ ...message, text: outboundText });
+    // No sender-side field to suppress URL previews exists in the
+    // Matrix spec (an `m.hint.no_preview` proposal is still open,
+    // matrix-org/matrix-spec#1588) — accepted residual risk, see
+    // outbound-safety.md.
     // Client-generated transaction id makes the PUT idempotent on the
     // homeserver — a retried request with the same txnId is deduplicated.
     this.txnCounter += 1;

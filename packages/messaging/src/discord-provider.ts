@@ -206,7 +206,11 @@ export class DiscordProvider implements MessagingProvider {
       // `@everyone` / `@here` / `<@id>` in agent output (a quote, a
       // code snippet) would otherwise ping the whole server. The
       // text still shows verbatim; it just doesn't notify.
-      body: JSON.stringify({ allowed_mentions: { parse: [] }, content: outboundText }),
+      // `flags: 4` (SUPPRESS_EMBEDS) stops Discord's server-side
+      // crawler from fetching any URL in the reply to build a
+      // preview — a passive-fetch exfiltration path for a URL an
+      // indirect prompt injection planted (EchoLeak/CamoLeak class).
+      body: JSON.stringify({ allowed_mentions: { parse: [] }, content: outboundText, flags: 4 }),
       headers: {
         authorization: `Bot ${this.token}`,
         "content-type": "application/json"

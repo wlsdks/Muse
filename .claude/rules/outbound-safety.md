@@ -20,8 +20,10 @@ Any action that:
   party.
 
 Replying to the **user themselves** on their own channel is the
-low-risk path (it already runs the channel approval gate for risky
-tools). Everything toward a third party is high-risk and gated.
+low-risk path for the *approval gate* (it already runs the channel
+approval gate for risky tools) — but see "Passive-fetch mitigation"
+below: low approval risk is not the same as zero output risk.
+Everything toward a third party is high-risk and gated.
 
 ## The rules (all MUST hold)
 
@@ -46,6 +48,36 @@ tools). Everything toward a third party is high-risk and gated.
    specific send class before they may act toward a third party
    (`performConsentedAction`); absent or scope-mismatched consent is
    fail-closed.
+
+## Passive-fetch mitigation on every channel reply (fail-close, deterministic)
+
+An indirect prompt injection (planted in a page / note / email / MCP
+result Muse reads) can make the model end a reply with an attacker URL
+carrying a secret in the query string. The moment that reply lands in
+a chat platform, the PLATFORM's own server-side crawler can fetch that
+URL to build a link preview — no click, no approval, secret
+exfiltrated (EchoLeak CVE-2025-32711 / CamoLeak CVE-2025-59145 class).
+This holds **regardless of approval status**: even an approved,
+human-confirmed reply must not trigger a passive server-side fetch of
+attacker-controlled text the model produced.
+
+So every channel-reply send carries the provider's link-preview /
+unfurl suppression parameter:
+
+- **Telegram** — `link_preview_options: { is_disabled: true }` on `sendMessage`.
+- **Discord** — `flags: 4` (`SUPPRESS_EMBEDS`) on the message-create body.
+- **Slack** — `unfurl_links: false, unfurl_media: false` on `chat.postMessage`.
+- **LINE** — no equivalent field exists on the text message object.
+  Accepted residual risk.
+- **Matrix** — no sender-side suppression field exists in the spec
+  (`m.hint.no_preview` is an open proposal, matrix-org/matrix-spec#1588).
+  Accepted residual risk; whether a preview is generated at all depends
+  on the recipient's client/homeserver, not the sender.
+
+A new outbound channel provider ships with its suppression parameter
+wired — or, if genuinely unavailable, the gap recorded here — never a
+provider that echoes the model's raw text into a platform capable of
+crawling it.
 
 ## Out of scope — never built
 

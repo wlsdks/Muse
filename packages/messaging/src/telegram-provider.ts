@@ -258,6 +258,11 @@ export class TelegramProvider implements MessagingProvider {
     const response = await fetchWithTimeout(this.fetchImpl, `${this.baseUrl}/bot${this.token}/sendMessage`, {
       body: JSON.stringify({
         chat_id: message.destination,
+        // Without this, a URL in the reply (including one an indirect
+        // prompt injection planted to exfiltrate a secret) makes
+        // Telegram's own server-side crawler fetch it to build the
+        // preview — no click, no approval (EchoLeak/CamoLeak class).
+        link_preview_options: { is_disabled: true },
         text: escapeForTelegramParseMode(outboundText, this.parseMode),
         ...(this.parseMode ? { parse_mode: this.parseMode } : {})
       }),

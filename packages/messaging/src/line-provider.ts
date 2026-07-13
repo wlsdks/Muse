@@ -102,6 +102,8 @@ export class LineProvider implements MessagingProvider {
     // Telegram / Discord send path).
     const outboundText = clampOutboundText(message.text);
     validateOutboundMessage({ ...message, text: outboundText });
+    // No link-preview-suppression field exists on the LINE text
+    // message object — accepted residual risk, see outbound-safety.md.
     const response = await fetchWithTimeout(this.fetchImpl, `${this.baseUrl}/v2/bot/message/push`, {
       body: JSON.stringify({
         messages: [{ text: outboundText, type: "text" }],

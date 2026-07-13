@@ -202,7 +202,11 @@ export class SlackProvider implements MessagingProvider {
     const outboundText = clampOutboundText(message.text);
     validateOutboundMessage({ ...message, text: outboundText });
     const response = await fetchWithTimeout(this.fetchImpl, `${this.baseUrl}/chat.postMessage`, {
-      body: JSON.stringify({ channel: message.destination, text: escapeSlackText(outboundText) }),
+      // `unfurl_links`/`unfurl_media: false` stop Slack's own server
+      // from fetching a URL in the reply to build a preview — a
+      // passive-fetch exfiltration path for a URL an indirect prompt
+      // injection planted (EchoLeak/CamoLeak class).
+      body: JSON.stringify({ channel: message.destination, text: escapeSlackText(outboundText), unfurl_links: false, unfurl_media: false }),
       headers: {
         authorization: `Bearer ${this.token}`,
         "content-type": "application/json; charset=utf-8"
