@@ -14,7 +14,7 @@ import type { Command } from "commander";
 import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
-const RESULT_FILTERS = ["performed", "refused", "failed", "all"] as const;
+const RESULT_FILTERS = ["performed", "refused", "failed", "noted", "all"] as const;
 
 function actionLogFile(): string {
   return resolveActionLogFile(process.env as Record<string, string | undefined>);

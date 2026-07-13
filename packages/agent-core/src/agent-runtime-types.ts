@@ -36,6 +36,7 @@ import type {
 } from "@muse/memory";
 import type { GuardBlockRateMonitor } from "@muse/policy";
 import type {
+  EgressDecisionKind,
   ToolExecutor,
   ToolExposurePolicy,
   ToolRegistry
@@ -253,6 +254,17 @@ export interface AgentRuntimeOptions {
    * `blockedTools` is always rejected.
    */
   readonly toolApprovalGate?: ToolApprovalGate;
+  /**
+   * Audit-only sink for a non-"allow" egress decision (S5): fired AFTER the
+   * approval-gate/deny enforcement above already ran, never before or in
+   * place of it. A "deny" is already hard-blocked by the runtime regardless
+   * of this sink; a "confirm" (link-following a URL observed only in an
+   * untrusted tool result, under the fan-out cap) is NOT blocked — it has no
+   * other record anywhere today. Fire-and-record: a throwing sink is caught
+   * and ignored, never crashes or gates the run. Never called on "allow"
+   * (a trusted-typed fetch) — that would log every ordinary fetch as noise.
+   */
+  readonly egressAdvisorySink?: EgressAdvisorySink;
   readonly defaults?: {
     readonly maxOutputTokens?: number;
     readonly temperature?: number;
@@ -300,6 +312,23 @@ export interface ToolApprovalGateDecision {
 export type ToolApprovalGate = (
   input: ToolApprovalGateInput
 ) => ToolApprovalGateDecision | Promise<ToolApprovalGateDecision>;
+
+/**
+ * A single non-"allow" egress decision, handed to `egressAdvisorySink` for
+ * the record — never consulted for the allow/confirm/deny decision itself
+ * (that is `authorizeEgressForValue`'s job; this is downstream of it).
+ */
+export interface EgressAdvisory {
+  readonly toolName: string;
+  readonly decision: Exclude<EgressDecisionKind, "allow">;
+  readonly reason: string;
+  /** The candidate URL the decision was about, when the gate resolved one. */
+  readonly url?: string;
+  readonly runId: string;
+  readonly userId?: string;
+}
+
+export type EgressAdvisorySink = (advisory: EgressAdvisory) => void | Promise<void>;
 
 export type AgentRuntimeStreamEvent =
   | ({ readonly runId: string } & Extract<ModelEvent, { readonly type: "text-delta" }>)

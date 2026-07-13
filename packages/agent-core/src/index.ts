@@ -610,6 +610,8 @@ export {
   createAgentRuntime,
   type AgentRuntimeOptions,
   type AgentRuntimeStreamEvent,
+  type EgressAdvisory,
+  type EgressAdvisorySink,
   type ToolApprovalGate,
   type ToolApprovalGateDecision,
   type ToolApprovalGateInput,

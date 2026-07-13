@@ -173,6 +173,7 @@ import type {
 import type {
   AgentRuntimeOptions,
   AgentRuntimeStreamEvent,
+  EgressAdvisorySink,
   ToolApprovalGate,
   ToolApprovalGateDecision
 } from "./agent-runtime-types.js";
@@ -184,6 +185,8 @@ import type {
 export type {
   AgentRuntimeOptions,
   AgentRuntimeStreamEvent,
+  EgressAdvisory,
+  EgressAdvisorySink,
   ToolApprovalGate,
   ToolApprovalGateDecision,
   ToolApprovalGateInput,
@@ -310,6 +313,7 @@ export class AgentRuntime {
   private readonly skillCatalogProvider?: SkillCatalogProvider;
   private readonly telemetryAggregator?: TelemetryAggregator;
   private readonly toolApprovalGate?: ToolApprovalGate;
+  private readonly egressAdvisorySink?: EgressAdvisorySink;
   private readonly defaults: AgentRuntimeOptions["defaults"];
   private readonly toolCapabilityCache = new Map<string, boolean>();
 
@@ -391,6 +395,7 @@ export class AgentRuntime {
     this.skillCatalogProvider = options.skillCatalogProvider;
     this.telemetryAggregator = options.telemetryAggregator;
     this.toolApprovalGate = options.toolApprovalGate;
+    this.egressAdvisorySink = options.egressAdvisorySink;
     this.defaults = options.defaults;
 
     if (!this.modelProvider && !this.modelRegistry) {
@@ -418,6 +423,7 @@ export class AgentRuntime {
       input: specApplied.input,
       runId: input.runId ?? createRunId(),
       startedAt: new Date(),
+      egressAdvisorySink: this.egressAdvisorySink,
       egressAuthority: createEgressAuthority(),
       taintLedger: createTaintLedger()
     };
@@ -491,6 +497,7 @@ export class AgentRuntime {
       input: specApplied.input,
       runId: input.runId ?? createRunId(),
       startedAt: new Date(),
+      egressAdvisorySink: this.egressAdvisorySink,
       egressAuthority: createEgressAuthority(),
       taintLedger: createTaintLedger()
     };
@@ -1274,6 +1281,28 @@ export class AgentRuntime {
       ? authorizeEgressForValue(toolCall.arguments ?? {}, context.egressAuthority)
       : undefined;
     const egressBlocked = egressDecision?.decision === "deny";
+    const egressUserId = metadataString(context.input.metadata, "userId");
+    // Audit trail (fire-and-record, never gates): "allow" is a trusted-typed
+    // fetch and stays silent (logging every ordinary fetch would be noise —
+    // testing.md AC17's byte-identical-on-no-URL contract extends to this).
+    // "confirm"/"deny" get NO other durable record anywhere else today, so
+    // this is the one place either surfaces. Runs regardless of what the
+    // approval gate below decides — a gate isn't required for read-risk
+    // calls, so this can't be folded into that block.
+    if (egressDecision && egressDecision.decision !== "allow" && context.egressAdvisorySink) {
+      try {
+        await context.egressAdvisorySink({
+          decision: egressDecision.decision,
+          reason: egressDecision.reason,
+          runId: context.runId,
+          toolName: toolCall.name,
+          url: egressDecision.url,
+          ...(egressUserId ? { userId: egressUserId } : {})
+        });
+      } catch {
+        // Fail-soft: an audit sink must never crash or block the run.
+      }
+    }
 
     const approvalGate = context.input.toolApprovalGate ?? this.toolApprovalGate;
     if (risk !== "read" && !approvalGate) {
@@ -1292,7 +1321,7 @@ export class AgentRuntime {
           risk,
           runId: context.runId,
           toolCall,
-          userId: metadataString(context.input.metadata, "userId"),
+          userId: egressUserId,
           ...(provenanceWarning ? { provenanceWarning } : {}),
           ...(egressDecision && egressDecision.decision !== "allow" ? { egressWarning: egressDecision.reason, egressBlocked } : {})
         });

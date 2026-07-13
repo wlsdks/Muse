@@ -23,6 +23,7 @@ import {
   type AgentInitiatedNoticeBroker,
   type AgentRuntime,
   type CapturedFollowup,
+  type EgressAdvisorySink,
   type HookStage,
   type PersonaRegister
 } from "@muse/agent-core";
@@ -43,7 +44,7 @@ import { createLoopbackMcpMuseTools, type LoopbackMcpServer, type McpManager, ty
 import { randomUUID } from "node:crypto";
 
 import { resolveLearningPauseFile } from "./provider-paths.js";
-import { defaultSchedulerPauseFile, enqueueLearnEvent, isLearningPaused, isSchedulerPaused, resolveLearnQueueFile, upsertFollowup, type PersistedFollowup } from "@muse/stores";
+import { appendActionLog, defaultSchedulerPauseFile, enqueueLearnEvent, isLearningPaused, isSchedulerPaused, resolveLearnQueueFile, upsertFollowup, type PersistedFollowup } from "@muse/stores";
 import { createContextReferenceMcpServer, createDefaultLoopbackMcpServers, createFetchMcpServer, createFilesystemMcpServer, type MessageApprovalGate, type NotesProviderRegistry, type TasksProviderRegistry } from "@muse/domain-tools";
 import {
   createUserMemoryAutoExtractHook,
@@ -76,6 +77,7 @@ import {
 import { loadUserPersonaSync, PersonaHotReloadRegistry, resolvePersonaFilePath } from "@muse/recall";
 import type { InMemoryPromptLayerRegistry } from "@muse/prompts";
 import { CircuitBreakerRegistry } from "@muse/resilience";
+import { redactSecretsInText } from "@muse/shared";
 import { RuntimeSettings } from "@muse/runtime-settings";
 import {
   FileCheckpointStore,
@@ -1028,6 +1030,49 @@ function buildHooksAndContextProviders(params: {
 }
 
 /**
+ * The runtime's egress-advisory audit sink (S5 follow-up, C1/C2 review
+ * finding): a non-"allow" egress decision — "confirm" (a link-follow the
+ * runtime didn't block) or "deny" (a hard block) — otherwise leaves no
+ * durable, reviewable record anywhere. Appends one `ActionLogEntry` to the
+ * SAME action-log file `buildPersonalStoreStack`'s loopback tools already
+ * read (`muse actions` / `/api/actions`), so this shows up in the existing
+ * review surface rather than a new one. `result: "noted"` for "confirm" (the
+ * call proceeded — this is advisory, not a refusal); `result: "refused"` for
+ * "deny" (the runtime's own fail-closed block, matching that value's
+ * existing meaning elsewhere in this store).
+ *
+ * Exported (not default-private) so it's directly unit-testable against a
+ * real temp file without standing up the whole assembly.
+ */
+export function buildEgressAdvisorySink(env: MuseEnvironment): EgressAdvisorySink {
+  const actionLogFile = resolveActionLogFile(env);
+  return async (advisory) => {
+    // The advisory URL came from an UNTRUSTED tool result (a "confirm"
+    // link-following fetch or a "deny"ed model-composed URL) and can carry a
+    // credential-SHAPED token the deny just blocked. This record is long-lived
+    // and round-trips into recall grounding (→ possibly a cloud model), so
+    // scrub it like the sibling outbound path (consented-action.ts): pattern +
+    // registered secret redaction, then a length cap so a multi-KB dictionary
+    // URL can't bloat the hash-chained log. redactSecrets (registered-only, at
+    // the append boundary) is NOT enough — it misses an unregistered token.
+    const safeUrl = advisory.url ? redactSecretsInText(advisory.url).slice(0, 500) : undefined;
+    // No gateClass: an egress advisory is a NON-INTERACTIVE deterministic
+    // record (no human approval prompt fired), and gateClass is the key
+    // approval-RATE telemetry groups on — tagging it would manufacture a
+    // phantom denial in `analyzeApprovalRates`. The tool name lives in `what`.
+    await appendActionLog(actionLogFile, {
+      ...(safeUrl ? { detail: `url: ${safeUrl}` } : {}),
+      id: `egress_${advisory.runId}_${randomUUID()}`,
+      result: advisory.decision === "deny" ? "refused" : "noted",
+      userId: advisory.userId ?? env.MUSE_USER_ID ?? "user",
+      what: `egress ${advisory.decision}: ${advisory.toolName}${safeUrl ? ` → ${safeUrl}` : ""}`,
+      when: new Date().toISOString(),
+      why: advisory.reason
+    });
+  };
+}
+
+/**
  * The `createAgentRuntime` composition itself — the single largest block
  * in the original function. Returns `undefined` when no model provider /
  * default model is configured (fresh, unconfigured install), same guard
@@ -1179,6 +1224,7 @@ function buildAgentRuntime(params: {
         ? buildEpisodicRecallProvider(env, conversationSummaryStore)
         : undefined,
       toolFilter: buildToolFilter(env),
+      egressAdvisorySink: buildEgressAdvisorySink(env),
       skillCatalogProvider: buildSkillCatalogProvider(skillRegistryPromise),
       // actually instantiate the aggregator so the
       // recordTelemetry call site in AgentRuntime stops no-op-ing.

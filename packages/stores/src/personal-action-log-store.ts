@@ -32,7 +32,15 @@ import { type JsonObject, hasRegisteredSecrets, redactSecrets } from "@muse/shar
 import { decryptFileAtRest, encryptFileAtRest, isFileEncryptedAtRest, readMaybeEncrypted, withFileLock, writeMaybeEncrypted } from "./encrypted-file.js";
 import { quarantineCorruptStore } from "./store-quarantine.js";
 
-export type ActionResult = "performed" | "refused" | "failed";
+/**
+ * `noted` is an ADVISORY record: the action was neither performed-by-consent
+ * nor refused nor failed — it's a non-blocking flag on something that
+ * proceeded anyway (e.g. an egress "confirm" link-follow the runtime didn't
+ * block but has no other durable record). Distinct from `refused` (a
+ * fail-closed block) and `performed` (an approved, gated action) so a reader
+ * scanning the log can't mistake an advisory-only note for either.
+ */
+export type ActionResult = "performed" | "refused" | "failed" | "noted";
 
 export interface ActionLogEntry {
   readonly id: string;
@@ -44,7 +52,7 @@ export interface ActionLogEntry {
   readonly what: string;
   /** WHY — the rationale (the objective spec / trigger reason). */
   readonly why: string;
-  /** Outcome. `refused` covers a fail-closed consent block. */
+  /** Outcome. `refused` covers a fail-closed consent block; `noted` covers a non-blocking advisory record. */
   readonly result: ActionResult;
   /** Standing objective that triggered the action, when applicable. */
   readonly objectiveId?: string;
@@ -317,7 +325,7 @@ function isActionLogEntry(value: unknown): value is ActionLogEntry {
   if (e.gateClass !== undefined && typeof e.gateClass !== "string") {
     return false;
   }
-  return e.result === "performed" || e.result === "refused" || e.result === "failed";
+  return e.result === "performed" || e.result === "refused" || e.result === "failed" || e.result === "noted";
 }
 
 /**

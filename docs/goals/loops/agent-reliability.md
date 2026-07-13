@@ -35,3 +35,11 @@ ratchet: testFiles +0 (extended eval-harness.test) · harness det-test 41/41 · 
 
 ### fire 3 · FINDING (live A/B completed)
 brief-CoT A/B measured (gemma4:12b, repeat=1): baseline(thinking-off) 374/376=99% vs brief-CoT 373/376=99% → NEUTRAL/미세 손해. 베이스라인 포화(99%)로 헤드룸 無 → thinking-off 기본값 데이터-확증, P3a 어댑터 모드 안 만듦(dead infra 회피). lesson: 논문 이득도 자기 베이스라인이 이미 포화면 transfer 안 됨 — measure-first가 premature infra를 정확히 막음.
+
+## fire 4 · 2026-07-14 · <commit-pending>
+meta: value-class=security-hardening · pkg=@muse/agent-core+@muse/autoconfigure+@muse/stores · kind=egress-audit-sink · verdict=PASS(④b 2-fix) · firesSinceDrill=4
+ratchet: testFiles +1 (egress-advisory-action-log.test) · agent-core 71f/autoconfigure 29f/stores 18f/cli 6f/proactivity 2f all pass · fabrication 0 · self-eval green(exit0)
+- **What:** Egress advisory audit-sink — executeToolCall이 egress 판정(confirm=link-following/deny)을 주입 egressAdvisorySink(toolApprovalGate seam 미러)로 넘기고, autoconfigure buildEgressAdvisorySink가 action-log에 append. stores에 "noted" ActionResult, CLI --result 필터. C3/C4의 surfacing 전제(fire 1 롤백 원인=surface 없음 해결).
+- **Why:** read-path egress advisory(confirm/warn)가 지금껏 무기록(Opus 2회 지적) → non-user-initiated fetch 감사불가. anti-defer-ratchet(C3 3회 defer)이 "이제 하라". fire 1 lesson 정면 적용: E2E가 실제 action-log 파일을 read-back(seam 필드 아님).
+- **Review point:** ④b Opus 초판정 FAIL(2 MAJOR) — (1) gateClass 세팅이 approval-rate 텔레메트리 오염(비대화형은 gateClass 생략해야) → 생략+테스트; (2) URL이 redactSecrets(등록만)로만 스크럽 → 시크릿-모양 토큰 verbatim, action-log가 recall→cloud round-trip=deny가 막은 토큰 역-exfil → redactSecretsInText+500캡+SECURITY AC. 내가 두 fix 직접 적용, 뮤테이션으로 load-bearing 확인. 설계·awaited fail-soft·surfaced-outcome·model-agnostic은 초판정서 PASS.
+- **Risk:** confirm이 link-following마다 1 write=action-log 성장(감사 trail이라 허용, 리뷰용). agent-core는 @muse/stores 미import 유지(sink 주입).

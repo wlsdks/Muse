@@ -8,7 +8,7 @@ export interface AgentSpecResolver {
 }
 import type { JsonObject } from "@muse/shared";
 import type { EgressAuthority, ToolExecutionResult } from "@muse/tools";
-import type { ToolApprovalGate } from "./agent-runtime-types.js";
+import type { EgressAdvisorySink, ToolApprovalGate } from "./agent-runtime-types.js";
 import type { TaintLedger } from "./taint-ledger.js";
 
 /**
@@ -90,6 +90,12 @@ export interface AgentRunContext {
    * {@link taintLedger}.
    */
   readonly egressAuthority?: EgressAuthority;
+  /**
+   * Audit-only sink forwarded from `AgentRuntimeOptions.egressAdvisorySink`
+   * (constructed once per runtime, not per run) — see that field's doc for
+   * the fire-and-record contract.
+   */
+  readonly egressAdvisorySink?: EgressAdvisorySink;
 }
 
 export type GuardDecision =
