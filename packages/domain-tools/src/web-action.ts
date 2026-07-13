@@ -47,6 +47,14 @@ export interface PerformWebActionWithApprovalOptions {
   readonly userId: string;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
+  /**
+   * The registered tool name this call is acting on behalf of, recorded on the
+   * action-log entry as `gateClass` for approval-rate telemetry. Default
+   * `"web_action"` (the generic tool); a caller reusing this primitive under a
+   * different tool identity (e.g. `home_action`) overrides it so its approval
+   * rate is tracked separately, not folded into the generic web-action bucket.
+   */
+  readonly gateClass?: string;
   /** Hard wall-clock cap once approved. Default 30_000ms. */
   readonly timeoutMs?: number;
   /**
@@ -90,6 +98,7 @@ export async function performWebActionWithApproval(
   const log = (result: "performed" | "refused" | "failed", detail: string): Promise<void> =>
     appendActionLog(options.actionLogFile, {
       detail,
+      gateClass: options.gateClass ?? "web_action",
       id: idFactory(),
       result,
       userId: options.userId,

@@ -24,6 +24,11 @@ export function createChannelRefusalRecorder(deps: {
   return async (refusal) => {
     await append(deps.actionLogFile, {
       detail: `channel ${deps.providerId}:${deps.source}; reply to approve`,
+      // Same literal tool name the model called — joins these channel-gate
+      // refusals to the SAME gateClass bucket the tool's own approval path
+      // logs its performed/refused entries under (approval-rate telemetry;
+      // see @muse/proactivity's analyzeApprovalRates).
+      gateClass: refusal.tool,
       id: randomUUID(),
       result: "refused",
       userId: refusal.userId ?? `${deps.providerId}:${deps.source}`,

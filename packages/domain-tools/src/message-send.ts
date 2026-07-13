@@ -63,6 +63,7 @@ export async function sendMessageWithApproval(options: SendMessageWithApprovalOp
   const log = (result: ActionResult, why: string, detail: string): Promise<void> =>
     appendActionLog(options.actionLogFile, {
       detail,
+      gateClass: "muse.messaging.send",
       id: idFactory(),
       result,
       userId: options.userId,

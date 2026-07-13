@@ -55,6 +55,7 @@ export async function confirmProposedAction(options: ConfirmProposedActionOption
       await patchProposedActionStatus(options.file, proposal.id, "executed", whenIso);
       await appendActionLog(options.actionLogFile, {
         detail: `confirmed proposal ${proposal.id} → ${proposal.providerId}:${proposal.destination}`,
+        gateClass: "proposed_action",
         id: `act_${proposal.id}_${Date.parse(whenIso).toString(36)}`,
         result: "performed",
         userId: proposal.userId,
@@ -68,6 +69,7 @@ export async function confirmProposedAction(options: ConfirmProposedActionOption
       // Leave it `pending` so the user can retry; record the failure.
       await appendActionLog(options.actionLogFile, {
         detail: `send failed: ${message}`,
+        gateClass: "proposed_action",
         id: `act_${proposal.id}_${Date.parse(whenIso).toString(36)}`,
         result: "failed",
         userId: proposal.userId,
@@ -105,6 +107,7 @@ export async function declineProposedAction(options: DeclineProposedActionOption
   await patchProposedActionStatus(options.file, proposal.id, "declined", whenIso);
   await appendActionLog(options.actionLogFile, {
     detail: `declined proposal ${proposal.id} — not sent`,
+    gateClass: "proposed_action",
     id: `act_${proposal.id}_${Date.parse(whenIso).toString(36)}`,
     result: "refused",
     userId: proposal.userId,

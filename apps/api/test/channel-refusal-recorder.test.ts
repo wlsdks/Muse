@@ -32,6 +32,9 @@ describe("createChannelRefusalRecorder", () => {
     expect(entry.what).toContain('to bob@example.com, subject "Q3"');
     expect(entry.why).toContain("fail-closed gate refused");
     expect(entry.when).toBe("2026-05-22T03:00:00.000Z");
+    // gateClass carries the exact tool name so this refusal joins the SAME
+    // approval-rate bucket the tool's own gate logs its outcomes under.
+    expect(entry.gateClass).toBe("email_send");
   });
 
   it("falls back to providerId:source as the userId when the refusal omits one", async () => {
@@ -48,6 +51,6 @@ describe("createChannelRefusalRecorder", () => {
     await record({ arguments: {}, draft: "", risk: "write", tool: "muse.notes.save" });
     expect(append).toHaveBeenCalledTimes(1);
     expect(append.mock.calls[0]![0]).toBe("/tmp/x.json");
-    expect(append.mock.calls[0]![1]).toMatchObject({ result: "refused", what: 'Muse wanted to run "muse.notes.save" (write)' });
+    expect(append.mock.calls[0]![1]).toMatchObject({ gateClass: "muse.notes.save", result: "refused", what: 'Muse wanted to run "muse.notes.save" (write)' });
   });
 });

@@ -350,6 +350,10 @@ export async function performHomeActionWithApproval(
     actionLogFile: options.actionLogFile,
     approvalGate: options.approvalGate,
     fetchImpl: options.fetchImpl,
+    // Home actions reuse the generic web-action gate; without this override
+    // their approval-rate would silently merge into `web_action`'s telemetry
+    // bucket instead of being tracked as its own `home_action` gate class.
+    gateClass: "home_action",
     request,
     summary,
     userId: options.userId,

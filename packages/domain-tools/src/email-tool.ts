@@ -184,6 +184,7 @@ export function createEmailForwardTool(deps: EmailForwardToolDeps): MuseTool {
         approvalGate: deps.approvalGate,
         body,
         contacts: await Promise.resolve(deps.contacts()),
+        gateClass: "email_forward",
         recipientQuery: to,
         sender: deps.sender,
         subject,

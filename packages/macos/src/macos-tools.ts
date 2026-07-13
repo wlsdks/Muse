@@ -48,6 +48,8 @@ export interface MacActionLogEntry {
   readonly why: string;
   readonly result: MacActionResult;
   readonly detail?: string;
+  /** Recorded for approval-rate telemetry — see `@muse/stores`'s `ActionLogEntry.gateClass`. */
+  readonly gateClass?: string;
 }
 
 /** Records an outbound action (sent OR refused) — injected by the CLI. */
@@ -138,6 +140,7 @@ export async function sendImessageWithApproval(options: SendImessageWithApproval
   const log = (result: MacActionResult, why: string, detail: string): Promise<void> =>
     options.actionLog({
       detail,
+      gateClass: "mac_message_send",
       id: idFactory(),
       result,
       userId: options.userId,

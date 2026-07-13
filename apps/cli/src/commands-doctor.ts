@@ -32,6 +32,8 @@ import { classifyHomeAlertsConfig, classifyMcpServersField, classifyWebWatchConf
 export { classifyHomeAlertsConfig, classifyMcpServersField, classifyWebWatchConfig, resolveDoctorWatchIntervalMs, resolveMuseEnvPath } from "./commands-doctor-config.js";
 import { runRunOutcomesDoctor } from "./commands-doctor-outcomes.js";
 export { formatRunOutcomes } from "./commands-doctor-outcomes.js";
+import { runApprovalRateDoctor } from "./commands-doctor-approval-rate.js";
+export { formatApprovalRateDoctor } from "./commands-doctor-approval-rate.js";
 import { isRecord } from "@muse/shared";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -173,6 +175,7 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
     .option("--grounding", "Score the bundled faithfulness + false-refusal corpus on the local model and print the two rates")
     .option("--weaknesses", "Show the Whetstone weakness ledger — what Muse has noticed it can't answer / didn't actually do")
     .option("--run-outcomes", "Show the grounding failure RATE over recent .muse/runs run-logs (the denominator the weakness ledger lacks) + top failing topics")
+    .option("--approval-rate", "Show per-gate approval/denial counts from the action log — flags a gate class being reflexively approved (a 'rubber stamp')")
     .option("--calibration", "Calibrate the 'I'm not sure' abstention threshold on the bundled edge corpus (conformal coverage guarantee)")
     .option("--alpha <rate>", "Target miss rate for --calibration (default 0.1 → answer ≥90% of answerable items)")
     .option("--watch", "Re-run on a fixed cadence until Ctrl-C (default 5s)")
@@ -188,6 +191,7 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
         readonly grounding?: boolean;
         readonly weaknesses?: boolean;
         readonly runOutcomes?: boolean;
+        readonly approvalRate?: boolean;
         readonly calibration?: boolean;
         readonly alpha?: string;
         readonly watch?: boolean;
@@ -213,6 +217,11 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
       // --run-outcomes is a read-only failure-RATE view over the run-logs.
       if (options.runOutcomes) {
         await runRunOutcomesDoctor(io, options.json === true);
+        return;
+      }
+      // --approval-rate is a read-only view over the action log's gated approve/deny outcomes.
+      if (options.approvalRate) {
+        await runApprovalRateDoctor(io, options.json === true);
         return;
       }
       // --calibration is a standalone live mode (Ollama-gated like --grounding).

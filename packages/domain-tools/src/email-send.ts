@@ -49,6 +49,13 @@ export interface SendEmailWithApprovalOptions {
   readonly userId: string;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
+  /**
+   * The registered tool name recorded on the action-log entry as `gateClass`
+   * for approval-rate telemetry. Default `"email_send"`; `email-tool.ts`'s
+   * forward handler overrides it to `"email_forward"` since it reuses this
+   * same primitive under a different tool identity.
+   */
+  readonly gateClass?: string;
 }
 
 export type SendEmailOutcome =
@@ -62,9 +69,15 @@ export type SendEmailOutcome =
 
 type EmailActionLogger = (result: "performed" | "refused" | "failed", what: string, why: string, detail: string) => Promise<void>;
 
-function makeEmailLogger(actionLogFile: string, userId: string, now: () => Date, idFactory: () => string): EmailActionLogger {
+function makeEmailLogger(
+  actionLogFile: string,
+  userId: string,
+  now: () => Date,
+  idFactory: () => string,
+  gateClass: string
+): EmailActionLogger {
   return (result, what, why, detail) =>
-    appendActionLog(actionLogFile, { detail, id: idFactory(), result, userId, what, when: now().toISOString(), why });
+    appendActionLog(actionLogFile, { detail, gateClass, id: idFactory(), result, userId, what, when: now().toISOString(), why });
 }
 
 /**
@@ -108,7 +121,7 @@ async function dispatchEmailDraft(
 export async function sendEmailWithApproval(options: SendEmailWithApprovalOptions): Promise<SendEmailOutcome> {
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? (() => `act_${Date.now().toString()}_${Math.random().toString(36).slice(2, 8)}`);
-  const log = makeEmailLogger(options.actionLogFile, options.userId, now, idFactory);
+  const log = makeEmailLogger(options.actionLogFile, options.userId, now, idFactory, options.gateClass ?? "email_send");
 
   // Rule 3: recipient resolved, never guessed.
   const resolution = resolveContact(options.contacts, options.recipientQuery);
@@ -147,6 +160,8 @@ export interface ReplyEmailWithApprovalOptions {
   readonly userId: string;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
+  /** Recorded as `gateClass` on the action-log entry. Default `"email_reply"`. */
+  readonly gateClass?: string;
 }
 
 /**
@@ -159,7 +174,7 @@ export interface ReplyEmailWithApprovalOptions {
 export async function replyEmailWithApproval(options: ReplyEmailWithApprovalOptions): Promise<SendEmailOutcome> {
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? (() => `act_${Date.now().toString()}_${Math.random().toString(36).slice(2, 8)}`);
-  const log = makeEmailLogger(options.actionLogFile, options.userId, now, idFactory);
+  const log = makeEmailLogger(options.actionLogFile, options.userId, now, idFactory, options.gateClass ?? "email_reply");
 
   const to = options.to.trim();
   if (!to.includes("@")) {

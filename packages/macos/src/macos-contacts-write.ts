@@ -42,6 +42,8 @@ export interface MacContactsActionLogEntry {
   readonly why: string;
   readonly result: MacContactsActionResult;
   readonly detail?: string;
+  /** Recorded for approval-rate telemetry — see `@muse/stores`'s `ActionLogEntry.gateClass`. */
+  readonly gateClass?: string;
 }
 
 export type MacContactsActionLogger = (entry: MacContactsActionLogEntry) => Promise<void> | void;
@@ -98,7 +100,7 @@ export function createMacContactsWriteTool(deps: MacContactsWriteToolDeps): Muse
       const userId = deps.userId ?? "local";
       const what = `Contact: ${name}`;
       const log = (result: MacContactsActionResult, why: string, detail: string): Promise<void> | void =>
-        deps.actionLog?.({ detail, id: idFactory(), result, userId, what, when: now().toISOString(), why });
+        deps.actionLog?.({ detail, gateClass: "mac_contacts_write", id: idFactory(), result, userId, what, when: now().toISOString(), why });
 
       const draft: ContactDraft = {
         name,

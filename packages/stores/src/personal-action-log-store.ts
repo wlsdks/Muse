@@ -51,6 +51,18 @@ export interface ActionLogEntry {
   /** Free-form result detail ("HTTP 201", "no recorded consent"). */
   readonly detail?: string;
   /**
+   * The registered tool/gate name this entry belongs to (e.g. `"web_action"`,
+   * `"email_send"`, `"muse.messaging.send"`) — the same literal id the model
+   * calls and the channel-approval-gate refusal recorder uses, so a live
+   * interactive approval prompt's approve/deny outcomes join up regardless of
+   * which layer (the tool's own gate vs. the channel gate) recorded them.
+   * Absent on legacy entries and on non-interactive paths (a standing
+   * objective's consent/veto check, an autonomous undo) that never show a
+   * human a live approval prompt — those are excluded from approval-RATE
+   * telemetry on purpose (see `@muse/proactivity`'s `analyzeApprovalRates`).
+   */
+  readonly gateClass?: string;
+  /**
    * Tamper-evidence link: SHA-256 of the previous entry (its content + ITS
    * prevHash). Set by `appendActionLog`; absent on legacy pre-chain entries,
    * which verify as a valid prefix. Excluded from this entry's own hashed body.
@@ -71,7 +83,8 @@ function canonicalActionContent(entry: ActionLogEntry): JsonObject {
     when: entry.when,
     why: entry.why,
     ...(entry.objectiveId ? { objectiveId: entry.objectiveId } : {}),
-    ...(entry.detail ? { detail: entry.detail } : {})
+    ...(entry.detail ? { detail: entry.detail } : {}),
+    ...(entry.gateClass ? { gateClass: entry.gateClass } : {})
   };
 }
 
@@ -299,6 +312,9 @@ function isActionLogEntry(value: unknown): value is ActionLogEntry {
     return false;
   }
   if (e.prevHash !== undefined && typeof e.prevHash !== "string") {
+    return false;
+  }
+  if (e.gateClass !== undefined && typeof e.gateClass !== "string") {
     return false;
   }
   return e.result === "performed" || e.result === "refused" || e.result === "failed";
