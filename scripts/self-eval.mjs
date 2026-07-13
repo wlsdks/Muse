@@ -220,6 +220,7 @@ function main() {
   gates.promptSeam = gateExit("pnpm -s check:prompt-seam");
   gates.envInventory = gateExit("pnpm -s check:env");
   gates.commentMarkers = gateExit("pnpm -s lint:comments");
+  gates.toolchain = gateExit("pnpm -s check:toolchain");
   // Gate runnability: a stale install/dist kills the API server at import
   // time and every live smoke gate silently rots with it — surface that as a
   // scoreboard regression, not a surprise at the next manual smoke run.

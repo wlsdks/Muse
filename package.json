@@ -100,7 +100,8 @@
     "eval:reverify-fix": "pnpm --filter @muse/fs build && pnpm --filter @muse/tools build && pnpm --filter \"@muse/autoconfigure...\" build && node scripts/eval-reverify-fix.mjs",
     "eval:channel-rhythm": "pnpm --filter @muse/agent-core build && pnpm --filter @muse/api build && node scripts/eval-channel-rhythm.mjs",
     "check:env": "node scripts/env-inventory.mjs --check",
-    "docs:env": "node scripts/env-inventory.mjs --write"
+    "docs:env": "node scripts/env-inventory.mjs --write",
+    "check:toolchain": "node scripts/check-toolchain.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -110,7 +111,8 @@
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.1",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "typescript7": "npm:typescript@^7.0.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
