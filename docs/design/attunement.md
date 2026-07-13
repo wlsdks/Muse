@@ -2,16 +2,17 @@
 title: Attunement architecture and data contract
 audience: [engineering, product, security, agents]
 purpose: Define the closed loop, privacy boundary, and implementation seams for Attunement
-status: roadmap
+status: partial-implementation
 updated: 2026-07-13
 related: [../strategy/attunement.md, ../goals/attunement-implementation-plan.md, ../privacy-and-data.md]
 ---
 
 # Attunement architecture and data contract
 
-This document specifies a roadmap. The full Attunement loop is **not shipped**. Existing
-components named below are reusable substrates; their presence must not be presented as
-end-to-end behavior.
+The full Attunement loop is **not shipped**. Slice A is implemented as a local CLI tracer:
+the user creates a `life` or `work` thread, links exact local tasks/notes, opens a pack,
+and records one of four outcomes. Observe, automatic affiliation, additional source adapters,
+and timing-aware help remain roadmap work.
 
 In plain language: start with an unfinished life or work thread the user chooses, build a
 small “where was I?” pack from explicitly linked items, record whether it helped, and change
@@ -28,8 +29,9 @@ opt-in observation (later)
   → safer timing / rhythm evidence ───────────────────────┘
 ```
 
-The LLM may phrase an explanation or summarize a Continuity Pack. It does not decide
-consent, retention, interruption budgets, evidence sufficiency, or action approval.
+Slice A makes no LLM call. A later LLM may phrase an explanation or summarize an already
+linked pack; it does not decide affiliation, consent, retention, interruption budgets,
+evidence sufficiency, or action approval.
 
 ## Reusable current seams
 
@@ -45,27 +47,26 @@ consent, retention, interruption budgets, evidence sufficiency, or action approv
 ## Personal-thread contract
 
 Muse must know which part of the user's life they mean before it combines a task, note,
-reminder, calendar event, contact, run, or browser visit. The first version gets that binding
-from the user or an existing deterministic link. An LLM may summarize linked evidence; it
-may not invent the association.
+reminder, calendar event, contact, run, or browser visit. Slice A supports only local tasks
+and local notes, and only the user can create the binding. An LLM may later summarize linked
+evidence; it may not invent the association.
 
 ```ts
 interface PersonalThreadLink {
   threadId: string;
-  artifactType:
-    | "task"
-    | "note"
-    | "reminder"
-    | "calendar-event"
-    | "contact"
-    | "muse-run"
-    | "checkpoint"
-    | "browser-visit";
+  artifactType: "task" | "note"; // Slice A only
+  providerId: "local";
   artifactId: string;
-  linkedBy: "user" | "deterministic-rule";
+  role: "context" | "next-step";
+  linkedBy: "user";
   linkedAt: string;
 }
 ```
+
+Slice A stores the canonical full task ID or a canonical vault-relative note path. It rejects
+title-search binding, absolute/`..` note paths, and a note whose resolved realpath leaves the
+vault. A thread has at most one `next-step`, and it must be a user-linked open task. Additional
+artifact types and deterministic bindings are later adapters, not a fallback in this path.
 
 ## Minimal observation contract
 
@@ -117,7 +118,13 @@ delivery boundary. The canonical outcome enum is `used`, `adjusted`, `ignored`, 
 `rejected` outcome with an explicit suppression instruction. Later stable dwell is a
 separate behavioral observation, not proof of causality.
 
-Adaptation may change:
+Slice A adaptation may change only:
+
+- detail (`standard` or `compact`);
+- next-step presentation (`direct`, `contextual`, or `hidden`);
+- whether the previous feedback is acknowledged in the next pack.
+
+Later, separately reviewed adaptation may change:
 
 - the focus threshold;
 - evidence/recurrence threshold;

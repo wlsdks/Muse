@@ -194,6 +194,13 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     ]
   },
   {
+    "name": "continue",
+    "description": "Prepare a grounded continuity pack from this thread's explicit local links",
+    "argsTerm": "[thread-id]",
+    "hasOptions": false,
+    "subcommands": []
+  },
+  {
     "name": "companion-line",
     "description": "One short opener for the desktop companion bubble (JSON: {line, grounded, mode, topic})",
     "argsTerm": "",
@@ -946,6 +953,23 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     "subcommands": [
       "recent",
       "summary"
+    ]
+  },
+  {
+    "name": "thread",
+    "description": "Keep an explicitly chosen life or work thread ready to resume",
+    "argsTerm": "",
+    "hasOptions": false,
+    "subcommands": [
+      "continue",
+      "inspect",
+      "link",
+      "list",
+      "outcome",
+      "reset",
+      "start",
+      "undo-reset",
+      "unlink"
     ]
   },
   {

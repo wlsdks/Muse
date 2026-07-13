@@ -1,0 +1,369 @@
+/**
+ * Personal Continuity CLI — deliberately local and deterministic. The user
+ * chooses a life/work thread and explicitly links sources; this command never
+ * asks a model to infer affiliation, timing, permission, or an external action.
+ */
+
+import { isCancel, select } from "@clack/prompts";
+import {
+  AttunementStoreError,
+  buildContinuityPack,
+  createPersonalThread,
+  inspectThread,
+  linkArtifact,
+  openContinuityDelivery,
+  readAttunementState,
+  recordContinuityOutcome,
+  resetThreadPolicy,
+  undoThreadReset,
+  unlinkArtifact,
+  type ArtifactLink,
+  type ArtifactLinkValidator,
+  type ContinuityPack,
+  type ExactArtifactResolver,
+  type PersonalThread
+} from "@muse/attunement";
+import { resolveAttunementFile, resolveNotesDir, resolveTasksFile } from "@muse/autoconfigure";
+import { readTaskById, readTasks } from "@muse/stores";
+import { promises as fs } from "node:fs";
+import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import type { Command } from "commander";
+
+import type { ProgramIO } from "./program.js";
+
+const THREAD_KINDS = ["life", "work"] as const;
+const ARTIFACT_TYPES = ["task", "note"] as const;
+const ARTIFACT_ROLES = ["context", "next-step"] as const;
+const OUTCOMES = ["used", "adjusted", "ignored", "rejected"] as const;
+
+function environment(): Record<string, string | undefined> {
+  return process.env as Record<string, string | undefined>;
+}
+
+function attunementFile(): string {
+  return resolveAttunementFile(environment());
+}
+
+function tasksFile(): string {
+  return resolveTasksFile(environment());
+}
+
+function notesDir(): string {
+  return resolveNotesDir(environment());
+}
+
+function assertChoice(value: string, allowed: readonly string[], name: string): void {
+  if (!allowed.includes(value)) throw new AttunementStoreError(`${name} must be one of: ${allowed.join(", ")}`);
+}
+
+function assertNoDotDotPath(value: string): void {
+  if (value.split(/[\\/]+/u).some((segment) => segment === "..")) {
+    throw new AttunementStoreError("note id must not contain '..'");
+  }
+}
+
+function containedRelative(root: string, target: string): string | undefined {
+  const candidate = relative(root, target);
+  if (candidate.length === 0 || candidate === ".." || candidate.startsWith(`..${sep}`) || isAbsolute(candidate)) return undefined;
+  return candidate.split(sep).join("/");
+}
+
+interface LocalNote {
+  readonly artifactId: string;
+  readonly summary?: string;
+  readonly title: string;
+  readonly updatedAt: string;
+}
+
+/**
+ * Exact local-note reader with realpath containment on every call. A saved
+ * relative id is rechecked at display time, so a later symlink swap cannot
+ * turn an approved note link into a read outside the vault.
+ */
+async function readCanonicalLocalNote(rawId: string): Promise<LocalNote | undefined> {
+  const id = rawId.trim();
+  if (id.length === 0 || isAbsolute(id)) throw new AttunementStoreError("note id must be a relative vault path");
+  assertNoDotDotPath(id);
+  let vaultRoot: string;
+  let target: string;
+  try {
+    vaultRoot = await fs.realpath(notesDir());
+    target = await fs.realpath(resolve(vaultRoot, id));
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw cause;
+  }
+  const artifactId = containedRelative(vaultRoot, target);
+  if (!artifactId) throw new AttunementStoreError("note path escapes the local notes vault");
+  const stat = await fs.stat(target);
+  if (stat.isDirectory()) throw new AttunementStoreError("note id points to a directory");
+  if (stat.size > 1_048_576) throw new AttunementStoreError("note exceeds the 1 MiB local continuity limit");
+  const body = await fs.readFile(target, "utf8");
+  const summary = body
+    .split(/\r?\n/u)
+    .map((line) => line.trim().replace(/^#+\s*/u, ""))
+    .find((line) => line.length > 0);
+  return {
+    artifactId,
+    ...(summary ? { summary: summary.slice(0, 240) } : {}),
+    title: basename(artifactId),
+    updatedAt: stat.mtime.toISOString()
+  };
+}
+
+async function canonicalTaskId(raw: string): Promise<string> {
+  const id = raw.trim();
+  if (id.length === 0) throw new AttunementStoreError("task id must not be empty");
+  const tasks = await readTasks(tasksFile());
+  if (tasks.some((task) => task.id === id)) return id;
+  const matches = tasks.filter((task) => task.id.startsWith(id));
+  if (matches.length === 1) return matches[0]!.id;
+  if (matches.length === 0) throw new AttunementStoreError(`no local task with id or unique prefix '${id}'`);
+  throw new AttunementStoreError(`task id prefix '${id}' is ambiguous; pass the full id`);
+}
+
+/**
+ * The store refuses unvalidated links. This adapter is the only place that
+ * knows the local task and notes providers, so it returns their exact,
+ * canonical identifiers rather than trusting a CLI argument.
+ */
+const validateLocalArtifact: ArtifactLinkValidator = async ({ artifactId, artifactType }) => {
+  if (artifactType === "task") {
+    return { artifactId: await canonicalTaskId(artifactId), artifactType };
+  }
+  const note = await readCanonicalLocalNote(artifactId);
+  if (!note) throw new AttunementStoreError(`no local note with exact id '${artifactId}'`);
+  return { artifactId: note.artifactId, artifactType };
+};
+
+const resolveExactArtifact: ExactArtifactResolver = async (link) => {
+  if (link.artifactType === "task") {
+    const task = await readTaskById(tasksFile(), link.artifactId);
+    if (!task) return undefined;
+    return {
+      artifactId: task.id,
+      artifactType: "task",
+      providerId: "local",
+      role: link.role,
+      ...(task.notes ? { summary: task.notes.slice(0, 240) } : {}),
+      taskStatus: task.status,
+      title: task.title,
+      updatedAt: task.completedAt ?? task.createdAt
+    };
+  }
+  const note = await readCanonicalLocalNote(link.artifactId);
+  if (!note) return undefined;
+  // The stored canonical ID must remain canonical after re-resolution; a note
+  // moved or symlinked to another in-vault path is unavailable rather than
+  // silently becoming a different source.
+  if (note.artifactId !== link.artifactId) return undefined;
+  return {
+    artifactId: note.artifactId,
+    artifactType: "note",
+    providerId: "local",
+    role: link.role,
+    ...(note.summary ? { summary: note.summary } : {}),
+    title: note.title,
+    updatedAt: note.updatedAt
+  };
+};
+
+function formatEvidence(pack: ContinuityPack): string[] {
+  return pack.evidence.map((entry) => {
+    const prefix = `[${entry.reference.artifactType}:${entry.reference.artifactId}]`;
+    if (entry.status === "unavailable") return `  - ${prefix} unavailable`;
+    if (pack.policy.nextStep === "hidden" && entry.reference.role === "next-step") return `  - ${prefix}`;
+    const artifact = entry.artifact!;
+    const detail = pack.policy.detail === "standard" && artifact.summary ? ` — ${artifact.summary}` : "";
+    return `  - ${prefix} ${artifact.title}${detail}`;
+  });
+}
+
+function formatPack(pack: ContinuityPack, deliveryId: string): string {
+  const lines = [`${pack.thread.title} [${pack.thread.kind}]`, "Connected context:", ...formatEvidence(pack)];
+  if (pack.previousOutcome) lines.push(`Previous pack: ${pack.previousOutcome}`);
+  if (pack.policy.nextStep === "hidden") {
+    lines.push("Next step: hidden after your previous feedback.");
+  } else if (pack.nextStep) {
+    const label = pack.policy.nextStep === "contextual" ? "Linked next step" : "Next step";
+    lines.push(`${label}: ${pack.nextStep.title} [${pack.nextStep.artifactId}]`);
+  } else {
+    lines.push("Next step: no open local task is linked.");
+  }
+  lines.push(`Delivery: ${deliveryId}`);
+  lines.push(`Record feedback: muse thread outcome ${deliveryId} <used|adjusted|ignored|rejected>`);
+  return `${lines.join("\n")}\n`;
+}
+
+async function selectThreadInteractively(threads: readonly PersonalThread[]): Promise<string> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new AttunementStoreError("thread id is required outside an interactive terminal");
+  }
+  if (threads.length === 0) throw new AttunementStoreError("no personal threads yet; start one with `muse thread start <title> --kind <life|work>`");
+  const chosen = await select({
+    message: "Choose a personal thread",
+    options: threads.map((thread) => ({ label: `${thread.title} [${thread.kind}]`, value: thread.id }))
+  });
+  if (isCancel(chosen)) throw new AttunementStoreError("thread selection cancelled");
+  return chosen;
+}
+
+async function resolveContinueThreadId(threadId: string | undefined): Promise<string> {
+  if (threadId?.trim()) return threadId.trim();
+  return selectThreadInteractively((await readAttunementState(attunementFile())).threads);
+}
+
+async function runContinue(io: ProgramIO, threadId: string | undefined): Promise<void> {
+  const file = attunementFile();
+  const chosenId = await resolveContinueThreadId(threadId);
+  const state = await readAttunementState(file);
+  const pack = await buildContinuityPack(state, chosenId, resolveExactArtifact);
+  const delivery = await openContinuityDelivery(file, {
+    evidenceRefs: pack.evidenceRefs,
+    expectedPolicyVersion: pack.deliveryPolicyVersion,
+    threadId: chosenId
+  });
+  io.stdout(formatPack(pack, delivery.id));
+}
+
+async function commandAction(command: Command, io: ProgramIO, label: string, action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (cause) {
+    io.stderr(`${cause instanceof Error ? cause.message : String(cause)}\n`);
+    command.error(`${label} failed`, { exitCode: 1 });
+  }
+}
+
+export function registerAttunementCommands(program: Command, io: ProgramIO): void {
+  const thread = program.command("thread").description("Keep an explicitly chosen life or work thread ready to resume");
+
+  thread
+    .command("start <title...>")
+    .description("Start a life or work thread — kind is always explicit")
+    .requiredOption("--kind <life|work>", "thread kind (required; no default)")
+    .action(async (titleParts: string[], options: { readonly kind: string }, command: Command) => {
+      await commandAction(command, io, "thread start", async () => {
+        const kind = options.kind.trim().toLowerCase();
+        assertChoice(kind, THREAD_KINDS, "--kind");
+        const created = await createPersonalThread(attunementFile(), { kind: kind as PersonalThread["kind"], title: titleParts.join(" ") });
+        io.stdout(`Started ${created.kind} thread ${created.id}: ${created.title}\n`);
+      });
+    });
+
+  thread
+    .command("list")
+    .description("List your explicitly chosen personal threads")
+    .option("--json", "Print structured thread data")
+    .action(async (options: { readonly json?: boolean }, command: Command) => {
+      await commandAction(command, io, "thread list", async () => {
+        const threads = (await readAttunementState(attunementFile())).threads;
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ threads }, null, 2)}\n`);
+          return;
+        }
+        if (threads.length === 0) {
+          io.stdout("No personal threads yet. Start one with `muse thread start <title> --kind <life|work>`.\n");
+          return;
+        }
+        for (const item of threads) io.stdout(`${item.id}  [${item.kind}]  ${item.title}\n`);
+      });
+    });
+
+  thread
+    .command("link <thread-id> <artifact-type> <artifact-id>")
+    .description("Explicitly link one exact local task or note to a thread")
+    .requiredOption("--role <context|next-step>", "how this source is used")
+    .action(async (threadId: string, artifactType: string, artifactId: string, options: { readonly role: string }, command: Command) => {
+      await commandAction(command, io, "thread link", async () => {
+        const type = artifactType.trim().toLowerCase();
+        const role = options.role.trim().toLowerCase();
+        assertChoice(type, ARTIFACT_TYPES, "artifact type");
+        assertChoice(role, ARTIFACT_ROLES, "--role");
+        const result = await linkArtifact(attunementFile(), {
+          artifactId,
+          artifactType: type as ArtifactLink["artifactType"],
+          role: role as ArtifactLink["role"],
+          threadId: threadId.trim()
+        }, { validateArtifact: validateLocalArtifact });
+        io.stdout(`${result.created ? "Linked" : "Already linked"} ${result.link.artifactType}:${result.link.artifactId} as ${result.link.role}\n`);
+      });
+    });
+
+  thread
+    .command("unlink <thread-id> <artifact-type> <artifact-id>")
+    .description("Remove one exact local source link from a thread")
+    .action(async (threadId: string, artifactType: string, artifactId: string, _options: unknown, command: Command) => {
+      await commandAction(command, io, "thread unlink", async () => {
+        const type = artifactType.trim().toLowerCase();
+        assertChoice(type, ARTIFACT_TYPES, "artifact type");
+        const removed = await unlinkArtifact(attunementFile(), { artifactId: artifactId.trim(), artifactType: type as ArtifactLink["artifactType"], threadId: threadId.trim() });
+        if (!removed) throw new AttunementStoreError(`no ${type} link '${artifactId}' on thread '${threadId}'`);
+        io.stdout(`Unlinked ${type}:${artifactId}\n`);
+      });
+    });
+
+  const registerContinue = (target: Command, name: string): void => {
+    target
+      .command(`${name} [thread-id]`)
+      .description("Prepare a grounded continuity pack from this thread's explicit local links")
+      .action(async (threadId: string | undefined, _options: unknown, command: Command) => {
+        await commandAction(command, io, "continue", () => runContinue(io, threadId));
+      });
+  };
+  registerContinue(thread, "continue");
+  registerContinue(program, "continue");
+
+  thread
+    .command("inspect <thread-id>")
+    .description("Inspect a thread's links, deliveries, policy, and reset receipts")
+    .option("--json", "Print structured inspection data")
+    .action(async (threadId: string, options: { readonly json?: boolean }, command: Command) => {
+      await commandAction(command, io, "thread inspect", async () => {
+        const inspection = inspectThread(await readAttunementState(attunementFile()), threadId.trim());
+        if (options.json) {
+          io.stdout(`${JSON.stringify(inspection, null, 2)}\n`);
+          return;
+        }
+        io.stdout(`${inspection.thread.title} [${inspection.thread.kind}]\n`);
+        io.stdout(`Policy: ${inspection.thread.policy.detail} / ${inspection.thread.policy.nextStep} / ${inspection.thread.policy.suppression} (v${inspection.thread.policy.version.toString()})\n`);
+        io.stdout(`Links: ${inspection.thread.links.length.toString()}  Deliveries: ${inspection.deliveries.length.toString()}  Resets: ${inspection.resetReceipts.length.toString()}\n`);
+      });
+    });
+
+  thread
+    .command("outcome <delivery-id> <outcome>")
+    .description("Record how a continuity pack helped: used, adjusted, ignored, or rejected")
+    .action(async (deliveryId: string, outcome: string, _options: unknown, command: Command) => {
+      await commandAction(command, io, "thread outcome", async () => {
+        const canonicalOutcome = outcome.trim().toLowerCase();
+        assertChoice(canonicalOutcome, OUTCOMES, "outcome");
+        const recorded = await recordContinuityOutcome(attunementFile(), deliveryId.trim(), canonicalOutcome as (typeof OUTCOMES)[number]);
+        io.stdout(`${recorded.applied ? "Recorded" : "Already recorded"} ${canonicalOutcome} for ${deliveryId}; policy v${recorded.policy.version.toString()}\n`);
+      });
+    });
+
+  thread
+    .command("reset <thread-id>")
+    .description("Reset this thread's display policy without deleting its links or feedback history")
+    .action(async (threadId: string, _options: unknown, command: Command) => {
+      await commandAction(command, io, "thread reset", async () => {
+        const reset = await resetThreadPolicy(attunementFile(), threadId.trim());
+        if (reset.alreadyBaseline) {
+          io.stdout(`Thread ${threadId} already uses the baseline policy.\n`);
+          return;
+        }
+        io.stdout(`Reset ${threadId} to baseline policy (receipt ${reset.receipt!.id}). Undo with: muse thread undo-reset ${threadId} ${reset.receipt!.id}\n`);
+      });
+    });
+
+  thread
+    .command("undo-reset <thread-id> <reset-id>")
+    .description("Undo the latest unchanged policy reset using its receipt")
+    .action(async (threadId: string, resetId: string, _options: unknown, command: Command) => {
+      await commandAction(command, io, "thread undo-reset", async () => {
+        const undone = await undoThreadReset(attunementFile(), threadId.trim(), resetId.trim());
+        io.stdout(`${undone.applied ? "Undid" : "Already undid"} reset ${resetId}; policy v${undone.thread.policy.version.toString()}\n`);
+      });
+    });
+}

@@ -1,0 +1,221 @@
+import { mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  AttunementStoreError,
+  createPersonalThread,
+  linkArtifact,
+  openContinuityDelivery,
+  readAttunementState,
+  recordContinuityOutcome,
+  resetThreadPolicy,
+  undoThreadReset,
+  unlinkArtifact
+} from "./index.js";
+import type { AttunementState, LinkArtifactOptions } from "./index.js";
+
+function stateFile(): string {
+  return join(mkdtempSync(join(tmpdir(), "muse-attunement-")), "attunement.json");
+}
+
+function deterministicOptions(): LinkArtifactOptions {
+  let index = 0;
+  return {
+    idFactory: () => `id-${(++index).toString()}`,
+    now: () => new Date("2026-07-14T00:00:00.000Z"),
+    validateArtifact: async ({ artifactId, artifactType }) => ({ artifactId, artifactType })
+  };
+}
+
+type Mutable<T> = T extends readonly (infer Item)[]
+  ? Mutable<Item>[]
+  : T extends object
+    ? { -readonly [Key in keyof T]: Mutable<T[Key]> }
+    : T;
+
+function cloneState(state: AttunementState): Mutable<AttunementState> {
+  return JSON.parse(JSON.stringify(state)) as Mutable<AttunementState>;
+}
+
+describe("Personal Continuity store", () => {
+  it("creates equal life/work threads without a default and writes owner-only state", async () => {
+    const file = stateFile();
+    const options = deterministicOptions();
+    const life = await createPersonalThread(file, { kind: "life", title: "Plan a quiet birthday" }, options);
+    const work = await createPersonalThread(file, { kind: "work", title: "Ship the continuity slice" }, options);
+
+    expect(life.kind).toBe("life");
+    expect(work.kind).toBe("work");
+    expect((statSync(file).mode & 0o777)).toBe(0o600);
+    expect((await readAttunementState(file)).threads.map((thread) => thread.kind)).toEqual(["life", "work"]);
+  });
+
+  it("accepts only explicit local links and never guesses between next-step tasks", async () => {
+    const file = stateFile();
+    const options = deterministicOptions();
+    const thread = await createPersonalThread(file, { kind: "work", title: "Prepare the launch" }, options);
+    const first = await linkArtifact(file, {
+      artifactId: "task_full-id-1",
+      artifactType: "task",
+      role: "next-step",
+      threadId: thread.id
+    }, options);
+    const replay = await linkArtifact(file, {
+      artifactId: "task_full-id-1",
+      artifactType: "task",
+      role: "next-step",
+      threadId: thread.id
+    }, options);
+
+    expect(first.created).toBe(true);
+    expect(replay.created).toBe(false);
+    await expect(linkArtifact(file, {
+      artifactId: "task_full-id-2",
+      artifactType: "task",
+      role: "next-step",
+      threadId: thread.id
+    }, options)).rejects.toThrow("already has a next-step");
+    await expect(linkArtifact(file, {
+      artifactId: "note.md",
+      artifactType: "note",
+      role: "next-step",
+      threadId: thread.id
+    }, options)).rejects.toThrow("only a local task");
+
+    expect(await unlinkArtifact(file, { artifactId: "task_full-id-1", artifactType: "task", threadId: thread.id })).toBe(true);
+    expect(await unlinkArtifact(file, { artifactId: "task_full-id-1", artifactType: "task", threadId: thread.id })).toBe(false);
+  });
+
+  it("requires an exact validator, stores its canonical ID, and rejects unsafe note paths at the public mutation boundary", async () => {
+    const file = stateFile();
+    const options = deterministicOptions();
+    const thread = await createPersonalThread(file, { kind: "life", title: "Keep the move grounded" }, options);
+    const input = { artifactId: "short-id", artifactType: "task" as const, role: "context" as const, threadId: thread.id };
+
+    await expect(linkArtifact(file, input, undefined as never)).rejects.toThrow("requires an exact local artifact validator");
+    const linked = await linkArtifact(file, input, {
+      ...options,
+      validateArtifact: async ({ artifactType }) => ({ artifactId: "task_full-canonical-id", artifactType })
+    });
+    expect(linked.link.artifactId).toBe("task_full-canonical-id");
+
+    await expect(linkArtifact(file, {
+      artifactId: "../outside.md",
+      artifactType: "note",
+      role: "context",
+      threadId: thread.id
+    }, options)).rejects.toThrow("unsafe relative note id");
+    await expect(linkArtifact(file, {
+      artifactId: "inside.md",
+      artifactType: "note",
+      role: "context",
+      threadId: thread.id
+    }, {
+      ...options,
+      validateArtifact: async ({ artifactType }) => ({ artifactId: "/outside.md", artifactType })
+    })).rejects.toThrow("unsafe relative note id");
+    await expect(linkArtifact(file, {
+      artifactId: "task_type-check",
+      artifactType: "task",
+      role: "context",
+      threadId: thread.id
+    }, {
+      ...options,
+      validateArtifact: async () => ({ artifactId: "note.md", artifactType: "note" })
+    })).rejects.toThrow("changed the artifact type");
+  });
+
+  it("records one canonical outcome atomically, replays the same receipt, and refuses overwrite", async () => {
+    const file = stateFile();
+    const options = deterministicOptions();
+    const thread = await createPersonalThread(file, { kind: "life", title: "Get ready for the move" }, options);
+    await linkArtifact(file, { artifactId: "task_pack-boxes", artifactType: "task", role: "next-step", threadId: thread.id }, options);
+    const delivery = await openContinuityDelivery(file, {
+      evidenceRefs: [{ artifactId: "task_pack-boxes", artifactType: "task", providerId: "local", role: "next-step" }],
+      expectedPolicyVersion: 0,
+      threadId: thread.id
+    }, options);
+
+    const applied = await recordContinuityOutcome(file, delivery.id, "ignored", options);
+    const replay = await recordContinuityOutcome(file, delivery.id, "ignored", options);
+    expect(applied.applied).toBe(true);
+    expect(applied.policy).toMatchObject({ detail: "compact", nextStep: "direct", suppression: "acknowledge-previous", version: 1 });
+    expect(replay).toEqual({ applied: false, delivery: applied.delivery, policy: applied.policy });
+    await expect(recordContinuityOutcome(file, delivery.id, "used", options)).rejects.toThrow("cannot be overwritten");
+  });
+
+  it("uses immutable reset/undo receipts, monotonically versions an undo, and rejects stale undo", async () => {
+    const file = stateFile();
+    const options = deterministicOptions();
+    const thread = await createPersonalThread(file, { kind: "work", title: "Finish proposal" }, options);
+    await linkArtifact(file, { artifactId: "task_proposal", artifactType: "task", role: "next-step", threadId: thread.id }, options);
+    const delivery = await openContinuityDelivery(file, {
+      evidenceRefs: [{ artifactId: "task_proposal", artifactType: "task", providerId: "local", role: "next-step" }],
+      expectedPolicyVersion: 0,
+      threadId: thread.id
+    }, options);
+    await recordContinuityOutcome(file, delivery.id, "used", options); // policy v1
+    const reset = await resetThreadPolicy(file, thread.id, options); // policy v2
+    expect(reset.alreadyBaseline).toBe(false);
+    expect(reset.receipt?.basePolicyVersion).toBe(1);
+    expect(reset.receipt?.resetPolicyVersion).toBe(2);
+
+    const undone = await undoThreadReset(file, thread.id, reset.receipt!.id, options); // policy v3
+    expect(undone.applied).toBe(true);
+    expect(undone.receipt.undoPolicyVersion).toBe(3);
+    expect(undone.thread.policy).toMatchObject({ detail: "compact", version: 3 });
+    expect(await undoThreadReset(file, thread.id, reset.receipt!.id, options)).toEqual({ applied: false, receipt: undone.receipt, thread: undone.thread });
+
+    const secondReset = await resetThreadPolicy(file, thread.id, options); // policy v4
+    const afterResetDelivery = await openContinuityDelivery(file, {
+      evidenceRefs: [{ artifactId: "task_proposal", artifactType: "task", providerId: "local", role: "next-step" }],
+      expectedPolicyVersion: 4,
+      threadId: thread.id
+    }, options);
+    await recordContinuityOutcome(file, afterResetDelivery.id, "adjusted", options); // policy v5
+    await expect(undoThreadReset(file, thread.id, secondReset.receipt!.id, options)).rejects.toThrow("stale reset");
+  });
+
+  it("fails closed rather than replacing an invalid local store", async () => {
+    const file = stateFile();
+    writeFileSync(file, "{ definitely-not-json", "utf8");
+    await expect(readAttunementState(file)).rejects.toBeInstanceOf(AttunementStoreError);
+    await expect(createPersonalThread(file, { kind: "life", title: "Do not overwrite" })).rejects.toBeInstanceOf(AttunementStoreError);
+  });
+
+  it("fails closed on relationally invalid persisted state", async () => {
+    const cases: readonly [string, (state: Mutable<AttunementState>, threadId: string) => void][] = [
+      ["a link assigned to another thread", (state, threadId) => {
+        state.threads[0]!.links.push({ artifactId: "note.md", artifactType: "note", linkedAt: "2026-07-14T00:00:00.000Z", linkedBy: "user", providerId: "local", role: "context", threadId: `${threadId}-other` });
+      }],
+      ["duplicate thread ids", (state) => {
+        state.threads.push(cloneState(state).threads[0]!);
+      }],
+      ["two next steps", (state, threadId) => {
+        state.threads[0]!.links.push({ artifactId: "task_one", artifactType: "task", linkedAt: "2026-07-14T00:00:00.000Z", linkedBy: "user", providerId: "local", role: "next-step", threadId });
+        state.threads[0]!.links.push({ artifactId: "task_two", artifactType: "task", linkedAt: "2026-07-14T00:00:00.000Z", linkedBy: "user", providerId: "local", role: "next-step", threadId });
+      }],
+      ["delivery referencing no thread", (state) => {
+        state.deliveries.push({ evidenceRefs: [], id: "delivery_missing", openedAt: "2026-07-14T00:00:00.000Z", policyVersion: 0, threadId: "thread_missing" });
+      }],
+      ["undo receipt referencing no reset", (state, threadId) => {
+        state.undoResetReceipts.push({ id: "undo_missing", previousPolicyVersion: 1, resetId: "reset_missing", restoredPolicy: { detail: "standard", nextStep: "direct", suppression: "none", version: 2 }, threadId, undoneAt: "2026-07-14T00:00:00.000Z", undoPolicyVersion: 2 });
+      }],
+      ["a non-monotonic next policy version", (state) => {
+        state.nextPolicyVersion = 0;
+      }]
+    ];
+
+    for (const [label, corrupt] of cases) {
+      const file = stateFile();
+      const thread = await createPersonalThread(file, { kind: "work", title: `Reject ${label}` });
+      const invalid = cloneState(await readAttunementState(file));
+      corrupt(invalid, thread.id);
+      writeFileSync(file, JSON.stringify(invalid), "utf8");
+      await expect(readAttunementState(file), label).rejects.toBeInstanceOf(AttunementStoreError);
+    }
+  });
+});

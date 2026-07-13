@@ -29,13 +29,15 @@ The first proof point is **Personal Continuity**: helping you pick up an unfinis
 without reconstructing it from scratch. That thread might be a project, a trip, a health
 appointment, someone you meant to contact, or an article you were reading. In the first
 version, you choose the thread and its related Muse items; automatic detection comes later.
-This experience is a roadmap target, not a shipped feature today. **Work Resumption** is one
-specialized use of it, not Muse's whole identity.
+The first local CLI slice now works with explicit local tasks and notes: create a thread,
+link exact sources, run `muse continue`, then record whether it helped. Automatic detection,
+timing, and observation remain later work. **Work Resumption** is one specialized use of it,
+not Muse's whole identity.
 
 > **What works today:** personal memory, grounded recall, local personal stores, opt-in
 > ambient snapshots, pattern and interruption controls, guarded browser actions, traces,
-> and checkpoints. **What comes next:** a closed loop from an unfinished personal thread to
-> useful help, its outcome, and better timing. See the
+> checkpoints, and the first local Personal Continuity path. **What comes next:** more source
+> adapters, opt-in observation, and better timing. See the
 > [product contract](docs/strategy/attunement.md) and [implementation plan](docs/goals/attunement-implementation-plan.md).
 
 ---
@@ -109,6 +111,13 @@ required** (they fall back to a local briefing when the API server isn't running
 ### Daily-driver flows
 
 ```bash
+# Personal Continuity — you choose the life/work thread and its exact local sources:
+muse thread start "Plan a birthday" --kind life
+muse thread link <thread-id> note birthday.md --role context
+muse thread link <thread-id> task <task-id> --role next-step
+muse continue <thread-id>
+muse thread outcome <delivery-id> used
+
 # JARVIS REPL — continuous conversation, token streaming, persona-aware (type /help):
 muse chat --local --user me
 

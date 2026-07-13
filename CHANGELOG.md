@@ -8,6 +8,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+### Added
+
+- **첫 Personal Continuity 경로가 이제 로컬 CLI에서 동작합니다.** `muse thread start`로 life/work
+  주제를 명시해 만들고, 정확한 local task·note만 연결한 뒤 `muse continue`로 근거와 한 다음 단계를
+  다시 엽니다. `used|adjusted|ignored|rejected` 결과는 한 번만 기록되며, 다음 pack의 표시 방식만
+  바꿉니다. 모델 호출, 자동 주제 추측, Observe, 외부 행동은 이 첫 slice에 없습니다. 데이터는
+  `~/.muse/attunement.json`에 owner-only 원자 저장되고 reset/undo와 inspect가 가능합니다.
+
 ### Changed
 
 - **Muse now has one product north star: Attunement.** Public and internal docs now

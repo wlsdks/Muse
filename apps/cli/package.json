@@ -18,6 +18,7 @@
     "@clack/prompts": "^1.6.0",
     "@muse/a2a": "workspace:*",
     "@muse/agent-core": "workspace:*",
+    "@muse/attunement": "workspace:*",
     "@muse/autoconfigure": "workspace:*",
     "@muse/browser": "workspace:*",
     "@muse/calendar": "workspace:*",

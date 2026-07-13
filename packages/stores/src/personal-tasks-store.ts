@@ -73,6 +73,12 @@ export async function readTasks(file: string): Promise<readonly PersistedTask[]>
   );
 }
 
+/** Exact local-task lookup. Callers that need a known ID should not fall back
+ * to title matching — that remains deliberately confined to chat convenience. */
+export async function readTaskById(file: string, id: string): Promise<PersistedTask | undefined> {
+  return (await readTasks(file)).find((task) => task.id === id);
+}
+
 /**
  * Serialized read-modify-write: run `fn` over the current tasks and persist its
  * result under a CROSS-PROCESS file lock, so the proactive daemon and a chat

@@ -28,7 +28,7 @@ Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처
 | 문서 | 무엇 | 누구에게 |
 |---|---|---|
 | **[strategy/attunement.md](strategy/attunement.md)** | Muse의 wedge, 사용자 순간, current/experimental/roadmap 경계 | 제품·설계·개발 모두 |
-| **[design/attunement.md](design/attunement.md)** | Observe 데이터·privacy·closed-loop 기술 계약 | 개발·보안·AI 에이전트 |
+| **[design/attunement.md](design/attunement.md)** | 구현된 Slice A와 후속 Observe의 privacy·closed-loop 기술 계약 | 개발·보안·AI 에이전트 |
 | **[goals/attunement-implementation-plan.md](goals/attunement-implementation-plan.md)** | 의존성 순서의 vertical slices, gate, kill criterion | 실행·평가 담당 |
 | **[SYSTEM-MAP.md](SYSTEM-MAP.md)** | Muse 기능을 한눈에 보는 구조 지도 (말로만, 빠른 파악용) | 기획·개발 모두 / 처음 보는 사람 |
 | **[glossary.md](glossary.md)** | Muse 전용 용어의 단일 정의 (용어마다 한 줄 + 어디 사는지) | 처음 보는 사람 / AI 에이전트 |

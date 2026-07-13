@@ -11,6 +11,7 @@ export type { DigestSentState } from "./digest-sent-store.js";
 export { DIGEST_LOCK_STALE_MS, withDigestLock, withProcessLock } from "./digest-lock.js";
 export type { DigestLockOutcome, ProcessLockOutcome } from "./digest-lock.js";
 export { decryptFileAtRest, encryptFileAtRest, isFileEncryptedAtRest } from "./encrypted-file.js";
+export { withFileLock } from "./encrypted-file.js";
 export { ageCutoffMs, pruneByAge } from "./retention.js";
 export type { PruneByAgeOptions, PruneByAgeResult } from "./retention.js";
 export { appendInterruptionDelivery, readInterruptionLedger, withinInterruptionBudget } from "./interruption-budget.js";
@@ -60,7 +61,7 @@ export { appendReminderHistory, readReminderHistory } from "./personal-reminder-
 export type { ReminderHistoryEntry } from "./personal-reminder-history-store.js";
 export { compareRemindersByDueAt, filterReminders, fireReminder, mutateReminders, nextReminderOccurrence, normalizeReminderRecurrence, parseReminderDueAt, parseReminderVia, readReminders, readReminderStatusFilter, resolveReminderRef, serializeReminder, serializeReminderForModel, writeReminders } from "./personal-reminders-store.js";
 export type { PersistedReminder, ReminderRecurrence } from "./personal-reminders-store.js";
-export { compareTasksByDueDate, mutateTasks, parseTaskDueAt, readTasks, readTaskStatusFilter, resolveTaskRef, resolveTasksDueLine, selectTasksDueWithin, serializeTask, serializeTaskForModel, writeTasks } from "./personal-tasks-store.js";
+export { compareTasksByDueDate, mutateTasks, parseTaskDueAt, readTaskById, readTasks, readTaskStatusFilter, resolveTaskRef, resolveTasksDueLine, selectTasksDueWithin, serializeTask, serializeTaskForModel, writeTasks } from "./personal-tasks-store.js";
 export type { PersistedTask } from "./personal-tasks-store.js";
 export { hasVeto, queryVetoes, readVetoes, recordVeto, removeVeto, serializeVeto } from "./personal-veto-store.js";
 export type { ActionVeto } from "./personal-veto-store.js";

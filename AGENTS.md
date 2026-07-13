@@ -68,6 +68,8 @@ apps/
 packages/
   agent-core/         Guard, Hook, ReAct + Plan-Execute loops,
                       message integrity, context transforms
+  attunement/         Personal Continuity threads, exact source links,
+                      delivery/outcome receipts, display-policy reducer
   model/              ModelProvider interface + provider wire adapters
   tools/              tool registry, MCP adapter, built-in tools
   policy/             approval, permissions, guardrails
