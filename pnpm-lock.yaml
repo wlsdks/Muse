@@ -675,6 +675,8 @@ importers:
 
   packages/prompts: {}
 
+  packages/quarantine-eval: {}
+
   packages/recall:
     dependencies:
       '@muse/agent-core':
