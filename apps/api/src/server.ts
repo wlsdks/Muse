@@ -4,12 +4,13 @@ import {
 } from "@muse/agent-specs";
 import { extractBearerToken } from "@muse/auth";
 import {
+  ConfigurationError,
   createGateEmbedder,
   parseBoolean,
   resolveActionLogFile,
   resolveContactsFile,
+  resolveIntegrationEnvironment,
   resolveNotesIndexFile,
-  resolveMessagingCredentialsFile,
   resolveObjectivesFile,
   resolveVetoesFile,
   resolvePlaybookFile,
@@ -138,6 +139,15 @@ function resolveTaglineModel(options: ServerOptions): TaglineModelFn | undefined
 }
 
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
+  const integrationEnv = options.integrationEnv
+    ?? resolveIntegrationEnvironment(process.env, { localOnlyOverride: options.localOnly });
+  if (
+    options.integrationEnv
+    && options.localOnly !== undefined
+    && options.localOnly !== options.integrationEnv.localOnly
+  ) {
+    throw new ConfigurationError("ServerOptions.localOnly must match ServerOptions.integrationEnv.localOnly");
+  }
   const agentSpecRegistry = options.agentSpecRegistry ?? new InMemoryAgentSpecRegistry();
   const agentSpecResolver = new RuleBasedAgentSpecResolver(agentSpecRegistry);
   const runtimeSettings =
@@ -292,6 +302,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     registerCalendarRoutes(server, {
       authService,
       credentialStore: options.calendarCredentialStore,
+      integrationEnv,
       registry: options.calendar
     });
   }
@@ -369,8 +380,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     });
     registerMessagingSetupRoutes(server, {
       authService,
-      credentialsFile: resolveMessagingCredentialsFile(process.env),
-      env: process.env,
+      integrationEnv,
       onConnected: (providerId) => {
         if (providerId === "telegram" || providerId === "matrix") {
           ingestStarters[providerId]?.();
@@ -395,14 +405,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // LINE webhook: only registered when both the channel
   // secret and an inbox file path are configured. The plugin scopes a
   // buffer-mode JSON parser so signature verification sees raw bytes.
-  const lineSecret = process.env.MUSE_LINE_CHANNEL_SECRET?.trim();
-  if (lineSecret && lineSecret.length > 0 && options.lineInboxFile) {
+  const lineSecret = integrationEnv.localOnly ? undefined : integrationEnv.messaging.lineChannelSecret;
+  if (lineSecret && options.lineInboxFile) {
     void server.register(lineWebhookPlugin, {
       channelSecret: lineSecret,
       inboxFile: options.lineInboxFile
     });
   }
-  registerSetupRoutes(server, { authService });
+  registerSetupRoutes(server, { authService, integrationEnv });
   registerActiveContextRoutes(server, {
     authService,
     ...(options.activeContextProvider ? { activeContextProvider: options.activeContextProvider } : {})
@@ -569,11 +579,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   startFollowupDaemonIfConfigured(env, server, options);
   startPatternDaemonIfConfigured(env, server, options);
   startConsolidateDaemonIfConfigured(env, server, options, phaseDWiring);
-  startSituationalBriefingDaemonIfConfigured(env, server, options);
+  startSituationalBriefingDaemonIfConfigured(env, server, options, integrationEnv.localOnly);
   startObjectivesDaemonIfConfigured(env, server, options);
   startAmbientDaemonIfConfigured(env, server, options);
   startWebWatchDaemonIfConfigured(env, server, options);
-  startHomeWatchDaemonIfConfigured(env, server, options);
+  startHomeWatchDaemonIfConfigured(env, server, options, integrationEnv.localOnly);
   startDigestDaemonIfConfigured(env, server, options);
   warmUpModelIfConfigured(env, options);
 

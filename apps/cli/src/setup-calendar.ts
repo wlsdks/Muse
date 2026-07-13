@@ -24,6 +24,7 @@ import { URL, URLSearchParams } from "node:url";
 
 import { confirm, isCancel, multiselect, password, text } from "@clack/prompts";
 import { FileCalendarCredentialStore } from "@muse/calendar";
+import { isLocalOnlyEnabled } from "@muse/model";
 
 interface SetupCalendarIO {
   readonly stdout: (message: string) => void;
@@ -31,6 +32,8 @@ interface SetupCalendarIO {
   readonly home?: string;
   readonly fetchImpl?: typeof fetch;
   readonly openBrowser?: (url: string) => Promise<void> | void;
+  /** Optional test seam; production commands inherit process.env. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 const googleAuthUrl = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -38,6 +41,15 @@ const googleTokenUrl = "https://oauth2.googleapis.com/token";
 const googleScope = "https://www.googleapis.com/auth/calendar";
 
 export async function runCalendarSetup(io: SetupCalendarIO): Promise<void> {
+  if (isLocalOnlyEnabled(io.env ?? process.env)) {
+    io.stdout(
+      "Remote Google/CalDAV setup is disabled while MUSE_LOCAL_ONLY=true. "
+      + "Local file, exported ICS, and macOS Calendar.app remain available; "
+      + "set MUSE_MACOS_CALENDAR_NAME to scope Calendar.app. "
+      + "Set MUSE_LOCAL_ONLY=false to configure Google/CalDAV.\n"
+    );
+    return;
+  }
   const home = io.home ?? homedir();
   const credentialsFile = pathJoin(home, ".muse", "credentials.json");
   const store = new FileCalendarCredentialStore(credentialsFile);

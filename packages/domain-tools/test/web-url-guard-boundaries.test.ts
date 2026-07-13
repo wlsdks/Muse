@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertPublicHttpUrlSync, isPrivateAddress, isPrivateIPv4, isPrivateIPv6 } from "../src/web-url-guard.js";
+import { assertPublicHttpUrl, assertPublicHttpUrlSync, isNonPublicWebAddress, isPrivateAddress, isPrivateIPv4, isPrivateIPv6, PUBLIC_WEB_ADDRESS_POLICY_REVIEWED_AT } from "../src/web-url-guard.js";
 
 // Complements web-read.test.ts (which checks representative positives):
 // here the focus is the SSRF-critical RANGE BOUNDARIES, where an
@@ -140,12 +140,50 @@ describe("assertPublicHttpUrlSync — composed SSRF gate (no DNS)", () => {
     expect(assertPublicHttpUrlSync("http://[::127.0.0.1]/admin").ok).toBe(false);
     expect(assertPublicHttpUrlSync("http://[::169.254.169.254]/latest/meta-data/").ok).toBe(false);
     expect(assertPublicHttpUrlSync("http://[::ffff:0:127.0.0.1]/internal").ok).toBe(false);
-    // a public IPv6 with low bits resembling a private IPv4 is still allowed
-    expect(assertPublicHttpUrlSync("https://[2001:db8::7f00:1]/").ok).toBe(true);
+    // Documentation space is separately non-public under the bounded IANA table.
+    expect(assertPublicHttpUrlSync("https://[2001:db8::7f00:1]/").ok).toBe(false);
   });
   it("passes a public https URL and returns the parsed URL", () => {
     const r = assertPublicHttpUrlSync("https://example.com/path");
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.url.hostname).toBe("example.com");
+  });
+});
+
+describe("isNonPublicWebAddress — bounded IANA/RFC public-web table", () => {
+  it("pins the review date and all IPv4 false/N/A ranges with their explicit true exceptions", () => {
+    expect(PUBLIC_WEB_ADDRESS_POLICY_REVIEWED_AT).toBe("2026-07-13");
+    for (const ip of [
+      "0.1.2.3", "10.1.2.3", "100.64.0.1", "127.0.0.1", "169.254.169.254", "172.16.0.1",
+      "192.0.0.8", "192.0.2.1", "192.88.99.1", "192.168.1.1", "198.18.0.1", "198.51.100.1",
+      "203.0.113.1", "224.0.0.1", "240.0.0.1"
+    ]) expect(isNonPublicWebAddress(ip), ip).toBe(true);
+    for (const ip of ["8.8.8.8", "192.0.0.9", "192.0.0.10", "192.31.196.1", "192.52.193.1", "192.175.48.1"]) {
+      expect(isNonPublicWebAddress(ip), ip).toBe(false);
+    }
+  });
+
+  it("pins IPv6 false/N/A ranges, legacy encodings, NAT64, and more-specific true allocations", () => {
+    for (const ip of [
+      "::", "::1", "64:ff9b:1::1", "100::1", "100:0:0:1::1", "2001::1", "2001:db8::1",
+      "2002::1", "3fff::1", "5f00::1", "fc00::1", "fe80::1", "fec0::1", "ff00::1",
+      "::808:808", "::ffff:808:808", "::ffff:0:808:808", "64:ff9b::a00:1"
+    ]) expect(isNonPublicWebAddress(ip), ip).toBe(true);
+    for (const ip of [
+      "64:ff9b::808:808", "2001:1::1", "2001:1::2", "2001:1::3", "2001:3::1",
+      "2001:4:112::1", "2001:20::1", "2001:30::1", "2620:4f:8000::1", "2606:4700::1111"
+    ]) expect(isNonPublicWebAddress(ip), ip).toBe(false);
+    expect(isNonPublicWebAddress("2001:1::4")).toBe(true);
+  });
+
+  it("rejects a mixed DNS answer at preflight time without claiming later socket pinning", async () => {
+    const result = await assertPublicHttpUrl("https://mixed.example.test/path", {
+      lookup: async () => [
+        { address: "93.184.216.34", family: 4 },
+        { address: "192.0.2.10", family: 4 }
+      ]
+    });
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) expect(result.error).toMatch(/non-public web address/u);
   });
 });

@@ -12,7 +12,6 @@ import {
   privacyRoutingCheck,
   readSensitiveFileModes,
   recallCalibrationCheck,
-  runnerSandboxPostureCheck,
   TOOL_OUTPUT_CAP_ADVISORY_FLOOR_CHARS,
   platformPostureCheck,
   toolResultCapAdvisoryCheck,
@@ -376,38 +375,6 @@ describe("toolResultCapAdvisoryCheck", () => {
   it("fails soft (ok) on a non-numeric override instead of crashing", () => {
     const r = toolResultCapAdvisoryCheck({ MUSE_MAX_TOOL_OUTPUT_CHARS: "not-a-number" });
     expect(r.status).toBe("ok");
-  });
-});
-
-describe("runnerSandboxPostureCheck — MUSE_RUNNER_SANDBOX=seatbelt posture", () => {
-  it("ok, off by default (unset) — names the opt-in", () => {
-    const r = runnerSandboxPostureCheck({}, "darwin");
-    expect(r.status).toBe("ok");
-    expect(r.detail).toContain("off");
-    expect(r.detail).toContain("MUSE_RUNNER_SANDBOX=seatbelt");
-  });
-
-  it("ok, seatbelt active on darwin", () => {
-    const r = runnerSandboxPostureCheck({ MUSE_RUNNER_SANDBOX: "seatbelt" }, "darwin");
-    expect(r.status).toBe("ok");
-    expect(r.detail).toContain("seatbelt active");
-  });
-
-  it("warn, seatbelt requested but unsupported off-darwin", () => {
-    const r = runnerSandboxPostureCheck({ MUSE_RUNNER_SANDBOX: "seatbelt" }, "linux");
-    expect(r.status).toBe("warn");
-    expect(r.detail).toContain("unsupported");
-    expect(r.detail).toContain("unsandboxed");
-  });
-
-  it("ok when unset regardless of platform", () => {
-    expect(runnerSandboxPostureCheck({}, "linux").status).toBe("ok");
-  });
-
-  it("ok when set to something other than 'seatbelt' (treated as off)", () => {
-    const r = runnerSandboxPostureCheck({ MUSE_RUNNER_SANDBOX: "bogus" }, "darwin");
-    expect(r.status).toBe("ok");
-    expect(r.detail).toContain("off");
   });
 });
 

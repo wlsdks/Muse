@@ -9,7 +9,7 @@ import { createWebDownloadTool, safeDownloadName } from "./web-download-tool.js"
 
 // Stub the system DNS resolver so the NO-lookup production path (which falls back
 // to the guard's defaultLookup = node:dns/promises) hermetically resolves a
-// public-looking hostname to a PRIVATE IP — the DNS-rebinding case. Only the
+// public-looking hostname to a PRIVATE IP at preflight time. Only the
 // no-lookup/hostname test hits this; every other test injects an explicit lookup
 // (or uses a literal IP caught before DNS), so this stub doesn't affect them.
 vi.mock("node:dns/promises", () => ({
@@ -57,6 +57,24 @@ describe("web_download tool", () => {
     expect(readFileSync(out.path, "utf8")).toBe("PDF-BYTES");
   });
 
+  it("uses the manual redirect final URL for a redirect download, not response.url", async () => {
+    const d = dir();
+    let calls = 0;
+    const tool = createWebDownloadTool({
+      downloadDir: d,
+      fetchImpl: (async () => {
+        calls += 1;
+        if (calls === 1) return new Response("redirect", { status: 302, headers: { location: "/final.pdf" } });
+        const final = new Response("FINAL", { status: 200 });
+        Object.defineProperty(final, "url", { value: "https://attacker.test/wrong.exe" });
+        return final;
+      }) as unknown as typeof fetch,
+      lookup: publicLookup
+    });
+    const out = await tool.execute({ url: "https://files.test/start" }, ctx) as { name: string; saved: boolean };
+    expect(out).toMatchObject({ name: "final.pdf", saved: true });
+  });
+
   it("does NOT clobber an existing file — dedupes like a browser (no silent data loss)", async () => {
     const d = dir();
     writeFileSync(join(d, "report.pdf"), "PRECIOUS-USER-FILE", "utf8");
@@ -77,10 +95,9 @@ describe("web_download tool", () => {
     expect(fetched).toBe(false);
   });
 
-  it("SSRF (DNS-rebinding): a public-looking hostname whose lookup RESOLVES to a private IP is refused", async () => {
-    // The rebinding defence: a public-looking name (not a literal private IP, so the
-    // sync guard would wave it through) whose DNS resolves to a private address. The
-    // async guard resolves via `lookup` and refuses on the resolved-private record.
+  it("SSRF (DNS preflight): a public-looking hostname whose lookup resolves to a private IP is refused", async () => {
+    // A public-looking name (not a literal private IP, so the sync guard would
+    // wave it through) whose DNS preflight resolves to a private address is refused.
     const d = dir();
     let fetched = false;
     const privateLookup = async () => [{ address: "10.0.0.5", family: 4 }];
@@ -95,11 +112,9 @@ describe("web_download tool", () => {
     expect(existsSync(join(d, "report.pdf"))).toBe(false);
   });
 
-  it("SSRF (DNS-rebinding): the NO-lookup PRODUCTION path resolves via defaultLookup (dns stubbed → private) and refuses", async () => {
-    // This is the actual fix: production wires no `lookup`, so the guard must fall
-    // back to defaultLookup (node:dns/promises, stubbed above → 169.254.169.254) and
-    // STILL catch the rebinding. Before the fix this path used the sync guard and
-    // the file was written.
+  it("SSRF (DNS preflight): the no-lookup production path resolves via defaultLookup and refuses", async () => {
+    // Production wires no `lookup`, so the guard falls back to defaultLookup
+    // (stubbed above → 169.254.169.254) and refuses before a request/write.
     const d = dir();
     let fetched = false;
     const tool = createWebDownloadTool({
@@ -114,11 +129,10 @@ describe("web_download tool", () => {
 
   it("SSRF: a public URL that redirects to a private host is refused without writing", async () => {
     const d = dir();
-    const privateUrl = "http://169.254.169.254/latest/meta-data";
-    const redirectFetch = (async (_url: string) => {
-      const resp = new Response(Buffer.from("secret-metadata"), { status: 200 });
-      Object.defineProperty(resp, "url", { value: privateUrl });
-      return resp;
+    const requests: string[] = [];
+    const redirectFetch = (async (url: string) => {
+      requests.push(url);
+      return new Response("redirect body must stay unread", { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data" } });
     }) as unknown as typeof fetch;
     const tool = createWebDownloadTool({ downloadDir: d, fetchImpl: redirectFetch, lookup: publicLookup });
     const out = await tool.execute({ url: "https://files.test/report.pdf" }, ctx) as { saved: boolean; reason?: string };
@@ -127,6 +141,7 @@ describe("web_download tool", () => {
     // nothing written to the downloads dir
     const { readdirSync } = await import("node:fs");
     expect(readdirSync(d)).toHaveLength(0);
+    expect(requests).toEqual(["https://files.test/report.pdf"]);
   });
 
   it("refuses a non-http(s) scheme", async () => {
@@ -141,6 +156,20 @@ describe("web_download tool", () => {
     const out = await tool.execute({ url: "https://files.test/big.bin" }, ctx) as { saved: boolean; reason?: string };
     expect(out.saved).toBe(false);
     expect(String(out.reason).toLowerCase()).toMatch(/large|big|size|cap/);
+  });
+
+  it("keeps download network failures to one physical call (no inherited retry/timeout)", async () => {
+    const d = dir();
+    let calls = 0;
+    const tool = createWebDownloadTool({
+      downloadDir: d,
+      fetchImpl: (async () => { calls += 1; throw new Error("offline"); }) as unknown as typeof fetch,
+      lookup: publicLookup
+    });
+    const out = await tool.execute({ url: "https://files.test/offline.bin" }, ctx) as { saved: boolean; reason?: string };
+    expect(out.saved).toBe(false);
+    expect(String(out.reason)).toMatch(/offline/u);
+    expect(calls).toBe(1);
   });
 
   it("aborts an over-cap body mid-stream — does NOT buffer the whole thing into RAM", async () => {

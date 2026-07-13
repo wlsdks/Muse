@@ -20,7 +20,7 @@ import type { NotesProviderRegistry, TasksProviderRegistry } from "@muse/domain-
 import type { CalendarProviderRegistry } from "@muse/calendar";
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import type { MuseTool } from "@muse/tools";
-import { isWebEgressAllowed } from "@muse/model";
+import { isInteractiveWebEgressAllowed } from "@muse/model";
 import type { ModelProvider } from "@muse/model";
 
 import { parseBoolean, parseInteger } from "./env-parsers.js";
@@ -84,10 +84,9 @@ export interface LoopbackToolsBundle {
 
 export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle {
   const { env } = deps;
-  // Master web-egress switch (airplane mode). When off, every web-reaching
-  // tool is removed regardless of its own enable flag. Independent of
-  // MUSE_LOCAL_ONLY (which governs cloud-LLM egress, not reading the web).
-  const webEgress = isWebEgressAllowed(env);
+  // Trusted interactive-web posture. Local-only dominates a permissive
+  // MUSE_WEB_EGRESS value before these tools can reach model projection.
+  const webEgress = isInteractiveWebEgressAllowed(env);
   const llmJudge = deps.modelProvider && deps.defaultModel
     ? { model: deps.defaultModel, modelProvider: deps.modelProvider }
     : {};
@@ -261,7 +260,7 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
   // MUSE_SEARXNG_URL is set. A JARVIS-class assistant on a local model has no
   // built-in web_search, so without this it can't answer "what did Apple
   // announce today?". Read-only + outbound to the public web like muse.web.read
-  // (MUSE_LOCAL_ONLY governs cloud-LLM egress, not reading the web).
+  // Local-only also removes this public-web surface before the model sees it.
   const searxngUrl = env.MUSE_SEARXNG_URL?.trim();
   const searxngEngines = env.MUSE_SEARXNG_ENGINES?.trim();
   const search = webEgress && parseBoolean(env.MUSE_SEARCH_ENABLED, true)

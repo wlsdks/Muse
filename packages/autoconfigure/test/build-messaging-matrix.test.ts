@@ -52,3 +52,21 @@ describe("matrix path resolvers", () => {
     expect(resolveMatrixSinceFile({ MUSE_MATRIX_SINCE_FILE: "/tmp/mx-since.json" })).toBe("/tmp/mx-since.json");
   });
 });
+
+describe("T2-B1 local-only containment", () => {
+  it("omits every remote provider while retaining the local log", () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-local-only-messaging-"));
+    const registry = buildMessagingRegistry({
+      MUSE_DISCORD_BOT_TOKEN: "discord-token",
+      MUSE_LINE_CHANNEL_ACCESS_TOKEN: "line-token",
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_MATRIX_ACCESS_TOKEN: "matrix-token",
+      MUSE_MATRIX_HOMESERVER_URL: "https://matrix.example.test",
+      MUSE_MESSAGING_CREDENTIALS_FILE: join(dir, "messaging.json"),
+      MUSE_SLACK_BOT_TOKEN: "slack-token",
+      MUSE_TELEGRAM_BOT_TOKEN: "telegram-token"
+    });
+
+    expect(registry.describe().map((entry) => entry.id)).toEqual(["log"]);
+  });
+});

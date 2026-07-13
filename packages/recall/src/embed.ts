@@ -11,30 +11,21 @@
  * on the POST so a REMOTE resolved host never receives personal text off-box.
  */
 
-import { classifyProviderLocality, LocalOnlyViolationError } from "@muse/model";
+import { canonicalizeLocalOnlyModelBaseUrl, isLocalOnlyEnabled, LocalOnlyViolationError } from "@muse/model";
 
 export { cosineSimilarity } from "@muse/agent-core";
 
 export const DEFAULT_EMBED_TIMEOUT_MS = 30_000;
 
-// Matches @muse/autoconfigure's parseBoolean truthy set so the embed gate fires
-// under the exact same MUSE_LOCAL_ONLY values the chat/doctor posture uses.
-const TRUTHY = new Set(["true", "1", "yes", "on"]);
-
-/**
- * Fail-CLOSED cloud-egress guard for the embeddings POST. `MUSE_LOCAL_ONLY=true`
- * means personal text must never leave the box — but an embed hits an arbitrary
- * resolved `OLLAMA_BASE_URL`, and a REMOTE Ollama host is egress. The chat
- * provider gate never sees this endpoint (it's an independent base URL), and the
- * guarded `createOllamaEmbedder` is a DIFFERENT embedder family than the CLI's,
- * so this is the only chokepoint that covers `muse ask/recall/note/…`. Throws
- * before any note/memory/query text is POSTed off-box.
- */
-function assertEmbedEgressAllowed(baseUrl: string): void {
-  const localOnly = TRUTHY.has((process.env.MUSE_LOCAL_ONLY ?? "").trim().toLowerCase());
-  if (localOnly && classifyProviderLocality("ollama", baseUrl) === "cloud") {
+function resolveEmbedTransportBaseUrl(baseUrl: string, requireLocalOnly?: true): string {
+  if (!isLocalOnlyEnabled(process.env) && requireLocalOnly !== true) {
+    return baseUrl;
+  }
+  const canonical = canonicalizeLocalOnlyModelBaseUrl("ollama", baseUrl);
+  if (!canonical) {
     throw new LocalOnlyViolationError("ollama", baseUrl);
   }
+  return canonical;
 }
 
 /** Env-only fallback resolver — no credentials-file merge (that's the caller's seam). */
@@ -50,6 +41,12 @@ export interface EmbedOptions {
   /** Resolve the Ollama base URL; defaults to `OLLAMA_BASE_URL` or localhost. */
   readonly baseUrlResolver?: () => string;
   /**
+   * One-way caller posture signal. `true` can add the local-only transport
+   * wall; `false` is intentionally not representable and cannot weaken an
+   * ambient local-only process.
+   */
+  readonly requireLocalOnly?: true;
+  /**
    * Hard wall-clock cap on the embeddings POST. Ollama's cold-model
    * load can wedge a request for minutes; without this every RAG
    * caller (`muse ask`, `muse notes reindex`, `muse recall`, the
@@ -62,8 +59,7 @@ export interface EmbedOptions {
 
 export async function embed(text: string, model: string, options: EmbedOptions = {}): Promise<number[]> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  const baseUrl = (options.baseUrlResolver ?? envOllamaUrl)();
-  assertEmbedEgressAllowed(baseUrl);
+  const baseUrl = resolveEmbedTransportBaseUrl((options.baseUrlResolver ?? envOllamaUrl)(), options.requireLocalOnly);
   const timeoutMs = Number.isFinite(options.timeoutMs) && (options.timeoutMs ?? 0) > 0
     ? (options.timeoutMs as number)
     : DEFAULT_EMBED_TIMEOUT_MS;

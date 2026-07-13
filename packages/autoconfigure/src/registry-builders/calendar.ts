@@ -18,6 +18,7 @@ import {
   MacOsCalendarProvider,
   type CalendarProvider
 } from "@muse/calendar";
+import { isLocalOnlyEnabled } from "@muse/model";
 
 import type { MuseEnvironment } from "../index.js";
 import { resolveCalendarIcsFile, resolveCredentialsFile, resolveLocalCalendarFile } from "../provider-paths.js";
@@ -36,6 +37,22 @@ export function buildCalendarRegistry(env: MuseEnvironment): CalendarProviderReg
   if (!requested.includes("ics") && existsSync(resolveCalendarIcsFile(env))) {
     requested.push("ics");
   }
+
+  // T2-B1: local-only must not even parse the shared credentials file. Its
+  // contents can contain Google/CalDAV secrets, so retain only the explicit
+  // local providers before any remote credential or env lookup is possible.
+  if (isLocalOnlyEnabled(env)) {
+    for (const id of requested) {
+      if (id === "local" || id === "ics" || id === "macos") {
+        const provider = tryBuildCalendarProvider(id, env, undefined);
+        if (provider) {
+          registry.register(provider);
+        }
+      }
+    }
+    return registry;
+  }
+
   const credentials = readCredentialsSync(resolveCredentialsFile(env), env);
 
   for (const id of requested) {

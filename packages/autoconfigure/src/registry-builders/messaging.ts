@@ -17,6 +17,7 @@ import {
   SlackProvider,
   TelegramProvider
 } from "@muse/messaging";
+import { isLocalOnlyEnabled } from "@muse/model";
 
 import type { MuseEnvironment } from "../index.js";
 import {
@@ -35,6 +36,13 @@ import { readCredentialsSync, stringField } from "../provider-utils.js";
 
 export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderRegistry {
   const registry = new MessagingProviderRegistry();
+  // T2-B1: do this before resolving the messaging file or any remote token.
+  // The credential-free log/native providers remain useful local surfaces.
+  if (isLocalOnlyEnabled(env)) {
+    registerLocalMessagingProviders(registry, env);
+    return registry;
+  }
+
   const file = readCredentialsSync(resolveMessagingCredentialsFile(env), env);
   const tokenFor = (envKey: string, providerId: string): string | undefined => {
     const fromEnv = env[envKey]?.trim();
@@ -110,6 +118,11 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
       token: lineToken
     }));
   }
+  registerLocalMessagingProviders(registry, env);
+  return registry;
+}
+
+function registerLocalMessagingProviders(registry: MessagingProviderRegistry, env: MuseEnvironment): void {
   // `log` is the credential-free, local-only outbound surface — write
   // every notice to `~/.muse/notifications.log` (override via
   // `MUSE_MESSAGING_LOG_FILE`). On by default so the proactive daemon
@@ -150,5 +163,4 @@ export function buildMessagingRegistry(env: MuseEnvironment): MessagingProviderR
       // shared dotfile that exports both flags doesn't break boot.
     }
   }
-  return registry;
 }

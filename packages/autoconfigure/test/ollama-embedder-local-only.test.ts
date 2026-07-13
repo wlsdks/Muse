@@ -35,8 +35,8 @@ describe("createOllamaEmbedder — MUSE_LOCAL_ONLY fail-close on remote OLLAMA_B
   });
 
   it("allows a loopback OLLAMA_BASE_URL under local-only", async () => {
-    process.env.OLLAMA_BASE_URL = "http://127.0.0.1:11434";
-    delete process.env.MUSE_LOCAL_ONLY;
+    process.env.OLLAMA_BASE_URL = "http://localhost:11434";
+    process.env.MUSE_LOCAL_ONLY = "true";
     const embed = createOllamaEmbedder("nomic-embed-text-v2-moe");
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -45,18 +45,21 @@ describe("createOllamaEmbedder — MUSE_LOCAL_ONLY fail-close on remote OLLAMA_B
     const vec = await embed("hello");
     expect(vec).toEqual([0.1, 0.2]);
     expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe("http://127.0.0.1:11434/api/embeddings");
   });
 
   it("allows the default (unset) base URL under local-only — built-in 127.0.0.1", () => {
     delete process.env.OLLAMA_BASE_URL;
-    delete process.env.MUSE_LOCAL_ONLY;
+    process.env.MUSE_LOCAL_ONLY = "true";
     expect(() => createOllamaEmbedder("nomic-embed-text-v2-moe")).not.toThrow();
   });
 
-  it("allows localhost by name under local-only", () => {
-    process.env.OLLAMA_BASE_URL = "http://localhost:11434";
-    delete process.env.MUSE_LOCAL_ONLY;
-    expect(() => createOllamaEmbedder("nomic-embed-text-v2-moe")).not.toThrow();
+  it("refuses wildcard and .localhost host aliases under local-only before constructing the embedder", () => {
+    process.env.MUSE_LOCAL_ONLY = "true";
+    for (const baseUrl of ["http://0.0.0.0:11434", "http://api.localhost:11434"]) {
+      process.env.OLLAMA_BASE_URL = baseUrl;
+      expect(() => createOllamaEmbedder("nomic-embed-text-v2-moe"), baseUrl).toThrow(LocalOnlyViolationError);
+    }
   });
 
   it("permits a remote host when local-only is explicitly opted OUT (MUSE_LOCAL_ONLY=false)", async () => {

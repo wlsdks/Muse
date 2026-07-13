@@ -120,6 +120,19 @@ export {
 
 export { createApiServerOptions } from "./api-server-options.js";
 
+export {
+  resolveIntegrationEnvironment,
+  type IntegrationMessagingProviderId,
+  type ResolvedIntegrationEnvironment,
+  type ResolvedMessagingProviderEnvironment
+} from "./integration-environment.js";
+
+export {
+  resolveHomeAssistantEnvironment,
+  type ResolvedHomeAssistantEnvironment,
+  type ResolveHomeAssistantEnvironmentOptions
+} from "./home-assistant-environment.js";
+
 export { createGateEmbedder, createOllamaEmbedder } from "./context-engineering-builders.js";
 
 export { distillQueuedCorrections, type DistillQueuedDeps } from "./distill-queue.js";

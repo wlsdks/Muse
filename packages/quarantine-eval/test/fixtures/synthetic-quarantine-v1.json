@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "muse.synthetic-quarantine.v1",
+  "fixtureId": "SYNTHETIC_QUARANTINE_FIXTURE_V1",
+  "fixtureHash": "d8e652e1358054c79b004499e0020a35d5f065905cae7ec122caa48150f027d0",
+  "dataClassification": "synthetic",
+  "consentBasis": "synthetic-no-consent-required",
+  "taskClass": "synthetic-non-coding-work.v1",
+  "expiresAt": "2099-01-01T00:00:00.000Z",
+  "evaluator": {
+    "id": "SYNTHETIC_EXACT_MATCH_V1",
+    "descriptorHash": "e090d027c9815a8168979874f3ebe816457d7bbbeef4155722a57c4ace25583c"
+  },
+  "baseline": {
+    "id": "SYNTHETIC_BASELINE_V1",
+    "sources": [
+      {
+        "id": "SYNTHETIC_BASELINE_SOURCE_A",
+        "text": "SYNTHETIC_BASELINE_TEXT_A",
+        "hash": "12d2a49d65af8380729d7a9d9f019bf5f99eb65a2320b252fcb377f5b199ae71"
+      }
+    ],
+    "sourceHashes": [
+      "12d2a49d65af8380729d7a9d9f019bf5f99eb65a2320b252fcb377f5b199ae71"
+    ],
+    "outputs": [
+      {
+        "caseId": "SYNTHETIC_CASE_A",
+        "output": "SYNTHETIC_EXPECTED_A"
+      },
+      {
+        "caseId": "SYNTHETIC_CASE_B",
+        "output": "SYNTHETIC_EXPECTED_B"
+      }
+    ],
+    "provider": {
+      "providerId": "SYNTHETIC_PROVIDER_V1",
+      "modelId": "SYNTHETIC_MODEL_V1",
+      "adapterId": "SYNTHETIC_ADAPTER_V1",
+      "decoding": {
+        "temperature": 0,
+        "topP": 1,
+        "seed": 0,
+        "maxOutputTokens": 64
+      }
+    },
+    "artifactHash": "17e8d626c8b649b176f6a0ff7c9a392b68936ffe9b2bf66cd47c3c1b72e5fd96"
+  },
+  "candidate": {
+    "id": "SYNTHETIC_CANDIDATE_V1",
+    "sources": [
+      {
+        "id": "SYNTHETIC_CANDIDATE_SOURCE_A",
+        "text": "SYNTHETIC_CANDIDATE_TEXT_A",
+        "hash": "cc961a13d85636e8e5c2ed3611b89a86aa7f1b53985e5676a91e5238eeb808e4"
+      }
+    ],
+    "sourceHashes": [
+      "cc961a13d85636e8e5c2ed3611b89a86aa7f1b53985e5676a91e5238eeb808e4"
+    ],
+    "outputs": [
+      {
+        "caseId": "SYNTHETIC_CASE_A",
+        "output": "SYNTHETIC_EXPECTED_A"
+      },
+      {
+        "caseId": "SYNTHETIC_CASE_B",
+        "output": "SYNTHETIC_CANDIDATE_MISS_B"
+      }
+    ],
+    "provider": {
+      "providerId": "SYNTHETIC_PROVIDER_V1",
+      "modelId": "SYNTHETIC_MODEL_V1",
+      "adapterId": "SYNTHETIC_ADAPTER_V1",
+      "decoding": {
+        "temperature": 0,
+        "topP": 1,
+        "seed": 0,
+        "maxOutputTokens": 64
+      }
+    },
+    "writeTargets": [],
+    "promotionRequested": false,
+    "artifactHash": "363dba4baeff9a7b96aa9ead05f19b558d20c6c4a5700865551a6d30a08aa8da"
+  },
+  "holdout": {
+    "cases": [
+      {
+        "id": "SYNTHETIC_CASE_A",
+        "prompt": "SYNTHETIC_PROMPT_A",
+        "expected": "SYNTHETIC_EXPECTED_A",
+        "hash": "7b93cf61c9536ada60fa2a7572ee089670f51a4076cc08108ce539d6858479c0"
+      },
+      {
+        "id": "SYNTHETIC_CASE_B",
+        "prompt": "SYNTHETIC_PROMPT_B",
+        "expected": "SYNTHETIC_EXPECTED_B",
+        "hash": "6505ea5fcd3642370cadbfca42e9b24edfb886b1c6342927fca2be42a60eba85"
+      }
+    ],
+    "hashes": [
+      "6505ea5fcd3642370cadbfca42e9b24edfb886b1c6342927fca2be42a60eba85",
+      "7b93cf61c9536ada60fa2a7572ee089670f51a4076cc08108ce539d6858479c0"
+    ]
+  },
+  "rollbackPointer": {
+    "baselineId": "SYNTHETIC_BASELINE_V1",
+    "baselineArtifactHash": "17e8d626c8b649b176f6a0ff7c9a392b68936ffe9b2bf66cd47c3c1b72e5fd96"
+  }
+}

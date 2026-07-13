@@ -13,8 +13,7 @@
 import { randomUUID } from "node:crypto";
 
 import { createBrowserActionTracker } from "@muse/agent-core";
-import type { MuseEnvironment } from "@muse/autoconfigure";
-import { resolveActionLogFile, resolveContactsFile } from "@muse/autoconfigure";
+import { resolveActionLogFile, resolveContactsFile, resolveHomeAssistantEnvironment, type MuseEnvironment } from "@muse/autoconfigure";
 import { recordPendingApproval } from "@muse/messaging";
 import { appendActionLog, queryContacts, resolveContact } from "@muse/stores";
 import { GmailEmailProvider, createEmailForwardTool, createEmailReplyTool, createEmailSendTool, createHomeActionTool, createWebActionTool, createAllowlistPathValidator, type EmailApprovalGate, type HostLookup, type MessageApprovalGate, type WebActionApprovalGate } from "@muse/domain-tools";
@@ -80,13 +79,21 @@ export interface ActuatorSummary {
  */
 export function summarizeActuators(env: MuseEnvironment): ActuatorSummary {
   const webEgress = isWebEgressAllowed(env);
+  // Resolve the Home Assistant endpoint once, before any token read. Its
+  // local-only value is also the monotonic posture used for the Gmail rows.
+  const homeAssistant = resolveHomeAssistantEnvironment(env);
+  const localOnly = homeAssistant.localOnly;
   const armed: string[] = webEgress ? ["web_action"] : [];
   const unavailable: { name: string; hint: string }[] = [];
   if (!webEgress) {
     unavailable.push({ hint: "web egress is off (unset MUSE_WEB_EGRESS)", name: "web_action" });
   }
 
-  if (env.MUSE_GMAIL_TOKEN?.trim()) {
+  if (localOnly) {
+    unavailable.push({ hint: "Gmail is disabled while MUSE_LOCAL_ONLY=true", name: "email_send" });
+    unavailable.push({ hint: "Gmail is disabled while MUSE_LOCAL_ONLY=true", name: "email_reply" });
+    unavailable.push({ hint: "Gmail is disabled while MUSE_LOCAL_ONLY=true", name: "email_forward" });
+  } else if (env.MUSE_GMAIL_TOKEN?.trim()) {
     armed.push("email_send", "email_reply", "email_forward");
   } else {
     unavailable.push({ hint: "set MUSE_GMAIL_TOKEN", name: "email_send" });
@@ -94,10 +101,15 @@ export function summarizeActuators(env: MuseEnvironment): ActuatorSummary {
     unavailable.push({ hint: "set MUSE_GMAIL_TOKEN", name: "email_forward" });
   }
 
-  if (env.MUSE_HOMEASSISTANT_URL?.trim() && env.MUSE_HOMEASSISTANT_TOKEN?.trim()) {
+  if (homeAssistant.status === "configured") {
     armed.push("home_action");
   } else {
-    unavailable.push({ hint: "set MUSE_HOMEASSISTANT_URL + MUSE_HOMEASSISTANT_TOKEN", name: "home_action" });
+    unavailable.push({
+      hint: homeAssistant.status === "blocked"
+        ? homeAssistant.reason
+        : "set MUSE_HOMEASSISTANT_URL + MUSE_HOMEASSISTANT_TOKEN",
+      name: "home_action"
+    });
   }
 
   // macOS native-app actuators (Shortcuts run, app read, iMessage send) are an
@@ -438,6 +450,11 @@ export function buildBrowserTools(deps: BrowserToolsDeps): MuseTool[] {
 
 export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
   const { env, io, userId } = deps;
+  // The resolver evaluates the monotonic ambient-or-injected posture before
+  // it touches the HA token, so this interactive builder cannot become a
+  // remote credential/reflection bypass.
+  const homeAssistant = resolveHomeAssistantEnvironment(env);
+  const localOnly = homeAssistant.localOnly;
   const fetchImpl = deps.fetchImpl ?? io.fetch ?? globalThis.fetch;
   const confirmAction =
     deps.confirmAction ??
@@ -457,7 +474,7 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
     tools.push(createWebActionTool({ actionLogFile, approvalGate: webGate, fetchImpl, ...(deps.lookup ? { lookup: deps.lookup } : {}), userId }));
   }
 
-  const gmailToken = env.MUSE_GMAIL_TOKEN?.trim();
+  const gmailToken = localOnly ? undefined : env.MUSE_GMAIL_TOKEN?.trim();
   if (gmailToken) {
     const contactsFile = resolveContactsFile(env);
     const emailGate = buildEmailApprovalGate({
@@ -492,9 +509,7 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
     );
   }
 
-  const haUrl = env.MUSE_HOMEASSISTANT_URL?.trim();
-  const haToken = env.MUSE_HOMEASSISTANT_TOKEN?.trim();
-  if (haUrl && haToken) {
+  if (homeAssistant.status === "configured") {
     const homeGate = buildWebApprovalGate({
       confirmAction,
       io,
@@ -502,7 +517,15 @@ export function buildActuatorTools(deps: ActuatorToolsDeps): MuseTool[] {
       prompt: "Perform this smart-home action?"
     });
     tools.push(
-      createHomeActionTool({ actionLogFile, approvalGate: homeGate, baseUrl: haUrl, fetchImpl, token: haToken, userId })
+      createHomeActionTool({
+        actionLogFile,
+        approvalGate: homeGate,
+        baseUrl: homeAssistant.baseUrl,
+        fetchImpl,
+        localOnly: homeAssistant.localOnly,
+        token: homeAssistant.token,
+        userId
+      })
     );
   }
 

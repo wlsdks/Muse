@@ -46,6 +46,21 @@ describe("fetchReadableUrl", () => {
     if (!res.ok) expect(res.error).toMatch(/unsupported protocol/u);
   });
 
+  it("preserves initial guard surfaces and does no fetch for literal, DNS-private, or DNS-unresolved inputs", async () => {
+    let fetches = 0;
+    const fetchImpl = (async () => { fetches += 1; return new Response("unexpected"); }) as typeof globalThis.fetch;
+    const literal = await fetchReadableUrl("http://127.0.0.1/private", { fetchImpl, lookup: publicLookup });
+    const dnsPrivate = await fetchReadableUrl("https://private-name.test/x", { fetchImpl, lookup: privateLookup });
+    const dnsUnresolved = await fetchReadableUrl("https://missing-name.test/x", { fetchImpl, lookup: async () => { throw new Error("NXDOMAIN"); } });
+    expect(literal).toMatchObject({ ok: false });
+    expect(dnsPrivate).toMatchObject({ ok: false });
+    expect(dnsUnresolved).toMatchObject({ ok: false });
+    if (!literal.ok) expect(literal.error).toBe("refusing to read a private/loopback address: 127.0.0.1");
+    if (!dnsPrivate.ok) expect(dnsPrivate.error).toMatch(/host resolves to a private address/u);
+    if (!dnsUnresolved.ok) expect(dnsUnresolved.error).toMatch(/host did not resolve/u);
+    expect(fetches).toBe(0);
+  });
+
   it("surfaces a permanent HTTP error without retrying it forever", async () => {
     const res = await fetchReadableUrl("https://example.test/missing", {
       fetchImpl: htmlFetch("", 404),
@@ -57,12 +72,33 @@ describe("fetchReadableUrl", () => {
   });
 
   it("refuses a redirect that lands on a private host", async () => {
+    const requests: string[] = [];
     const res = await fetchReadableUrl("https://example.test/start", {
-      fetchImpl: htmlFetch("<p>x</p>", 200, "https://intranet.test/inside"),
+      fetchImpl: (async (url) => {
+        requests.push(String(url));
+        return new Response("redirect body must stay unread", { status: 302, headers: { location: "https://intranet.test/inside" } });
+      }) as typeof globalThis.fetch,
       lookup: async (host) => (host === "example.test" ? [{ address: "93.184.216.34", family: 4 }] : [{ address: "10.0.0.5", family: 4 }])
     });
     expect(res).toMatchObject({ ok: false });
     if (!res.ok) expect(res.error).toMatch(/redirected to a blocked host/u);
+    expect(requests).toEqual(["https://example.test/start"]);
+  });
+
+  it("uses the redirect state machine finalUrl rather than a hostile response.url", async () => {
+    let calls = 0;
+    const res = await fetchReadableUrl("https://example.test/start", {
+      fetchImpl: (async () => {
+        calls += 1;
+        if (calls === 1) return new Response("redirect", { status: 302, headers: { location: "/final" } });
+        const final = new Response("<title>Final</title><p>trusted final body</p>", { status: 200, headers: { "content-type": "text/html" } });
+        Object.defineProperty(final, "url", { value: "https://attacker.test/wrong" });
+        return final;
+      }) as typeof globalThis.fetch,
+      lookup: publicLookup,
+      retryOptions: noWait
+    });
+    expect(res).toMatchObject({ finalUrl: "https://example.test/final", ok: true });
   });
 
   it("refuses a non-text resource by content-type (a PDF URL is not grounded on)", async () => {

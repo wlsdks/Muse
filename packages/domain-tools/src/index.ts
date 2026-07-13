@@ -17,7 +17,9 @@ export { createFeedsSearchTool } from "./feeds-search-tool.js";
 export type { FeedEntryLike } from "./feeds-search-tool.js";
 export { createBrowsingSearchTool } from "./browsing-search-tool.js";
 export type { BrowsingVisitLike } from "./browsing-search-tool.js";
-export { fetchReadableUrl, isPdfContentType, isReadableContentType } from "./fetch-readable-url.js";
+export { fetchReadableUrl, isPdfContentType, isReadableContentType, LOCAL_EGRESS_BLOCKED } from "./fetch-readable-url.js";
+export { fetchPublicHttpWithRedirects, MAX_PUBLIC_HTTP_REDIRECTS } from "./public-http-redirect.js";
+export type { FetchPublicHttpOptions, PublicHttpRedirectFailure, PublicHttpRedirectResult, PublicRedirectCode } from "./public-http-redirect.js";
 export { homeWatchesFromConfig } from "./home-watch.js";
 export { createCalendarMcpServer, resolveEventByRef } from "./loopback-calendar.js";
 export { createContextReferenceMcpServer } from "./loopback-context.js";
@@ -64,7 +66,17 @@ export { createRecentActionsTool } from "./recent-actions-tool.js";
 export { createRememberFactTool } from "./remember-fact-tool.js";
 export { runActuatorByName } from "./run-actuator-by-name.js";
 export { runDueSituationalBriefing } from "./situational-briefing-loop.js";
-export { listHomeAssistantStates, parseHomeAlertChecks, performHomeActionWithApproval, readHomeAssistantState, resolveHomeAlertLine } from "./smart-home.js";
+export {
+  HOME_ASSISTANT_LOCAL_ONLY_REASON,
+  isHomeAssistantLocalOnlyEffective,
+  listHomeAssistantStates,
+  parseHomeAlertChecks,
+  performHomeActionWithApproval,
+  readHomeAssistantState,
+  resolveHomeAlertLine,
+  resolveHomeAssistantTransportBaseUrl
+} from "./smart-home.js";
+export type { HomeAssistantTransportPolicy, HomeAssistantTransportResolution } from "./smart-home.js";
 export { createHomeActionTool, createHomeEntitiesTool, createHomeStateTool } from "./smart-home-tool.js";
 export { TasksProviderError, TasksProviderRegistry, TasksValidationError } from "./tasks-providers.js";
 export type { Task, TasksProvider } from "./tasks-providers.js";
@@ -80,7 +92,7 @@ export type { WebActionApprovalGate } from "./web-action.js";
 export { createWebActionTool } from "./web-action-tool.js";
 export { createWebDownloadTool } from "./web-download-tool.js";
 export { extractReadableText } from "./web-readable.js";
-export { assertPublicHttpUrl, extractPublicHttpUrls, isPrivateIPv4, isPrivateIPv6 } from "./web-url-guard.js";
+export { assertPublicHttpUrl, extractPublicHttpUrls, isNonPublicWebAddress, isPrivateIPv4, isPrivateIPv6, PUBLIC_WEB_ADDRESS_POLICY_REVIEWED_AT } from "./web-url-guard.js";
 export type { HostLookup } from "./web-url-guard.js";
 export { extractImageSources, resolveImageAttachmentCandidates } from "./image-source.js";
 export { createWorldTimeTool, formatTimeInZone, resolveTimezone } from "./world-time.js";

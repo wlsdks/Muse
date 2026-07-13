@@ -4,6 +4,8 @@ import { fetchWithRetry, type RetryOptions } from "@muse/mcp-shared";
 import type { LoopbackMcpServer } from "@muse/mcp";
 import { buildJsonToolSchema, readString } from "@muse/mcp";
 
+import { LOCAL_EGRESS_BLOCKED } from "./fetch-readable-url.js";
+
 /**
  * `muse.search` loopback MCP server — model-agnostic web search.
  *
@@ -34,6 +36,8 @@ import { buildJsonToolSchema, readString } from "@muse/mcp";
  */
 
 export interface SearchMcpServerOptions {
+  /** Trusted composition posture; false denies each invocation before parsing or I/O. */
+  readonly interactiveWebEgressAllowed?: boolean;
   /** Max rows returned to the agent. Default 10. */
   readonly maxResults?: number;
   /** Per-request timeout. Default 8,000ms. */
@@ -106,6 +110,9 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
         domain: "web",
         keywords: ["search", "검색", "찾아봐", "찾아줘", "web", "웹", "google", "구글", "online", "온라인", "latest", "최신", "news", "뉴스", "현재", "지금"],
         execute: async (args): Promise<JsonObject> => {
+          if (options.interactiveWebEgressAllowed === false) {
+            return { error: LOCAL_EGRESS_BLOCKED };
+          }
           const query = readString(args, "query");
           if (!query || query.length === 0) {
             return { error: "query is required" };

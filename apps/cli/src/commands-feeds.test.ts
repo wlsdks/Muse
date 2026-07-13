@@ -1,11 +1,11 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_FEED_FETCH_TIMEOUT_MS, DEFAULT_FEED_MAX_BODY_BYTES, formatFeedEntryLines, loadFeedBody, parseFeedSearchLimit, registerFeedsCommand, searchFeedEntries, slugifyUrl, type FeedSearchHit } from "./commands-feeds.js";
+import { DEFAULT_FEED_FETCH_TIMEOUT_MS, DEFAULT_FEED_MAX_BODY_BYTES, fetchFeedWithPublicRedirects, formatFeedEntryLines, loadFeedBody, parseFeedSearchLimit, registerFeedsCommand, searchFeedEntries, slugifyUrl, type FeedSearchHit } from "./commands-feeds.js";
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -115,6 +115,30 @@ async function runFeedsCommand(
   const exitCode = process.exitCode;
   process.exitCode = previousExit;
   return { exitCode, stderr: stderrChunks.join(""), stdout: stdoutChunks.join("") };
+}
+
+function writeRawFeedsStore(feeds: readonly Record<string, unknown>[]): { readonly file: string; readonly raw: string } {
+  const dir = mkdtempSync(join(tmpdir(), "muse-feeds-redirect-store-"));
+  const file = join(dir, "feeds.json");
+  // The non-semantic whitespace makes an accidental write detectable even when
+  // it serializes equivalent feed records.
+  const raw = JSON.stringify({ version: 1, feeds }, null, 2).replace("{\n", "{   \n") + "\n";
+  writeFileSync(file, raw, "utf8");
+  return { file, raw };
+}
+
+function publicFirstHopToPrivateRedirect(requests: string[]): typeof globalThis.fetch {
+  return (async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.includes("127.0.0.1")) {
+      throw new Error("private redirect target must never be fetched");
+    }
+    return new Response("redirect body must stay unread", {
+      headers: { location: "http://127.0.0.1/private-feed.xml" },
+      status: 302
+    });
+  }) as typeof globalThis.fetch;
 }
 
 function seedFeeds(ids: readonly string[]): string {
@@ -236,6 +260,9 @@ describe("muse feeds refresh — the summary count reflects feeds actually re-fe
     const { stdout, exitCode } = await runFeedsCommand(["refresh"], file);
     expect(stdout).toContain("Refreshed 1 of 2 feed(s) (1 failed");
     expect(exitCode).toBe(0);
+    const persisted = JSON.parse(readFileSync(file, "utf8")) as { feeds: Array<{ id: string; entries: unknown[] }> };
+    expect(persisted.feeds.find((feed) => feed.id === "ok-feed")?.entries.length).toBeGreaterThan(0);
+    expect(persisted.feeds.find((feed) => feed.id === "down-feed")?.entries).toEqual([]);
   });
 
   it("an all-success refresh keeps the plain 'Refreshed N feed(s)' message", async () => {
@@ -333,6 +360,53 @@ describe("muse feeds add --id empty / whitespace fallback", () => {
   });
 });
 
+describe("muse feeds — blocked public-to-private redirects are nonpersistent at command level", () => {
+  it("feeds add exits 1 after the public first hop and leaves raw store bytes/records unchanged", async () => {
+    const { file, raw } = writeRawFeedsStore([]);
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = publicFirstHopToPrivateRedirect(requests);
+    let result: Awaited<ReturnType<typeof runFeedsCommand>>;
+    try {
+      result = await runFeedsCommand(["add", "https://93.184.216.34/blocked-add.xml", "--id", "blocked-add"], file);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(result!.exitCode).toBe(1);
+    expect(result!.stderr).toMatch(/initial fetch failed.*redirect.*blocked host/iu);
+    expect(requests).toEqual(["https://93.184.216.34/blocked-add.xml"]);
+    const after = readFileSync(file, "utf8");
+    expect(after).toBe(raw);
+    expect(JSON.parse(after)).toEqual(JSON.parse(raw));
+  });
+
+  it("feeds refresh --id exits 1 after the public first hop and does not rewrite unchanged records", async () => {
+    const originalRecord = {
+      entries: [],
+      id: "blocked",
+      lastFetchedAt: "2026-05-15T00:00:00Z",
+      name: "blocked",
+      url: "https://93.184.216.34/blocked-refresh.xml"
+    };
+    const { file, raw } = writeRawFeedsStore([originalRecord]);
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = publicFirstHopToPrivateRedirect(requests);
+    let result: Awaited<ReturnType<typeof runFeedsCommand>>;
+    try {
+      result = await runFeedsCommand(["refresh", "--id", "blocked"], file);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(result!.exitCode).toBe(1);
+    expect(result!.stderr).toMatch(/blocked:.*redirect.*blocked host/iu);
+    expect(requests).toEqual(["https://93.184.216.34/blocked-refresh.xml"]);
+    const after = readFileSync(file, "utf8");
+    expect(after).toBe(raw);
+    expect(JSON.parse(after)).toEqual(JSON.parse(raw));
+  });
+});
+
 describe("loadFeedBody — fetch timeout so a slow-loris / dead RSS server can't hang `muse feeds refresh` forever", () => {
   it("rejects with a 'timed out after Nms' error when the upstream fetch never resolves before the configured timeout", async () => {
     const neverResolves: typeof globalThis.fetch = (_input, init) => {
@@ -363,6 +437,29 @@ describe("loadFeedBody — fetch timeout so a slow-loris / dead RSS server can't
     ).rejects.toThrow(/timed out/u);
     expect(receivedSignal).toBeInstanceOf(AbortSignal);
     expect(receivedSignal?.aborted).toBe(true);
+  });
+
+  it("preserves the historic timeout message and original cause when the feed wrapper starts already aborted", async () => {
+    const controller = new AbortController();
+    const abortCause = new Error("outer timeout fired first");
+    controller.abort(abortCause);
+    let fetches = 0;
+    try {
+      await fetchFeedWithPublicRedirects("https://93.184.216.34/feed.xml", {
+        baseDelayMs: 0,
+        controller,
+        fetchImpl: (async () => { fetches += 1; return new Response("unexpected"); }) as typeof globalThis.fetch,
+        retries: 0,
+        sleep: async () => {},
+        timeoutMs: 37
+      });
+      throw new Error("expected already-aborted feed wrapper to reject");
+    } catch (error) {
+      const failure = error as Error & { cause?: unknown };
+      expect(failure.message).toBe("feed fetch https://93.184.216.34/feed.xml timed out after 37ms");
+      expect(failure.cause).toBe(abortCause);
+    }
+    expect(fetches).toBe(0);
   });
 
   it("returns the body and clears the timer on a successful fetch — no leaked timer keeping the event loop alive", async () => {
@@ -579,6 +676,7 @@ describe("feeds list — singular entry count", () => {
 });
 
 describe("loadFeedBody — SSRF guard (no internal/metadata host, pre- and post-redirect)", () => {
+  const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
   const okBody = (body: string, url: string) => ({
     ok: true,
     status: 200,
@@ -596,10 +694,15 @@ describe("loadFeedBody — SSRF guard (no internal/metadata host, pre- and post-
     expect(fetched).toBe(false);
   });
 
-  it("refuses a body whose FINAL url (after a redirect) is internal — the metadata SSRF via a trusted feed", async () => {
-    const redirectToMeta = (async () => okBody("<rss/>", "http://169.254.169.254/latest/meta-data/")) as unknown as typeof globalThis.fetch;
-    await expect(loadFeedBody("https://93.184.216.34/feed.xml", { fetchImpl: redirectToMeta }))
-      .rejects.toThrow(/redirected to a non-public/u);
+  it("refuses a redirect target that is internal before a hostile second request or body read", async () => {
+    const requests: string[] = [];
+    const redirectToMeta = (async (url: string) => {
+      requests.push(url);
+      return new Response("redirect body must stay unread", { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data/" } });
+    }) as unknown as typeof globalThis.fetch;
+    await expect(loadFeedBody("https://93.184.216.34/feed.xml", { fetchImpl: redirectToMeta, lookup: publicLookup }))
+      .rejects.toThrow(/redirect failed|blocked host/u);
+    expect(requests).toEqual(["https://93.184.216.34/feed.xml"]);
   });
 
   it("allows a public host and returns the body", async () => {

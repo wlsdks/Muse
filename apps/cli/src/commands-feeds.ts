@@ -10,14 +10,14 @@
  * `~/.muse/feeds.json` carries every feed's url + cached entries
  * so `today` doesn't need network. Pure XML parsing via
  * `fast-xml-parser` (MIT). Feed fetch is SSRF-guarded for http(s) (no
- * internal/metadata host, pre- and post-redirect); `file://` is supported
+ * internal/metadata host before every manual redirect hop); `file://` is supported
  * for offline fixtures / dogfood (a local, user-only read).
  */
 
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { assertPublicHttpUrl, isRetriableStatus } from "@muse/domain-tools";
+import { fetchPublicHttpWithRedirects, type HostLookup, type PublicHttpRedirectResult } from "@muse/domain-tools";
 import { formatErrorForTerminal, stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
@@ -51,8 +51,8 @@ function feedTitleEmbedder(): (text: string) => Promise<readonly number[]> {
 }
 
 /**
- * Fetch the feed body. An http(s) URL is SSRF-guarded (pre- and post-redirect,
- * public hosts only, no internal/metadata target); a `file://` URL is read
+ * Fetch the feed body. An http(s) URL is SSRF-guarded before every manual
+ * redirect hop (public hosts only, no internal/metadata target); a `file://` URL is read
  * directly — a local, user-only path for offline fixtures / dogfood, not
  * reachable from a model tool. Exported for direct test coverage.
  */
@@ -61,6 +61,8 @@ export const DEFAULT_FEED_MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export interface LoadFeedBodyOptions {
   readonly fetchImpl?: typeof globalThis.fetch;
+  /** Injectable DNS preflight resolver for hermetic redirect tests. */
+  readonly lookup?: HostLookup;
   readonly timeoutMs?: number;
   readonly maxBodyBytes?: number;
   /** Extra attempts after the first on a transient 429/5xx. Default 2. */
@@ -71,6 +73,58 @@ export interface LoadFeedBodyOptions {
   readonly sleep?: (ms: number) => Promise<void>;
 }
 
+interface FetchFeedWithPublicRedirectsOptions {
+  readonly baseDelayMs: number;
+  readonly controller: AbortController;
+  readonly fetchImpl: typeof globalThis.fetch;
+  readonly lookup?: HostLookup;
+  readonly retries: number;
+  readonly sleep: (ms: number) => Promise<void>;
+  readonly timeoutMs: number;
+}
+
+function feedTimeoutError(url: string, timeoutMs: number, cause: unknown): Error {
+  return new Error(`feed fetch ${url} timed out after ${timeoutMs.toString()}ms`, { cause });
+}
+
+/**
+ * Preserve feeds' one outer timeout while sending every public redirect hop
+ * through the shared manual state machine. A feed deliberately does not retry
+ * network rejections; only 429/5xx retain its historical retry/backoff policy.
+ */
+export async function fetchFeedWithPublicRedirects(
+  url: string,
+  options: FetchFeedWithPublicRedirectsOptions
+): Promise<PublicHttpRedirectResult> {
+  if (options.controller.signal.aborted) {
+    throw feedTimeoutError(url, options.timeoutMs, options.controller.signal.reason);
+  }
+  try {
+    const fetched = await fetchPublicHttpWithRedirects(url, {
+      fetchImpl: options.fetchImpl,
+      ...(options.lookup ? { lookup: options.lookup } : {}),
+      retryOptions: {
+        baseDelayMs: options.baseDelayMs,
+        init: { signal: options.controller.signal },
+        maxRetryAfterMs: 0,
+        retries: options.retries,
+        retryOnNetworkError: false,
+        sleep: options.sleep,
+        timeoutMs: 0
+      }
+    });
+    if (options.controller.signal.aborted) {
+      throw feedTimeoutError(url, options.timeoutMs, options.controller.signal.reason);
+    }
+    return fetched;
+  } catch (cause) {
+    if (options.controller.signal.aborted) {
+      throw feedTimeoutError(url, options.timeoutMs, cause ?? options.controller.signal.reason);
+    }
+    throw cause;
+  }
+}
+
 export async function loadFeedBody(url: string, options: LoadFeedBodyOptions = {}): Promise<string> {
   // `file://` reads a local fixture (offline / dogfood). It is a user-only CLI
   // path (never a model-reachable tool), so it carries no REMOTE attack surface;
@@ -79,14 +133,6 @@ export async function loadFeedBody(url: string, options: LoadFeedBodyOptions = {
   if (url.startsWith("file://")) {
     return readFile(fileURLToPath(url), "utf8");
   }
-  // SSRF guard: an http(s) feed URL (or a redirect from a trusted feed) must
-  // resolve to a PUBLIC host — blocks a direct or redirect-to internal/metadata
-  // target (`169.254.169.254`, `127.0.0.1`, link-local). Re-checked after the
-  // fetch for the final, post-redirect URL below.
-  const preGuard = await assertPublicHttpUrl(url);
-  if (!preGuard.ok) {
-    throw new Error(`feed URL is not an allowed public http(s) address: ${url}`);
-  }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const timeoutMs = Number.isFinite(options.timeoutMs) && (options.timeoutMs ?? 0) > 0
     ? (options.timeoutMs as number)
@@ -94,43 +140,32 @@ export async function loadFeedBody(url: string, options: LoadFeedBodyOptions = {
   const maxBodyBytes = Number.isFinite(options.maxBodyBytes) && (options.maxBodyBytes ?? 0) > 0
     ? (options.maxBodyBytes as number)
     : DEFAULT_FEED_MAX_BODY_BYTES;
-  // Retry a transient 429/5xx (a feed server hiccup) with backoff,
-  // bounded by the single wall-clock timeout below — the same posture
-  // the weather/calendar/email read actuators use. An abort (timeout)
-  // or network throw fails fast (no retry); the !ok throw catches a
-  // 4xx or an exhausted 5xx.
+  // Retry a transient 429/5xx (a feed server hiccup) with backoff, bounded by
+  // the single wall-clock timeout below. Network rejections stay fail-fast.
   const retries = Number.isFinite(options.retries) ? Math.max(0, Math.trunc(options.retries as number)) : 2;
   const baseDelayMs = Number.isFinite(options.baseDelayMs) ? Math.max(0, options.baseDelayMs as number) : 250;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error(`feed fetch ${url} timed out after ${timeoutMs.toString()}ms`)), timeoutMs);
   try {
-    let response: Response;
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        response = await fetchImpl(url, { signal: controller.signal });
-      } catch (cause) {
-        if (controller.signal.aborted) {
-          throw new Error(`feed fetch ${url} timed out after ${timeoutMs.toString()}ms`, { cause });
-        }
-        throw cause;
+    const fetched = await fetchFeedWithPublicRedirects(url, {
+      baseDelayMs,
+      controller,
+      fetchImpl,
+      ...(options.lookup ? { lookup: options.lookup } : {}),
+      retries,
+      sleep,
+      timeoutMs
+    });
+    if (!fetched.ok) {
+      if (fetched.phase === "initial") {
+        throw new Error(`feed URL is not an allowed public http(s) address: ${url}`);
       }
-      if (response.ok || !isRetriableStatus(response.status) || attempt >= retries) {
-        break;
-      }
-      await sleep(baseDelayMs * 2 ** attempt);
+      throw new Error(`feed ${url} redirect failed: ${fetched.message}`);
     }
+    const response = fetched.response;
     if (!response.ok) {
       throw new Error(`feed fetch ${url} returned ${response.status.toString()}`);
-    }
-    // Post-redirect re-guard: a trusted feed can 302 to an internal/metadata
-    // host, which `redirect: "follow"` would have chased. If the FINAL URL is
-    // not public, refuse the body before it is parsed/ingested.
-    if (response.url && response.url !== url) {
-      const postGuard = await assertPublicHttpUrl(response.url);
-      if (!postGuard.ok) {
-        throw new Error(`feed ${url} redirected to a non-public address: ${response.url}`);
-      }
     }
     const declared = response.headers.get("content-length");
     if (declared !== null) {
@@ -423,7 +458,14 @@ export function registerFeedsCommand(program: Command, io: ProgramIO): void {
           refreshed.push(feed);
         }
       }
-      await writeFeedsStore(file, { version: store.version, feeds: refreshed });
+      // A total refresh failure leaves every record exactly as it was. Do not
+      // rewrite the store in that case: apart from avoiding needless churn, a
+      // blocked redirect must leave raw bytes/provenance untouched as well.
+      // Partial success still persists the successful records and carries the
+      // failed records through unchanged.
+      if (succeeded > 0) {
+        await writeFeedsStore(file, { version: store.version, feeds: refreshed });
+      }
       // Report the count actually re-fetched, not the count attempted — a
       // fail-soft refresh where every feed is down (404 / timeout) must not
       // print "Refreshed N feed(s)" as if it succeeded while `today` stays

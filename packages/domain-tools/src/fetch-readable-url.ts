@@ -1,6 +1,6 @@
 /**
  * Fetch a PUBLIC web page and return its readable text — SSRF-guarded
- * (before the fetch AND on the post-redirect final URL), retry-hardened
+ * (before every physical fetch in a manual redirect chain), retry-hardened
  * (429/5xx via fetchWithRetry), and stripped to readable text via
  * extractReadableText. The shared core behind the `web_read` perception tool
  * and `muse notes ingest --url`, so both reach the web the same safe way.
@@ -9,11 +9,17 @@
  * is exercised over real request shapes with only the network faked.
  */
 
-import { fetchWithRetry, type RetryOptions } from "@muse/mcp-shared";
+import type { RetryOptions } from "@muse/mcp-shared";
+import { fetchPublicHttpWithRedirects } from "./public-http-redirect.js";
 import { extractReadableText } from "./web-readable.js";
-import { assertPublicHttpUrl, type HostLookup } from "./web-url-guard.js";
+import type { HostLookup } from "./web-url-guard.js";
+
+/** Stable pre-I/O result for a trusted local-only interactive-web denial. */
+export const LOCAL_EGRESS_BLOCKED = "LOCAL_EGRESS_BLOCKED";
 
 export interface FetchReadableUrlOptions {
+  /** Trusted composition posture; false denies before URL parsing or any I/O. */
+  readonly interactiveWebEgressAllowed?: boolean;
   readonly fetchImpl?: typeof globalThis.fetch;
   readonly lookup?: HostLookup;
   readonly retryOptions?: RetryOptions;
@@ -88,29 +94,28 @@ export async function fetchReadableUrl(
   rawUrl: string,
   options: FetchReadableUrlOptions = {}
 ): Promise<FetchReadableUrlResult> {
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  const lookupOpt = options.lookup ? { lookup: options.lookup } : {};
-
-  const guard = await assertPublicHttpUrl(rawUrl, lookupOpt);
-  if (!guard.ok) return { ok: false, error: guard.error };
-
+  if (options.interactiveWebEgressAllowed === false) {
+    return { error: LOCAL_EGRESS_BLOCKED, ok: false };
+  }
   let response: Response;
+  let finalUrl: string;
   try {
-    response = await fetchWithRetry(fetchImpl, guard.url.toString(), {
-      timeoutMs: options.timeoutMs ?? 15_000,
-      init: { redirect: "follow", headers: { accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } },
-      ...(options.retryOptions ?? {})
+    const fetched = await fetchPublicHttpWithRedirects(rawUrl, {
+      fetchImpl: options.fetchImpl,
+      init: { headers: { accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } },
+      ...(options.lookup ? { lookup: options.lookup } : {}),
+      retryOptions: {
+        timeoutMs: options.timeoutMs ?? 15_000,
+        ...(options.retryOptions ?? {})
+      }
     });
+    if (!fetched.ok) return { ok: false, error: fetched.message };
+    response = fetched.response;
+    finalUrl = fetched.finalUrl;
   } catch (error) {
     return { ok: false, error: `fetch failed: ${error instanceof Error ? error.message : String(error)}` };
   }
   if (!response.ok) return { ok: false, error: `fetch failed: HTTP ${response.status.toString()}` };
-
-  // A redirect chain can land on a private host the first guard never saw.
-  if (response.url && response.url !== guard.url.toString()) {
-    const finalGuard = await assertPublicHttpUrl(response.url, lookupOpt);
-    if (!finalGuard.ok) return { ok: false, error: `redirected to a blocked host: ${finalGuard.error}` };
-  }
 
   // Refuse a NON-TEXT resource by its declared content-type. A PDF / image /
   // octet-stream URL would otherwise decode to garbled bytes that the model
@@ -132,7 +137,7 @@ export async function fetchReadableUrl(
       return { ok: false, error: "PDF had no extractable text (scanned / image-only?)" };
     }
     const capped = options.maxChars && trimmed.length > options.maxChars ? trimmed.slice(0, options.maxChars) : trimmed;
-    return { ok: true, finalUrl: response.url || guard.url.toString(), text: capped, truncated: capped.length < trimmed.length };
+    return { ok: true, finalUrl, text: capped, truncated: capped.length < trimmed.length };
   }
   if (!isReadableContentType(declaredType)) {
     return { ok: false, error: `not a readable text page (content-type: ${declaredType.split(";")[0]!.trim() || "unknown"})` };
@@ -147,7 +152,7 @@ export async function fetchReadableUrl(
   const readable = extractReadableText(html, options.maxChars ? { maxChars: options.maxChars } : {});
   return {
     ok: true,
-    finalUrl: response.url || guard.url.toString(),
+    finalUrl,
     text: readable.text,
     truncated: readable.truncated,
     ...(readable.title ? { title: readable.title } : {})

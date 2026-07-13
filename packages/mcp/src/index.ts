@@ -10,6 +10,23 @@ export type McpTransportType = "stdio" | "sse" | "streamable" | "http";
 export type McpServerStatus = "pending" | "connecting" | "connected" | "disconnected" | "failed" | "disabled";
 export type McpHealthStatus = "unknown" | "healthy" | "unhealthy";
 
+/**
+ * Stable, non-sensitive reason for a transport that the local-only posture
+ * deliberately refuses. It never includes the configured URL, command,
+ * headers, or token.
+ */
+export const MCP_EXTERNAL_TRANSPORT_BLOCKED = "MCP_EXTERNAL_TRANSPORT_BLOCKED" as const;
+
+/** Raised by the direct SDK connector backstop when a caller bypasses McpManager. */
+export class McpExternalTransportBlockedError extends Error {
+  readonly code = MCP_EXTERNAL_TRANSPORT_BLOCKED;
+
+  constructor() {
+    super("External MCP transport is disabled by the local-only privacy posture");
+    this.name = "McpExternalTransportBlockedError";
+  }
+}
+
 export interface McpServer {
   readonly id: string;
   readonly name: string;
@@ -152,6 +169,12 @@ export interface DefaultMcpTransportConnectorOptions {
    * needs broader directory access than its launch args allow.
    */
   readonly clientRoots?: readonly string[];
+  /**
+   * Immutable construction-time transport posture. `false` denies all
+   * external MCP transports (including stdio) before validation, DNS, SDK,
+   * or process work. Defaults to the established normal-mode behavior.
+   */
+  readonly externalTransportAllowed?: boolean;
 }
 
 export interface McpServerValidationOptions {
@@ -165,6 +188,12 @@ export interface McpManagerOptions {
   readonly store?: McpServerStore;
   readonly validation?: McpServerValidationOptions;
   readonly now?: () => Date;
+  /**
+   * Immutable construction-time transport posture. `false` closes every
+   * externally managed MCP transport while preserving local store management
+   * and disabled diagnostic rows.
+   */
+  readonly externalTransportAllowed?: boolean;
   /**
    * Live OSV malware-advisory preflight (`osv-check.ts`), additional to
    * the static `server-audit.ts` scan. Opt-in and unset by default —
@@ -189,6 +218,8 @@ export interface McpHealthSnapshot {
   readonly status: McpHealthStatus;
   readonly checkedAt?: Date;
   readonly error?: string;
+  /** Stable machine-readable reason for a terminal health refusal. */
+  readonly errorCode?: string;
   readonly reconnectAttempts: number;
   readonly nextReconnectAt?: Date;
   readonly toolCount: number;
@@ -340,4 +371,3 @@ export {
   type OfficialMcpPreset,
   type OfficialMcpPresetOptions
 } from "./official-mcp-presets.js";
-

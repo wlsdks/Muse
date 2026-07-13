@@ -4,6 +4,19 @@
  * NOT use this — a retried POST can double-act.
  */
 
+export interface RetryAttemptContext {
+  /** Zero-based physical request attempt. */
+  readonly attempt: number;
+  /** Exact URL that is about to be passed to fetchImpl. */
+  readonly url: string;
+}
+
+/**
+ * Optional per-physical-request boundary. A thrown/rejected error is deliberately
+ * not retried or wrapped: callers use this for deterministic policy guards.
+ */
+export type BeforeAttempt = (context: RetryAttemptContext) => void | Promise<void>;
+
 export interface RetryOptions {
   /** Extra attempts after the first. Default 2 (so up to 3 calls). */
   readonly retries?: number;
@@ -31,6 +44,17 @@ export interface RetryOptions {
    * Default 30000. `0` ignores `Retry-After` entirely (pure backoff).
    */
   readonly maxRetryAfterMs?: number;
+  /**
+   * Runs exactly once immediately before each physical fetch attempt. It runs
+   * before retry-owned timers/controllers and outside the fetch error handler,
+   * so a guard failure cannot be converted into a retry.
+   */
+  readonly beforeAttempt?: BeforeAttempt;
+  /**
+   * Whether rejected network requests are retried. Default true preserves the
+   * existing resilient-read behaviour; HTTP 429/5xx retry policy is unchanged.
+   */
+  readonly retryOnNetworkError?: boolean;
 }
 
 /**
@@ -83,6 +107,11 @@ export async function fetchWithRetry(
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    // Keep this outside the fetch try/catch. A policy guard is not a transient
+    // network failure, and must surface as the original error without a sleep,
+    // retry, or physical request after it throws.
+    await options.beforeAttempt?.({ attempt, url });
+
     let retryAfterMs: number | undefined;
     const controller = timeoutMs > 0 ? new AbortController() : undefined;
     const externalSignal = options.init?.signal ?? undefined;
@@ -109,7 +138,7 @@ export async function fetchWithRetry(
       }
     } catch (cause) {
       lastError = cause;
-      if (attempt === retries) {
+      if (options.retryOnNetworkError === false || attempt === retries) {
         throw cause;
       }
     } finally {

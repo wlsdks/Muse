@@ -57,7 +57,10 @@ Read these five and you know exactly what kind of agent this is.
    multimodal + grounding-strong — or any weights you run locally), and it's provider-
    neutral: use cloud or local, your choice. Privacy is a first-class **opt-in** — set
    `MUSE_LOCAL_ONLY=true` and cloud egress is **refused in code** (the runtime won't even
-   start against a cloud provider). The deeper it knows you, the more that matters.
+   start against a cloud provider). In the same posture, standard remote Home Assistant
+   paths are disabled before its bearer token is read; only a canonical local HTTP loopback
+   endpoint remains available. That is a scoped integration boundary, not a claim of a
+   complete all-egress audit. The deeper it knows you, the more that matters.
 
 3. **Honest — _it won't make you up._**
    Every answer, proactive nudge, and insight cites the real source it came from; weak
@@ -172,7 +175,8 @@ for a single call; it remembers you and shapes every future turn *and* every pro
   channel-approval gate — a reply toward a person is draft-first, never autonomous.
 - **Deterministic safety.** Guards are fail-close, hooks are fail-open, security lives in code
   (never in prompt instructions). Tool output is untrusted until sanitised. Risky local
-  execution flows through a separate Rust runner (`crates/runner`).
+  command execution is outside standard personal runtimes; use a dedicated coding tool
+  outside Muse Work when that capability is needed.
 
 <details>
 <summary><b>Repository layout</b></summary>
@@ -205,7 +209,7 @@ packages/
   db/ scheduler/ auth/ cache/ resilience/ runtime-state/ runtime-settings/ macos/ prompts/ shared/
 
 crates/
-  runner/        Rust sandbox: shell / process / file execution
+  runner/        Direct/test-only Rust runner artifact; never registered by standard model runtimes
 ```
 </details>
 

@@ -18,6 +18,7 @@
  */
 
 import type { CalendarCredentialStore, CalendarProviderRegistry } from "@muse/calendar";
+import type { ResolvedIntegrationEnvironment } from "@muse/autoconfigure";
 import type { JsonObject } from "@muse/shared";
 import type { FastifyInstance } from "fastify";
 
@@ -30,7 +31,13 @@ interface CalendarRoutesGate {
   readonly authService: ServerOptions["authService"];
   readonly registry: CalendarProviderRegistry;
   readonly credentialStore?: CalendarCredentialStore;
+  readonly integrationEnv: ResolvedIntegrationEnvironment;
 }
+
+const LOCAL_ONLY_REMOTE_INTEGRATIONS_DISABLED = {
+  code: "LOCAL_ONLY_REMOTE_INTEGRATIONS_DISABLED",
+  message: "Remote calendar and messaging integrations are disabled while MUSE_LOCAL_ONLY=true."
+} as const;
 
 export function registerCalendarRoutes(server: FastifyInstance, gate: CalendarRoutesGate): void {
   server.get("/api/calendar/providers", async (request, reply) => {
@@ -166,6 +173,9 @@ export function registerCalendarRoutes(server: FastifyInstance, gate: CalendarRo
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
     }
+    if (gate.integrationEnv.localOnly) {
+      return reply.status(403).send(LOCAL_ONLY_REMOTE_INTEGRATIONS_DISABLED);
+    }
     const ids = await credentialStore.list();
     return { providers: ids };
   });
@@ -173,6 +183,9 @@ export function registerCalendarRoutes(server: FastifyInstance, gate: CalendarRo
   server.put("/api/calendar/credentials/:providerId", async (request, reply) => {
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
+    }
+    if (gate.integrationEnv.localOnly) {
+      return reply.status(403).send(LOCAL_ONLY_REMOTE_INTEGRATIONS_DISABLED);
     }
     const { providerId } = request.params as { readonly providerId: string };
     const body = request.body;
@@ -189,6 +202,9 @@ export function registerCalendarRoutes(server: FastifyInstance, gate: CalendarRo
   server.delete("/api/calendar/credentials/:providerId", async (request, reply) => {
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
+    }
+    if (gate.integrationEnv.localOnly) {
+      return reply.status(403).send(LOCAL_ONLY_REMOTE_INTEGRATIONS_DISABLED);
     }
     const { providerId } = request.params as { readonly providerId: string };
     await credentialStore.remove(providerId);

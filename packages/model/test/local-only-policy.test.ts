@@ -14,7 +14,6 @@ describe("isLoopbackUrl — the no-egress host check (a false 'loopback' would l
     "127.5.6.7",
     "127.255.255.255",
     "http://[::1]:11434",
-    "0.0.0.0",
     "foo.localhost",
     "http://foo.localhost:3000",
     "LOCALHOST",
@@ -36,6 +35,7 @@ describe("isLoopbackUrl — the no-egress host check (a false 'loopback' would l
     "8.8.8.8",
     "126.0.0.1",
     "128.0.0.1",
+    "0.0.0.0",
     // Adversarial: a hostname that merely CONTAINS a loopback token but is a
     // real off-box domain must NOT be classified loopback.
     "localhost.evil.com",

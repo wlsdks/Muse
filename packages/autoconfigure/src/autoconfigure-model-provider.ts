@@ -1,5 +1,6 @@
 import {
   AnthropicProvider,
+  canonicalizeLocalOnlyModelBaseUrl,
   classifyProviderLocality,
   CodexCliProvider,
   CODEX_DEFAULT_MODEL_ID,
@@ -372,18 +373,28 @@ export function createModelProvider(env: MuseEnvironment, modelOverride?: string
   const models = parseCsv(env.MUSE_MODEL_LIST) ?? [parseModelName(defaultModel).modelId];
   const extraHeaders = parseHeaderMap(env.MUSE_MODEL_EXTRA_HEADERS);
 
-  // Local-only / no-cloud-egress: an OPT-IN posture (MUSE_LOCAL_ONLY=true). When
-  // set, fail CLOSED (and loud) before any cloud provider is instantiated —
-  // silently disabling the runtime would hide the privacy violation the user
-  // asked to be protected from. Off by default: cloud providers are allowed.
-  if (parseBoolean(env.MUSE_LOCAL_ONLY, false)) {
-    const effectiveBaseUrl = providerId === "ollama"
-      ? (baseUrl ?? normalizeOllamaBaseUrl(env.OLLAMA_BASE_URL))
-      : OPENAI_COMPAT_PRESETS[providerId]
-        ? (baseUrl ?? OPENAI_COMPAT_PRESETS[providerId].baseUrl)
-        : baseUrl;
-    if (classifyProviderLocality(providerId, effectiveBaseUrl) !== "local") {
-      throw new LocalOnlyViolationError(providerId, effectiveBaseUrl);
+  const effectiveBaseUrl = providerId === "ollama"
+    ? (baseUrl ?? normalizeOllamaBaseUrl(env.OLLAMA_BASE_URL))
+    : OPENAI_COMPAT_PRESETS[providerId]
+      ? (baseUrl ?? OPENAI_COMPAT_PRESETS[providerId].baseUrl)
+      : baseUrl;
+  const localOnly = parseBoolean(env.MUSE_LOCAL_ONLY, false);
+  const transportBaseUrl = localOnly
+    ? canonicalizeLocalOnlyModelBaseUrl(providerId, effectiveBaseUrl)
+    : effectiveBaseUrl;
+
+  // Local-only / no-cloud-egress: an OPT-IN posture (MUSE_LOCAL_ONLY=true).
+  // Canonicalize before classifying and before constructing an adapter, so an
+  // accepted localhost spelling cannot later be resolved by the transport.
+  if (localOnly) {
+    // LM Studio is an OpenAI-compatible server with no implicit Muse endpoint.
+    // An unset base stays the existing no-provider outcome instead of inventing
+    // a numeric endpoint merely because local-only is enabled.
+    if (providerId === "lmstudio" && transportBaseUrl === undefined) {
+      return undefined;
+    }
+    if (classifyProviderLocality(providerId, transportBaseUrl) !== "local") {
+      throw new LocalOnlyViolationError(providerId, transportBaseUrl);
     }
   }
 
@@ -427,7 +438,7 @@ export function createModelProvider(env: MuseEnvironment, modelOverride?: string
         // the CLI's resolveOllamaUrl honours) — without this its
         // value was discarded and a remote/custom host silently fell
         // back to 127.0.0.1. `MUSE_MODEL_BASE_URL` still wins.
-        baseUrl: baseUrl ?? normalizeOllamaBaseUrl(env.OLLAMA_BASE_URL),
+        baseUrl: transportBaseUrl,
         defaultModel,
         ...(extraHeaders ? { headers: extraHeaders } : {}),
         models,
@@ -482,20 +493,20 @@ export function createModelProvider(env: MuseEnvironment, modelOverride?: string
         const preset = OPENAI_COMPAT_PRESETS[providerId];
         return new OpenAICompatibleProvider({
           apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env[preset.envKey]),
-          baseUrl: baseUrl ?? preset.baseUrl,
+          baseUrl: transportBaseUrl ?? preset.baseUrl,
           defaultModel,
           ...(extraHeaders ? { headers: extraHeaders } : {}),
           id: providerId,
           models
         });
       }
-      if (!baseUrl) {
+      if (!transportBaseUrl) {
         return undefined;
       }
 
       return new OpenAICompatibleProvider({
         apiKey: parseOptionalString(env.MUSE_MODEL_API_KEY ?? env.OPENAI_API_KEY),
-        baseUrl,
+        baseUrl: transportBaseUrl,
         defaultModel,
         ...(extraHeaders ? { headers: extraHeaders } : {}),
         id: providerId,

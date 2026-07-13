@@ -4,13 +4,12 @@ import { createMuseObservabilitySnapshotProvider } from "@muse/observability";
 import { parseOptionalString } from "./env-parsers.js";
 import {
   mergeModelKeysFromFile,
+  resolveEffectiveLocalOnlyOverride,
   resolveActionLogFile,
   resolveBriefingSidecarFile,
-  resolveCredentialsFile,
   resolveDiscordInboxFile,
   resolveEpisodesFile,
   resolveFollowupsFile,
-  resolveLineInboxFile,
   resolveMatrixInboxFile,
   resolveNotesDir,
   resolveObjectivesFile,
@@ -24,11 +23,31 @@ import {
   resolveTelegramInboxFile
 } from "./personal-providers.js";
 
-import { createMuseRuntimeAssembly, type ApiServerAssemblyOptions } from "./index.js";
+import { createMuseRuntimeAssembly, type ApiServerAssemblyOptions, type MuseEnvironment } from "./index.js";
+import { resolveIntegrationEnvironment } from "./integration-environment.js";
 
 export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
-  const env = mergeModelKeysFromFile(options.env ?? process.env);
-  const assembly = createMuseRuntimeAssembly(options);
+  const source: MuseEnvironment = options.env ?? process.env;
+  // Calculate the process-backed HA/model strictness before any model-key
+  // merge can take its raw `{ ...env }` branch. Feed that same posture into
+  // the API integration snapshot so setup status and tick daemons cannot
+  // carry a stale false while the assembled runtime is strict. An explicit
+  // false still works when the actual process is not strict.
+  const modelAndHomeLocalOnlyOverride = resolveEffectiveLocalOnlyOverride(source, options.localOnlyOverride);
+  const integrationEnv = resolveIntegrationEnvironment(source, {
+    ...(modelAndHomeLocalOnlyOverride === undefined ? {} : { localOnlyOverride: modelAndHomeLocalOnlyOverride })
+  });
+  const env = mergeModelKeysFromFile(source, {
+    ...(modelAndHomeLocalOnlyOverride === undefined ? {} : { localOnlyOverride: modelAndHomeLocalOnlyOverride })
+  });
+  // One effective env feeds both the runtime assembly and the narrow API
+  // integration snapshot. Reusing raw options.env here would let setup routes
+  // disagree with the registry the runtime actually assembled.
+  const assembly = createMuseRuntimeAssembly({
+    ...options,
+    env,
+    ...(modelAndHomeLocalOnlyOverride === undefined ? {} : { localOnlyOverride: modelAndHomeLocalOnlyOverride })
+  });
 
   return {
     admin: {
@@ -123,7 +142,9 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     userMemoryStore: assembly.userMemoryStore,
     conversationSummaryStore: assembly.conversationSummaryStore,
     calendar: assembly.calendar,
-    calendarCredentialStore: new FileCalendarCredentialStore(resolveCredentialsFile(env)),
+    calendarCredentialStore: new FileCalendarCredentialStore(integrationEnv.calendar.credentialsFile),
+    integrationEnv,
+    localOnly: integrationEnv.localOnly,
     notesDir: resolveNotesDir(env),
     ...(assembly.notesProviderRegistry ? { notesProviderRegistry: assembly.notesProviderRegistry } : {}),
     tasksFile: resolveTasksFile(env),
@@ -144,7 +165,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
     briefingSidecarFile: resolveBriefingSidecarFile(env),
     patternsFiredFile: resolvePatternsFiredFile(env),
     episodesFile: resolveEpisodesFile(env),
-    lineInboxFile: resolveLineInboxFile(env),
+    lineInboxFile: integrationEnv.messaging.providers.line.inboxFile,
     matrixInboxFile: resolveMatrixInboxFile(env),
     telegramInboxFile: resolveTelegramInboxFile(env),
     discordInboxFile: resolveDiscordInboxFile(env),

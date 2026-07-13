@@ -1,4 +1,4 @@
-import { McpSecurityPolicyProvider, type McpManager, type McpSecurityPolicyStore, type McpServer } from "@muse/mcp";
+import { MCP_EXTERNAL_TRANSPORT_BLOCKED, McpSecurityPolicyProvider, type McpManager, type McpSecurityPolicyStore, type McpServer } from "@muse/mcp";
 import { ToolOutputSanitizer } from "@muse/policy";
 import type { FastifyInstance } from "fastify";
 
@@ -70,10 +70,7 @@ export function registerMcpRoutes(server: FastifyInstance, options: McpRouteOpti
         const saved = await mcp.manager.register(parsed.value);
 
         if (!saved) {
-          return reply.status(403).send({
-            code: "MCP_SERVER_DENIED",
-            message: `MCP server is not allowed by policy: ${parsed.value.name}`
-          });
+          return reply.status(403).send(mcpMutationDenied(mcp.manager, parsed.value.name));
         }
 
         if (saved.autoConnect) {
@@ -200,6 +197,10 @@ export function registerMcpRoutes(server: FastifyInstance, options: McpRouteOpti
         return reply;
       }
 
+      if (!mcp.manager.isExternalTransportAllowed()) {
+        return reply.status(403).send(externalMcpTransportBlocked());
+      }
+
       return mcp.manager.reconnectDue();
     });
 
@@ -307,10 +308,7 @@ async function updateMcpServer(
     const updated = await mcp.manager.syncRuntimeServer(parsed.value);
 
     if (!updated) {
-      return reply.status(403).send({
-        code: "MCP_SERVER_DENIED",
-        message: `MCP server is not allowed by policy: ${name}`
-      });
+      return reply.status(403).send(mcpMutationDenied(mcp.manager, name));
     }
 
     if (wasConnected || updated.autoConnect) {
@@ -339,6 +337,10 @@ async function connectMcpServer(
 
   if (!(await findMcpServer(mcp.manager, name))) {
     return sendMcpServerNotFound(reply, name);
+  }
+
+  if (!mcp.manager.isExternalTransportAllowed()) {
+    return reply.status(403).send(externalMcpTransportBlocked());
   }
 
   const connected = await mcp.manager.connect(name);
@@ -394,6 +396,10 @@ async function reconnectMcpServer(
     return sendMcpServerNotFound(reply, name);
   }
 
+  if (!mcp.manager.isExternalTransportAllowed()) {
+    return reply.status(403).send(externalMcpTransportBlocked());
+  }
+
   const connected = await mcp.manager.reconnect(name);
 
   if (!connected) {
@@ -427,6 +433,10 @@ async function callMcpTool(
 
   if (!parsed.ok) {
     return reply.status(400).send(parsed.error);
+  }
+
+  if (!mcp.manager.isExternalTransportAllowed()) {
+    return reply.status(403).send(externalMcpTransportBlocked());
   }
 
   const tool = mcp.manager.toMuseTools().find((candidate) => candidate.definition.name === `${name}.${toolName}`);
@@ -517,4 +527,19 @@ function resolveMcpSecurityPolicyProvider(mcp: McpRouteMcp | undefined): McpSecu
   return mcp?.securityPolicyStore ? new McpSecurityPolicyProvider(mcp.securityPolicyStore) : undefined;
 }
 
+function mcpMutationDenied(manager: McpManager, name: string): ApiError {
+  return manager.isExternalTransportAllowed()
+    ? {
+        code: "MCP_SERVER_DENIED",
+        message: `MCP server is not allowed by policy: ${name}`
+      }
+    : externalMcpTransportBlocked();
+}
+
+function externalMcpTransportBlocked(): ApiError {
+  return {
+    code: MCP_EXTERNAL_TRANSPORT_BLOCKED,
+    message: "External MCP transport is disabled by the local-only privacy posture"
+  };
+}
 

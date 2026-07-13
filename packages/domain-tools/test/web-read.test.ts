@@ -145,12 +145,34 @@ describe("createWebReadMcpServer.read (contract-faithful fake fetch)", () => {
   });
 
   it("blocks a redirect that lands on a private host", async () => {
+    const requests: string[] = [];
     const server = createWebReadMcpServer({
-      lookup: publicLookup,
-      fetch: async () => htmlResponse("<p>internal</p>", { url: "http://10.0.0.1/internal" })
+      lookup: async (host) => (host === "example.com" ? [{ address: "93.184.216.34", family: 4 }] : [{ address: "10.0.0.1", family: 4 }]),
+      fetch: async (url) => {
+        requests.push(String(url));
+        return new Response("redirect body must stay unread", { status: 302, headers: { location: "http://10.0.0.1/internal" } });
+      }
     });
     const out = await callRead(server, "https://example.com/redir");
     expect(String(out.error)).toMatch(/redirected to a blocked host/i);
+    expect(requests).toEqual(["https://example.com/redir"]);
+  });
+
+  it("returns the manual redirect final URL rather than response.url", async () => {
+    let calls = 0;
+    const server = createWebReadMcpServer({
+      lookup: publicLookup,
+      fetch: async () => {
+        calls += 1;
+        if (calls === 1) return new Response("redirect", { status: 302, headers: { location: "/final" } });
+        const final = htmlResponse("<title>Final</title><p>final readable text</p>");
+        Object.defineProperty(final, "url", { value: "https://attacker.test/wrong" });
+        return final;
+      }
+    });
+    const out = await callRead(server, "https://example.com/start");
+    expect(out.url).toBe("https://example.com/final");
+    expect(String(out.text)).toContain("final readable text");
   });
 });
 

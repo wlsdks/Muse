@@ -30,10 +30,12 @@ import {
   resolveProactiveHistoryFile,
   resolveRemindersFile,
   resolveTasksFile,
+  resolveHomeAssistantEnvironment,
   type DecayContradictedDeps,
   type DistillQueuedDeps
 } from "@muse/autoconfigure";
 import type { MessagingProviderRegistry } from "@muse/messaging";
+import { isLocalOnlyEnabled } from "@muse/model";
 import { queryActionLog, readReminders, readTasks } from "@muse/stores";
 import { createAmbientNoticeRunner, createMessagingObjectiveActuator, createModelObjectiveEvaluator, createProposingObjectiveActuator, createWebWatchRunner, FileAmbientSignalSource, gateProactiveNoticeSink, parseQuietHours, MacOsActiveWindowSource, parseAmbientNoticeRules, WindowsActiveWindowSource, webWatchesFromConfig, type AmbientNoticeRunner, type BriefingCalendarLister, type ChromeSnapshotConnection, type InterruptionBudgetWiring, type ProactiveNoticeSink, type WebWatchRunner } from "@muse/proactivity";
 import { homeWatchesFromConfig, type EmailProvider } from "@muse/domain-tools";
@@ -179,6 +181,10 @@ export interface DaemonHelpers {
    * built from MUSE_GMAIL_TOKEN.
    */
   readonly emailSyncProvider?: Pick<EmailProvider, "listRecent">;
+  /** Test seam for proving the Gmail-specific factory is never entered. */
+  readonly makeEmailSyncTick?: typeof makeEmailSyncTick;
+  /** Test seam for the continuous loop; production uses the real runner. */
+  readonly runDaemonLoop?: typeof runDaemonLoop;
   /**
    * Test seams — inject the LLM merge + the held-out coverage validator the
    * autonomous playbook-consolidate tick uses, so a smoke can drive a real
@@ -255,6 +261,9 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       readonly destination?: string;
     }) => {
       const e = env();
+      // `helpers.env` is a test/composition seam, not an escape hatch. A
+      // supplied false cannot downgrade the ambient local-only posture.
+      const localOnly = isLocalOnlyEnabled(process.env) || isLocalOnlyEnabled(e);
       const interval = parseBoundedFlag(options.interval, "--interval", 5, 86_400, 60);
       const leadMinutes = parseBoundedFlag(options.leadMinutes, "--lead-minutes", 1, 1_440, 10);
       // Precedence: flag > env > config file > hardcoded default. The
@@ -448,18 +457,23 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       // Home-watch: read-only Home Assistant entity-state polling (e.g.
       // "front door unlocked"). Active only with config + HA creds; a
       // firing watch never acts on the home (outbound-safety).
-      const homeWatchRaw = e.MUSE_HOME_WATCH_CONFIG?.trim();
-      const haBaseUrl = e.MUSE_HOMEASSISTANT_URL?.trim();
-      const haToken = e.MUSE_HOMEASSISTANT_TOKEN?.trim();
+      // Classify the endpoint before reading the watch config or HA token. A
+      // blocked remote integration is deliberately inert: no config parser,
+      // runner, tick, or credential access is created for it.
+      const homeAssistant = resolveHomeAssistantEnvironment(e);
       let homeWatchRunner: WebWatchRunner | undefined;
-      if (homeWatchRaw && haBaseUrl && haToken) {
-        const homeWatches = homeWatchesFromConfig(homeWatchRaw, {
-          baseUrl: haBaseUrl,
-          token: haToken,
-          ...(helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {})
-        });
-        if (homeWatches.length > 0) {
-          homeWatchRunner = createWebWatchRunner({ sink: noticeSink, watches: homeWatches });
+      if (homeAssistant.status === "configured") {
+        const homeWatchRaw = e.MUSE_HOME_WATCH_CONFIG?.trim();
+        if (homeWatchRaw) {
+          const homeWatches = homeWatchesFromConfig(homeWatchRaw, {
+            baseUrl: homeAssistant.baseUrl,
+            localOnly: homeAssistant.localOnly,
+            token: homeAssistant.token,
+            ...(helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {})
+          });
+          if (homeWatches.length > 0) {
+            homeWatchRunner = createWebWatchRunner({ sink: noticeSink, watches: homeWatches });
+          }
         }
       }
 
@@ -504,13 +518,21 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  followup:   ${followupModel ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  ambient:    ${ambientRunner ? "enabled" : "disabled (set MUSE_AMBIENT_RULES)"}\n`);
         io.stdout(`  web-watch:  ${webWatchRunner ? "enabled" : "disabled (set MUSE_WEB_WATCH_CONFIG)"}\n`);
-        io.stdout(`  home-watch: ${homeWatchRunner ? "enabled" : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
+        io.stdout(`  home-watch: ${homeWatchRunner
+          ? "enabled"
+          : homeAssistant.status === "blocked"
+            ? `disabled (${homeAssistant.reason})`
+            : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
         io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) && followupModel ? "enabled (distill + decay + consolidate)" : "disabled (set MUSE_SELFLEARN_ENABLED + a model)"}\n`);
         io.stdout(`  recap:      ${parseBoolean(e.MUSE_RECAP_ENABLED, false) ? `enabled (evening, after ${(e.MUSE_RECAP_HOUR ?? "21").toString()}:00)` : "disabled (set MUSE_RECAP_ENABLED)"}\n`);
         io.stdout(`  digest:     ${parseBoolean(e.MUSE_DIGEST_ENABLED, true) ? `enabled (daily, at ${(e.MUSE_DIGEST_HOUR ?? "18").toString()}:00 local)` : "disabled (set MUSE_DIGEST_ENABLED=false to keep off)"}\n`);
-        io.stdout(`  email-sync: ${parseBoolean(e.MUSE_EMAIL_SYNC_ENABLED, false) && e.MUSE_GMAIL_TOKEN?.trim() ? "enabled (recent emails → recall)" : "disabled (set MUSE_EMAIL_SYNC_ENABLED + MUSE_GMAIL_TOKEN)"}\n`);
+        io.stdout(`  email-sync: ${localOnly
+          ? "disabled (MUSE_LOCAL_ONLY=true; Gmail standard paths are closed)"
+          : parseBoolean(e.MUSE_EMAIL_SYNC_ENABLED, false) && e.MUSE_GMAIL_TOKEN?.trim()
+            ? "enabled (recent emails → recall)"
+            : "disabled (set MUSE_EMAIL_SYNC_ENABLED + MUSE_GMAIL_TOKEN)"}\n`);
         io.stdout(`  msg-poll:   ${parseBoolean(e.MUSE_MESSAGING_POLL_ENABLED, false) ? "enabled (new inbound → recallable)" : "disabled (set MUSE_MESSAGING_POLL_ENABLED)"}\n`);
         io.stdout(`  conflicts:  ${parseBoolean(e.MUSE_CONFLICT_WATCH_ENABLED, false) ? `enabled (warns of upcoming double-bookings, next ${(e.MUSE_CONFLICT_WATCH_WITHIN_DAYS ?? "7").toString()}d)` : "disabled (set MUSE_CONFLICT_WATCH_ENABLED)"}\n`);
         io.stdout(`  browsing:   ${parseBoolean(e.MUSE_BROWSING_AUTO_SYNC, false) ? `enabled (Chrome history → recall every ${(e.MUSE_BROWSING_SYNC_INTERVAL_MINUTES ?? "60").toString()} min)` : "disabled (set MUSE_BROWSING_AUTO_SYNC)"}\n`);
@@ -651,15 +673,17 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const emailSyncLimitRaw = e.MUSE_EMAIL_SYNC_LIMIT ? Number(e.MUSE_EMAIL_SYNC_LIMIT) : 20;
       const emailSyncLimit = Number.isFinite(emailSyncLimitRaw) && emailSyncLimitRaw > 0 ? Math.min(100, Math.trunc(emailSyncLimitRaw)) : 20;
       const lastEmailSyncMs: TickRunState = { current: undefined };
-      const emailSyncTick = makeEmailSyncTick({
-        env: e,
-        intervalMs: emailSyncIntervalMs,
-        lastRunMs: lastEmailSyncMs,
-        limit: emailSyncLimit,
-        notesDir: resolveNotesDir(e),
-        stdout: io.stdout,
-        ...(helpers.emailSyncProvider ? { emailSyncProvider: helpers.emailSyncProvider } : {})
-      });
+      const emailSyncTick = localOnly
+        ? undefined
+        : (helpers.makeEmailSyncTick ?? makeEmailSyncTick)({
+          env: e,
+          intervalMs: emailSyncIntervalMs,
+          lastRunMs: lastEmailSyncMs,
+          limit: emailSyncLimit,
+          notesDir: resolveNotesDir(e),
+          stdout: io.stdout,
+          ...(helpers.emailSyncProvider ? { emailSyncProvider: helpers.emailSyncProvider } : {})
+        });
 
       // Unattended learning (distill + subtractive decay) — see
       // `makeSelfLearnTick`'s doc comment for the full brake/safety contract.
@@ -851,7 +875,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await homeWatchTick();
         await briefingTick();
         await reflectionTick();
-        await emailSyncTick();
+        if (emailSyncTick) await emailSyncTick();
         await selfLearnTick();
         await selfLearnDecayTick();
         await playbookConsolidateTick();
@@ -882,7 +906,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       process.on("SIGTERM", stop);
 
       io.stdout(`  running every ${interval.toString()} s — ctrl-c to stop\n`);
-      await runDaemonLoop({
+      await (helpers.runDaemonLoop ?? runDaemonLoop)({
         intervalMs: interval * 1000,
         onError: (cause) => {
           io.stderr(`tick error: ${cause instanceof Error ? cause.message : String(cause)}\n`);

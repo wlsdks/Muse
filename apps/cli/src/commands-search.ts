@@ -17,6 +17,7 @@
 
 import { createLoopbackMcpConnection } from "@muse/mcp";
 import { createSearchMcpServer, normaliseTimeRange } from "@muse/domain-tools";
+import { isInteractiveWebEgressAllowed, isLocalOnlyEnabled } from "@muse/model";
 import { redactSecretsInText, stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
@@ -69,6 +70,13 @@ export function registerSearchCommand(program: Command, io: ProgramIO): void {
     .option("--time <range>", "Date-range hint forwarded to the backend (today | week | month | year). SearXNG: time_range, DuckDuckGo: df.")
     .option("--json", "Emit the raw {backend, query, results, total} payload")
     .action(async (queryParts: readonly string[], options: SearchOptions) => {
+      if (!isInteractiveWebEgressAllowed(process.env)) {
+        io.stderr(isLocalOnlyEnabled(process.env)
+          ? "muse search: interactive public-web access is blocked by local-only.\n"
+          : "muse search: interactive public-web access is disabled by MUSE_WEB_EGRESS.\n");
+        process.exitCode = 2;
+        return;
+      }
       const rawQuery = queryParts.join(" ").trim();
       if (rawQuery.length === 0) {
         throw new Error("query is required");

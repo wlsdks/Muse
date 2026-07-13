@@ -1,5 +1,6 @@
 import { CHROME_DEVTOOLS_MCP_SERVER_NAME, createChromeDevToolsMcpServer, DefaultMcpTransportConnector, McpManager, McpSecurityPolicyProvider, OFFICIAL_MCP_PRESETS, type McpSecurityPolicyStore, type McpServerInput, type McpServerStore, type McpTransportConnector } from "@muse/mcp";
 import type { MuseDatabase } from "@muse/db";
+import { isLocalOnlyEnabled } from "@muse/model";
 import type { Kysely } from "kysely";
 
 import { parseBoolean, parseCsv, parseInteger } from "./env-parsers.js";
@@ -16,9 +17,10 @@ export interface McpStack {
   readonly serverStore: McpServerStore;
   /**
    * External MCP servers parsed from `~/.muse/mcp.json` (or the path
-   * in `MUSE_MCP_CONFIG`). Empty when the file is absent. Callers
-   * must `await seedExternalMcpServers(serverStore, ...)` BEFORE
-   * `manager.start()` so the connector picks them up.
+   * in `MUSE_MCP_CONFIG`). Empty when the file is absent or when
+   * `MUSE_LOCAL_ONLY=true`; callers must `await
+   * seedExternalMcpServers(serverStore, ...)` BEFORE `manager.start()`
+   * so the connector picks them up in normal mode.
    */
   readonly externalServerInputs: readonly McpServerInput[];
 }
@@ -36,47 +38,59 @@ export function assembleMcpStack(
   connectorOverride?: McpTransportConnector
 ): McpStack {
   const serverStore = createMcpServerStore(db, env);
-  const externalServerInputs = [...loadExternalMcpConfig(env)];
-  // MUSE_CHROME_DEVTOOLS_ENABLED auto-registers the
-  // Chrome DevTools MCP preset (auto-connect) so the user need not
-  // hand-write the npx command + --browser-url in mcp.json. Skipped
-  // if they already declared `chrome-devtools` themselves.
-  if (
-    parseBoolean(env.MUSE_CHROME_DEVTOOLS_ENABLED, false)
-    && !externalServerInputs.some((server) => server.name === CHROME_DEVTOOLS_MCP_SERVER_NAME)
-  ) {
-    const browserUrl = env.MUSE_CHROME_DEVTOOLS_BROWSER_URL?.trim();
-    externalServerInputs.push(createChromeDevToolsMcpServer({
-      autoConnect: true,
-      ...(browserUrl && browserUrl.length > 0 ? { browserUrl } : {})
-    }));
-  }
-  // Official-public preset opt-in (mirrors the Chrome turnkey above):
-  // MUSE_GITHUB_MCP_ENABLED / MUSE_NOTION_MCP_ENABLED register the
-  // curated GitHub / Notion remote preset behind an explicit toggle.
-  // Default OFF; skipped if the user already declared that server in
-  // mcp.json. The credential is resolved from a SECURE source — a
-  // dedicated env var (GITHUB_MCP_TOKEN / NOTION_MCP_TOKEN) or the
-  // `~/.muse/mcp-credentials.json` file — through the same non-logging
-  // seam the model keys use, and injected ONLY as the streamable
-  // transport's `Authorization: Bearer` header. NO secret is shipped or
-  // logged. FAIL-CLOSED: a toggle ON with NO resolvable credential does
-  // NOT enable the preset (no blank-auth / broken half-connection); a
-  // credential is never invented here. The fail-close write
-  // classification reaches the live approval gate via
-  // `withOfficialMcpRisk` in the runtime projection.
-  const enabledOfficialPresets = Object.values(OFFICIAL_MCP_PRESETS)
-    .filter(
-      (preset) =>
-        parseBoolean(env[`MUSE_${preset.name.toUpperCase()}_MCP_ENABLED`], false)
-        && !externalServerInputs.some((server) => server.name === preset.name)
-    )
-    .map((preset) => ({ headers: resolveOfficialMcpAuthHeaders(env, preset.name), preset }))
-    .filter((candidate): candidate is { headers: Record<string, string>; preset: typeof candidate.preset } =>
-      candidate.headers !== undefined
-    );
-  for (const { preset, headers } of enabledOfficialPresets) {
-    externalServerInputs.push(preset.create({ headers }));
+  // This is a trusted construction-time privacy posture, not request metadata
+  // or a user-configurable MCP exception. A local-only runtime has no external
+  // MCP transport, including stdio/process transports.
+  const externalTransportAllowed = !isLocalOnlyEnabled(env);
+  const externalServerInputs: McpServerInput[] = [];
+  const enabledOfficialPresetNames: string[] = [];
+  const chromeDevtoolsEnabled = externalTransportAllowed
+    && parseBoolean(env.MUSE_CHROME_DEVTOOLS_ENABLED, false);
+
+  if (externalTransportAllowed) {
+    externalServerInputs.push(...loadExternalMcpConfig(env));
+    // MUSE_CHROME_DEVTOOLS_ENABLED auto-registers the
+    // Chrome DevTools MCP preset (auto-connect) so the user need not
+    // hand-write the npx command + --browser-url in mcp.json. Skipped
+    // if they already declared `chrome-devtools` themselves.
+    if (
+      chromeDevtoolsEnabled
+      && !externalServerInputs.some((server) => server.name === CHROME_DEVTOOLS_MCP_SERVER_NAME)
+    ) {
+      const browserUrl = env.MUSE_CHROME_DEVTOOLS_BROWSER_URL?.trim();
+      externalServerInputs.push(createChromeDevToolsMcpServer({
+        autoConnect: true,
+        ...(browserUrl && browserUrl.length > 0 ? { browserUrl } : {})
+      }));
+    }
+    // Official-public preset opt-in (mirrors the Chrome turnkey above):
+    // MUSE_GITHUB_MCP_ENABLED / MUSE_NOTION_MCP_ENABLED register the
+    // curated GitHub / Notion remote preset behind an explicit toggle.
+    // Default OFF; skipped if the user already declared that server in
+    // mcp.json. The credential is resolved from a SECURE source — a
+    // dedicated env var (GITHUB_MCP_TOKEN / NOTION_MCP_TOKEN) or the
+    // `~/.muse/mcp-credentials.json` file — through the same non-logging
+    // seam the model keys use, and injected ONLY as the streamable
+    // transport's `Authorization: Bearer` header. NO secret is shipped or
+    // logged. FAIL-CLOSED: a toggle ON with NO resolvable credential does
+    // NOT enable the preset (no blank-auth / broken half-connection); a
+    // credential is never invented here. The fail-close write
+    // classification reaches the live approval gate via
+    // `withOfficialMcpRisk` in the runtime projection.
+    const enabledOfficialPresets = Object.values(OFFICIAL_MCP_PRESETS)
+      .filter(
+        (preset) =>
+          parseBoolean(env[`MUSE_${preset.name.toUpperCase()}_MCP_ENABLED`], false)
+          && !externalServerInputs.some((server) => server.name === preset.name)
+      )
+      .map((preset) => ({ headers: resolveOfficialMcpAuthHeaders(env, preset.name), preset }))
+      .filter((candidate): candidate is { headers: Record<string, string>; preset: typeof candidate.preset } =>
+        candidate.headers !== undefined
+      );
+    for (const { preset, headers } of enabledOfficialPresets) {
+      externalServerInputs.push(preset.create({ headers }));
+      enabledOfficialPresetNames.push(preset.name);
+    }
   }
   const configuredAllowedServers = parseCsv(env.MUSE_MCP_ALLOWED_SERVERS);
   // An explicit turnkey enable (Chrome or an official preset) must not be
@@ -87,8 +101,8 @@ export function assembleMcpStack(
   // untouched — adding to it would flip allow-all into a strict list that
   // blocks everything else.
   const turnkeyEnabledServers = [
-    ...(parseBoolean(env.MUSE_CHROME_DEVTOOLS_ENABLED, false) ? [CHROME_DEVTOOLS_MCP_SERVER_NAME] : []),
-    ...enabledOfficialPresets.map(({ preset }) => preset.name)
+    ...(chromeDevtoolsEnabled ? [CHROME_DEVTOOLS_MCP_SERVER_NAME] : []),
+    ...enabledOfficialPresetNames
   ];
   const allowedServerNames =
     configuredAllowedServers && configuredAllowedServers.length > 0
@@ -109,6 +123,7 @@ export function assembleMcpStack(
     connector: connectorOverride ?? new DefaultMcpTransportConnector({
       allowPrivateAddresses,
       clientRoots: parseCsv(env.MUSE_MCP_CLIENT_ROOTS),
+      externalTransportAllowed,
       requestTimeoutMs: parseInteger(env.MUSE_MCP_REQUEST_TIMEOUT_MS, 15_000)
     }),
     reconnect: {
@@ -120,6 +135,7 @@ export function assembleMcpStack(
     validation: {
       allowPrivateAddresses
     },
+    externalTransportAllowed,
     securityPolicyProvider
   });
   return { externalServerInputs, manager, securityPolicyProvider, securityPolicyStore, serverStore };

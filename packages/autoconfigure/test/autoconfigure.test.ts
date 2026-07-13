@@ -62,6 +62,58 @@ import { parseNonNegativeFloat, parseNonNegativeInteger, parsePositiveFloat, par
 import { resolveWorkspaceSkillsDir } from "../src/provider-paths.js";
 import { createPersonalToolExposurePolicy } from "../src/runtime-wiring.js";
 
+const workingBudgetTempRoot = mkdtempSync(join(tmpdir(), "muse-working-budget-"));
+const workingBudgetMissingPersonaFile = join(workingBudgetTempRoot, "persona.md");
+const workingBudgetMissingModelKeysFile = join(workingBudgetTempRoot, "models.json");
+
+function baseWorkingBudgetEnv(overrides: Readonly<Record<string, string>> = {}): Record<string, string> {
+  return {
+    HOME: workingBudgetTempRoot,
+    MUSE_ACTIVE_CONTEXT_ENABLED: "false",
+    MUSE_CONVERSATION_SUMMARY_PERSIST: "false",
+    MUSE_FOLLOWUP_CAPTURE_ENABLED: "false",
+    MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "4096",
+    MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
+    MUSE_MODEL: "diagnostic/smoke",
+    MUSE_MODEL_KEYS_FILE: workingBudgetMissingModelKeysFile,
+    MUSE_MODEL_PROVIDER_ID: "diagnostic",
+    MUSE_PERSONA_MD_FILE: workingBudgetMissingPersonaFile,
+    MUSE_PLAN_CACHE: "false",
+    MUSE_PLAYBOOK: "false",
+    MUSE_SKILLS_ENABLED: "false",
+    MUSE_TOOL_EXEMPLARS: "false",
+    MUSE_USER_MEMORY_AUTO_EXTRACT: "false",
+    MUSE_USER_MEMORY_INJECTION: "false",
+    ...overrides
+  };
+}
+
+const workingBudgetHistory = [
+  { content: "working-budget payload ".repeat(75), role: "user" as const },
+  { content: "working-budget payload ".repeat(75), role: "assistant" as const },
+  { content: "working-budget payload ".repeat(75), role: "user" as const },
+  { content: "working-budget payload ".repeat(75), role: "assistant" as const },
+  { content: "What should we do next?", role: "user" as const }
+];
+
+const standardRunnerContainmentCases: readonly { readonly name: string; readonly env: Record<string, string> }[] = [
+  { name: "unset", env: {} },
+  { name: "MUSE_RUNNER_ENABLED=false", env: { MUSE_RUNNER_ENABLED: "false" } },
+  { name: "MUSE_RUNNER_ENABLED=true", env: { MUSE_RUNNER_ENABLED: "true" } },
+  {
+    name: "MUSE_RUNNER_ENABLED=true with an arbitrary runner path",
+    env: { MUSE_RUNNER_ENABLED: "true", MUSE_RUNNER_PATH: "/arbitrary/muse-runner" }
+  },
+  {
+    name: "MUSE_LOCAL_ONLY=true with enabled runner and an invalid path",
+    env: {
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_RUNNER_ENABLED: "true",
+      MUSE_RUNNER_PATH: "/definitely-not-a-muse-runner"
+    }
+  }
+];
+
 describe("autoconfigure", () => {
   it("assembles default runtime without auth when no secret is configured", async () => {
     // PERSIST=false keeps the task store in-memory: this test verifies the assembly
@@ -426,90 +478,34 @@ describe("autoconfigure", () => {
   });
 
   it("wires working-budget compaction into the AgentRuntime by default", async () => {
-    // autoconfigure wires workingBudgetTokens on ConversationTrimOptions,
-    // computing it as 40% of nominal by default. The composed layered system
-    // prompt rides in the compaction estimate, and it GREW (the flagship chat
-    // role became a real behavioural contract and a fresh install now gets the
-    // default personality layer), so a nominal window sized for the old prompt
-    // tips straight past the hard cap and reports `hard_limit` — which would
-    // read as a mis-wiring when it is only the window being too small for the
-    // prompt. Size the window so the intended regime is exercised: the working
-    // budget (40%) is exceeded by prompt+messages while the hard cap (after the
-    // output reserve) is not.
     const assembly = createMuseRuntimeAssembly({
-      env: {
-        // Disable the Context Engineering Phase 1 system-prompt
-        // injection so the budget math is dominated by the
-        // conversation messages this test ships — otherwise the
-        // nominal budget tips into `hard_limit` from the
-        // `[Active Context]` block alone, which isn't what this
-        // test is exercising.
-        MUSE_ACTIVE_CONTEXT_ENABLED: "false",
-        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "2000",
-        MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
-        MUSE_MODEL: "diagnostic/smoke",
-        MUSE_MODEL_PROVIDER_ID: "diagnostic"
-      }
+      env: baseWorkingBudgetEnv()
     });
-
-    const longerMessages = [
-      { content: "first user message that is long enough to fill some tokens", role: "user" as const },
-      { content: "first assistant response that also has decent length", role: "assistant" as const },
-      { content: "second user message that adds more conversation history", role: "user" as const },
-      { content: "second assistant response continuing the dialogue", role: "assistant" as const },
-      { content: "third question asking about something else entirely", role: "user" as const }
-    ];
     const result = await assembly.agentRuntime?.run({
-      messages: longerMessages,
+      messages: workingBudgetHistory,
       model: "diagnostic/smoke"
     });
 
-    // The runtime should have surfaced a context-window report and
-    // it should have fired on the WORKING budget (proactive), not
-    // the hard limit, because the hard cap is much larger than what
-    // the messages consume.
-    expect(result?.contextWindow).toBeDefined();
+    expect(result?.contextWindow?.budgetTokens).toBe(4086);
     expect(result?.contextWindow?.triggeredBy).toBe("working_budget");
     expect(result?.contextWindow?.removedCount).toBeGreaterThan(0);
   });
 
   it("respects MUSE_LLM_WORKING_BUDGET_TOKENS=0 to disable proactive compaction", async () => {
-    // Same scenario as above but with the user explicitly opting
-    // out via 0. The trim should NOT fire because the hard cap is
-    // unreached and proactive compaction is disabled. Same 1000-token
-    // floor as the sibling test above (see its comment) — with it
-    // on, the [Active Context] block's reminders/user-memory
-    // resolvers default to the real `~/.muse/reminders.json` and
-    // `~/.muse/user-memory.json` when no env override is given —
-    // on a lived-in dev box those files are non-empty and inflate
-    // the prompt past a too-tight hard cap, flipping this test's
-    // `hard_limit` vs `none` assertion depending on machine state.
     const assembly = createMuseRuntimeAssembly({
-      env: {
-        MUSE_ACTIVE_CONTEXT_ENABLED: "false",
-        // 2000, not 1000: the composed system prompt grew (real chat contract +
-        // default personality layer), and a window sized for the old prompt puts
-        // the prompt ALONE past the hard cap — so this test would report
-        // `hard_limit` and look like a broken disable switch when nothing about
-        // the switch changed.
-        MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS: "2000",
-        MUSE_LLM_MAX_OUTPUT_TOKENS: "10",
-        MUSE_LLM_WORKING_BUDGET_TOKENS: "0",
-        MUSE_MODEL: "diagnostic/smoke",
-        MUSE_MODEL_PROVIDER_ID: "diagnostic"
-      }
+      env: baseWorkingBudgetEnv({ MUSE_LLM_WORKING_BUDGET_TOKENS: "0" })
     });
 
     const result = await assembly.agentRuntime?.run({
-      messages: [
-        { content: "shorter", role: "user" }
-      ],
+      messages: workingBudgetHistory,
       model: "diagnostic/smoke"
     });
 
-    // Below both budgets → triggeredBy: "none".
+    expect(result?.contextWindow?.budgetTokens).toBe(4086);
     expect(result?.contextWindow?.triggeredBy).toBe("none");
     expect(result?.contextWindow?.removedCount).toBe(0);
+    expect(result?.contextWindow?.estimatedTokens).toBeGreaterThan(1638);
+    expect(result?.contextWindow?.estimatedTokens).toBeLessThanOrEqual(4086);
   });
 
   it("feeds the MonthlyBudgetTracker from each agent run", async () => {
@@ -639,17 +635,14 @@ describe("autoconfigure", () => {
     expect(events[0]?.totalTokens).toBeGreaterThan(0);
   });
 
-  it("adds the Rust runner tool only when explicitly enabled", () => {
-    const disabled = createMuseRuntimeAssembly({ env: {} });
-    const enabled = createMuseRuntimeAssembly({
-      env: {
-        MUSE_RUNNER_ENABLED: "true"
-      }
-    });
+  for (const { name, env } of standardRunnerContainmentCases) {
+    it(`does not register run_command in the standard runtime registry when ${name}`, () => {
+      const assembly = createMuseRuntimeAssembly({ env });
 
-    expect(disabled.toolRegistry.get("run_command")).toBeUndefined();
-    expect(enabled.toolRegistry.get("run_command")?.definition.risk).toBe("execute");
-  });
+      expect(assembly.toolRegistry.get("run_command")).toBeUndefined();
+      expect(assembly.toolRegistry.list().map((tool) => tool.definition.name)).not.toContain("run_command");
+    });
+  }
 
   it("assembles named model providers without forcing an OpenAI-compatible base URL", () => {
     const anthropic = createMuseRuntimeAssembly({
@@ -811,6 +804,27 @@ describe("autoconfigure", () => {
     const tools = createLoopbackMcpToolsFromEnv({ MUSE_LOOPBACK_FETCH_HOSTS: "api.example.test,backup.example.test" });
     const names = tools.map((tool) => tool.definition.name).sort();
     expect(names).toEqual(["muse.fetch.get", "muse.fetch.head"]);
+  });
+
+  it("local-only omits default loopback search and configured muse.fetch while preserving non-web loopback tools", () => {
+    const tools = createLoopbackMcpToolsFromEnv({
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_LOOPBACK_FETCH_HOSTS: "api.example.test",
+      MUSE_LOOPBACK_FS_ROOTS: "/tmp/workspace",
+      MUSE_LOOPBACK_MCP_ENABLED: "true"
+    });
+    const names = tools.map((tool) => tool.definition.name);
+    expect(names).toContain("muse.time.now");
+    expect(names).toContain("muse.fs.read");
+    expect(names).not.toContain("muse.search.search");
+    expect(names.some((name) => name.startsWith("muse.fetch."))).toBe(false);
+  });
+
+  it("local-only runtime assembly omits public web tools from the registry before model projection", () => {
+    const assembly = createMuseRuntimeAssembly({ env: { MUSE_LOCAL_ONLY: "true" } });
+    const names = assembly.toolRegistry.list().map((tool) => tool.definition.name);
+    expect(names).not.toContain("muse.web.read");
+    expect(names).not.toContain("muse.search.search");
   });
 
   it("createLoopbackMcpToolsFromEnv adds muse.fs tools when MUSE_LOOPBACK_FS_ROOTS is set", () => {
@@ -1096,6 +1110,54 @@ describe("autoconfigure", () => {
     expect(merged.MISTRAL_API_KEY).toBe("from-file-mistral");
     expect(merged.MOONSHOT_API_KEY).toBe("from-file-moonshot");
     expect(merged.CEREBRAS_API_KEY).toBe("from-file-cerebras");
+  });
+
+  it("freezes local-only override reflection before a nonempty model merge and never enumerates a Gmail-poison source", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const { isLocalOnlyEnabled } = await import("@muse/model");
+    const root = mkdtempSync(join(tmpdir(), "muse-local-model-overlay-"));
+    const file = join(root, "models.json");
+    writeFileSync(file, JSON.stringify({ providers: { ollama: { token: "http://127.0.0.1:11434" } } }), "utf8");
+
+    const poison = (sourceLocalOnly: string): Record<string, string | undefined> => new Proxy({
+      HOME: root,
+      MUSE_GMAIL_TOKEN: "must-not-read",
+      MUSE_LOCAL_ONLY: sourceLocalOnly,
+      MUSE_MODEL_KEYS_FILE: file,
+      MUSE_WEB_EGRESS: "true"
+    }, {
+      get(target, property, receiver) {
+        if (property === "MUSE_GMAIL_TOKEN") throw new Error("Gmail get");
+        return Reflect.get(target, property, receiver);
+      },
+      getOwnPropertyDescriptor(target, property) {
+        if (property === "MUSE_GMAIL_TOKEN") throw new Error("Gmail descriptor");
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+      has(target, property) {
+        if (property === "MUSE_GMAIL_TOKEN") throw new Error("Gmail has");
+        return Reflect.has(target, property);
+      },
+      ownKeys() {
+        throw new Error("source ownKeys");
+      }
+    });
+
+    const forcedLocal = mergeModelKeysFromFile(poison("false"), { localOnlyOverride: true });
+    expect(forcedLocal.MUSE_LOCAL_ONLY).toBe("true");
+    expect("MUSE_LOCAL_ONLY" in forcedLocal).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(forcedLocal, "MUSE_LOCAL_ONLY")?.value).toBe("true");
+    expect(Object.keys(forcedLocal)).toContain("MUSE_LOCAL_ONLY");
+    expect(forcedLocal.MUSE_GMAIL_TOKEN).toBeUndefined();
+    expect("MUSE_GMAIL_TOKEN" in forcedLocal).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(forcedLocal, "MUSE_GMAIL_TOKEN")).toBeUndefined();
+    expect(forcedLocal.MUSE_WEB_EGRESS).toBe("true");
+    expect(isLocalOnlyEnabled(forcedLocal)).toBe(true);
+
+    const forcedNormal = mergeModelKeysFromFile(poison("true"), { localOnlyOverride: false });
+    expect(forcedNormal.MUSE_LOCAL_ONLY).toBe("false");
+    expect(isLocalOnlyEnabled(forcedNormal)).toBe(false);
+    expect(forcedNormal.OLLAMA_BASE_URL).toBe("http://127.0.0.1:11434");
   });
 
   it("buildMessagingRegistry honours env tokens, the credentials file, and env-overrides-file", async () => {

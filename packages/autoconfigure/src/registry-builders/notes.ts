@@ -27,6 +27,7 @@
  */
 
 import { AppleNotesProvider, LocalDirNotesProvider, NotesProviderRegistry, NotionNotesProvider, type NotesProvider } from "@muse/domain-tools";
+import { isLocalOnlyEnabled } from "@muse/model";
 
 import type { MuseEnvironment } from "../index.js";
 import { resolveCredentialsFile, resolveNotesDir } from "../provider-paths.js";
@@ -38,6 +39,22 @@ export function buildNotesRegistry(env: MuseEnvironment): NotesProviderRegistry 
     .split(",")
     .map((entry) => entry.trim().toLowerCase())
     .filter((entry) => entry.length > 0);
+
+  // T2-B1: local-only keeps only local/Apple Notes without opening the
+  // shared credentials file that may also contain Google/CalDAV/Notion data.
+  // Apple scope deliberately comes only from its explicit local env var.
+  if (isLocalOnlyEnabled(env)) {
+    for (const id of requested) {
+      if (id === "local") {
+        registry.register(new LocalDirNotesProvider({ notesDir: resolveNotesDir(env) }));
+      } else if (id === "apple") {
+        const folder = env.MUSE_APPLE_NOTES_FOLDER?.trim();
+        registry.register(new AppleNotesProvider(folder ? { folder } : {}));
+      }
+    }
+    return registry;
+  }
+
   const credentials = readCredentialsSync(resolveCredentialsFile(env), env);
 
   for (const id of requested) {

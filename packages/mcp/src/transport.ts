@@ -45,6 +45,7 @@ import type { ToolRisk } from "@muse/tools";
 import { toErrorMessage } from "./error-utils.js";
 import {
   McpConnectionError,
+  McpExternalTransportBlockedError,
   type DefaultMcpTransportConnectorOptions,
   type McpConnection,
   type McpRemoteTool,
@@ -67,11 +68,13 @@ export class DefaultMcpTransportConnector implements McpTransportConnector {
   private readonly clientVersion: string;
   private readonly requestTimeoutMs: number;
   private readonly allowPrivateAddresses: boolean;
+  private readonly externalTransportAllowed: boolean;
   private readonly stderr: StdioServerParameters["stderr"];
   private readonly clientRoots: readonly string[];
 
   constructor(options: DefaultMcpTransportConnectorOptions = {}) {
     this.allowPrivateAddresses = options.allowPrivateAddresses ?? false;
+    this.externalTransportAllowed = options.externalTransportAllowed ?? true;
     this.clientName = options.clientName ?? "muse";
     this.clientVersion = options.clientVersion ?? "1.0.0";
     this.requestTimeoutMs = options.requestTimeoutMs ?? defaultMcpRequestTimeoutMs;
@@ -80,6 +83,10 @@ export class DefaultMcpTransportConnector implements McpTransportConnector {
   }
 
   async connect(server: McpServer, policy: McpSecurityPolicy): Promise<McpConnection> {
+    if (!this.externalTransportAllowed) {
+      throw new McpExternalTransportBlockedError();
+    }
+
     const validation = validateMcpServer(server, policy, {
       allowPrivateAddresses: this.allowPrivateAddresses
     });

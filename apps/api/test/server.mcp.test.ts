@@ -1,10 +1,119 @@
-import { describe, expect, it } from "vitest";
-import { DefaultMcpTransportConnector, InMemoryMcpSecurityPolicyStore, InMemoryMcpServerStore, McpManager, McpSecurityPolicyProvider, type McpConnection } from "@muse/mcp";
+import { describe, expect, it, vi } from "vitest";
+import { DefaultMcpTransportConnector, InMemoryMcpSecurityPolicyStore, InMemoryMcpServerStore, MCP_EXTERNAL_TRANSPORT_BLOCKED, McpManager, McpSecurityPolicyProvider, type McpConnection, type McpServer } from "@muse/mcp";
 import { buildServer } from "../src/server.js";
 import { createFakeMcpAdminServer, createMcpFixtureServerCode } from "./helpers/fake-mcp-admin-server.js";
 import { createAuthService } from "./helpers/test-auth.js";
 
 describe("api server: MCP", () => {
+  it("materializes persisted local-only rows and denies external MCP routes/proxies before config or fetch", async () => {
+    const authService = createAuthService();
+    const registered = authService.register({
+      email: "local_only",
+      name: "Local Only",
+      password: "password-1"
+    });
+    const policyStore = new InMemoryMcpSecurityPolicyStore();
+    const securityPolicyProvider = new McpSecurityPolicyProvider(policyStore);
+    const store = new InMemoryMcpServerStore({ idFactory: () => "raw-mcp" });
+    const configReads = vi.fn();
+    const hostileConfig = new Proxy({} as McpServer["config"], {
+      get() {
+        configReads();
+        throw new Error("local-only API must not dereference persisted MCP config");
+      }
+    });
+    await store.save({
+      autoConnect: true,
+      config: hostileConfig,
+      name: "persisted",
+      transportType: "streamable"
+    });
+    const connector = { connect: vi.fn(async () => { throw new Error("connector must not run"); }) };
+    const manager = new McpManager(store, {
+      connector,
+      externalTransportAllowed: false,
+      securityPolicyProvider
+    });
+    const server = buildServer({
+      authService,
+      logger: false,
+      mcp: { manager, securityPolicyProvider, securityPolicyStore: policyStore },
+      requireAuth: true
+    });
+    const headers = { authorization: `Bearer ${registered.token}` };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      throw new Error("compatibility proxy fetch must not run under local-only");
+    });
+
+    try {
+      const list = await server.inject({ headers, method: "GET", url: "/api/mcp/servers" });
+      const health = await server.inject({ headers, method: "GET", url: "/api/mcp/servers/persisted/health" });
+      const preflight = await server.inject({ headers, method: "GET", url: "/api/mcp/servers/persisted/preflight" });
+      const accessResponses = await Promise.all([
+        server.inject({ headers, method: "GET", url: "/api/mcp/servers/persisted/access-policy" }),
+        server.inject({ headers, method: "PUT", payload: { allowPreviewReads: true }, url: "/api/mcp/servers/persisted/access-policy" }),
+        server.inject({ headers, method: "DELETE", url: "/api/mcp/servers/persisted/access-policy" }),
+        server.inject({ headers, method: "POST", url: "/api/mcp/servers/persisted/access-policy/emergency-deny-all" })
+      ]);
+      const swaggerResponses = await Promise.all([
+        server.inject({ headers, method: "GET", url: "/api/mcp/servers/persisted/swagger/sources" }),
+        server.inject({ headers, method: "GET", url: "/api/mcp/servers/persisted/swagger/sources/orders" }),
+        server.inject({ headers, method: "POST", payload: { name: "orders", url: "https://example.invalid/openapi.json" }, url: "/api/mcp/servers/persisted/swagger/sources" }),
+        server.inject({ headers, method: "PUT", payload: {}, url: "/api/mcp/servers/persisted/swagger/sources/orders" }),
+        server.inject({ headers, method: "POST", url: "/api/mcp/servers/persisted/swagger/sources/orders/sync" }),
+        server.inject({ headers, method: "POST", payload: { revisionId: "rev-1" }, url: "/api/mcp/servers/persisted/swagger/sources/orders/publish" }),
+        server.inject({ headers, method: "GET", url: "/api/mcp/servers/persisted/swagger/sources/orders/revisions?limit=1" }),
+        server.inject({ headers, method: "GET", url: "/api/mcp/servers/persisted/swagger/sources/orders/diff?from=one&to=two" })
+      ]);
+      const invalidRegister = await server.inject({ headers, method: "POST", payload: {}, url: "/api/mcp/servers" });
+      const register = await server.inject({
+        headers,
+        method: "POST",
+        payload: { config: { command: "node" }, name: "new-server", transportType: "stdio" },
+        url: "/api/mcp/servers"
+      });
+      const connect = await server.inject({ headers, method: "POST", url: "/api/mcp/servers/persisted/connect" });
+      const missingConnect = await server.inject({ headers, method: "POST", url: "/api/mcp/servers/missing/connect" });
+      const reconnect = await server.inject({ headers, method: "POST", url: "/api/mcp/servers/persisted/reconnect" });
+      const reconnectDue = await server.inject({ headers, method: "POST", url: "/api/mcp/reconnect-due" });
+      const invalidToolCall = await server.inject({ headers, method: "POST", payload: {}, url: "/api/mcp/servers/missing/tools/unknown/call" });
+      const toolCall = await server.inject({ headers, method: "POST", payload: { args: {} }, url: "/api/mcp/servers/missing/tools/unknown/call" });
+      const disconnect = await server.inject({ headers, method: "POST", url: "/api/mcp/servers/persisted/disconnect" });
+      const deleted = await server.inject({ headers, method: "DELETE", url: "/api/mcp/servers/persisted" });
+
+      expect(list.statusCode).toBe(200);
+      expect(list.json()).toMatchObject([{ name: "persisted", status: "DISABLED" }]);
+      expect(health.json()).toMatchObject({ errorCode: MCP_EXTERNAL_TRANSPORT_BLOCKED, status: "unhealthy" });
+      expect(preflight.statusCode).toBe(200);
+      expect(preflight.json()).toMatchObject({
+        ok: false,
+        checks: expect.arrayContaining([expect.objectContaining({ code: "external_mcp_transport", status: "fail" })])
+      });
+      for (const response of [...accessResponses, ...swaggerResponses]) {
+        expect(response.statusCode).toBe(403);
+        expect(response.json()).toMatchObject({ code: MCP_EXTERNAL_TRANSPORT_BLOCKED });
+      }
+      expect(invalidRegister.statusCode).toBe(400);
+      expect(register.statusCode).toBe(403);
+      expect(register.json()).toMatchObject({ code: MCP_EXTERNAL_TRANSPORT_BLOCKED });
+      expect(connect.statusCode).toBe(403);
+      expect(missingConnect.statusCode).toBe(404);
+      expect(reconnect.statusCode).toBe(403);
+      expect(reconnectDue.statusCode).toBe(403);
+      expect(invalidToolCall.statusCode).toBe(400);
+      expect(toolCall.statusCode).toBe(403);
+      expect(toolCall.json()).toMatchObject({ code: MCP_EXTERNAL_TRANSPORT_BLOCKED });
+      expect(disconnect.statusCode).toBe(200);
+      expect(deleted.statusCode).toBe(204);
+      expect(configReads).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(connector.connect).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+      await server.close();
+    }
+  });
+
   it("manages MCP servers, policies, connections, and tool calls through admin API", async () => {
     const authService = createAuthService();
     const registered = authService.register({

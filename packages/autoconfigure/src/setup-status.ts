@@ -25,11 +25,207 @@ import {
   resolveTasksFile,
   type MuseEnvironment
 } from "./index.js";
-import { evaluateWebEgressPosture, isLoopbackUrl } from "@muse/model";
+import type { ResolvedIntegrationEnvironment } from "./integration-environment.js";
+import { resolveCredentialsFile } from "./provider-paths.js";
+import { canonicalizeLocalOnlyModelBaseUrl, evaluateWebEgressPosture, isInteractiveWebEgressAllowed, isLocalOnlyEnabled } from "@muse/model";
 
 import { resolveEmbedderBase } from "./embedder-base.js";
 import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
 import { createModelProvider, LOCAL_FIRST_DEFAULT_MODEL, resolveDefaultModel } from "./autoconfigure-model-provider.js";
+import { resolveHomeAssistantEnvironment, type ResolvedHomeAssistantEnvironment } from "./home-assistant-environment.js";
+
+// A supplied ResolvedIntegrationEnvironment is the only authority for the
+// calendar/messaging slice of API setup status. Keep its source fields out of
+// the ambient status view before model-key merging: mergeModelKeysFromFile can
+// spread every enumerable key from its input when the model file is nonempty.
+const SNAPSHOT_HIDDEN_INTEGRATION_ENV_KEYS = new Set([
+  "MUSE_CALDAV_APP_PASSWORD",
+  "MUSE_CALDAV_URL",
+  "MUSE_CALDAV_USERNAME",
+  "MUSE_CALENDAR_FILE",
+  "MUSE_CALENDAR_ICS_FILE",
+  "MUSE_CALENDAR_PROVIDERS",
+  "MUSE_CHANNEL_OWNERS_FILE",
+  "MUSE_CHANNEL_PAIRING_CODES_FILE",
+  "MUSE_CREDENTIALS_FILE",
+  "MUSE_DISCORD_AFTER_FILE",
+  "MUSE_DISCORD_BOT_TOKEN",
+  "MUSE_DISCORD_INBOX_FILE",
+  "MUSE_DISCORD_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_GCAL_CALENDAR_ID",
+  "MUSE_GCAL_CLIENT_ID",
+  "MUSE_GCAL_CLIENT_SECRET",
+  "MUSE_GCAL_REFRESH_TOKEN",
+  "MUSE_HOMEASSISTANT_TOKEN",
+  "MUSE_HOMEASSISTANT_URL",
+  "MUSE_LINE_CHANNEL_ACCESS_TOKEN",
+  "MUSE_LINE_CHANNEL_SECRET",
+  "MUSE_LINE_INBOX_FILE",
+  "MUSE_LINE_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_MATRIX_ACCESS_TOKEN",
+  "MUSE_MATRIX_HOMESERVER_URL",
+  "MUSE_MATRIX_INBOX_FILE",
+  "MUSE_MATRIX_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_MATRIX_SINCE_FILE",
+  "MUSE_MESSAGING_CREDENTIALS_FILE",
+  "MUSE_NOTION_DATABASE_ID",
+  "MUSE_NOTION_TITLE_PROPERTY",
+  "MUSE_NOTION_TOKEN",
+  "MUSE_SLACK_AFTER_FILE",
+  "MUSE_SLACK_BOT_TOKEN",
+  "MUSE_SLACK_INBOX_FILE",
+  "MUSE_SLACK_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_TELEGRAM_BOT_TOKEN",
+  "MUSE_TELEGRAM_INBOX_FILE",
+  "MUSE_TELEGRAM_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_TELEGRAM_OFFSET_FILE"
+]);
+
+function isSnapshotHiddenIntegrationKey(property: PropertyKey): boolean {
+  return typeof property === "string" && SNAPSHOT_HIDDEN_INTEGRATION_ENV_KEYS.has(property);
+}
+
+// `collectSetupStatusJson` only needs this bounded non-integration subset from
+// ambient state when an API composition snapshot is present. Keeping the list
+// explicit is intentional: enumerating an arbitrary source environment would
+// invoke an ambient Proxy's ownKeys/descriptor traps and could re-expose a
+// calendar or messaging field before the snapshot boundary is applied.
+const SNAPSHOT_VISIBLE_STATUS_ENV_KEYS = new Set([
+  "ANTHROPIC_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "HOME",
+  "MUSE_APP_NAME",
+  "MUSE_CREDENTIALS_ENCRYPT",
+  "MUSE_DEFAULT_MODEL",
+  "MUSE_GMAIL_TOKEN",
+  "MUSE_LOCAL_ONLY",
+  "MUSE_MCP_CONFIG",
+  "MUSE_MEMORY_KEY",
+  "MUSE_MODEL",
+  "MUSE_MODEL_API_KEY",
+  "MUSE_MODEL_BASE_URL",
+  "MUSE_MODEL_EXTRA_HEADERS",
+  "MUSE_MODEL_KEYS_FILE",
+  "MUSE_MODEL_LIST",
+  "MUSE_MODEL_PROVIDER_ID",
+  "MUSE_NOTES_DIR",
+  "MUSE_OLLAMA_NUM_BATCH",
+  "MUSE_OLLAMA_NUM_CTX",
+  "MUSE_OLLAMA_NUM_GPU",
+  "MUSE_OLLAMA_NUM_PREDICT",
+  "MUSE_OLLAMA_NUM_THREAD",
+  "MUSE_OLLAMA_PROBE_CONTEXT",
+  "MUSE_PIPER_VOICE",
+  "MUSE_PROACTIVE_AGENT_TURN",
+  "MUSE_PROACTIVE_DESTINATION",
+  "MUSE_PROACTIVE_LEAD_MINUTES",
+  "MUSE_PROACTIVE_PROVIDER",
+  "MUSE_PROACTIVE_QUIET_HOURS",
+  "MUSE_PROACTIVE_SIDECAR_FILE",
+  "MUSE_PROACTIVE_TICK_MS",
+  "MUSE_REMINDER_AGENT_TURN",
+  "MUSE_REMINDER_DEFAULT_DESTINATION",
+  "MUSE_REMINDER_DEFAULT_PROVIDER",
+  "MUSE_REMINDER_QUIET_HOURS",
+  "MUSE_REMINDER_TICK_MS",
+  "MUSE_SITE_URL",
+  "MUSE_TASKS_FILE",
+  "MUSE_USER_MEMORY_AUTO_EXTRACT",
+  "MUSE_USER_MEMORY_AUTO_EXTRACT_MODEL",
+  "MUSE_VOICE_OPENAI_API_KEY",
+  "MUSE_VOICE_STT",
+  "MUSE_VOICE_TTS",
+  "MUSE_WEB_EGRESS",
+  "MUSE_WEB_SEARCH",
+  "MUSE_WEB_SEARCH_MAX_USES",
+  "OLLAMA_BASE_URL",
+  "OPENAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  ...Object.values(OPENAI_COMPAT_PRESETS).map((preset) => preset.envKey)
+]);
+
+function isSnapshotVisibleStatusEnvironmentKey(property: PropertyKey): property is string {
+  return typeof property === "string" && SNAPSHOT_VISIBLE_STATUS_ENV_KEYS.has(property);
+}
+
+/**
+ * Read-only, non-integration view of ambient status input for an API request
+ * that already owns a narrow integration snapshot. This must remain a view
+ * instead of a spread: model-key merge itself spreads its input for a
+ * nonempty key file, so hidden keys must be absent before that call.
+ */
+function createSnapshotStatusEnvironmentView(
+  sourceEnv: MuseEnvironment,
+  localOnly: boolean
+): MuseEnvironment {
+  const localOnlyValue = localOnly ? "true" : "false";
+  // Snapshot only present, explicitly allowed values. In particular, absent
+  // ambient keys must stay absent from ownKeys so `{ ...env }` in the model
+  // key merge cannot overwrite a suggested model with `undefined`.
+  const visibleValues = new Map<string, string>();
+  for (const key of SNAPSHOT_VISIBLE_STATUS_ENV_KEYS) {
+    // Gmail is deliberately not even read from the source when the frozen
+    // snapshot is local-only. Status can report it as disabled without
+    // probing a credential-protecting environment.
+    if (key === "MUSE_LOCAL_ONLY" || (localOnly && key === "MUSE_GMAIL_TOKEN")) {
+      continue;
+    }
+    const value = sourceEnv[key];
+    if (value !== undefined) {
+      visibleValues.set(key, value);
+    }
+  }
+  // Never use `sourceEnv` as the Proxy target. An ambient environment can be
+  // another Proxy whose invariant validation reaches hidden descriptors when
+  // this view filters ownKeys. A fresh extensible, null-prototype target keeps
+  // every virtual key configurable and makes all traps self-contained.
+  const snapshotTarget = Object.create(null) as Record<string, never>;
+  return new Proxy(snapshotTarget, {
+    defineProperty: () => false,
+    deleteProperty: () => false,
+    get(_target, property) {
+      if (property === "MUSE_LOCAL_ONLY") {
+        return localOnlyValue;
+      }
+      if (localOnly && property === "MUSE_GMAIL_TOKEN") {
+        return undefined;
+      }
+      if (isSnapshotHiddenIntegrationKey(property)) {
+        return undefined;
+      }
+      if (isSnapshotVisibleStatusEnvironmentKey(property)) {
+        return visibleValues.get(property);
+      }
+      // Symbols are not part of the enumerable status snapshot, but forwarding
+      // their read preserves ordinary object interop without probing strings.
+      return typeof property === "symbol" ? Reflect.get(sourceEnv, property) : undefined;
+    },
+    getOwnPropertyDescriptor(_target, property) {
+      if (property === "MUSE_LOCAL_ONLY") {
+        return { configurable: true, enumerable: true, value: localOnlyValue, writable: false };
+      }
+      if (isSnapshotVisibleStatusEnvironmentKey(property) && visibleValues.has(property)) {
+        return {
+          configurable: true,
+          enumerable: true,
+          value: visibleValues.get(property),
+          writable: false
+        };
+      }
+      return undefined;
+    },
+    has(_target, property) {
+      return property === "MUSE_LOCAL_ONLY"
+        || (isSnapshotVisibleStatusEnvironmentKey(property) && visibleValues.has(property));
+    },
+    ownKeys() {
+      return ["MUSE_LOCAL_ONLY", ...visibleValues.keys()];
+    },
+    preventExtensions: () => false,
+    set: () => false
+  });
+}
 
 export interface SetupStatusSnapshot {
   readonly model: {
@@ -129,11 +325,16 @@ export interface WebEgressStatusSnapshot {
 }
 
 export function evaluateWebEgressStatus(env: Readonly<Record<string, string | undefined>>): WebEgressStatusSnapshot {
-  const { enabled } = evaluateWebEgressPosture(env);
+  const { enabled: webEgressEnabled } = evaluateWebEgressPosture(env);
+  const enabled = isInteractiveWebEgressAllowed(env);
   return {
     detail: enabled
-      ? "🌐 on (default) — web search / read / download available (independent of local-only)"
-      : "✈️ off — all web egress blocked (MUSE_WEB_EGRESS); the local-LLM guarantee is unaffected",
+      ? "🌐 on (default) — Muse interactive public-web search / read / download available"
+      : isLocalOnlyEnabled(env)
+        ? "🔒 local-only — Muse interactive public-web tools are disabled in T2-A1; this is not a complete all-egress audit"
+        : webEgressEnabled
+          ? "✈️ off — Muse interactive public-web tools unavailable; this is not a complete all-egress audit"
+          : "✈️ off — Muse interactive public-web tools disabled by MUSE_WEB_EGRESS; this is not a complete all-egress audit",
     enabled,
     status: "ok"
   };
@@ -169,10 +370,16 @@ export function evaluateLocalOnlyPosture(env: Readonly<Record<string, string | u
       // yet egresses the user's note/memory text. Mirror the embedder's own
       // construction-time fail-close so doctor surfaces it instead of reporting ok.
       const embedBase = resolveEmbedderBase(env);
-      if (!isLoopbackUrl(embedBase)) {
+      try {
+        canonicalizeLocalOnlyModelBaseUrl("ollama", embedBase);
+      } catch {
         return { detail: `🔒 on, but OLLAMA_BASE_URL points off-box (${embedBase}) — the embedder fails closed, so recall/memory embedding refuses; point OLLAMA_BASE_URL at localhost`, enabled, status: "fail" };
       }
-      return { detail: "🔒 on — cloud LLM + voice egress blocked (fail-closed to local)", enabled, status: "ok" };
+      return {
+        detail: "🔒 on — cloud model + voice egress blocked and Gmail standard paths disabled; Home Assistant remote paths are disabled while MUSE_LOCAL_ONLY=true; canonical loopback remains available; Muse interactive public-web tools (T2-A1), external MCP transports (T2-A2), and T2-B1 standard remote calendar/messaging assembly/setup disabled; local file, exported ICS, and macOS Calendar.app remain available (set MUSE_MACOS_CALENDAR_NAME to scope Calendar.app); not a complete all-egress audit",
+        enabled,
+        status: "ok"
+      };
     } catch (cause) {
       return { detail: cause instanceof Error ? cause.message : "cloud provider selected under local-only", enabled, status: "fail" };
     }
@@ -197,22 +404,36 @@ export interface ActuatorReadinessSnapshot {
   readonly web: boolean;
   /** Both MUSE_HOMEASSISTANT_URL + MUSE_HOMEASSISTANT_TOKEN present. */
   readonly home: boolean;
+  /** Present only when local-only refused a non-loopback HA endpoint. */
+  readonly homeReason?: string;
   readonly nextStep?: string;
 }
 
-export function readActuatorReadiness(env: Readonly<Record<string, string | undefined>>): ActuatorReadinessSnapshot {
-  const email = Boolean(env.MUSE_GMAIL_TOKEN?.trim());
-  const home = Boolean(env.MUSE_HOMEASSISTANT_URL?.trim() && env.MUSE_HOMEASSISTANT_TOKEN?.trim());
+export function readActuatorReadiness(
+  env: MuseEnvironment,
+  options: { readonly homeAssistant?: ResolvedHomeAssistantEnvironment } = {}
+): ActuatorReadinessSnapshot {
+  const homeAssistant = options.homeAssistant ?? resolveHomeAssistantEnvironment(env);
+  const localOnly = homeAssistant.localOnly;
+  // Read local-only before Gmail. A credential-protecting env Proxy is a
+  // valid composition input and this status row must not become a probe.
+  const email = localOnly ? false : Boolean(env.MUSE_GMAIL_TOKEN?.trim());
+  const home = homeAssistant.status === "configured";
   const hints: string[] = [];
   if (!email) {
-    hints.push("set MUSE_GMAIL_TOKEN for email_send");
+    hints.push(localOnly
+      ? "Gmail email_send is disabled while MUSE_LOCAL_ONLY=true"
+      : "set MUSE_GMAIL_TOKEN for email_send");
   }
   if (!home) {
-    hints.push("set MUSE_HOMEASSISTANT_URL + MUSE_HOMEASSISTANT_TOKEN for home_action");
+    hints.push(homeAssistant.status === "blocked"
+      ? homeAssistant.reason
+      : "set MUSE_HOMEASSISTANT_URL + MUSE_HOMEASSISTANT_TOKEN for home_action");
   }
   return {
     email,
     home,
+    ...(homeAssistant.status === "blocked" ? { homeReason: homeAssistant.reason } : {}),
     status: email || home ? "ok" : "info",
     web: true,
     ...(hints.length > 0
@@ -380,9 +601,28 @@ export function buildModelSection(
  * reflects what the next `muse` invocation will see, not just raw
  * process.env.
  */
-export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
-  const env = mergeModelKeysFromFile(process.env as Record<string, string | undefined>);
-  const home = homedir();
+export async function collectSetupStatusJson(options: {
+  /** Test/composition seam; CLI callers retain the process-env default. */
+  readonly env?: MuseEnvironment;
+  readonly integrationEnv?: ResolvedIntegrationEnvironment;
+} = {}): Promise<SetupStatusSnapshot> {
+  const integrationEnv = options.integrationEnv;
+  const sourceEnv: MuseEnvironment = options.env ?? process.env;
+  // Resolve the HA pair before constructing any model/status overlay. In
+  // strict mode the resolver classifies URL first and returns on remote or
+  // blank endpoints without touching the token; neither the overlay nor its
+  // reflective merge can then re-open that credential.
+  const homeAssistant = resolveHomeAssistantEnvironment(sourceEnv, {
+    ...(integrationEnv ? { localOnlyOverride: integrationEnv.localOnly } : {})
+  });
+  const statusEnv = integrationEnv
+    ? mergeModelKeysFromFile(createSnapshotStatusEnvironmentView(sourceEnv, homeAssistant.localOnly), {
+      localOnlyOverride: homeAssistant.localOnly
+    })
+    : mergeModelKeysFromFile(sourceEnv, { localOnlyOverride: homeAssistant.localOnly });
+  const env = statusEnv;
+  const integrationLocalOnly = homeAssistant.localOnly;
+  const home = env.HOME?.trim() || homedir();
 
   const modelKeysFile = env.MUSE_MODEL_KEYS_FILE?.trim() && env.MUSE_MODEL_KEYS_FILE.trim().length > 0
     ? env.MUSE_MODEL_KEYS_FILE.trim()
@@ -396,10 +636,12 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
     : pathJoin(home, ".muse", "mcp.json");
   const mcpCount = await readMcpEntryCount(mcpFile);
 
-  const calendarFile = resolveLocalCalendarFile(env);
+  const calendarFile = integrationEnv?.calendar.localFile ?? resolveLocalCalendarFile(env);
   const calendarBytes = await statBytes(calendarFile);
-  const credentialsFile = pathJoin(home, ".muse", "credentials.json");
-  const credentialsBytes = await statBytes(credentialsFile);
+  const credentialsFile = integrationEnv?.calendar.credentialsFile ?? resolveCredentialsFile(env);
+  // Shared calendar records can hold remote Google/CalDAV secrets. Under
+  // local-only, status must not stat/read them just to render a row.
+  const credentialsBytes = integrationLocalOnly ? undefined : await statBytes(credentialsFile);
 
   const notesDir = resolveNotesDir(env);
   const notesCount = await countNotes(notesDir);
@@ -408,8 +650,8 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
 
   const voiceStatus = resolveVoiceStatus(env);
 
-  const messagingFile = resolveMessagingCredentialsFile(env);
-  const messagingHits = await readMessagingProviderState(messagingFile, env);
+  const messagingFile = integrationEnv?.messaging.credentialsFile ?? resolveMessagingCredentialsFile(env);
+  const messagingHits = await readMessagingProviderState(messagingFile, env, integrationEnv);
 
   // User-memory auto-extract (default-on as of the recent flip).
   const autoExtractEnv = env.MUSE_USER_MEMORY_AUTO_EXTRACT?.trim().toLowerCase();
@@ -455,13 +697,20 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
   const calendarLocalStatus = calendarBytes !== undefined ? "ok" : "info";
   const credentialsStatus = credentialsBytes !== undefined ? "ok" : "info";
   return {
-    localOnly: evaluateLocalOnlyPosture(env),
-    webEgress: evaluateWebEgressStatus(env),
+    localOnly: evaluateLocalOnlyPosture(statusEnv),
+    // A supplied API integration snapshot owns the local-only posture. Keep
+    // the adjacent T2-A1 status row coherent with that same boolean instead
+    // of accidentally reporting ambient public-web availability.
+    webEgress: evaluateWebEgressStatus(statusEnv),
     calendar: {
       credentials: {
         file: credentialsFile,
         status: credentialsStatus,
-        ...(credentialsStatus === "info"
+        ...(integrationLocalOnly
+          ? {
+            nextStep: "Remote Google/CalDAV setup is disabled while MUSE_LOCAL_ONLY=true. Local file, exported ICS, and macOS Calendar.app remain available; set MUSE_MACOS_CALENDAR_NAME to scope Calendar.app."
+          }
+          : credentialsStatus === "info"
           ? { nextStep: "Run `muse setup calendar` for OAuth / CalDAV / macOS credentials" }
           : {})
       },
@@ -477,7 +726,9 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
     messaging: {
       providers: messagingHits,
       status: messagingHits.length > 0 ? "ok" : "info",
-      ...(messagingHits.length === 0
+      ...(integrationLocalOnly
+        ? { nextStep: "Remote messaging setup is disabled while MUSE_LOCAL_ONLY=true; local log/native notifications remain available." }
+        : messagingHits.length === 0
         ? { nextStep: "Run `muse setup messaging` for Telegram / Discord / Slack / LINE tokens" }
         : {})
     },
@@ -545,7 +796,7 @@ export async function collectSetupStatusJson(): Promise<SetupStatusSnapshot> {
         ? {}
         : { nextStep: "Set MUSE_REMINDER_DEFAULT_PROVIDER + MUSE_REMINDER_DEFAULT_DESTINATION to enable the reminder firing daemon" })
     },
-    actuators: readActuatorReadiness(env)
+    actuators: readActuatorReadiness(env, { homeAssistant })
   };
 }
 
@@ -583,10 +834,22 @@ export async function readModelKeyState(file: string, env: MuseEnvironment): Pro
   return lines;
 }
 
-export async function readMessagingProviderState(file: string, env: MuseEnvironment): Promise<readonly string[]> {
+export async function readMessagingProviderState(
+  file: string,
+  env: MuseEnvironment,
+  integrationEnv?: ResolvedIntegrationEnvironment
+): Promise<readonly string[]> {
+  // A supplied API composition snapshot is authoritative for every
+  // integration-derived status field. In particular, do not re-evaluate
+  // ambient local-only policy or probe ambient token fields in that path.
+  const localOnly = integrationEnv?.localOnly ?? isLocalOnlyEnabled(env);
+  if (localOnly) {
+    return [];
+  }
+  const credentialsFile = integrationEnv?.messaging.credentialsFile ?? file;
   let storedProviders: Record<string, unknown> = {};
   try {
-    const raw = await fs.readFile(file, "utf8");
+    const raw = await fs.readFile(credentialsFile, "utf8");
     const parsed = JSON.parse(raw) as { providers?: Record<string, unknown> };
     if (parsed && typeof parsed === "object" && parsed.providers && typeof parsed.providers === "object") {
       storedProviders = parsed.providers;
@@ -595,12 +858,14 @@ export async function readMessagingProviderState(file: string, env: MuseEnvironm
     // missing or malformed → treat as empty
   }
   const lines: string[] = [];
-  const probe = (id: string, envKey: string): void => {
-    const fromEnv = env[envKey]?.trim();
+  const probe = (id: "telegram" | "discord" | "slack" | "line", envKey: string): void => {
+    const fromEnv = integrationEnv
+      ? integrationEnv.messaging.providers[id].envConfigured
+      : Boolean(env[envKey]?.trim());
     const fromFile = isRecord(storedProviders[id]) && typeof storedProviders[id].token === "string"
       ? "file"
       : undefined;
-    if (fromEnv && fromEnv.length > 0) {
+    if (fromEnv) {
       lines.push(`${id} (env)`);
     } else if (fromFile) {
       lines.push(`${id} (file)`);

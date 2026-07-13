@@ -56,7 +56,7 @@ import {
   type TaskMemoryStore,
   type UserMemoryStore
 } from "@muse/memory";
-import type { ModelProvider } from "@muse/model";
+import { isInteractiveWebEgressAllowed, type ModelProvider } from "@muse/model";
 import {
   InMemoryAgentMetrics,
   InMemoryFollowupSuggestionStore,
@@ -136,6 +136,7 @@ import {
   buildVoiceRegistry,
   ensureNotesDir,
   mergeModelKeysFromFile,
+  resolveEffectiveLocalOnlyOverride,
   resolveActionLogFile,
   resolveEpisodesFile,
   resolveFollowupLlmBudgetFile,
@@ -303,6 +304,12 @@ export interface ApiServerAssemblyOptions {
   readonly db?: Kysely<MuseDatabase>;
   readonly env?: MuseEnvironment;
   /**
+   * Composition-only posture freeze used by the API boundary. It is not a
+   * user-facing setting: ordinary CLI/runtime assembly continues to derive
+   * local-only from `env`.
+   */
+  readonly localOnlyOverride?: boolean;
+  /**
    * Caller-supplied tools merged into the runtime registry. The CLI
    * uses this to inject surface-specific tools it builds with its own
    * confirmation gate (e.g. the `--actuators` email/web/home tools,
@@ -351,7 +358,15 @@ export function assertAuthConfigCoherent(
 }
 
 export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}): MuseRuntimeAssembly {
-  const env = mergeModelKeysFromFile(options.env ?? process.env);
+  const sourceEnv = options.env ?? process.env;
+  // Compute the process-backed strict floor before model-key merging. Without
+  // this, a supplied `MUSE_LOCAL_ONLY=false` plus a nonempty models.json could
+  // enumerate the raw environment before Home Assistant gets a chance to
+  // reject a remote/blank endpoint without touching its bearer token.
+  const modelAndHomeLocalOnlyOverride = resolveEffectiveLocalOnlyOverride(sourceEnv, options.localOnlyOverride);
+  const env = mergeModelKeysFromFile(sourceEnv, {
+    ...(modelAndHomeLocalOnlyOverride === undefined ? {} : { localOnlyOverride: modelAndHomeLocalOnlyOverride })
+  });
   const db = options.db;
   // Sync read: createMuseRuntimeAssembly is called synchronously from dozens
   // of CLI command sites, so the startup persona load can't await. A broken
@@ -1200,18 +1215,22 @@ export function requireEnv(env: MuseEnvironment, key: string): string {
  */
 export function createLoopbackMcpToolsFromEnv(env: MuseEnvironment): readonly MuseTool[] {
   const servers: LoopbackMcpServer[] = [];
+  const interactiveWebEgressAllowed = isInteractiveWebEgressAllowed(env);
 
   if (parseBoolean(env.MUSE_LOOPBACK_MCP_ENABLED, false)) {
     const searxngUrl = env.MUSE_SEARXNG_URL?.trim();
     const searxngEngines = env.MUSE_SEARXNG_ENGINES?.trim();
-    servers.push(...createDefaultLoopbackMcpServers({
+    const defaultServers = createDefaultLoopbackMcpServers({
       ...(searxngUrl && searxngUrl.length > 0 ? { searxngUrl } : {}),
       ...(searxngEngines && searxngEngines.length > 0 ? { searxngEngines } : {})
-    }));
+    });
+    servers.push(...(interactiveWebEgressAllowed
+      ? defaultServers
+      : defaultServers.filter((server) => server.name !== "muse.search")));
   }
 
   const fetchHosts = parseCsv(env.MUSE_LOOPBACK_FETCH_HOSTS);
-  if (fetchHosts) {
+  if (fetchHosts && interactiveWebEgressAllowed) {
     servers.push(createFetchMcpServer({ allowedHosts: fetchHosts }));
   }
 

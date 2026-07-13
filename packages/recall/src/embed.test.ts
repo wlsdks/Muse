@@ -97,9 +97,12 @@ describe("embed", () => {
 
 describe("embed — MUSE_LOCAL_ONLY cloud-egress guard", () => {
   const prev = process.env.MUSE_LOCAL_ONLY;
+  const previousOllamaBaseUrl = process.env.OLLAMA_BASE_URL;
   afterEach(() => {
     if (prev === undefined) delete process.env.MUSE_LOCAL_ONLY;
     else process.env.MUSE_LOCAL_ONLY = prev;
+    if (previousOllamaBaseUrl === undefined) delete process.env.OLLAMA_BASE_URL;
+    else process.env.OLLAMA_BASE_URL = previousOllamaBaseUrl;
   });
 
   it("throws (no fetch) when local-only is on and the resolved host is REMOTE — personal text never leaves the box", async () => {
@@ -122,5 +125,60 @@ describe("embed — MUSE_LOCAL_ONLY cloud-egress guard", () => {
     process.env.MUSE_LOCAL_ONLY = "false";
     const result = await embed("x", "m", { ...opts(okJson({ embedding: [0.5] })), baseUrlResolver: () => "http://192.168.1.50:11434" });
     expect(result).toEqual([0.5]);
+  });
+
+  it("treats requireLocalOnly as one-way: explicit true tightens transport and an unsafe false cannot weaken ambient local-only", async () => {
+    let calls = 0;
+    const fetchImpl: typeof globalThis.fetch = async (...args) => {
+      calls += 1;
+      return okJson({ embedding: [0.5] })(...args);
+    };
+    process.env.MUSE_LOCAL_ONLY = "false";
+    await expect(embed("private", "m", {
+      baseUrlResolver: () => "http://192.168.1.50:11434",
+      fetchImpl,
+      requireLocalOnly: true
+    })).rejects.toThrow(/local-only|cloud provider/u);
+    process.env.MUSE_LOCAL_ONLY = "true";
+    await expect(embed("private", "m", {
+      baseUrlResolver: () => "http://192.168.1.50:11434",
+      fetchImpl,
+      // Runtime input can be untyped JS; false must remain powerless.
+      ...( { requireLocalOnly: false } as unknown as { requireLocalOnly?: true })
+    })).rejects.toThrow(/local-only|cloud provider/u);
+    expect(calls).toBe(0);
+  });
+
+  it("canonicalizes actual local-only embedding fetches to numeric loopback and refuses ambiguous bases before fetch", async () => {
+    process.env.MUSE_LOCAL_ONLY = "true";
+    delete process.env.OLLAMA_BASE_URL;
+    const urls: string[] = [];
+    const captureFetch: typeof globalThis.fetch = async (input) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ embedding: [0.5] }), { status: 200 });
+    };
+
+    await expect(embed("default Ollama", "m", { fetchImpl: captureFetch })).resolves.toEqual([0.5]);
+    await expect(embed("explicit localhost", "m", {
+      baseUrlResolver: () => "http://localhost:11435",
+      fetchImpl: captureFetch
+    })).resolves.toEqual([0.5]);
+    expect(urls).toEqual([
+      "http://127.0.0.1:11434/api/embeddings",
+      "http://127.0.0.1:11435/api/embeddings"
+    ]);
+
+    for (const baseUrl of [
+      "http://0.0.0.0:11434",
+      "http://foo.localhost:11434",
+      "http://user:pass@localhost:11434",
+      "https://localhost:11434",
+      "http://192.168.1.50:11434",
+      "not a URL"
+    ]) {
+      await expect(embed("private", "m", { baseUrlResolver: () => baseUrl, fetchImpl: captureFetch }), baseUrl)
+        .rejects.toThrow(/local-only|local only|MUSE_LOCAL_ONLY/u);
+    }
+    expect(urls).toHaveLength(2);
   });
 });
