@@ -1,6 +1,7 @@
 # Muse
 
-A provider-neutral, JARVIS-style personal AI conductor. One coherent
+A provider-neutral personal AI conductor being built around Attunement: learning
+how one user lives and works, then getting better at when and how to help. One coherent
 reasoning loop, any LLM, any tool, any MCP server.
 
 ## Mission
@@ -8,6 +9,14 @@ reasoning loop, any LLM, any tool, any MCP server.
 Muse is a personal-use agent: one user, one local environment, no
 shared workspace. The runtime discipline is what stays durable —
 provider-specific code is kept at the edges.
+
+`Attunement` is the product north star: personal thread → Continuity Pack →
+outcome → adaptation. Optional Observe can later improve timing through rhythm
+and friction evidence. The full loop is a roadmap, not a shipped claim; current
+memory, pattern, proactivity, browser, trace, and checkpoint systems are its
+substrates. Product contract:
+[`docs/strategy/attunement.md`](docs/strategy/attunement.md). Implementation:
+[`docs/goals/attunement-implementation-plan.md`](docs/goals/attunement-implementation-plan.md).
 
 - Guard is fail-close. Hook is fail-open.
 - Tool output is untrusted.
@@ -109,8 +118,8 @@ store + CLI (`muse contacts`) but are surfaced via a tool, not a
 User-memory auto-extraction (`MUSE_USER_MEMORY_AUTO_EXTRACT=true`,
 default `true`) runs an extra structured-output LLM call after each
 turn to persist newly stated facts / preferences into the
-`UserMemoryStore`. JARVIS-class memory is core to the product
-identity, so the per-turn cost is on by default. Set to `false`
+`UserMemoryStore`. Personal memory is a required Attunement substrate,
+so the per-turn cost is on by default. Set to `false`
 when an offline run / cheap-model budget / disabled-memory test
 rig wants to skip the extra call.
 

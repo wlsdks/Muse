@@ -10,6 +10,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Changed
 
+- **Muse now has one product north star: Attunement.** Public and internal docs now
+  distinguish today's memory, pattern, interruption, browser, and trace foundations
+  from the roadmap closed loop: personal thread → Continuity Pack → outcome → adaptation.
+  The first dependency-ordered delivery sequence begins with a user-chosen
+  Personal Continuity thread across daily life or work, followed by optional observation
+  and better timing. Optional Observe feeds timing instead of defining the product. Privacy
+  gates and kill criteria are defined before runtime implementation,
+  with no calendar estimate.
 - **Standard personal runtimes no longer expose a general command runner.** Existing
   `MUSE_RUNNER_ENABLED` and `MUSE_RUNNER_PATH` values are inert compatibility settings;
   they no longer enable model-callable `run_command`. Move coding or general command

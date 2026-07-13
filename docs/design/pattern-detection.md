@@ -1,5 +1,9 @@
 # Pattern-driven goal detection
 
+> **Attunement boundary (2026-07-13):** this shipped detector is a substrate, not a
+> Personal Rhythm Model. See [Attunement architecture](attunement.md). It uses note/task
+> timestamps and limited CLI activity; it does not observe desktop dwell or action sequences.
+
 Status: **all 4 steps shipped + CLI + MCP loopback.** Audit
 finding #24 (Tier 3). The detector pipeline runs end-to-end:
 
@@ -47,9 +51,9 @@ open last night's note?" The agent has to:
 
 ## Signals available today
 
-- `~/.muse/activity.jsonl` — append-only log of chat-bearing surfaces
-  per request (commands-status / commands-ask / commands-brief etc.
-  all stamp it).
+- `~/.muse/activity.jsonl` — append-only CLI activity log. The current confirmed writer
+  records `repl-start`; although the event type also permits `chat-turn`, chat-bearing
+  surfaces do **not** all stamp it per request. Do not treat it as desktop work history.
 - `~/.muse/last-chat.jsonl` — REPL transcript with role + content.
 - `~/.muse/tasks.json` — task creates / completes with timestamps.
 - `~/.muse/notes/<path>.md` — file mtimes give "user edited this at X".
@@ -118,12 +122,10 @@ env (default false initially).
 
 ## Privacy & opt-in
 
-Detector reads from local-only files. No upload. New patterns are
-not added to user-memory automatically — they live in a separate
-`~/.muse/patterns.json` file that the user can `cat` and audit.
-`muse pattern list` + `muse pattern remove <id>` are CLI surfaces;
-`muse pattern show <id>` shows the supporting signals that built
-the cluster.
+Detector reads local files. New patterns are not added to user-memory automatically.
+Detected patterns are computed dynamically; fire/dismiss state lives in
+`~/.muse/patterns-fired.json`. `muse pattern list|fired|dismissed|reset` provides the
+current audit surface. A persisted, evidence-addressable Rhythm Model is roadmap.
 
 ## Implementation order (3-4 iters)
 

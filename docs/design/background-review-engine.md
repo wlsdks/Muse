@@ -1,8 +1,12 @@
 # Background-Review Engine — Muse's unified "complete the answer, then learn"
 
-> Status: DESIGN (for review). Target: unify Muse's scattered post-turn
-> learning into ONE engine with intelligent triggers, after Hermes-agent's
-> `background_review.py`. Local-first, fail-soft, answer-never-blocked.
+> Attunement may reuse this as a post-intervention learning substrate, not as its observation
+> or rhythm engine. The hook and skill/commitment/preference arms are implemented and wired
+> behind `MUSE_BACKGROUND_REVIEW_ENABLED` (default off). The longer sections below preserve
+> the original design rationale and may describe pre-implementation gaps.
+
+> Status: **IMPLEMENTED, EXPERIMENTAL, DEFAULT OFF.** The engine adds bounded review
+> triggers after an answer; it remains fail-soft and never blocks the answer.
 
 ## 1. Why this exists (the gap we dropped)
 

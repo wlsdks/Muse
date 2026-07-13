@@ -2,8 +2,8 @@
 title: Muse 문서 안내 (인덱스)
 audience: [기획자, 개발자, AI 에이전트]
 purpose: Muse 문서 집합의 단일 진입점 — 어떤 문서가 무엇을 담는지
-updated: 2026-06-14
-related: [SYSTEM-MAP.md, FEATURES.md]
+updated: 2026-07-13
+related: [strategy/attunement.md, SYSTEM-MAP.md, FEATURES.md]
 ---
 
 # Muse 문서 안내
@@ -14,21 +14,25 @@ Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처
 
 레포를 처음 여는 에이전트가 **docs만 읽고 Muse를 이해**하도록 한 권장 읽기 순서:
 
-1. [`../README.md`](../README.md) — Muse가 무엇인가 (5원칙·정체성)
+1. [`../README.md`](../README.md) — Muse가 무엇인가 (Attunement·5원칙·정체성)
 2. [`../CLAUDE.md`](../CLAUDE.md) — 모든 에이전트가 먼저 읽는 계약 (비협상 규칙)
-3. [`glossary.md`](glossary.md) — Muse 전용 용어 (playbook·whetstone·grounding floor… grep 없이)
-4. [`SYSTEM-MAP.md`](SYSTEM-MAP.md) — 기능 구조 한 장
-5. [`grounding-gate.md`](grounding-gate.md) — 핵심 엣지(그라운딩 게이트)를 한 흐름으로
-6. [`FEATURES.md`](FEATURES.md) → [`feature-catalog/INDEX.md`](feature-catalog/INDEX.md) — 기능 상세 + 전수 검증 증거
-7. 그다음 깊이: [`design/`](design/) · [`strategy/`](strategy/) · [`../.claude/rules/`](../.claude/rules/) · [`../harness/`](../harness/README.md)
+3. [`strategy/attunement.md`](strategy/attunement.md) — 제품 약속과 current/roadmap 경계
+4. [`glossary.md`](glossary.md) — Muse 전용 용어 (Attunement·Observe·grounding floor… grep 없이)
+5. [`SYSTEM-MAP.md`](SYSTEM-MAP.md) — 기능 구조 한 장
+6. [`grounding-gate.md`](grounding-gate.md) — 신뢰 바닥선(그라운딩 게이트)을 한 흐름으로
+7. [`FEATURES.md`](FEATURES.md) → [`feature-catalog/INDEX.md`](feature-catalog/INDEX.md) — 기능 상세 + 전수 검증 증거
+8. 그다음 깊이: [`design/attunement.md`](design/attunement.md) · [`goals/attunement-implementation-plan.md`](goals/attunement-implementation-plan.md) · [`design/`](design/) · [`strategy/`](strategy/) · [`../.claude/rules/`](../.claude/rules/) · [`../harness/`](../harness/README.md)
 
 ## 제품을 이해하려면
 
 | 문서 | 무엇 | 누구에게 |
 |---|---|---|
+| **[strategy/attunement.md](strategy/attunement.md)** | Muse의 wedge, 사용자 순간, current/experimental/roadmap 경계 | 제품·설계·개발 모두 |
+| **[design/attunement.md](design/attunement.md)** | Observe 데이터·privacy·closed-loop 기술 계약 | 개발·보안·AI 에이전트 |
+| **[goals/attunement-implementation-plan.md](goals/attunement-implementation-plan.md)** | 의존성 순서의 vertical slices, gate, kill criterion | 실행·평가 담당 |
 | **[SYSTEM-MAP.md](SYSTEM-MAP.md)** | Muse 기능을 한눈에 보는 구조 지도 (말로만, 빠른 파악용) | 기획·개발 모두 / 처음 보는 사람 |
 | **[glossary.md](glossary.md)** | Muse 전용 용어의 단일 정의 (용어마다 한 줄 + 어디 사는지) | 처음 보는 사람 / AI 에이전트 |
-| **[grounding-gate.md](grounding-gate.md)** | 핵심 엣지(그라운딩 게이트)가 질문 하나를 어떻게 처리하나 — 흐름 + 워크드 예시 | 핵심 동작을 이해하려는 사람 / AI 에이전트 |
+| **[grounding-gate.md](grounding-gate.md)** | 신뢰 바닥선인 그라운딩 게이트가 질문 하나를 어떻게 처리하나 — 흐름 + 워크드 예시 | 핵심 동작을 이해하려는 사람 / AI 에이전트 |
 | **[FEATURES.md](FEATURES.md)** | 기능별 상세 정의 (사용자 입장에서 무엇을 어떻게) | 기획·설계 의사결정 |
 | **[feature-catalog/INDEX.md](feature-catalog/INDEX.md)** | 전수 검증된 전체 기능 인벤토리 (기능마다 실행/테스트/소스 증거; 2026-06-14) | 정확한 사실이 필요한 사람 / AI 에이전트 |
 | **[privacy-and-data.md](privacy-and-data.md)** | 내 데이터는 어디 있고 무엇이 절대 안 나가나 (프라이버시 요약) | 도입 전 확인하는 사람 |
@@ -43,6 +47,7 @@ Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처
 
 [`design/`](design/) 폴더에는 개별 기능의 설계 노트가 한 주제당 한 파일로 들어 있습니다. 대부분은 **이미 출시된 기능의 설계 근거(왜 그렇게 만들었나)** 기록이고, [background-review-engine](design/background-review-engine.md)이 현재 진행 중인 설계입니다. 기능의 "무엇"은 위 제품 문서를, "왜"는 여기를 보세요:
 
+- Attunement: [architecture and data contract](design/attunement.md), [implementation slices](goals/attunement-implementation-plan.md)
 - 기억·인지: [episodic-memory](design/episodic-memory.md), [proactive-surfacing](design/proactive-surfacing.md), [pattern-detection](design/pattern-detection.md), [context-engineering-roadmap](design/context-engineering-roadmap.md)
 - 능동·후속: [agent-self-followup](design/agent-self-followup.md), [reminder-firing](design/reminder-firing.md), [background-review-engine](design/background-review-engine.md)
 - 채널·음성: [messaging](design/messaging.md), [line-webhook](design/line-webhook.md), [voice-mode](design/voice-mode.md), [phase-d-chat-stream-routing](design/phase-d-chat-stream-routing.md)

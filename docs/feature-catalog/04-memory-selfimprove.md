@@ -1,5 +1,9 @@
 # Catalog 04 — Memory (long/short-term) + Self-improvement / Learning (Whetstone + Playbook)
 
+> Memory and correction are Attunement substrates; they do not by themselves prove that
+> Muse observes work rhythm or learns intervention timing. Product boundary:
+> [Attunement](../strategy/attunement.md).
+
 Domain owner packages: `packages/memory`, `packages/skills`, `packages/agent-specs`
 Self-improvement engine code also lives in `packages/agent-core` (playbook, reflection-synthesis, correction-distiller, preference-inference) and `packages/mcp` (playbook store, reflections store, weakness ledger, swarm quarantine).
 CLI base used for verification: `node /Users/jinan/side-project/Muse/apps/cli/dist/index.js <cmd> --help </dev/null`
