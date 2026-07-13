@@ -423,24 +423,37 @@ export function renderUserMemorySection(memory: UserMemorySnapshot, maxEntries: 
  * `[User context: …]` block of a compaction summary without
  * blowing the post-compaction budget.
  *
- * Caps: `maxEntries` facts + `maxEntries` preferences + up to 3
- * recent topics. Returns `undefined` when the snapshot would be
- * empty (so callers can pass it through to trim without bloating
- * the prompt for users with no recorded memory).
+ * Caps: `maxEntries` facts + `maxEntries` plain preferences + up to 3
+ * recent topics. Facts/preferences keep the FRESHEST tail (auto-extract
+ * appends chronologically — a head slice drops every newly-learned fact
+ * once memory grows); vetoes/goals are uncapped (few + safety-critical)
+ * and keep their own prefixes so a compaction summary can't demote a
+ * hard veto into an ordinary preference. Every value flows through
+ * `safeMemoryValue`, mirroring `renderUserMemorySection`. Returns
+ * `undefined` when the snapshot would be empty (so callers can pass it
+ * through to trim without bloating the prompt for users with no
+ * recorded memory).
  */
 export function buildPersonaSnapshot(memory: UserMemorySnapshot, maxEntries: number): string | undefined {
-  const factEntries = Object.entries(memory.facts).slice(0, maxEntries);
-  const preferenceEntries = Object.entries(memory.preferences).slice(0, maxEntries);
+  const factEntries = Object.entries(memory.facts).slice(-maxEntries);
+  const { plain, vetoes, goals } = classifyPreferenceSlots(memory.preferences);
+  const plainPrefs = plain.slice(-maxEntries);
   const topics = (memory.recentTopics ?? []).slice(0, 3);
   const parts: string[] = [];
   for (const [key, value] of factEntries) {
-    parts.push(`fact.${key}=${value}`);
+    parts.push(`fact.${key}=${safeMemoryValue(value)}`);
   }
-  for (const [key, value] of preferenceEntries) {
-    parts.push(`pref.${key}=${value}`);
+  for (const [key, value] of plainPrefs) {
+    parts.push(`pref.${key}=${safeMemoryValue(value)}`);
+  }
+  for (const [key, value] of vetoes) {
+    parts.push(`veto(never propose).${key}=${safeMemoryValue(value)}`);
+  }
+  for (const [key, value] of goals) {
+    parts.push(`goal.${key}=${safeMemoryValue(value)}`);
   }
   if (topics.length > 0) {
-    parts.push(`topics=${topics.join(",")}`);
+    parts.push(`topics=${topics.map((t) => safeMemoryValue(t)).join(",")}`);
   }
   // when the snapshot carries typed slots, append the
   // structured composition so the agent gets the higher-signal
