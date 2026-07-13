@@ -71,13 +71,18 @@ half-off behind opt-in flags. Engine: a Ferrari. State: parked with the cover on
   12/12 with it active.
 
 ### Remaining (ranked; NOT shipped this session)
-- **T2-③ Self-improvement defaults** — default-on the SAFE daemon subset
-  (contradiction decay, consolidation) with the existing probation/learning-pause
-  brakes + channel notice. Prove with a correction-decay analogue of
-  `verify-experience-delta.mjs`. **USER-GATED**: default-on autonomous background
-  learning is a privacy/behavior posture decision, deliberately left for 진안 to
-  call — the machinery is real and verified (that was the audit's finding); only
-  the default flip is the open decision.
+- ✓ **T2-③ Self-improvement defaults — SHIPPED (a8c92ab87, 진안 approved 2026-07-13).**
+  And the audit's premise was WRONG in an important way: the machinery was NOT
+  merely "real but off". Live measurement (new `eval:playbook-credit`) found the
+  credit-assignment floors (0.55/0.62) sat ABOVE the genuine cue→strategy band —
+  a feedback cue and an imperative strategy are different text distributions, so
+  they score 0.30–0.58, not paraphrase-high. Credit fired on 3/13 real feedback
+  cues and **decay on 0/13 (dead code)**. Redesigned to argmax + low absolute
+  floor + a MARGIN gate (the absolute bands OVERLAP with no-match feedback; the
+  margins do not): credit 10/13, decay 9/13, mis-credits 0. Only THEN was the
+  default flipped ON (brakes unchanged: probation-until-reinforce, subtractive-
+  only decay, learning-pause kill switch, channel notice; opt out with
+  `MUSE_SELFLEARN_ENABLED=false`). eval:self-improving 39/39.
 - **T2-④ `muse auth gmail`** — guided OAuth + refresh-token store (encrypted
   secrets store exists) to unlock the already-built email/triage/sync domain. A
   large new surface (OAuth loopback flow) — scoped as its own future slice.
