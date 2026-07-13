@@ -45,7 +45,10 @@
  *
  * @param {object} opts
  * @param {string} opts.name              suite name for the report + gate line
- * @param {readonly {label:string, skip?:string, cases:readonly any[], tools?:readonly any[], allowNullAsInfra?:boolean, safetyCritical?:boolean}[]} opts.scenarios
+ * @param {readonly {label:string, skip?:string, cases:readonly any[], tools?:readonly any[], allowNullAsInfra?:boolean, safetyCritical?:boolean, minRepeat?:number}[]} opts.scenarios
+ *   `safetyCritical` marks a stochastic scenario subject to the pass^k floor;
+ *   `minRepeat` raises that scenario's floor above the default (e.g. `5` for a
+ *   grounding-tier meta-eval) — it can only raise, never lower, the floor.
  *   `allowNullAsInfra` opts a scenario INTO treating a `null` solve result as
  *   a possible infra-flake worth one retry — only set it where `null` is
  *   genuinely ambiguous (a fail-open composer), never where `null` is a
@@ -172,9 +175,10 @@ const DEFAULT_INFRA_BACKOFF_MS = Math.max(0, Math.trunc(Number(process.env.MUSE_
 
 // agent-testing.md's pass^k floor: "k=3 for CI gates, k≥5 for grounding/
 // safety-critical; a single green run is not proof" (τ-bench, arXiv:2406.12045).
-// 3 is the floor ENFORCED here for every safetyCritical scenario — a scenario
-// that wants the stronger k≥5 tier opts into a higher `repeat` itself, but the
-// gate never lets a safety-critical run go below 3 without failing closed.
+// 3 is the DEFAULT floor for every safetyCritical scenario; a grounding-tier
+// scenario opts into the stronger k≥5 by setting `minRepeat: 5` on itself, and
+// the gate ENFORCES that per-scenario floor (not just the default) — so the
+// grounding-judge meta-eval can't silently drop to k=3.
 export const SAFETY_CRITICAL_MIN_REPEAT = 3;
 
 export async function runEvalSuite(opts) {
@@ -197,8 +201,9 @@ export async function runEvalSuite(opts) {
       log(`\n[${scenario.label}] SKIP — ${scenario.skip}`);
       continue;
     }
-    if (scenario.safetyCritical && repeat < SAFETY_CRITICAL_MIN_REPEAT) {
-      const reason = `safety-critical scenario "${scenario.label}" ran at repeat=${repeat} < floor ${SAFETY_CRITICAL_MIN_REPEAT} — set MUSE_EVAL_REPEAT>=${SAFETY_CRITICAL_MIN_REPEAT}; a single-run must-refuse is not proof (pass^k)`;
+    const scenarioFloor = Math.max(SAFETY_CRITICAL_MIN_REPEAT, Math.trunc(scenario.minRepeat ?? 0));
+    if (scenario.safetyCritical && repeat < scenarioFloor) {
+      const reason = `safety-critical scenario "${scenario.label}" ran at repeat=${repeat} < floor ${scenarioFloor} — set MUSE_EVAL_REPEAT>=${scenarioFloor}; a single-run must-refuse is not proof (pass^k)`;
       safetyFloorViolations.push(reason);
       err(reason);
     }

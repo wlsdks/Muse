@@ -530,6 +530,28 @@ test("runEvalSuite — the SAME safetyCritical scenario at repeat=3 (the floor) 
   assert.deepEqual(r.safetyFloorViolations, []);
 });
 
+test("runEvalSuite — a per-scenario minRepeat RAISES the floor: a grounding-tier scenario (minRepeat 5) at repeat=3 fails the gate even though 3 clears the default floor", async () => {
+  const scenarios = [{ cases: [{}, {}], label: "grounding-judge", safetyCritical: true, minRepeat: 5 }];
+  const r = await runEvalSuite({ name: "t", repeat: 3, scenarios, score: allPassScore, solve: allPassSolve, ...silent });
+  assert.equal(r.gate, false, "minRepeat=5 means repeat=3 is under-k for THIS scenario, even though 3 is the default floor");
+  assert.equal(r.safetyFloorViolations.length, 1);
+  assert.match(r.safetyFloorViolations[0], /floor 5/);
+});
+
+test("runEvalSuite — the SAME minRepeat-5 scenario at repeat=5 satisfies the gate", async () => {
+  const scenarios = [{ cases: [{}, {}], label: "grounding-judge", safetyCritical: true, minRepeat: 5 }];
+  const r = await runEvalSuite({ name: "t", repeat: 5, scenarios, score: allPassScore, solve: allPassSolve, ...silent });
+  assert.equal(r.gate, true);
+  assert.deepEqual(r.safetyFloorViolations, []);
+});
+
+test("runEvalSuite — minRepeat below the default floor cannot LOWER it (minRepeat 2 stays clamped to the default 3)", async () => {
+  const scenarios = [{ cases: [{}], label: "must-refuse", safetyCritical: true, minRepeat: 2 }];
+  const r = await runEvalSuite({ name: "t", repeat: 2, scenarios, score: allPassScore, solve: allPassSolve, ...silent });
+  assert.equal(r.gate, false, "minRepeat=2 must not drop the enforced floor below the default 3");
+  assert.match(r.safetyFloorViolations[0], /floor 3/);
+});
+
 test("runEvalSuite — a SKIPPED safetyCritical scenario at repeat=1 is exempt from the floor (a skip is not an under-k run)", async () => {
   const scenarios = [{ cases: [{}], label: "must-refuse", safetyCritical: true, skip: "Ollama unreachable" }];
   const r = await runEvalSuite({ name: "t", repeat: 1, scenarios, score: allPassScore, solve: allPassSolve, ...silent });

@@ -59,3 +59,11 @@ ratchet: testFiles +1 (egress-confidentiality-advisory.test) · agent-core 1239t
 - **Why:** header-값 exfil 채널(Opus가 S5서 지목)이 URL 규칙 사각. fire 1의 두 롤백 사유(no-surface·단일-단어 노이즈)를 정면 수정: (1) fire-4 sink로 surface(end-to-end action-log 파일 검증), (2) 단일토큰 .some→2-gram 스팬. value-first: fire 4 seam이 unblock한 egress 완성.
 - **Review point:** ④b Opus PASS — fire-1 두 실패모드 진짜 해결 확인(파일-영속 read-back+mutation; 2-gram이 단일-단어 노이즈 제거). residual 2개(단일 opaque 시크릿 미탐·stopword 2-gram)는 warn-only·charter외·zero→additive라 documented-residual. nit(독스트링에 residual 명시) 적용. 감사 레코드는 leaf PATH만 기록(private 값 미유출 확인).
 - **Risk:** de-noise 캘리브레이션 residual(위, backlog화). 다양성: fire 1 (agent-core+tools/egress-confidentiality)의 (pkg,kind) 반복(2회째, ratchet ≥6/8 여전히 미달) — fire 5 eval-hardening 뒤라 모노컬처 아님, egress 스레드 완성.
+
+## fire 7 · 2026-07-14 · <commit-pending>
+meta: value-class=eval-hardening · pkg=scripts/eval-harness · kind=passk-per-scenario-floor · verdict=PASS(④b) · firesSinceDrill=7
+ratchet: testFiles +0 (extended eval-harness.test +3) · harness det-test 49/49 · eval:judge live 15/15 STABLE 5/5 · fabrication 0 · self-eval green
+- **What:** fire 5 pass^k floor을 per-scenario `minRepeat`로 확장(floor를 default 3 위로만 raise, Math.max 클램프). eval:judge(agent-testing.md가 이름으로 지목한 grounding-judge 안전통제)를 minRepeat:5+기본5로 — grounding 티어 k≥5 강제. τ-bench pass^k.
+- **Why:** fire 5가 eval:judge를 floor 3에 남긴 deferred 항목 완성. 2→5 점프가 4/5 케이스 노출 리스크라 **라이브 5/5를 load-bearing 블로킹 검증**(15/15 각 5/5) 후 올림 — measure-before-commit. 다양성: value-class는 fire 5와 같은 eval-hardening이나 kind=per-scenario-floor(fire 5=global floor)로 구분; egress/security 스레드(fire 1-6 대부분) 대비 다변화 유지.
+- **Review point:** 내가 직접 빌드(작은 메커니즘)라 ④b maker≠judge가 특히 load-bearing — Opus PASS: raise-only 불변식 안전(Math.max), mutation-first genuine(클램프 제거→1 RED), skip 면제, aggregator 무breakage(eval-agent가 =3 강제 안 함), non-minRepeat byte-identical. Finding 5(LOW doc tension)=backlog.
+- **Risk:** eval:judge 기본 5=런타임 ~1.7×. dev-loop.md의 =3 관례와 eval:judge k≥5 불일치(사람이 =3 붙이면 hard-fail=의도된 fail-closed; 자동경로는 안 걸림). NaN minRepeat는 floor 무력화하나 리터럴 5만 쓰여 도달 불가.
