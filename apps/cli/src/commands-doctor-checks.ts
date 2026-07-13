@@ -278,26 +278,49 @@ export function privacyRoutingCheck(env: Record<string, string | undefined>): Lo
 }
 
 /**
- * Report whether background self-learning (B1) is actually running — the
- * verifiable-autonomy check (Slice 7). Pure of IO so it's directly testable;
- * the caller resolves `enabled` / `paused` / `installed`.
+ * Report whether background self-learning is actually running.
+ *
+ * This check used to return `status: "ok"` for "OFF (default)" — a green tick on a
+ * product whose one-line promise is "learns you". Muse's whole edge is that it shows
+ * its work honestly; a doctor that reports a dormant learning loop as healthy is the
+ * one place that principle must not bend. OFF is not a healthy state for this
+ * feature. It is the feature not existing.
+ *
+ * Pure of IO so it's directly testable; the caller resolves `enabled` / `paused` /
+ * `installed` / `queued` (lessons captured and waiting for a distiller to run).
  */
 export function selfLearningCheck(state: {
   readonly enabled: boolean;
   readonly paused: boolean;
   readonly installed: boolean;
+  readonly queued?: number;
 }): LocalCheck {
   const name = "self-learning";
+  const waiting = state.queued ?? 0;
+  const backlog = waiting > 0 ? ` — ${waiting.toString()} lesson(s) you taught are waiting to be learned` : "";
+
   if (state.paused) {
-    return { detail: "PAUSED — run `muse playbook resume` to let Muse learn again", name, status: "warn" };
+    return { detail: `PAUSED${backlog} — run \`muse playbook resume\` to let Muse learn again`, name, status: "warn" };
   }
   if (!state.enabled) {
-    return { detail: "OFF (default) — set MUSE_IDLE_LEARNING_ENABLED=true to let Muse learn from corrections while idle", name, status: "ok" };
+    return {
+      detail: `OFF${backlog} — Muse is not learning from your corrections. Set MUSE_IDLE_LEARNING_ENABLED=true`,
+      name,
+      status: "warn"
+    };
   }
   if (!state.installed) {
-    return { detail: "ON this session, but the daemon isn't installed — run `muse daemon --install` so it keeps learning across reboots", name, status: "warn" };
+    // The daemon is the ONLY thing that runs decay, skill merge, consolidation,
+    // reflection and pattern detection — and it never auto-starts. Without it, chat
+    // exit is the sole moment Muse learns anything, and half the loop never runs at
+    // all. That is not an "ok".
+    return {
+      detail: `ON for this session only${backlog} — the daemon isn't installed, so Muse forgets to learn between runs. \`muse daemon --install\``,
+      name,
+      status: "warn"
+    };
   }
-  return { detail: "ON, will run while idle (daemon installed)", name, status: "ok" };
+  return { detail: `ON, learning while idle (daemon installed)${backlog}`, name, status: "ok" };
 }
 
 /**

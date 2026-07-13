@@ -32,16 +32,21 @@ describe("proactiveHeartbeatCheck — doctor surfacing per heartbeat state", () 
     expect(check.detail).toMatch(/stopped/i);
   });
 
-  it("unknown (no heartbeat — daemon never ran) → ok, no false alarm", () => {
+  it("no heartbeat — the daemon has NEVER run — is a warning, not a clean bill of health", () => {
+    // This test used to assert `ok`, under the name "no false alarm". It was not a
+    // false alarm; it was the alarm. The daemon does not auto-start, so "never ran"
+    // is the DEFAULT state of every install — and it is the state in which decay,
+    // skill merge, consolidation, reflection and pattern detection have never
+    // executed for anyone. A green tick on that is how it stayed unnoticed.
     const check = proactiveHeartbeatCheck({}, { nowMs });
-    expect(check.status).toBe("ok");
+    expect(check.status).toBe("warn");
   });
 });
 
 describe("heartbeatStatusToCheckStatus", () => {
-  it("maps every status", () => {
+  it("maps every status — not knowing whether it ever ran is not health", () => {
     expect(heartbeatStatusToCheckStatus("healthy")).toBe("ok");
-    expect(heartbeatStatusToCheckStatus("unknown")).toBe("ok");
+    expect(heartbeatStatusToCheckStatus("unknown")).toBe("warn");
     expect(heartbeatStatusToCheckStatus("failing")).toBe("warn");
     expect(heartbeatStatusToCheckStatus("dead")).toBe("warn");
   });

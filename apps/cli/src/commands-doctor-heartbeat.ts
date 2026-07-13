@@ -30,8 +30,15 @@ export function heartbeatStatusToCheckStatus(status: ProactiveHeartbeatStatus): 
     case "dead":
     case "failing":
       return "warn";
-    case "healthy":
+    // "unknown" means the daemon has never left a heartbeat on this box — which, since
+    // the daemon does not auto-start, is the DEFAULT state of every install. Mapping it
+    // to "ok" turned "I have no idea whether this ever ran" into a green tick, and the
+    // green tick is why nobody noticed that decay, skill merge, consolidation,
+    // reflection and pattern detection had never run for anyone. Not knowing is not
+    // health; it is the absence of evidence, and here the absence is the finding.
     case "unknown":
+      return "warn";
+    case "healthy":
       return "ok";
   }
 }

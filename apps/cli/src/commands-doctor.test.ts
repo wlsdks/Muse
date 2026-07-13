@@ -538,10 +538,18 @@ describe("officialMcpChecks — external official-MCP audit surface", () => {
 });
 
 describe("selfLearningCheck — verifiable autonomy (B1 §7)", () => {
-  it("ON + daemon installed → ok 'will run while idle'", () => {
+  it("ON + daemon installed → ok 'learning while idle'", () => {
     const c = selfLearningCheck({ enabled: true, paused: false, installed: true });
     expect(c.status).toBe("ok");
-    expect(c.detail).toContain("ON, will run while idle");
+    expect(c.detail).toContain("learning while idle");
+  });
+
+  it("names the backlog — how many lessons you taught that Muse has not learned yet", () => {
+    // The queue depth is the one number that says whether the loop is actually
+    // closing. A doctor that stays quiet while it grows is the reason it grew.
+    const c = selfLearningCheck({ enabled: true, paused: false, installed: false, queued: 7 });
+    expect(c.detail).toContain("7 lesson(s)");
+    expect(c.status).toBe("warn");
   });
 
   it("ON but daemon NOT installed → warn pointing at `muse daemon --install`", () => {
@@ -556,10 +564,13 @@ describe("selfLearningCheck — verifiable autonomy (B1 §7)", () => {
     expect(c.detail).toContain("muse playbook resume");
   });
 
-  it("OFF (default) → ok, explains how to enable", () => {
+  it("OFF is a WARNING, not a clean bill of health", () => {
+    // Muse's one-line promise is "learns you". A green tick on a learning loop that
+    // is switched off says the feature is fine when the feature does not exist. This
+    // check used to return "ok" here, and that is precisely why nobody looked.
     const c = selfLearningCheck({ enabled: false, paused: false, installed: false });
-    expect(c.status).toBe("ok");
-    expect(c.detail).toContain("MUSE_IDLE_LEARNING_ENABLED");
+    expect(c.status).toBe("warn");
+    expect(c.detail).toContain("not learning from your corrections");
   });
 })
 

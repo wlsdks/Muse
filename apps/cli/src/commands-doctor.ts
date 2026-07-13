@@ -39,7 +39,7 @@ import { join } from "node:path";
 
 import { describeOfficialMcpPosture, LOCAL_FIRST_DEFAULT_MODEL, mergeModelKeysFromFile, parseBoolean, resolveActionLogFile, resolveContactsFile, resolveDefaultModel, resolveEpisodesFile, resolveLearningPauseFile, resolveNotesDir, resolveRecallHitsFile, resolveReflectionsFile, resolveWeaknessesFile, type OfficialMcpPresetPosture } from "@muse/autoconfigure";
 import { defaultBeliefProvenanceFile } from "@muse/memory";
-import { defaultSchedulerPauseFile, isLearningPaused, isMasteredWeakness, readBackgroundProcesses, readEpisodes, readSchedulerPauseState, readWeaknesses, selectDevFixableWeaknesses, type DevFixableWeakness, type WeaknessEntry } from "@muse/stores";
+import { defaultSchedulerPauseFile, isLearningPaused, isMasteredWeakness, readBackgroundProcesses, readEpisodes, readPendingLearnEvents, readSchedulerPauseState, readWeaknesses, resolveLearnQueueFile, selectDevFixableWeaknesses, type DevFixableWeakness, type WeaknessEntry } from "@muse/stores";
 import type { Command } from "commander";
 
 import { resolveLaunchAgentFile } from "./commands-daemon.js";
@@ -638,9 +638,27 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   const memory_path = join(muse_home, "user-memory.json");
   try {
     const raw = await fs.readFile(memory_path, "utf8");
-    const parsed = JSON.parse(raw) as { users?: Record<string, unknown> };
-    const users = parsed.users ? Object.keys(parsed.users).length : 0;
-    checks.push({ detail: `${users.toString()} user(s) seeded`, name: "user-memory", status: users > 0 ? "ok" : "warn" });
+    // Count what Muse actually LEARNED, not how many user rows exist. The old check
+    // counted rows — and reported "✓ 3 user(s) seeded" on a store whose three rows
+    // were two smoke fixtures and one user holding a single fact planted by a test.
+    // A green tick on an empty user model is the most expensive lie this command can
+    // tell, because it is the one that stops anybody looking.
+    const parsed = JSON.parse(raw) as {
+      users?: Record<string, { facts?: Record<string, unknown>; preferences?: Record<string, unknown> }>;
+    };
+    const rows = Object.values(parsed.users ?? {});
+    const learned = rows.reduce(
+      (total, row) => total + Object.keys(row.facts ?? {}).length + Object.keys(row.preferences ?? {}).length,
+      0
+    );
+    checks.push({
+      detail:
+        learned > 0
+          ? `${learned.toString()} thing(s) learned about you across ${rows.length.toString()} profile(s) — \`muse learned\` to review`
+          : "nothing learned about you yet — Muse has a user model and it is empty",
+      name: "user-memory",
+      status: learned > 0 ? "ok" : "warn"
+    });
   } catch {
     checks.push({ detail: "no user-memory.json — run `muse remember` or `muse memory set --local`", name: "user-memory", status: "warn" });
   }
@@ -669,10 +687,20 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   }
 
   // self-learning autonomy: is Muse actually set up to learn while idle?
+  // The queue depth is the honest number here: it is exactly how many lessons the
+  // user has taught that Muse has captured and NOT yet learned. A doctor that stays
+  // silent while that backlog grows is the reason it grew.
+  const queued = await countPendingLessons(env);
   checks.push(selfLearningCheck({
-    enabled: parseBoolean(env.MUSE_IDLE_LEARNING_ENABLED, false),
+    // The gate the daemon ITSELF reads is MUSE_SELFLEARN_ENABLED, and it defaults to
+    // TRUE. Doctor was asking about MUSE_IDLE_LEARNING_ENABLED — a different flag, for
+    // a different thing — and reporting its `false` default as "OFF (default), ok". So
+    // the message read "learning is intentionally off, that's fine" when the truth was
+    // "learning is on by the code's own default, and has never once run."
+    enabled: parseBoolean(env.MUSE_SELFLEARN_ENABLED, true),
     installed: existsSync(resolveLaunchAgentFile(process.env)),
-    paused: await isLearningPaused(resolveLearningPauseFile(env)).catch(() => false)
+    paused: await isLearningPaused(resolveLearningPauseFile(env)).catch(() => false),
+    queued
   }));
 
   // Surface the real-usage failure fuel (dev-fixable recurring agent bugs) so a
@@ -798,4 +826,17 @@ async function runWeaknessesDoctor(io: ProgramIO, asJson: boolean): Promise<void
   }
   io.stdout(formatWeaknesses(entries, { nowMs: Date.now() }));
   io.stdout(formatDevFixableWeaknesses(devFixable));
+}
+
+/**
+ * How many lessons the user has taught that Muse has captured but not yet learned.
+ * Fail-soft: an unreadable queue reports 0 — a doctor check must never be the thing
+ * that breaks.
+ */
+async function countPendingLessons(env: Record<string, string | undefined>): Promise<number> {
+  try {
+    return (await readPendingLearnEvents(resolveLearnQueueFile(env))).length;
+  } catch {
+    return 0;
+  }
 }
