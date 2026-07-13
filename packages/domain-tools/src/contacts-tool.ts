@@ -108,7 +108,7 @@ export function createContactsAddTool(deps: ContactsAddToolDeps): MuseTool {
       // contact name (which IS in the utterance), and a reformatted date
       // both false-drops and lets stray digits vouch. Domain-aware /
       // literal-@ / numeric-component matching makes all five groundable.
-      groundedArgs: ["relationship", "phone", "email:email", "handle:handle", "birthday:date"],
+      groundedArgs: ["relationship", "phone:phone", "email:email", "handle:handle", "birthday:date"],
       keywords: ["contact", "add", "save", "remember", "person", "phone", "number"],
       name: "add_contact",
       risk: "write"

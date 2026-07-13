@@ -297,3 +297,32 @@ describe("groundToolArguments — per-field modes (name:mode entries)", () => {
     expect(r.dropped).toEqual([]);
   });
 });
+
+describe("groundToolArguments — phone mode (the identifier hole the ANY-token rule left open)", () => {
+  it("drops a fabricated number that only 'grounds' via an unrelated digit run in the utterance", () => {
+    const r = groundToolArguments(
+      { name: "Bob", phone: "010-1234-5678" },
+      ["phone:phone"],
+      "밥 저장해줘, 1234번 회의실에서 만났어"
+    );
+    expect(r.dropped).toContain("phone");
+    expect(r.args.phone).toBeUndefined();
+  });
+
+  it("keeps a number the user actually stated, in any separator format", () => {
+    const spaced = groundToolArguments({ phone: "010-1234-5678" }, ["phone:phone"], "밥 번호는 010 1234 5678 이야");
+    expect(spaced.dropped).toEqual([]);
+    const dashed = groundToolArguments({ phone: "+1 415 555 0101" }, ["phone:phone"], "her number is +1-415-555-0101");
+    expect(dashed.dropped).toEqual([]);
+  });
+
+  it("drops a number whose digits are only PARTIALLY present (a half-invented number)", () => {
+    const r = groundToolArguments({ phone: "010-1234-9999" }, ["phone:phone"], "번호는 010-1234-5678 이야");
+    expect(r.dropped).toContain("phone");
+  });
+
+  it("a digitless value falls back to the default rule (no false drop)", () => {
+    const r = groundToolArguments({ phone: "회사 대표번호" }, ["phone:phone"], "회사 대표번호로 저장해줘");
+    expect(r.dropped).toEqual([]);
+  });
+});

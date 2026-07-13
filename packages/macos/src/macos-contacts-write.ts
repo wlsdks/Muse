@@ -67,7 +67,7 @@ export function createMacContactsWriteTool(deps: MacContactsWriteToolDeps): Muse
       // email:email — under the ANY-token rule the local part echoes the
       // contact name (always in the utterance), so an invented domain gets
       // persisted; domain-aware matching closes that (fire-65 class).
-      groundedArgs: ["name", "phone", "email:email"],
+      groundedArgs: ["name", "phone:phone", "email:email"],
       inputSchema: {
         additionalProperties: false,
         properties: {
