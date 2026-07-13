@@ -147,6 +147,15 @@ gate that would have caught the next regression.
 - For a substantive slice, the builder does not grade their own work: spawn
   an independent evaluator (harness-evaluator subagent, or at minimum a
   fresh-context review of the diff + test evidence) before calling it done.
+  **This is not ceremony.** In one session an evaluator failed 4/4 slices that
+  had ALL shipped with green suites and a green live battery — including a
+  zero-click security hole that defeated the gate it had just built (a
+  "first-party" reader whose corpus secretly included Gmail), and a
+  user-visible false "panel agreed" on a maximally disagreeing panel. A green
+  battery means "green on the edges it covers"; the evaluator's job is to
+  find the edges you did not think of, so give it the adversarial framing
+  explicitly ("find an input where this is wrong") and a concrete list of
+  invariants to attack.
 - A FAIL verdict must name a concrete violation (which invariant, which
   input, what wrong output). A vague "seems off" is not grounds to rework;
   an unexplained PASS on safety-critical work is not grounds to ship.
