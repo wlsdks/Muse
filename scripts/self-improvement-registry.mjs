@@ -15,9 +15,19 @@
  *   entry     — the function that does the learning (file + exported symbol)
  *   firesFrom — WHO calls it in production, in one phrase. If you cannot name a
  *               caller, the surface is inert and does not belong in the product.
- *   gate      — the env flag and its DEFAULT. `null` means always on.
+ *   gate      — the env flag, the file where the DEFAULT is actually decided, and
+ *               that default. `null` means always on.
  *   liveProof — the battery that proves it actually fires on real input, and that
  *               is wired into `eval:self-improving` so it runs.
+ *
+ * `gate.definedIn` is not bureaucracy — it is the fix for the first way this
+ * registry itself failed. The guard originally searched a hand-maintained list of
+ * likely files for `parseBoolean(env.FLAG, …)` and took the first hit. Two rows
+ * claimed `default: true` while the code that actually runs said `false`, and the
+ * guard passed anyway, because it found *a* match for that flag name in some other
+ * file. A registry that can be wrong while its guard is green is worse than no
+ * registry — it launders the lie. So a row now names the exact file whose default
+ * governs, and the guard reads that file and nothing else.
  *
  * `scripts/self-improvement-guard.test.mjs` enforces all four: the entry must
  * exist and be exported, the gate default in the code must match what is claimed
@@ -32,7 +42,7 @@ export const SELF_IMPROVEMENT_SURFACES = [
     what: "A correction or redirect you make anywhere — web, Telegram, API, chat — is queued as a lesson.",
     entry: { file: "packages/agent-core/src/correction-capture-hook.ts", symbol: "createCorrectionCaptureHook" },
     firesFrom: "an afterComplete hook on the AgentRuntime, so every surface that runs an agent captures",
-    gate: { env: "MUSE_PLAYBOOK_DISTILL_ENABLED", default: true },
+    gate: { definedIn: "packages/autoconfigure/src/runtime-assembly.ts", env: "MUSE_PLAYBOOK_DISTILL_ENABLED", default: true },
     liveProof: "apps/cli/scripts/verify-playbook-merge.mjs"
   },
   {
@@ -40,7 +50,7 @@ export const SELF_IMPROVEMENT_SURFACES = [
     what: "A correction you make in chat becomes a learned strategy on probation.",
     entry: { file: "apps/cli/src/chat-distill-corrections.ts", symbol: "distillSessionCorrections" },
     firesFrom: "the end-of-session pipeline, on every interactive chat",
-    gate: { env: "MUSE_PLAYBOOK_DISTILL_ENABLED", default: true },
+    gate: { definedIn: "apps/cli/src/chat-end-session-pipeline.ts", env: "MUSE_PLAYBOOK_DISTILL_ENABLED", default: true },
     liveProof: "apps/cli/scripts/verify-playbook-merge.mjs"
   },
   {
@@ -55,8 +65,8 @@ export const SELF_IMPROVEMENT_SURFACES = [
     surface: "correction-decay (retiring a rule you contradicted)",
     what: "A new correction that contradicts an applied strategy drops it below the inject line.",
     entry: { file: "packages/autoconfigure/src/decay-contradicted.ts", symbol: "decayContradictedStrategies" },
-    firesFrom: "the daemon self-learn tick, and the session-end distill",
-    gate: { env: "MUSE_SELFLEARN_ENABLED", default: true },
+    firesFrom: "the daemon self-learn tick (its ONLY caller — the session-end pipeline does not call it)",
+    gate: { definedIn: "apps/cli/src/daemon-selflearn-ticks.ts", env: "MUSE_SELFLEARN_ENABLED", default: true },
     liveProof: "apps/cli/scripts/verify-correction-polarity.mjs"
   },
   {
@@ -64,31 +74,31 @@ export const SELF_IMPROVEMENT_SURFACES = [
     what: "A graduated strategy is ranked and rendered into the system prompt.",
     entry: { file: "packages/agent-core/src/playbook-injection.ts", symbol: "applyPlaybook" },
     firesFrom: "the AgentRuntime, on every run with a playbook provider",
-    gate: { env: "MUSE_PLAYBOOK", default: true },
+    gate: { definedIn: "packages/autoconfigure/src/context-engineering-builders.ts", env: "MUSE_PLAYBOOK", default: true },
     liveProof: "apps/cli/scripts/verify-experience-delta.mjs"
   },
   {
     surface: "user-memory auto-extract (facts / preferences / vetoes / goals)",
     what: "Extracts what you revealed about yourself from each exchange.",
     entry: { file: "packages/memory/src/memory-auto-extract.ts", symbol: "createUserMemoryAutoExtractHook" },
-    firesFrom: "an afterComplete hook on the AgentRuntime, every turn",
-    gate: { env: "MUSE_USER_MEMORY_AUTO_EXTRACT", default: true },
+    firesFrom: "an afterComplete hook on the AgentRuntime, every turn, on every surface",
+    gate: { definedIn: "packages/autoconfigure/src/runtime-assembly.ts", env: "MUSE_USER_MEMORY_AUTO_EXTRACT", default: true },
     liveProof: "apps/cli/scripts/verify-preference-inference.mjs"
   },
   {
     surface: "skill authoring / review",
     what: "Recurring work becomes a reusable skill.",
     entry: { file: "packages/agent-core/src/skill-review.ts", symbol: "reviewSkillsFromTurns" },
-    firesFrom: "the background-review hook on the AgentRuntime",
-    gate: { env: "MUSE_SKILL_AUTHOR_ENABLED", default: true },
+    firesFrom: "the background-review hook on the AgentRuntime — DOUBLE-gated OFF, so it does not run for anyone",
+    gate: { definedIn: "packages/autoconfigure/src/background-review-arms.ts", env: "MUSE_BACKGROUND_REVIEW_ENABLED", default: false },
     liveProof: "apps/cli/scripts/verify-background-review.mjs"
   },
   {
     surface: "skill merge (consolidating near-duplicate skills)",
     what: "Overlapping skills collapse into one umbrella skill.",
     entry: { file: "packages/agent-core/src/skill-merge.ts", symbol: "mergeSkillsIntoUmbrella" },
-    firesFrom: "the daemon consolidation tick",
-    gate: { env: "MUSE_SELFLEARN_ENABLED", default: true },
+    firesFrom: "the daemon consolidation tick and the session-end pipeline — both OFF by default",
+    gate: { definedIn: "apps/cli/src/chat-end-session-pipeline.ts", env: "MUSE_SKILL_CONSOLIDATE_ENABLED", default: false },
     liveProof: "apps/cli/scripts/verify-skill-merge.mjs"
   },
   {

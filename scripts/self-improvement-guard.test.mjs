@@ -48,35 +48,48 @@ test("each gate's DEFAULT in the code matches what the registry claims", () => {
   // The registry is what a maintainer reads. A default flipped in the code and not
   // here is exactly the silent-death case: `MUSE_SELFLEARN_ENABLED` sat at `false`
   // for months while the docs said the loop was real.
+  // Read ONLY the file the row names. The first version of this guard searched a
+  // hand-maintained list of likely files and took the first hit for the flag name —
+  // so two rows could claim `default: true` while the code that actually runs said
+  // `false`, and the guard stayed green because the flag appeared, with the other
+  // default, somewhere else. A guard that can be satisfied by the wrong file is not
+  // a guard; it is a rubber stamp on whatever the registry happens to say.
   for (const s of SELF_IMPROVEMENT_SURFACES) {
     if (!s.gate) continue;
-    const { env, default: claimed } = s.gate;
-    const sources = [
-      "apps/cli/src/daemon-selflearn-ticks.ts",
-      "apps/cli/src/chat-end-session-pipeline.ts",
-      "apps/cli/src/chat-distill-corrections.ts",
-      "packages/autoconfigure/src/context-engineering-builders.ts",
-      "packages/autoconfigure/src/runtime-assembly.ts",
-      "packages/autoconfigure/src/decay-contradicted.ts"
-    ].filter((f) => existsSync(join(ROOT, f)));
+    const { definedIn, env, default: claimed } = s.gate;
+    assert.ok(
+      definedIn,
+      `${s.surface}: gate.definedIn is missing. Name the file whose default actually governs — ` +
+        "without it the guard would have to guess, and guessing is how the registry lied in the first place."
+    );
+    assert.ok(existsSync(join(ROOT, definedIn)), `${s.surface}: gate.definedIn does not exist — ${definedIn}`);
 
-    let found;
-    for (const file of sources) {
-      const src = read(file);
-      const m = new RegExp(`parseBoolean\\(\\s*(?:process\\.)?e(?:nv)?\\.${env}\\s*,\\s*(true|false)\\s*\\)`, "u").exec(src);
-      if (m) {
-        found = m[1] === "true";
-        break;
-      }
-    }
-    // A gate the guard cannot locate is not a pass — it means the flag moved and
-    // nobody would notice its default changing.
-    assert.notEqual(found, undefined, `${s.surface}: could not find the default for ${env} — did the gate move?`);
+    const src = read(definedIn);
+    const match = new RegExp(`parseBoolean\\(\\s*(?:process\\.)?e(?:nv)?\\.${env}\\s*,\\s*(true|false)\\s*\\)`, "u").exec(src);
+    assert.ok(
+      match,
+      `${s.surface}: ${definedIn} does not decide ${env}'s default — the gate moved, and nothing else would have noticed.`
+    );
     assert.equal(
-      found,
+      match[1] === "true",
       claimed,
-      `${s.surface}: ${env} defaults to ${String(found)} in the code but the registry claims ${String(claimed)}. ` +
+      `${s.surface}: ${env} defaults to ${match[1]} in ${definedIn} but the registry claims ${String(claimed)}. ` +
         "Either the default was flipped silently, or the registry is stale — both are the bug this guard exists for."
+    );
+  }
+});
+
+test("a surface that is OFF by default says so, in the open", () => {
+  // Muse's promise is "learns you". A surface shipped default-OFF does not learn
+  // anyone — it is a feature flag with a README. That may be a legitimate choice
+  // (cost, immaturity, risk), but it must be a LOUD one: the row has to admit it,
+  // so nobody reads this table and believes the loop is closed when it is not.
+  const off = SELF_IMPROVEMENT_SURFACES.filter((s) => s.gate && s.gate.default === false);
+  for (const s of off) {
+    assert.match(
+      s.firesFrom,
+      /OFF by default|does not run|DOUBLE-gated OFF/u,
+      `${s.surface}: gate defaults to false, but firesFrom reads like it runs. Say plainly that it does not.`
     );
   }
 });
