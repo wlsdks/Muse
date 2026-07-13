@@ -2,41 +2,41 @@
   <img src="docs/assets/mascot.svg" alt="Muse — the bluebird mascot" width="120" />
 </p>
 
-<p align="center"><i>Meet Muse — and the bluebird that lives in it: a small companion that watches quietly and chirps when it has something for you.</i></p>
+<p align="center"><i>Meet Muse — a personal AI project built to understand the life you are already living.</i></p>
 
 <h1 align="center">Muse</h1>
 
 <p align="center">
-  <b>The personal AI that learns <i>you</i> — not the world. It builds a private model of who you are<br/>from your own notes and files, keeps it on your machine, and forgets the moment you correct it.</b>
+  <b>Building a personal AI that learns how you live and work—and gets better at knowing when and how to help.</b><br/>
+  <i>Local-first, provider-neutral, and honest about what is not built yet.</i>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-green.svg" /></a>
   <a href="package.json"><img alt="Node ≥ 22.12" src="https://img.shields.io/badge/node-%E2%89%A5%2022.12-43853d.svg" /></a>
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/built%20with-TypeScript-3178c6.svg" /></a>
-  <a href="#what-muse-will-not-do-boundaries"><img alt="Cloud egress: off by default" src="https://img.shields.io/badge/cloud%20egress-off%20by%20default-6f42c1.svg" /></a>
+  <a href="#what-muse-will-not-do-boundaries"><img alt="Local-first" src="https://img.shields.io/badge/privacy-local--first-6f42c1.svg" /></a>
   <a href="https://ollama.com"><img alt="Runs on Ollama" src="https://img.shields.io/badge/runs%20on-Ollama-000000.svg" /></a>
   &nbsp;·&nbsp; <a href="README.ko.md">한국어</a>
 </p>
 
-> **Learns you, not the world.**
->
-> *세상이 아니라, 너를 학습한다.*
->
-> It learns you a little deeper every day, lives only on your machine, and forgets the moment you tell it to.
+Muse is meant to be a continuing personal agent for one person's life and work—not only a
+work assistant. It should remember context, coordinate personal tools, stay quiet when that
+is better, and learn whether its last suggestion actually helped. We call this
+**Attunement**: learning how to live and work well with you, not only storing facts about you.
 
-Most AI learns the whole world — and you, for everyone else. Muse learns **you**, for
-**you**: it builds a model of who you are from the notes, files, and mail you'd never
-paste into ChatGPT, reinforces what actually works for you, and **forgets the moment you
-correct it**. That model of you never leaves your machine (cloud egress is **refused in
-code**, not a setting), and every claim it makes cites a real source — weak grounding
-becomes *"I'm not sure,"* an un-groundable claim is dropped by code. The deeper it knows
-you, the more it's yours.
+The first proof point is **Personal Continuity**: helping you pick up an unfinished thread
+without reconstructing it from scratch. That thread might be a project, a trip, a health
+appointment, someone you meant to contact, or an article you were reading. In the first
+version, you choose the thread and its related Muse items; automatic detection comes later.
+This experience is a roadmap target, not a shipped feature today. **Work Resumption** is one
+specialized use of it, not Muse's whole identity.
 
-> Hermes learns you too — but on its server, and it can confabulate. **Muse learns you on
-> _your_ machine, cites why it believes what it knows, and forgets when you correct it** —
-> a model of you that gets sharper without ever getting riskier (fabrication rate = 0 is a
-> release gate).
+> **What works today:** personal memory, grounded recall, local personal stores, opt-in
+> ambient snapshots, pattern and interruption controls, guarded browser actions, traces,
+> and checkpoints. **What comes next:** a closed loop from an unfinished personal thread to
+> useful help, its outcome, and better timing. See the
+> [product contract](docs/strategy/attunement.md) and [implementation plan](docs/goals/attunement-implementation-plan.md).
 
 ---
 
@@ -44,51 +44,39 @@ you, the more it's yours.
 
 Read these five and you know exactly what kind of agent this is.
 
-1. **Learns you — _not the world._**
-   Muse builds a model of who *you* are — your facts, preferences, goals, and the things
-   it must never suggest — from what you tell it and correct it on. It reinforces the
-   strategies that work for you (the **Playbook**), grinds down its own blind spots (the
-   **Whetstone**), and — unlike every "memory" that only piles up — **forgets the moment
-   you correct it**. A fixed local brain that gets sharper *about you* every day, with no
-   weight changes. (`muse memory`, `muse doctor --weaknesses`)
+1. **Learns how to fit into your life.**
+   Facts and preferences matter, but the goal is broader: learn when to stay quiet, what
+   kind of help fits, and whether it worked. The technical name for this is Attunement.
+   Today Muse ships foundations for it; the complete learning loop is still a roadmap.
 
-2. **It's yours — _the model of you can stay on your machine._**
-   Runs on a local open-source model by default (`gemma4:12b` via Ollama —
-   multimodal + grounding-strong — or any weights you run locally), and it's provider-
-   neutral: use cloud or local, your choice. Privacy is a first-class **opt-in** — set
-   `MUSE_LOCAL_ONLY=true` and cloud egress is **refused in code** (the runtime won't even
-   start against a cloud provider). In the same posture, standard remote Home Assistant
-   paths are disabled before its bearer token is read; only a canonical local HTTP loopback
-   endpoint remains available. That is a scoped integration boundary, not a claim of a
-   complete all-egress audit. The deeper it knows you, the more that matters.
+2. **Yours — _your personal layer can stay on your machine._**
+   Muse can use a local or cloud model. With no cloud credential it falls back to the local
+   Ollama model; an available cloud key may select that provider. Set `MUSE_LOCAL_ONLY=true`
+   when you need a strict on-device model boundary: cloud providers are then refused in
+   code. Personal file-backed stores remain local by default.
 
-3. **Honest — _it won't make you up._**
-   Every answer, proactive nudge, and insight cites the real source it came from; weak
-   grounding becomes *"I'm not sure"*; an un-groundable claim is **dropped by code**. The
-   same gate governs recall, proactivity, reflection, **and plain `muse chat`** — ask
-   *"what's my office VPN MTU?"* and it quotes your note's `1380`, not the textbook `1500`.
-   **Fabrication rate = 0 is a release gate**, measured continuously — so a model of you
-   that deepens never gets riskier.
+3. **Shows the evidence where it uses your data.**
+   Grounded recall and other supported personal-data paths attach real sources, lower weak
+   matches, and reject invalid citations. This protection is not universal yet: a fast,
+   uncited chat sentence can still slip past the citation checker. That gap is documented
+   instead of hidden behind a “zero hallucinations” promise.
 
-4. **Distills nature's mechanisms — _the cross-field moat._**
-   Muse mines OPEN papers from **biology, ecology, neuroscience** and beyond, turning a
-   real mechanism into a deterministic, live-verified capability: optimal foraging →
-   adaptive recall depth, ant stigmergy → an evaporating note-relatedness graph,
-   allostasis → anticipating a recurring need. A rival can copy a feature; copying a
-   *research-distillation discipline yoked to a fabrication-zero floor* is far harder.
-   ([full catalog ↓](#cross-field-mechanism-distillation-the-moat))
+4. **Correctable — _your correction changes the next collaboration._**
+   Muse can reinforce strategies that work, retire inferred strategies that conflict with
+   your correction, and remember vetoes. Attunement extends this discipline from answer
+   content to intervention timing and form—without changing model weights or silently
+   overriding explicit user rules. (`muse memory`, `muse doctor --weaknesses`)
 
 5. **Yours to act through — _draft-first, never autonomous._**
    Acts through your real tools (calendar, notes, tasks, reminders, the web) — but any
    send or action toward another person is **draft-first and needs your explicit
    confirmation**. Banking and money movement are permanently out of scope.
 
-> Principle 1 is *what Muse is* — it learns you; principles 2–3 are *why you can trust it
-> with that* — the learning stays yours and stays honest; principle 4 is *how* it keeps
-> gaining capabilities a copycat can't.
+> Attunement is the product promise. Local-first ownership, grounding, correction, and
+> draft-first action are the trust floor that makes it safe to pursue.
 
 A native **macOS desktop companion** (a floating, voice-capable orb; on-device speech via
-WhisperKit + Qwen3-TTS) is the newest surface — same local-only, grounded runtime.
+WhisperKit + Qwen3-TTS) is the newest surface — the same provider-neutral, grounded runtime.
 
 ---
 
@@ -230,7 +218,7 @@ Deliberate product boundaries, enforced in code — not TODOs:
 - **Vision input — one path excepted.** Image attachments are serialized on local **Ollama**
   (`muse ask --image`), **Anthropic**, OpenAI **Chat-Completions**, OpenAI-compatible /
   OpenRouter, and **Gemini**. The only exception is the OpenAI **Responses** API path (text-only).
-  Under local-only (the default) image bytes never leave the machine regardless.
+  Under explicit local-only mode, image bytes never leave the machine regardless.
 
 ---
 
@@ -313,7 +301,7 @@ Running `muse mcp serve` is your explicit consent to expose these read tools to 
 connecting client. See `.claude/rules/outbound-safety.md` for why write/outbound tools
 aren't in scope here.
 
-**Cloud + API server (BYOK)** — opt out of local-only to reach any provider:
+**Cloud + API server (BYOK)** — select a cloud provider (incompatible with `MUSE_LOCAL_ONLY=true`):
 
 ```bash
 GEMINI_API_KEY=… MUSE_MODEL=gemini/gemini-2.0-flash MUSE_MODEL_PROVIDER_ID=gemini \
@@ -376,7 +364,7 @@ Full notices: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 | Long-context passage reordering (strong sources at head/tail) | "Lost in the Middle" | [arXiv 2307.03172](https://arxiv.org/abs/2307.03172) |
 | Preference inference from real corrections (not self-judgement) | distil from outcome signals | ReasoningBank — [arXiv 2509.25140](https://arxiv.org/abs/2509.25140) |
 
-### Cross-field mechanism distillation (the moat)
+### Cross-field mechanism distillation (research discipline)
 
 Beyond the AI-agent literature, Muse continuously mines OPEN papers from **many fields** —
 biology, ecology, neuroscience, network science, control theory, decision & information
@@ -410,8 +398,7 @@ Each mechanism cites its paper in the module header; the verified feature invent
 </details>
 
 Deep dives: [differentiation](docs/strategy/differentiation.md) ·
-[verified feature catalog](docs/feature-catalog/INDEX.md) ·
-[frontier research](docs/strategy/frontier-research-2026-06.md).
+[verified feature catalog](docs/feature-catalog/INDEX.md).
 
 ---
 
@@ -419,10 +406,12 @@ Deep dives: [differentiation](docs/strategy/differentiation.md) ·
 
 | Goal | Read |
 | --- | --- |
+| Understand the Attunement product contract | [`docs/strategy/attunement.md`](docs/strategy/attunement.md) |
+| Inspect the architecture, privacy boundary, and current gaps | [`docs/design/attunement.md`](docs/design/attunement.md) |
+| Build and falsify the first closed loop | [`docs/goals/attunement-implementation-plan.md`](docs/goals/attunement-implementation-plan.md) |
 | Run on a local open-source model (tiers, licenses, latency) | [`docs/setup-local-llm.md`](docs/setup-local-llm.md) |
 | The verified, proof-cited feature inventory | [`docs/feature-catalog/INDEX.md`](docs/feature-catalog/INDEX.md) |
-| Why Muse differs from Hermes / OpenClaw | [`docs/strategy/differentiation.md`](docs/strategy/differentiation.md) |
-| The 2026 frontier research it draws on | [`docs/strategy/frontier-research-2026-06.md`](docs/strategy/frontier-research-2026-06.md) |
+| Inspect trust foundations and the historical competitor ledger | [`docs/strategy/differentiation.md`](docs/strategy/differentiation.md) |
 | Security posture & reporting | [`SECURITY.md`](SECURITY.md) |
 | The bluebird mascot — concept, states, palette, single-source pixels | [`docs/design/mascot.md`](docs/design/mascot.md) · [showroom](docs/design/mascot-showroom.html) |
 | Korean overview | [`README.ko.md`](README.ko.md) |

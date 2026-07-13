@@ -1,5 +1,9 @@
 # Proactive surfacing — Design Doc
 
+> **Attunement boundary (2026-07-13):** proactivity is a delivery substrate, not the
+> product wedge. Attunement adds evidence-linked timing, outcome learning, and the option
+> to stay quiet. See [Attunement architecture](attunement.md).
+
 Status: **Phases A + B + C + D shipped**. Phase D (agent-initiated
 turn) lands an in-memory presence tracker rather than the full
 presence pub/sub described below — same user-visible behaviour for
@@ -109,10 +113,9 @@ is the user currently on?" signal that doesn't exist yet.
   separate delivery adapter; the daemon emits notices through a
   pluggable `NoticeSink` interface so a `NodeOsNotificationSink` is a
   drop-in.
-- **Batch / digest delivery.** Same exclusion as the reminder daemon —
-  individual notices fire individually. A separate "daily brief"
-  feature (which already exists via `muse today --brief`) handles the
-  digest case.
+- **Historical note — batch/digest was originally excluded.** Interruption budgets now
+  queue excess unasked notices and can emit a configured digest. Focus-boundary digesting
+  and outcome-linked adaptation remain roadmap work in Attunement.
 - **Cross-device dedupe.** Sidecar file is single-machine. Two Muse
   instances on two devices fire independently. Multi-device coordination
   needs a server-side dedupe store (Postgres) and is a separate iter.

@@ -1,5 +1,17 @@
 # Muse differentiation ledger — where we win vs hermes / openclaw
 
+> **Current product direction (2026-07-13): Attunement.** Muse is being built to learn
+> how to fit help into one person's daily life and work. The first vertical is Personal
+> Continuity: restore a user-chosen unfinished thread from explicitly linked context,
+> offer one safe next step, and improve the next pack from the outcome. See
+> [the product contract](attunement.md) and
+> [implementation plan](../goals/attunement-implementation-plan.md).
+>
+> The L1–L7 entries below are a historical, evidence-oriented trust ledger. They remain
+> valuable foundations—grounding, privacy enforcement, correction, tamper evidence, and
+> fail-closed action—but they are no longer the top-level user wedge. Competitor claims are
+> dated research records, not copy for the current README.
+
 > The `differentiation` loop's compounding artifact. Each fire researches a
 > competitor capability/claim (cited), names ONE lever where Muse wins
 > **structurally** (something a rival cannot copy without breaking their own

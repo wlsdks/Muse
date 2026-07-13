@@ -8,6 +8,10 @@ related: [../FEATURES.md, ../SYSTEM-MAP.md, ../../README.md]
 
 # Muse 전체 기능 검증 & 인벤토리 — 2026-06-14
 
+> **Status boundary:** 이 카탈로그는 2026-06-14 shipped-evidence snapshot이다. Attunement의
+> Observe → Rhythm → Friction → outcome → adaptation 전체 루프는 포함되어 있지 않으며
+> [roadmap](../goals/attunement-implementation-plan.md)으로 관리한다.
+
 > **이 문서는?** 5,166개 커밋(최근 30일에만 3,934개)이 쌓인 시점에서 Muse의 **모든 기능을 실제로 실행·검증하고, 기능 단위로 증거와 함께 기록**한 마스터 문서입니다. 7개 도메인을 병렬로 샅샅이 훑어 작성했으며, 상세는 각 도메인 카탈로그 파일에 있습니다.
 >
 > 검증 범례: ✅ 실제 실행으로 검증 · 🧪 테스트로 검증 · ⬜ 코드만 확인 · ⚠️ 버그/의심 · 🔌 로컬 모델/외부연동 필요

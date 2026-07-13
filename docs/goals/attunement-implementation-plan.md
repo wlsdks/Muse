@@ -1,0 +1,154 @@
+---
+title: Attunement implementation plan
+audience: [product, engineering, evaluation]
+purpose: Deliver and falsify the first Attunement closed loop through dependency-ordered slices
+status: proposed
+updated: 2026-07-13
+related: [../strategy/attunement.md, ../design/attunement.md, ../privacy-and-data.md]
+---
+
+# Attunement implementation plan
+
+## What we are proving
+
+The first question is not “can Muse watch the desktop?” It is:
+
+> When I return to something unfinished in my life or work, can Muse restore the right
+> context, suggest one useful next step, and learn from my response?
+
+Examples include preparing for a hospital visit, continuing a trip plan, contacting someone,
+finishing an article, or resuming a work project. Start with a version the user deliberately
+opens. Add automatic detection only after the basic help is useful.
+
+## How to read the plan
+
+The slices below are ordered by dependency, not by days or weeks. Each slice must produce
+something a user can try and a gate that can prove it works. Do not build several partial
+subsystems and call their combination “Attunement.”
+
+Terms used below:
+
+- **Personal thread:** one unfinished topic the user chose, from daily life or work.
+- **Continuity Pack:** a small bundle showing the linked context and one next step.
+- **Outcome ledger:** one canonical state: `used`, `adjusted`, `ignored`, or `rejected`.
+- **Policy reducer:** deterministic code that turns the outcome into a small, allowed change
+  for the next pack.
+
+## Slice A — user-invoked Continuity Pack
+
+**User experience:** the user runs `muse continue`, chooses or creates a personal thread,
+and links the relevant Muse items. Muse shows the current state, the evidence behind it, and
+one safe next step. The user answers `continue`, `adjust`, or `not useful`.
+These map to `used`, `adjusted`, and `rejected`; no response after the defined window maps
+to `ignored`. Merely opening a pack is recorded separately and does not count as useful.
+
+This is the tracer bullet: one thin path through thread → pack → feedback → changed next
+pack. It does not require desktop observation.
+
+**Build**
+
+- Add `packages/attunement/` with `PersonalThread`, artifact links, Continuity Pack
+  orchestration, an outcome ledger, and a deterministic `InterventionPolicyReducer`.
+- Add `muse thread start|list|continue|inspect|reset` in `apps/cli`; `muse continue` is the
+  short entry point.
+- Reuse existing Muse tasks, notes, reminders, calendar events, contacts, run
+  logs/checkpoints, and separately enabled browser history.
+- Require the user or an existing deterministic link to bind each item to a `threadId`.
+  An LLM may summarize bound items; it may not guess which part of the user's life they
+  belong to.
+- Treat `work` as one optional thread kind. It must not be the default meaning of every
+  thread.
+
+**Gate**
+
+- A pack uses only items linked to the selected thread, with resolvable evidence IDs.
+  Unsupported “where you left off” claims are omitted.
+- Browser history is absent unless separately enabled; no form submission or external send.
+- `continue`, `adjust`, `not useful`, and timeout create `used`, `adjusted`, `rejected`, and
+  `ignored` outcomes respectively. No other outcome vocabulary is accepted.
+- Golden tests prove `outcome N → allowed policy change → different pack N+1`.
+- Replaying the same outcome is idempotent; reset restores the baseline.
+- A policy change may affect only pack form, detail level, suggestion threshold, or
+  suppression. It cannot expand data sources, retention, permissions, recipients, or actions.
+- Golden examples cover both a daily-life thread and a work thread; neither may rely on a
+  work-only field or prompt.
+
+**Kill criterion:** if fewer than 20% of the first 20 eligible packs are used, or more than
+30% are rejected, stop adding automation. Fix the pack's usefulness first.
+
+## Slice B — safe observation and better timing
+
+**User experience:** after the user explicitly starts a personal thread, Muse can notice a
+stable activity block, hold its own optional notices, and offer the existing Continuity Pack
+at a natural return point. The user can see, pause, or delete everything Observe collected.
+
+**Build**
+
+- Add minimal app-session events, an atomic owner-only store, source TTL, and a focus-state
+  reducer to `packages/attunement/`.
+- Add `muse observe status|start|pause|resume|inspect|forget`.
+- Attach an observation to a thread only while that explicit thread is active.
+- Unify ambient source selection used by API and CLI.
+- Extend `packages/proactivity/src/interruption-gate.ts` so stable focus holds only
+  Muse-generated optional notices. User-scheduled reminders and due alerts stay exempt.
+
+**Gate**
+
+- Disabled or paused means zero OS reads; pause applies by the next tick.
+- Store writes are atomic, owner-only (`0600`), TTL-aware, inspectable, and deletable.
+- Raw titles, clipboard text, selections, keystrokes, and screenshots never enter the
+  default observation store.
+- Focus means zero optional Muse notices; a boundary produces at most one digest or offer.
+- The Slice A pack still works when Observe is off.
+
+**Kill criterion:** Observe does not ship without pause, inspect, and forget. If Focus Hold
+suppresses a requested or due-critical notice, stop and fix notice classification first.
+
+## Slice C — personal rhythm and recurring friction
+
+**User experience:** after enough evidence exists, Muse can ask a retrospective question
+such as “Was this switching normal, exploration, or did it make this harder to continue?”
+It does not silently diagnose the user.
+
+**Build**
+
+- Add deterministic dwell, stable-block, and transition aggregates.
+- Create evidence-linked friction candidates only from observations bound to a personal
+  thread.
+- Connect each question and answer to the same outcome ledger and policy reducer.
+- Expose the same inspect/reset view through CLI and API.
+
+**Gate**
+
+- No candidate without evidence IDs, rule version, confidence, and a recurrence threshold.
+- Require at least three comparable episodes across two distinct dates before asking.
+- `normal` or `exploring` immediately suppresses that candidate.
+- An LLM may explain a candidate in plain language; deterministic code decides whether it
+  qualifies and what data supports it.
+- Property tests prove adaptation cannot widen consent, retention, approval, or action scope.
+- A daily-life routine must not be described with workplace language unless the user labeled
+  it as work.
+
+**Kill criterion:** if more than half of the first 20 questions are labeled `normal` or
+`exploring`, retire rapid switching as a friction signal. If rejection exceeds 30%, stop
+automatic questions and keep only a user-opened review.
+
+## Product evaluation
+
+- Start with users who have at least three comparable returns to unfinished threads; do not
+  count passive observation volume as value.
+- Measure pack use, rejection, corrected links, time to resume, and preference for a short
+  line versus a detailed pack.
+- Report daily-life and work threads separately so success in one cannot hide failure in the
+  other.
+- For users with at least ten comparable interventions, compare the first five with the next
+  five. If usefulness does not improve, freeze automatic adaptation and keep explicit user
+  settings only.
+- Every release candidate reviews store schemas and deletion cascades, not user content.
+
+## Expansion gate
+
+Only after the Muse-managed and optional browser loop passes should a separate plan consider
+generic desktop or IDE control. Each new surface needs a semantic state model, explicit
+personal-thread binding, deterministic target resolution, recovery, permission, and an
+outcome link. Better model reasoning cannot replace those controls.

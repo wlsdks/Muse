@@ -1,5 +1,5 @@
 ---
-title: 그라운딩 게이트 — Muse의 핵심 엣지, 한 흐름으로
+title: 그라운딩 게이트 — Muse의 신뢰 바닥선, 한 흐름으로
 audience: [AI 에이전트, 개발자]
 purpose: Muse의 grounding+citation 게이트가 질문 하나를 어떻게 처리하는지 end-to-end로 — 멘탈 모델용
 updated: 2026-06-20
@@ -8,14 +8,17 @@ related: [feature-catalog/02-knowledge-rag.md, glossary.md, SYSTEM-MAP.md]
 
 # 그라운딩 게이트 — 한 흐름으로
 
-Muse의 정체성 한 줄은 **"네 거에서 답하고, 출처를 인용하고, 모르면 모른다고 한다"**이다. 그걸
-강제하는 결정적 코드가 **그라운딩 게이트**다. 이 문서는 *질문 하나가 게이트를 어떻게 통과하는지*를
+> 그라운딩은 Attunement의 **신뢰 바닥선**이다. 작업 리듬·마찰·복귀 맥락에 대한 주장도 같은
+> 증거 규율을 따라야 한다. 제품 방향은 [Attunement](strategy/attunement.md)를 참고한다.
+
+Muse의 제품 정체성은 Attunement지만, 개인에 대한 주장과 개입 근거를 지어내지 않게 하는
+결정적 신뢰 바닥선은 **그라운딩 게이트**다. 이 문서는 *질문 하나가 게이트를 어떻게 통과하는지*를
 한 흐름으로 보여준다(멘탈 모델용). 심볼·테스트 단위 증거는 [feature-catalog/02](feature-catalog/02-knowledge-rag.md),
 용어는 [glossary](glossary.md).
 
-> 핵심: 게이트는 **모델 호출이 아니라 결정적 코드**다(`verifyGrounding`,
-> `packages/agent-core/src/knowledge-recall.ts`). 그래서 모델이 아무리 그럴듯하게 지어내도 *코드가*
-> 드롭한다 — "fabrication = 0"이 부탁이 아니라 게이트인 이유.
+> 핵심: 이 경로의 게이트는 **모델 호출이 아니라 결정적 코드**다(`verifyGrounding`,
+> `packages/agent-core/src/knowledge-recall.ts`). 검색 근거가 약하거나 인용이 잘못되면 답을 낮추거나
+> 드롭한다. 다만 이 문서는 자유대화의 인용 없는 모든 문장까지 검증한다고 주장하지 않는다.
 
 ## 흐름 (한 질문이 거치는 7단계)
 

@@ -260,14 +260,9 @@ export function resolveModelFallbackChain(params: {
  *
  * Priority: explicit `MUSE_MODEL` (or `MUSE_DEFAULT_MODEL`) wins.
  *
- * LOCAL-FIRST: when local-only is on (the default posture), the zero-config
- * default is the LOCAL model — never a cloud one. This is the whole product
- * Cloud is allowed by default (MUSE_LOCAL_ONLY off unless explicitly set), so
- * cloud-credential inference (GEMINI → OPENAI → ANTHROPIC → OPENROUTER) runs by
- * default and picks a cloud model when a key is present, otherwise falls back to
- * the local default — a fresh box with no key still boots on gemma4:12b. When
- * `MUSE_LOCAL_ONLY=true` is set, the local model is forced and ambient cloud
- * keys are ignored (so the local-only gate can never be tripped by a stray key).
+ * Cloud use is allowed unless `MUSE_LOCAL_ONLY=true`. Without an explicit model,
+ * an ambient cloud credential selects its provider; otherwise Muse falls back to
+ * the local model. Local-only mode forces the local model and ignores cloud keys.
  */
 export function resolveDefaultModel(env: MuseEnvironment): string | undefined {
   const explicit = parseOptionalString(env.MUSE_MODEL ?? env.MUSE_DEFAULT_MODEL);

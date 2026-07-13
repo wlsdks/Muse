@@ -2,8 +2,8 @@
 title: Muse 용어집 (Glossary)
 audience: [AI 에이전트, 개발자, 기획자]
 purpose: Muse 전용 용어의 단일 정의 — 처음 보는 에이전트가 grep 없이 이해하도록
-updated: 2026-06-20
-related: [SYSTEM-MAP.md, grounding-gate.md, feature-catalog/INDEX.md]
+updated: 2026-07-13
+related: [strategy/attunement.md, SYSTEM-MAP.md, grounding-gate.md, feature-catalog/INDEX.md]
 ---
 
 # Muse 용어집
@@ -14,24 +14,39 @@ Muse 문서·코드·커밋에서 반복되는 **Muse-고유 용어**의 정의.
 
 ## 1. 정체성 — Muse가 무엇인가
 
-- **Local by construction (로컬-by-construction)** — Muse는 기본적으로 로컬 오픈소스 모델
-  (gemma4:12b via Ollama)에서만 돈다. 클라우드 송출은 설정이 아니라 *코드로 거부*된다.
-- **MUSE_LOCAL_ONLY** — 클라우드 송출 fail-close 정책 플래그. **기본 ON.** 켜져 있으면 model-router가
+- **Attunement (조율)** — 나에 대한 정보만 외우는 것이 아니라, 내 삶에 잘 맞게 돕는 법을 배우는 제품 방향.
+  언제 조용히 있고 어떤 도움이 잘 맞는지 결과를 보며 개선한다. 전체 흐름은 **roadmap**이다.
+- **Observe (관찰 설정)** — 무엇을 수집하는지 보고, 멈추고, 확인하고, 지울 수 있게 하는 화면과
+  명령(**roadmap**). 키 입력과 연속 화면 녹화는 기본 수집 대상이 아니다.
+- **Personal Rhythm Model (개인 생활 리듬 모델)** — 앱에 머문 시간과 활동 전환처럼 최소한의 기록으로
+  만든 생활·업무 흐름 요약(**roadmap**). 성격이나 심리를 진단하는 모델이 아니다.
+- **Friction Discovery (반복 불편 발견)** — 일이 자주 끊기는 후보를 근거와 함께 보여주고, 사용자가
+  “평소 흐름/탐색/막힘” 중 무엇인지 바로잡는 단계(**roadmap**).
+- **Intervention outcome / adaptation (도움 결과와 개선)** — 도움을 썼는지·고쳤는지·거절했는지를
+  기록해 다음 도움의 시점과 형태만 바꾸는 과정(**roadmap**). 권한이나 수집 범위는 넓히지 않는다.
+- **Personal Continuity (삶의 맥락 이어주기)** — 사용자가 고른 미완료 주제의 관련 기억과 다음 한
+  단계를 준비하는 첫 사용자 경험(**roadmap**). 업무·일정·생활 계획을 모두 담을 수 있다.
+- **Muse Work / Work Resumption (업무 복귀)** — Personal Continuity를 업무에 특화해 쓰는 모드.
+  Muse 전체가 업무 도우미라는 뜻도, 컴퓨터 전체를 자동 조작한다는 뜻도 아니다.
+- **Local-first** — 개인 store와 로컬 모델 경로를 우선 지원하지만 provider-neutral 선택을 유지한다.
+  “항상 로컬” 보장은 `MUSE_LOCAL_ONLY=true`를 사용한 명시적 자세에서만 주장한다.
+- **MUSE_LOCAL_ONLY** — 클라우드 송출 fail-close 정책 플래그. 켜져 있으면 model-router가
   클라우드 provider 인스턴스화 *전에* `LocalOnlyViolationError`를 던진다. 음성/임베딩도 로컬로 강제.
 - **Provider-neutral / model-agnostic** — `agent-core`는 vendor SDK를 직접 부르지 않고 Muse 소유의
   `ModelProvider` 추상화만 부른다. vendor 코드는 `packages/model/adapters/*` 가장자리에만 산다.
-- **Grounding floor (그라운딩 플로어)** — Muse의 *유지되는 바닥선*: 모든 표면(recall·proactivity·
-  reflection·vision)이 grounding+citation 게이트 아래를 지나 **fabrication rate = 0**을 릴리스 게이트로
-  강제한다. 이 floor를 약화하는 변경은 금지(IMMUTABLE-CORE).
-- **fabrication = 0** — 근거 없는 주장은 *코드가* 드롭한다. 약한 근거는 "잘 모르겠다"로 격하. 이게
-  CLAUDE.md 계약이자 `precheck:grounding` 릴리스 게이트의 불변식.
+- **Grounding floor (그라운딩 플로어)** — 개인 근거를 사용하는 지원 경로에서 실제 source를
+  확인하고, 약한 근거를 낮추며, 잘못된 인용을 거부하는 신뢰 바닥선. 모든 자유대화 문장을
+  검증한다는 뜻은 아니다.
+- **fabrication = 0 (배터리 지표)** — 특정 grounding 평가 배터리에서 근거 없는 출력이 0이어야
+  한다는 release metric. 제품 전체와 모든 chat 문장에 대한 보편적 무환각 보장이 아니다.
 
-## 2. 그라운딩 / 리콜 — 핵심 엣지
+## 2. 그라운딩 / 리콜 — 신뢰 바닥선
 
 전체 흐름은 [grounding-gate.md](grounding-gate.md). 여기선 용어만.
 
 - **Grounding gate (그라운딩 게이트)** — 답변+근거를 받아 결정적(모델 호출 없음)으로 3-way 판정을
-  내리는 `verifyGrounding` (`packages/agent-core/src/knowledge-recall.ts`). Muse의 핵심 엣지.
+  내리는 `verifyGrounding` (`packages/agent-core/src/knowledge-recall.ts`). Attunement가 개인에 대한
+  가설을 지어내지 않게 하는 신뢰 바닥선.
 - **3-way 판정** — **grounded**(근거 충분) / **weak**(약하게만 지지 → "잘 모르겠다") / **ungrounded**
   (근거 없음·인용 위조·근거 초과 주장 → 드롭). fail-close 순서로 평가.
 - **4-기준 루브릭** — 판정의 재료: `confidence`(검색 cosine 신뢰도, CRAG식) · `coverage`(답변 토큰이
@@ -80,8 +95,8 @@ Muse 문서·코드·커밋에서 반복되는 **Muse-고유 용어**의 정의.
 
 ## 5. 능동성 · 아웃바운드 안전
 
-- **Proactivity (능동성) / earned (획득)** — Muse가 먼저 말 거는 것. "earned"는 휴리스틱이 아니라
-  *fail-close 게이트*: ratchet으로 뒷받침된 자격을 통과해야만 능동 알림이 나간다(north star).
+- **Proactivity (능동성) / earned (획득)** — Muse가 먼저 말 거는 전달 substrate. "earned"는
+  휴리스틱이 아니라 *fail-close 게이트*: ratchet으로 뒷받침된 자격을 통과해야만 능동 알림이 나간다.
 - **Daemon (데몬)** — idle일 때 reflection(dreaming)·check-in·followup을 도는 백그라운드 프로세스(opt-in).
 - **Objectives (목표) / consent (동의) / scope (스코프)** — 사용자 위임 standing 목표. 제3자에게 행동하려면
   *기록된 scoped consent*가 필요(`performConsentedAction`); 없거나 scope 불일치면 fail-close.
