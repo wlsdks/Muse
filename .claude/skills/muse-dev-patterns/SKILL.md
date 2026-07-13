@@ -96,6 +96,22 @@ Any floor/ceiling/limit (similarity floors, retry limits, caps) follows the
 4. Write the measured bands into the constant's WHY comment. "Tuned later"
    comments rot; measurements don't.
 
+**A constant set from a plausible-sounding prior is a bug waiting to be
+found — and priors travel in families.** A single measurement session
+invalidated FIVE council constants that all rested on one unexamined belief
+("semantically agreeing texts score cosine 0.6+"). The truth was the
+opposite of the design: a value difference LOWERS the embedding cosine
+because the embedding encodes the value, so a same-topic *disagreeing* peer
+outscores a genuinely *agreeing* cross-lingual one. Consequences ranged from
+dead code (a consensus gate whose bar sat above the entire agreement band —
+it had never once fired) to inverted user-facing behaviour (a conflict
+detector that flagged agreeing sources and missed real conflicts; a dissent
+surfacer that published noise and silenced the minority view). **When you
+find one miscalibrated threshold, grep for its siblings and measure them
+all** — the same false prior almost certainly set them too. And check what
+the signal actually measures: prose cosine answers "same subject", not "same
+answer"; if you need the latter, compose a second signal that can decide it.
+
 ## 5. Live batteries (eval:*) — the house style
 
 - LOCAL OLLAMA ONLY; unreachable ⇒ skip with exit 0 AND print "a skip is
