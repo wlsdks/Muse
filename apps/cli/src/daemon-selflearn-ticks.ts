@@ -41,6 +41,29 @@ import { runMemoryConsolidationTick } from "./memory-consolidate-tick.js";
 import { promoteRecalledMemories, resolveMemoryUserId } from "./commands-memory.js";
 import type { FollowupModel } from "./commands-daemon-connections.js";
 
+/**
+ * Unattended learning is ON by default (진안, 2026-07-13). It stays OFF only if
+ * the user opts out with `MUSE_SELFLEARN_ENABLED=false`.
+ *
+ * The default was off while the machinery was unproven — and it was right to be:
+ * credit assignment silently no-credited most real feedback and the decay gate
+ * had NEVER fired (its cosine floors were set on the assumption that a
+ * conversational cue and an imperative strategy score like paraphrases; they do
+ * not — measured, eval:playbook-credit). With that fixed, the loop demonstrably
+ * learns 10/13 of real feedback and mis-credits none, so the default flips.
+ *
+ * The brakes are unchanged and are what make an ON default safe:
+ *   - every distilled strategy lands on PROBATION and is NEVER injected until
+ *     the user's own reinforce graduates it;
+ *   - decay is subtractive-only (it can drop a strategy below the inject line,
+ *     never graduate one) and fires only on a confident contradiction;
+ *   - the learning-pause kill switch is checked inside every write;
+ *   - the user is TOLD on their channel when something is learned.
+ */
+function selfLearnEnabled(env: NodeJS.ProcessEnv): boolean {
+  return parseBoolean(env.MUSE_SELFLEARN_ENABLED, true);
+}
+
 /** Mutable last-run timestamp, shared by reference so it survives across tick calls. */
 export interface TickRunState {
   current: number | undefined;
@@ -68,7 +91,7 @@ export interface MakeSelfLearnTickDeps {
 export function makeSelfLearnTick(deps: MakeSelfLearnTickDeps): () => Promise<void> {
   const { env: e, stdout, followupModel, noticeSink, intervalMs, lastRunMs, selfLearnDistill, contradictionClassify } = deps;
   return async (): Promise<void> => {
-    if (!parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) || !followupModel) return;
+    if (!selfLearnEnabled(e) || !followupModel) return;
     const nowMs = Date.now();
     if (lastRunMs.current !== undefined && nowMs - lastRunMs.current < intervalMs) return;
     lastRunMs.current = nowMs;
@@ -161,7 +184,7 @@ export interface MakeSelfLearnDecayTickDeps {
 export function makeSelfLearnDecayTick(deps: MakeSelfLearnDecayTickDeps): () => Promise<void> {
   const { env: e, stdout, noticeSink, intervalMs, lastRunMs } = deps;
   return async (): Promise<void> => {
-    if (!parseBoolean(e.MUSE_SELFLEARN_ENABLED, false)) return;
+    if (!selfLearnEnabled(e)) return;
     const nowMs = Date.now();
     if (lastRunMs.current !== undefined && nowMs - lastRunMs.current < intervalMs) return;
     lastRunMs.current = nowMs;
@@ -219,7 +242,7 @@ export interface MakePlaybookConsolidateTickDeps {
 export function makePlaybookConsolidateTick(deps: MakePlaybookConsolidateTickDeps): () => Promise<void> {
   const { env: e, stdout, followupModel, intervalMs, lastRunMs, consolidateMerge, consolidateValidate } = deps;
   return async (): Promise<void> => {
-    if (!parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) || !followupModel) return;
+    if (!selfLearnEnabled(e) || !followupModel) return;
     const nowMs = Date.now();
     if (lastRunMs.current !== undefined && nowMs - lastRunMs.current < intervalMs) return;
     lastRunMs.current = nowMs;
@@ -291,7 +314,7 @@ export function makeMemoryConsolidateTick(deps: MakeMemoryConsolidateTickDeps): 
         }
       : undefined;
     const nextState = await runMemoryConsolidationTick({
-      enabled: parseBoolean(e.MUSE_SELFLEARN_ENABLED, false),
+      enabled: selfLearnEnabled(e),
       nowMs: Date.now(),
       lastRunMs: lastRunMs.current,
       readHits: () => readRecallHits(resolveRecallHitsFile(e)),

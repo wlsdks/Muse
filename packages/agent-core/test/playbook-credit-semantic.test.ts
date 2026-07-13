@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PLAYBOOK_CREDIT_COSINE, selectCreditTargetSemantic } from "../src/index.js";
+import {
+  DEFAULT_PLAYBOOK_CREDIT_COSINE,
+  DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE,
+  PLAYBOOK_CREDIT_MARGIN,
+  PLAYBOOK_DECAY_CREDIT_MARGIN,
+  selectCreditTargetSemantic
+} from "../src/index.js";
 
 // Semantic credit assignment for the playbook RL loop (Memory-R2 arXiv:2605.21768;
 // mis-credited reward replays via experience-following arXiv:2505.16067). The
@@ -83,5 +89,86 @@ describe("selectCreditTargetSemantic (Memory-R2 arXiv:2605.21768)", () => {
   it("exports a sane default credit floor", () => {
     expect(DEFAULT_PLAYBOOK_CREDIT_COSINE).toBeGreaterThan(0);
     expect(DEFAULT_PLAYBOOK_CREDIT_COSINE).toBeLessThan(1);
+  });
+});
+
+/**
+ * Live-calibration regression pins (eval:playbook-credit). A feedback cue and a
+ * strategy are DIFFERENT text distributions, so they do NOT score like
+ * paraphrases: genuine pairs measure 0.30-0.58 while feedback that implicates
+ * NOTHING still reaches 0.29 against its nearest strategy — the absolute bands
+ * OVERLAP. The shipped 0.55/0.62 floors sat above the genuine band entirely, so
+ * credit fired on 3/13 real cues and decay on 0/13 (dead code). The MARGIN is
+ * what separates the populations: a genuine match beats the runner-up by 0.13
+ * (median), a no-match cue's top-2 sit within 0.038.
+ */
+describe("selectCreditTargetSemantic — the margin gate (live-calibrated)", () => {
+  // Vectors reproducing the measured geometry: the cue is CLOSE to its own
+  // strategy and mid-distance from the rest.
+  const V: Record<string, readonly number[]> = {
+    "cue-clear": [1, 0, 0],
+    "s-match": [0.95, 0.31, 0],      // cos ≈ 0.95 → top
+    "s-other": [0.30, 0.95, 0],      // cos ≈ 0.30 → runner-up, margin ≈ 0.65
+    "cue-ambiguous": [1, 0, 0],
+    "s-near-a": [0.42, 0.91, 0],     // cos ≈ 0.42
+    "s-near-b": [0.40, 0.92, 0]      // cos ≈ 0.40 → margin ≈ 0.02: a near-tie
+  };
+  const embed = async (text: string): Promise<readonly number[]> => V[text] ?? [0, 0, 1];
+
+  it("credits the strategy that clearly stands out", async () => {
+    const picked = await selectCreditTargetSemantic(
+      [{ id: "a", text: "s-match" }, { id: "b", text: "s-other" }],
+      "cue-clear",
+      embed,
+      0.3,
+      0.05
+    );
+    expect(picked).toBe("a");
+  });
+
+  it("credits NOTHING on a near-tie — feedback that implicates nothing scores its top-2 within 0.04", async () => {
+    const picked = await selectCreditTargetSemantic(
+      [{ id: "a", text: "s-near-a" }, { id: "b", text: "s-near-b" }],
+      "cue-ambiguous",
+      embed,
+      0.3,
+      0.05
+    );
+    expect(picked).toBeUndefined();
+  });
+
+  it("a SOLE candidate has no runner-up, so it must clear the higher no-match floor alone", async () => {
+    // cos ≈ 0.42 — above the credit floor (0.3) but below the solo floor (0.35)?
+    // 0.42 > 0.35 → credited. A weaker sole match is not.
+    const strong = await selectCreditTargetSemantic(
+      [{ id: "a", text: "s-match" }],
+      "cue-clear",
+      embed,
+      0.3,
+      0.05
+    );
+    expect(strong).toBe("a");
+
+    const weak = await selectCreditTargetSemantic(
+      [{ id: "a", text: "s-other" }],
+      "cue-clear",
+      embed,
+      0.3,
+      0.05
+    );
+    // cos ≈ 0.30: clears the credit floor but NOT the solo floor (0.35).
+    expect(weak).toBeUndefined();
+  });
+
+  it("the decay margin is stricter than the credit margin (asymmetric precision)", () => {
+    expect(PLAYBOOK_DECAY_CREDIT_MARGIN).toBeGreaterThan(PLAYBOOK_CREDIT_MARGIN);
+    expect(DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE).toBeGreaterThan(DEFAULT_PLAYBOOK_CREDIT_COSINE);
+  });
+
+  it("the floors sit INSIDE the measured genuine band, not above it", () => {
+    // Genuine cue→strategy pairs measure 0.298-0.575 live. A floor at or above
+    // ~0.6 (the old 0.55/0.62) rejects nearly all real feedback.
+    expect(DEFAULT_PLAYBOOK_CREDIT_COSINE).toBeLessThan(0.4);
+    expect(DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE).toBeLessThan(0.45);
   });
 });

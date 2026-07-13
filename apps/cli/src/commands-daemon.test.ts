@@ -1208,8 +1208,8 @@ describe("muse daemon — unattended self-learning tick", () => {
     expect(await readPendingLearnEvents(env.MUSE_LEARN_QUEUE_FILE!)).toHaveLength(1); // untouched, resume catches up
   });
 
-  it("does NOTHING when MUSE_SELFLEARN_ENABLED is unset (gate is real — off by default)", async () => {
-    const env = tmpEnv();
+  it("is OFF only on an explicit opt-out (MUSE_SELFLEARN_ENABLED=false) — the gate is real, the default is ON", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_SELFLEARN_ENABLED: "false" };
     await seedCorrection(env);
     const registry = new MessagingProviderRegistry([capturingProvider([])]);
 
@@ -1369,8 +1369,8 @@ describe("muse daemon — unattended disuse-decay tick", () => {
     expect((await readPlaybook(env.MUSE_PLAYBOOK_FILE!))[0]!.reward).toBe(2); // untouched, resume catches up
   });
 
-  it("does NOTHING when MUSE_SELFLEARN_ENABLED is unset (same gate as distill)", async () => {
-    const env = tmpEnv();
+  it("is OFF only on an explicit opt-out (same gate as distill)", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_SELFLEARN_ENABLED: "false" };
     await seedStaleStrategy(env);
     const registry = new MessagingProviderRegistry([capturingProvider([])]);
 

@@ -251,21 +251,22 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
   it("asymmetric floor: a borderline cross-distribution correction does NOT decay a strategy (Memory-R2 2605.21768)", async () => {
     const file = await tmpPlaybook();
     // pb_target shares ~no tokens with the Korean cue (cross-distribution). The
-    // cue↔strategy cosine is 0.58 — ABOVE the 0.55 reinforce floor but BELOW the
-    // 0.62 decay floor, so a DECAY must NOT fire (a wrong decay of a possibly
-    // grounded strategy is costlier than a missed reinforce — WEDGE).
+    // cue↔strategy cosine is 0.37 — above the SOLE-candidate reinforce floor
+    // (0.35) but below the decay floor (0.40), so a DECAY must NOT fire (a wrong
+    // decay of a possibly grounded strategy is costlier than a missed reinforce —
+    // WEDGE). Floors live-calibrated: eval:playbook-credit.
     await recordPlaybookStrategy(file, { createdAt: "2026-05-01T00:00:00.000Z", id: "pb_target", text: "summarize notes as bullet points", userId: "stark" });
     const res = await distillSessionCorrections({
       model: "m",
       modelProvider: stub("NONE"), // no new distillation — isolate the decay-credit decision
-      // cue (contains 회의록) ↔ pb_target cosine = 0.58; lexical overlap ~0 (KO↔EN).
-      embed: async (t: string) => (t.includes("회의록") ? [0.58, 0.81462] : [1, 0]),
+      // cue (contains 회의록) ↔ pb_target cosine = 0.37; lexical overlap ~0 (KO↔EN).
+      embed: async (t: string) => (t.includes("회의록") ? [0.37, 0.92899] : [1, 0]),
       playbookFile: file,
       readBoundaries: async () => boundaries,
       readInjectedIds: async () => new Set<string>(),
       readLines: async () => correctedSession
     });
-    expect(res.decayed).toHaveLength(0); // 0.58 < 0.62 decay floor → no decay
+    expect(res.decayed).toHaveLength(0); // 0.37 < 0.40 decay floor → no decay
     const saved = await queryPlaybook(file, "stark");
     expect(saved.find((e) => e.id === "pb_target")!.reward).toBeUndefined(); // strategy protected
   });

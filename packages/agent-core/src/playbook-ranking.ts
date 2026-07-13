@@ -98,7 +98,7 @@ export function strategyTextSimilarity(a: string, b: string): number {
  * -discharge cue↔text floor; a genuine implication clears it, an incidental
  * overlap does not.
  */
-export const DEFAULT_PLAYBOOK_CREDIT_COSINE = 0.55;
+export const DEFAULT_PLAYBOOK_CREDIT_COSINE = 0.3;
 
 /**
  * HIGHER credit floor for a DECAY (a correction docking a strategy's reward) than
@@ -111,7 +111,47 @@ export const DEFAULT_PLAYBOOK_CREDIT_COSINE = 0.55;
  * approval needs to reinforce (0.55); a borderline correction credits nothing
  * rather than risk decaying the wrong (possibly grounded) strategy.
  */
-export const DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE = 0.62;
+export const DEFAULT_PLAYBOOK_DECAY_CREDIT_COSINE = 0.4;
+
+/**
+ * The MARGIN by which the implicated strategy must beat the runner-up. This — not
+ * the absolute cosine — is what actually separates "this feedback is about that
+ * strategy" from "this feedback is about nothing in the bank".
+ *
+ * LIVE-CALIBRATED (eval:playbook-credit, nomic-embed-text-v2-moe). A feedback cue
+ * and a strategy are DIFFERENT text distributions (conversational prose vs an
+ * imperative rule), so they do not score like paraphrases: genuine cue→strategy
+ * pairs measure 0.30-0.58, while feedback that implicates NOTHING in the bank
+ * still reaches 0.29 against its nearest strategy — the two absolute bands
+ * OVERLAP and no single floor can separate them. Their MARGINS do not overlap:
+ * a genuine match beats the runner-up by 0.13 (median), while a no-match cue's
+ * top-2 sit within 0.038 of each other, because nothing in the bank stands out.
+ *
+ * 0.05 (credit) admits the clear matches and fail-closes on the ambiguous ones —
+ * including the case where the nearest strategy is the WRONG one (measured: the
+ * single argmax error in the corpus had a 0.023 margin, so the margin gate
+ * rejects it rather than mis-crediting). A missed reinforce is the safe
+ * direction; a mis-credit replays its error through experience-following
+ * (arXiv:2505.16067).
+ */
+export const PLAYBOOK_CREDIT_MARGIN = 0.05;
+
+/**
+ * The decay margin is STRICTER (0.08) for the same asymmetry the absolute floors
+ * encode: a wrong decay of a grounded strategy erodes the cited-recall edge,
+ * while a missed decay merely leaves reward flat.
+ */
+export const PLAYBOOK_DECAY_CREDIT_MARGIN = 0.08;
+
+/**
+ * With a SINGLE candidate there is no runner-up, so the margin test is
+ * unavailable and the absolute floor carries the whole decision. It must then sit
+ * above the measured no-match band (max 0.290) rather than merely above noise.
+ * The decay floor (0.40) stays ABOVE this, so the credit/decay asymmetry survives
+ * the solo case too — otherwise a lone candidate would be as easy to decay as to
+ * reinforce, which is exactly backwards.
+ */
+export const PLAYBOOK_CREDIT_SOLO_COSINE = 0.35;
 
 /**
  * SEMANTIC credit assignment for the playbook RL loop (fair credit assignment —
@@ -130,7 +170,8 @@ export async function selectCreditTargetSemantic(
   candidates: readonly { readonly id: string; readonly text: string }[],
   cue: string,
   embed: (text: string) => Promise<readonly number[]>,
-  threshold: number = DEFAULT_PLAYBOOK_CREDIT_COSINE
+  threshold: number = DEFAULT_PLAYBOOK_CREDIT_COSINE,
+  margin: number = PLAYBOOK_CREDIT_MARGIN
 ): Promise<string | undefined> {
   if (candidates.length === 0 || cue.trim().length === 0) return undefined;
   let cueVec: readonly number[];
@@ -140,7 +181,8 @@ export async function selectCreditTargetSemantic(
     return undefined;
   }
   if (cueVec.length === 0) return undefined;
-  let best: { readonly id: string; readonly sim: number } | undefined;
+
+  const scored: { readonly id: string; readonly sim: number }[] = [];
   for (const candidate of candidates) {
     let vec: readonly number[];
     try {
@@ -149,12 +191,22 @@ export async function selectCreditTargetSemantic(
       return undefined;
     }
     if (vec.length === 0) continue;
-    const sim = cosineSimilarity(cueVec, vec);
-    if (sim >= threshold && (!best || sim > best.sim)) {
-      best = { id: candidate.id, sim };
-    }
+    scored.push({ id: candidate.id, sim: cosineSimilarity(cueVec, vec) });
   }
-  return best?.id;
+  if (scored.length === 0) return undefined;
+  scored.sort((a, b) => b.sim - a.sim);
+
+  const top = scored[0]!;
+  // Sole candidate: no runner-up to measure against, so the absolute floor must
+  // carry the decision alone and therefore has to clear the no-match band.
+  if (scored.length === 1) {
+    return top.sim >= Math.max(threshold, PLAYBOOK_CREDIT_SOLO_COSINE) ? top.id : undefined;
+  }
+  if (top.sim < threshold) return undefined;
+  // The margin gate: credit only when ONE strategy clearly stands out. Feedback
+  // that implicates nothing in the bank scores its top-2 within 0.038 of each
+  // other, and a wrong argmax is likewise a near-tie — both fail closed here.
+  return top.sim - scored[1]!.sim >= margin ? top.id : undefined;
 }
 
 /**
