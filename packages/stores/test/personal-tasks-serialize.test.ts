@@ -1,6 +1,10 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { type PersistedTask, readTaskStatusFilter, resolveTaskRef, serializeTask, serializeTaskForModel } from "../src/personal-tasks-store.js";
+import { type PersistedTask, readTaskById, readTaskStatusFilter, resolveTaskRef, serializeTask, serializeTaskForModel, writeTasks } from "../src/personal-tasks-store.js";
 
 const base: PersistedTask = { id: "t1", title: "buy milk", status: "open", createdAt: "2026-01-01T00:00:00Z" };
 
@@ -128,5 +132,15 @@ describe("readTaskStatusFilter", () => {
     expect(readTaskStatusFilter(undefined)).toBe("open");
     expect(readTaskStatusFilter("")).toBe("open");
     expect(readTaskStatusFilter("fired")).toBe("open");
+  });
+});
+
+describe("readTaskById", () => {
+  it("reads only an exact id; a title-like value never becomes a task selection", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "muse-task-read-")), "tasks.json");
+    await writeTasks(file, [base]);
+    expect(await readTaskById(file, "t1")).toEqual(base);
+    expect(await readTaskById(file, "buy milk")).toBeUndefined();
+    expect(await readTaskById(file, "t")).toBeUndefined();
   });
 });

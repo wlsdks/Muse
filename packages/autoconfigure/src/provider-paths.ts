@@ -149,6 +149,11 @@ export function resolvePlanCacheFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_PLAN_CACHE_FILE", "plan-cache.json");
 }
 
+/** Local Personal Continuity threads, links, delivery receipts, and display policy. */
+export function resolveAttunementFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_ATTUNEMENT_FILE", "attunement.json");
+}
+
 export function resolveActionLogFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_ACTION_LOG_FILE", "action-log.json");
 }

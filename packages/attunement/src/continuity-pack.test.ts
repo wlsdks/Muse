@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+
+import { baselinePolicy, buildContinuityPack, policyForOutcome, type AttunementState, type ArtifactLink } from "./index.js";
+
+const taskLink: ArtifactLink = {
+  artifactId: "task_finish-invite",
+  artifactType: "task",
+  linkedAt: "2026-07-14T00:00:00.000Z",
+  linkedBy: "user",
+  providerId: "local",
+  role: "next-step",
+  threadId: "thread_life"
+};
+
+const noteLink: ArtifactLink = {
+  artifactId: "birthday/ideas.md",
+  artifactType: "note",
+  linkedAt: "2026-07-14T00:00:00.000Z",
+  linkedBy: "user",
+  providerId: "local",
+  role: "context",
+  threadId: "thread_life"
+};
+
+function state(policy = baselinePolicy()): AttunementState {
+  return {
+    deliveries: [],
+    nextPolicyVersion: 1,
+    resetReceipts: [],
+    schemaVersion: 1,
+    threads: [{ createdAt: "2026-07-14T00:00:00.000Z", id: "thread_life", kind: "life", links: [noteLink, taskLink], policy, title: "Plan a birthday" }],
+    undoResetReceipts: []
+  };
+}
+
+describe("buildContinuityPack", () => {
+  it("resolves only the selected thread's stored links, preserving unavailable references", async () => {
+    const calls: string[] = [];
+    const pack = await buildContinuityPack(state(), "thread_life", async (link) => {
+      calls.push(link.artifactId);
+      if (link.artifactType === "note") return undefined;
+      return { ...link, taskStatus: "open", title: "Finish invitation list" };
+    });
+
+    expect(calls).toEqual(["birthday/ideas.md", "task_finish-invite"]);
+    expect(pack.evidence.map((entry) => [entry.reference.artifactType, entry.reference.artifactId, entry.status])).toEqual([
+      ["note", "birthday/ideas.md", "unavailable"],
+      ["task", "task_finish-invite", "available"]
+    ]);
+    expect(pack.nextStep?.title).toBe("Finish invitation list");
+    expect(pack.evidenceRefs).toEqual([noteLink, taskLink].map(({ artifactId, artifactType, providerId, role }) => ({ artifactId, artifactType, providerId, role })));
+  });
+
+  it("does not infer a replacement when the linked next task is done or hidden", async () => {
+    const done = await buildContinuityPack(state(), "thread_life", async (link) => ({ ...link, taskStatus: link.artifactType === "task" ? "done" : undefined, title: link.artifactId }));
+    expect(done.nextStep).toBeUndefined();
+
+    const hidden = await buildContinuityPack(state(policyForOutcome("rejected", 1)), "thread_life", async (link) => ({ ...link, taskStatus: link.artifactType === "task" ? "open" : undefined, title: link.artifactId }));
+    expect(hidden.nextStep).toBeUndefined();
+    expect(hidden.policy.nextStep).toBe("hidden");
+  });
+
+  it("carries the previous outcome only when policy asks to acknowledge it", async () => {
+    const base = state(policyForOutcome("ignored", 1));
+    const withDelivery: AttunementState = {
+      ...base,
+      deliveries: [{
+        evidenceRefs: [],
+        id: "delivery_previous",
+        openedAt: "2026-07-14T00:00:00.000Z",
+        outcome: { outcome: "ignored", policyVersion: 1, recordedAt: "2026-07-14T01:00:00.000Z" },
+        policyVersion: 0,
+        threadId: "thread_life"
+      }]
+    };
+    const pack = await buildContinuityPack(withDelivery, "thread_life", async (link) => ({ ...link, taskStatus: link.artifactType === "task" ? "open" : undefined, title: link.artifactId }));
+    expect(pack.previousOutcome).toBe("ignored");
+  });
+});

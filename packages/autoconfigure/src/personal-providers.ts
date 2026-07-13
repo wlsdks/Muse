@@ -49,6 +49,7 @@ import { isLocalOnlyEnabled } from "@muse/model";
 
 export {
   resolveActionLogFile,
+  resolveAttunementFile,
   resolveAuthoredSkillsDir,
   resolveSkillRewardsFile,
   resolvePendingApprovalsFile,

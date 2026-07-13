@@ -36,26 +36,26 @@ Terms used below:
 
 ## Slice A — user-invoked Continuity Pack
 
-**User experience:** the user runs `muse continue`, chooses or creates a personal thread,
-and links the relevant Muse items. Muse shows the current state, the evidence behind it, and
-one safe next step. The user answers `continue`, `adjust`, or `not useful`.
-These map to `used`, `adjusted`, and `rejected`; no response after the defined window maps
-to `ignored`. Merely opening a pack is recorded separately and does not count as useful.
+**Implemented local CLI experience:** the user runs `muse thread start <title> --kind life|work`,
+explicitly links local tasks/notes, then runs `muse continue <thread-id>`. Muse shows the
+connected source IDs and one user-linked open task. The user records `used`, `adjusted`,
+`ignored`, or `rejected` explicitly with `muse thread outcome`; opening is a separate delivery
+event and is never treated as a helpful outcome.
 
 This is the tracer bullet: one thin path through thread → pack → feedback → changed next
 pack. It does not require desktop observation.
 
 **Build**
 
-- Add `packages/attunement/` with `PersonalThread`, artifact links, Continuity Pack
-  orchestration, an outcome ledger, and a deterministic `InterventionPolicyReducer`.
-- Add `muse thread start|list|continue|inspect|reset` in `apps/cli`; `muse continue` is the
-  short entry point.
-- Reuse existing Muse tasks, notes, reminders, calendar events, contacts, run
-  logs/checkpoints, and separately enabled browser history.
-- Require the user or an existing deterministic link to bind each item to a `threadId`.
-  An LLM may summarize bound items; it may not guess which part of the user's life they
-  belong to.
+- ✅ `packages/attunement/` has `PersonalThread`, exact artifact links, Continuity Pack
+  construction, delivery/outcome records, reset/undo receipts, and a deterministic display
+  policy reducer.
+- ✅ `muse thread start|list|link|unlink|continue|inspect|outcome|reset|undo-reset` and the
+  short `muse continue` entry point are available.
+- ✅ Slice A supports only local tasks and local notes. Reminders, calendar events, contacts,
+  run logs/checkpoints, and browser history are later adapters.
+- ✅ Only the user binds an item to a `threadId`; no deterministic auto-link or LLM summary is
+  present in Slice A.
 - Treat `work` as one optional thread kind. It must not be the default meaning of every
   thread.
 
@@ -64,8 +64,8 @@ pack. It does not require desktop observation.
 - A pack uses only items linked to the selected thread, with resolvable evidence IDs.
   Unsupported “where you left off” claims are omitted.
 - Browser history is absent unless separately enabled; no form submission or external send.
-- `continue`, `adjust`, `not useful`, and timeout create `used`, `adjusted`, `rejected`, and
-  `ignored` outcomes respectively. No other outcome vocabulary is accepted.
+- `muse thread outcome` accepts only `used`, `adjusted`, `ignored`, and `rejected`; no timeout
+  or model inference creates a hidden outcome.
 - Golden tests prove `outcome N → allowed policy change → different pack N+1`.
 - Replaying the same outcome is idempotent; reset restores the baseline.
 - A policy change may affect only pack form, detail level, suggestion threshold, or

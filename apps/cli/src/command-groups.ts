@@ -35,7 +35,7 @@ export const COMMAND_GROUPS: ReadonlyArray<{
   },
   {
     heading: "Planning & time",
-    commands: ["today", "week", "calendar", "remind", "tasks", "followup", "commitments", "checkins"]
+    commands: ["today", "continue", "thread", "week", "calendar", "remind", "tasks", "followup", "commitments", "checkins"]
   },
   {
     heading: "Setup & status",
