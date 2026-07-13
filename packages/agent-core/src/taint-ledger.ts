@@ -12,6 +12,17 @@ export interface TaintLedger {
   recordUntrusted(source: string, text: string): void;
   untrustedSpans(): readonly UntrustedSpan[];
   untrustedTokens(): ReadonlySet<string>;
+  /**
+   * Record output that came from one of the USER'S OWN stores (a note they
+   * wrote, their calendar, their task list). Such content is a FIRST-PARTY
+   * origin, not third-party tool output — a write built from it ("add my
+   * note's action item as a task") must not read as fabricated. Kept separate
+   * from the untrusted spans so the outbound-send / execute gates are
+   * unaffected: only the write-sink gate consults this.
+   */
+  recordFirstParty(source: string, text: string): void;
+  /** Concatenated first-party text — a haystack extension for the write gate. */
+  firstPartyHaystack(): string;
 }
 
 /**
@@ -25,9 +36,23 @@ export function createTaintLedger(options?: { maxSpans?: number; maxCharsPerSpan
   const maxSpans = options?.maxSpans ?? DEFAULT_MAX_SPANS;
   const maxCharsPerSpan = options?.maxCharsPerSpan ?? DEFAULT_MAX_CHARS_PER_SPAN;
   const spans: UntrustedSpan[] = [];
+  const firstParty: string[] = [];
   let tokenCache: Set<string> | null = null;
 
   return {
+    recordFirstParty(source: string, text: string): void {
+      if (text.trim().length === 0) {
+        return;
+      }
+      const truncated = text.length > maxCharsPerSpan ? text.slice(0, maxCharsPerSpan) : text;
+      firstParty.push(truncated);
+      while (firstParty.length > maxSpans) {
+        firstParty.shift();
+      }
+    },
+    firstPartyHaystack(): string {
+      return firstParty.join("\n");
+    },
     recordUntrusted(source: string, text: string): void {
       if (text.trim().length === 0) {
         return;

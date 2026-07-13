@@ -53,6 +53,7 @@ import { applyToolCallMiddleware, type ToolCallMiddleware } from "./tool-call-mi
 import { ToolFailureStreakTracker } from "./tool-failure-streak.js";
 import { buildPingPongSignature, PingPongLoopGuard } from "./tool-loop-pingpong.js";
 import { ToolLoopProgressTracker } from "./tool-loop-progress.js";
+import { isFirstPartyReadTool } from "./actuator-provenance-gate.js";
 import { capToolOutput, deriveAnchorTerms } from "./tool-output-cap.js";
 import { REVERIFY_NUDGE, ReverifyNudgeTracker, hasRunVerifyIntent, toolsIncludeExecute } from "./reverify-nudge.js";
 import { BudgetExhaustionTracker, budgetExhaustionNotice } from "./budget-exhaustion-notice.js";
@@ -523,6 +524,16 @@ async function* runToolBatch(
       // outbound-send gate in executeToolCall reads this ledger to block a send
       // whose args were supplied by a poisoned tool result.
       context.taintLedger?.recordUntrusted(`tool:${toolCall.name}`, unwrapToolData(cappedOutput));
+      // A read from one of the user's OWN stores is a FIRST-PARTY origin. It is
+      // still recorded above (the outbound-send / execute gates stay unchanged —
+      // a note can itself quote a poisoned page, and a send is draft-first
+      // anyway), but the write-sink gate consults this haystack so an ordinary
+      // "add the action item from my note as a task" is not read as
+      // third-party-derived. Fail-closed: anything not classified first-party
+      // stays purely untrusted.
+      if (isFirstPartyReadTool(toolCall.name)) {
+        context.taintLedger?.recordFirstParty(`tool:${toolCall.name}`, unwrapToolData(cappedOutput));
+      }
       const messageContent = withRepetitionNudge(cappedOutput, isDuplicate);
       toolMessages.push({
         content: messageContent,

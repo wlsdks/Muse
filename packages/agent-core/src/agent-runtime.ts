@@ -67,6 +67,7 @@ import {
   describeProvenanceTaint,
   EXECUTE_SINK_ARG_NAMES,
   OUTBOUND_SEND_SINK_ARG_NAMES,
+  WRITE_SINK_ARG_NAMES,
   OUTBOUND_SEND_TOOL_NAMES
 } from "./actuator-provenance-gate.js";
 import { createTaintLedger } from "./taint-ledger.js";
@@ -1073,18 +1074,28 @@ export class AgentRuntime {
     }
     const isOutboundSend = OUTBOUND_SEND_TOOL_NAMES.includes(toolCall.name);
     const isExecute = risk === "execute";
-    if (!isOutboundSend && !isExecute) {
+    const isWrite = risk === "write";
+    if (!isOutboundSend && !isExecute && !isWrite) {
       return undefined;
     }
     const sinkArgNames = [
       ...(isOutboundSend ? OUTBOUND_SEND_SINK_ARG_NAMES : []),
-      ...(isExecute ? EXECUTE_SINK_ARG_NAMES : [])
+      ...(isExecute ? EXECUTE_SINK_ARG_NAMES : []),
+      ...(isWrite ? WRITE_SINK_ARG_NAMES : [])
     ];
+    // The write class — and ONLY it — trusts the user's own stores as an origin:
+    // a task built from the user's own note is not third-party-derived, while a
+    // send/execute keeps the strict user-messages-only haystack (a note can quote
+    // a poisoned page; broadening there would weaken the higher-blast-radius
+    // gates). Purely additive — no existing class changes behaviour.
+    const trustedHaystack = isOutboundSend || isExecute
+      ? joinUserMessages(context.input.messages)
+      : `${joinUserMessages(context.input.messages)}\n${ledger.firstPartyHaystack()}`;
     const check = checkActuatorProvenance({
       args: toolCall.arguments ?? {},
       ledger,
       sinkArgNames,
-      trustedHaystack: joinUserMessages(context.input.messages)
+      trustedHaystack
     });
     return check.untrustedDerived ? describeProvenanceTaint(check) : undefined;
   }
