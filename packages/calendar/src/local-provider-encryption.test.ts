@@ -143,7 +143,12 @@ describe("LocalCalendarProvider plaintext backup before first encryption", () =>
     await new LocalCalendarProvider({ env: { MUSE_CALENDAR_ENCRYPT: "true", MUSE_MEMORY_KEY: "k" }, file, idFactory: seq() }).createEvent({ endsAt: d("2026-05-16T09:30:00Z"), startsAt: d("2026-05-16T09:00:00Z"), title: "Enc" });
     const [backup] = backupsIn(file);
     if (!backup) throw new Error("expected a plaintext backup file");
-    expect(statSync(join(dirname(file), backup)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits — chmod(0o600) there reports 0o666. The
+    // guarantee (private user data is not world-readable) is a POSIX one; assert
+    // it where it exists, exactly like the messaging/calendar store tests do.
+    if (process.platform !== "win32") {
+      expect(statSync(join(dirname(file), backup)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it("does NOT back up when a store is created encrypted from the start (no prior plaintext to lose)", async () => {
