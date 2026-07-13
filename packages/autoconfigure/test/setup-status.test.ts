@@ -5,10 +5,75 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { LOCAL_FIRST_DEFAULT_MODEL, resolveDefaultModel } from "../src/autoconfigure-model-provider.js";
-import { buildModelSection, evaluateLocalOnlyPosture, evaluateWebEgressStatus, readActuatorReadiness, readConfigDefaultModel, readModelKeyState, readWebSearchEnvSnapshot, resolveVoiceStatus } from "../src/setup-status.js";
+import { buildModelSection, collectSetupStatusJson, evaluateLocalOnlyPosture, evaluateWebEgressStatus, readActuatorReadiness, readConfigDefaultModel, readMessagingProviderState, readModelKeyState, readWebSearchEnvSnapshot, resolveVoiceStatus } from "../src/setup-status.js";
+import { resolveIntegrationEnvironment } from "../src/integration-environment.js";
 
 const MISSING_KEYS_FILE = "/dev/null/no-such-keys.json";
 const KEYS_FILE = "/c/models.json";
+const SNAPSHOT_HIDDEN_INTEGRATION_KEYS = new Set([
+  "MUSE_CALDAV_APP_PASSWORD",
+  "MUSE_CALDAV_URL",
+  "MUSE_CALDAV_USERNAME",
+  "MUSE_CALENDAR_FILE",
+  "MUSE_CALENDAR_ICS_FILE",
+  "MUSE_CALENDAR_PROVIDERS",
+  "MUSE_CHANNEL_OWNERS_FILE",
+  "MUSE_CHANNEL_PAIRING_CODES_FILE",
+  "MUSE_CREDENTIALS_FILE",
+  "MUSE_DISCORD_AFTER_FILE",
+  "MUSE_DISCORD_BOT_TOKEN",
+  "MUSE_DISCORD_INBOX_FILE",
+  "MUSE_DISCORD_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_GCAL_CALENDAR_ID",
+  "MUSE_GCAL_CLIENT_ID",
+  "MUSE_GCAL_CLIENT_SECRET",
+  "MUSE_GCAL_REFRESH_TOKEN",
+  "MUSE_LINE_CHANNEL_ACCESS_TOKEN",
+  "MUSE_LINE_CHANNEL_SECRET",
+  "MUSE_LINE_INBOX_FILE",
+  "MUSE_LINE_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_MATRIX_ACCESS_TOKEN",
+  "MUSE_MATRIX_HOMESERVER_URL",
+  "MUSE_MATRIX_INBOX_FILE",
+  "MUSE_MATRIX_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_MATRIX_SINCE_FILE",
+  "MUSE_MESSAGING_CREDENTIALS_FILE",
+  "MUSE_NOTION_DATABASE_ID",
+  "MUSE_NOTION_TITLE_PROPERTY",
+  "MUSE_NOTION_TOKEN",
+  "MUSE_SLACK_AFTER_FILE",
+  "MUSE_SLACK_BOT_TOKEN",
+  "MUSE_SLACK_INBOX_FILE",
+  "MUSE_SLACK_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_TELEGRAM_BOT_TOKEN",
+  "MUSE_TELEGRAM_INBOX_FILE",
+  "MUSE_TELEGRAM_INBOX_INJECTION_CURSOR_FILE",
+  "MUSE_TELEGRAM_OFFSET_FILE"
+]);
+
+function throwingIntegrationEnv(source: Record<string, string | undefined>): NodeJS.ProcessEnv {
+  return new Proxy(source, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && SNAPSHOT_HIDDEN_INTEGRATION_KEYS.has(property)) {
+        throw new Error(`ambient integration key read: ${property}`);
+      }
+      return Reflect.get(target, property, receiver);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      if (typeof property === "string" && SNAPSHOT_HIDDEN_INTEGRATION_KEYS.has(property)) {
+        throw new Error(`ambient integration key descriptor read: ${property}`);
+      }
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+    has(target, property) {
+      if (typeof property === "string" && SNAPSHOT_HIDDEN_INTEGRATION_KEYS.has(property)) {
+        throw new Error(`ambient integration key presence check: ${property}`);
+      }
+      return Reflect.has(target, property);
+    },
+    ownKeys: Reflect.ownKeys
+  }) as NodeJS.ProcessEnv;
+}
 
 describe("evaluateWebEgressStatus — scoped local-only wording", () => {
   it("reports that T2-A1 closes Muse interactive public-web tools without claiming a whole-machine egress audit", () => {
@@ -25,6 +90,161 @@ describe("evaluateLocalOnlyPosture — scoped MCP closure wording", () => {
     expect(status.detail).toContain("T2-A2");
     expect(status.detail).toContain("external MCP");
     expect(status.detail).toContain("not a complete all-egress audit");
+  });
+});
+
+describe("T2-B1 setup-status containment", () => {
+  it("does not read messaging credentials or token env under local-only", async () => {
+    const originalReadFile = fs.readFile;
+    let reads = 0;
+    fs.readFile = (async (...args: Parameters<typeof originalReadFile>) => {
+      reads += 1;
+      return originalReadFile(...args);
+    }) as typeof fs.readFile;
+    try {
+      expect(await readMessagingProviderState("/tmp/muse-t2b-messaging-sentinel.json", {
+        MUSE_LOCAL_ONLY: "true",
+        MUSE_TELEGRAM_BOT_TOKEN: "token"
+      })).toEqual([]);
+      expect(reads).toBe(0);
+    } finally {
+      fs.readFile = originalReadFile;
+    }
+  });
+
+  it("uses a supplied normal snapshot for messaging labels instead of ambient policy, tokens, or credential files", async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), "muse-status-snapshot-messaging-"));
+    const snapshotCredentials = join(root, "snapshot-messaging.json");
+    const ambientCredentials = join(root, "ambient-messaging.json");
+    try {
+      await fs.writeFile(ambientCredentials, JSON.stringify({ providers: { telegram: { token: "ambient-file-token" } } }));
+      const withoutTelegram = resolveIntegrationEnvironment({
+        HOME: root,
+        MUSE_LOCAL_ONLY: "false",
+        MUSE_MESSAGING_CREDENTIALS_FILE: snapshotCredentials
+      });
+      expect(await readMessagingProviderState(ambientCredentials, {
+        MUSE_LOCAL_ONLY: "true",
+        MUSE_TELEGRAM_BOT_TOKEN: "ambient-token"
+      }, withoutTelegram)).toEqual([]);
+
+      const withTelegram = resolveIntegrationEnvironment({
+        HOME: root,
+        MUSE_LOCAL_ONLY: "false",
+        MUSE_MESSAGING_CREDENTIALS_FILE: snapshotCredentials,
+        MUSE_TELEGRAM_BOT_TOKEN: "snapshot-token"
+      });
+      expect(await readMessagingProviderState(ambientCredentials, { MUSE_LOCAL_ONLY: "true" }, withTelegram))
+        .toEqual(["telegram (env)"]);
+    } finally {
+      await fs.rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the no-snapshot CLI helper behavior visible from its supplied environment", async () => {
+    expect(await readMessagingProviderState("/tmp/muse-t2b-missing-messaging.json", {
+      MUSE_LOCAL_ONLY: "false",
+      MUSE_TELEGRAM_BOT_TOKEN: "cli-token"
+    })).toEqual(["telegram (env)"]);
+  });
+
+  it("masks ambient integration fields before a nonempty model-key merge for supplied normal snapshots", async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), "muse-status-snapshot-merge-"));
+    const modelFile = join(root, "models.json");
+    const snapshotCredentials = join(root, "snapshot-messaging.json");
+    const ambientCredentials = join(root, "ambient-messaging.json");
+    const previousEnv = process.env;
+    const originalReadFile = fs.readFile;
+    const reads: string[] = [];
+    try {
+      await fs.writeFile(modelFile, JSON.stringify({ providers: { openai: { suggestedModel: "openai/gpt-4.1-mini", token: "model-key" } } }));
+      await fs.writeFile(snapshotCredentials, JSON.stringify({ providers: {} }));
+      await fs.writeFile(ambientCredentials, JSON.stringify({ providers: { telegram: { token: "ambient-file-token" } } }));
+      const snapshotBase = {
+        HOME: root,
+        MUSE_CALENDAR_FILE: join(root, "snapshot-calendar.json"),
+        MUSE_CREDENTIALS_FILE: join(root, "snapshot-credentials.json"),
+        MUSE_LOCAL_ONLY: "false",
+        MUSE_MESSAGING_CREDENTIALS_FILE: snapshotCredentials
+      };
+      const withoutTelegram = resolveIntegrationEnvironment(snapshotBase);
+      const withTelegram = resolveIntegrationEnvironment({ ...snapshotBase, MUSE_TELEGRAM_BOT_TOKEN: "snapshot-token" });
+      expect(withoutTelegram.messaging.providers.telegram.envConfigured).toBe(false);
+      expect(withTelegram.messaging.providers.telegram.envConfigured).toBe(true);
+
+      fs.readFile = (async (...args: Parameters<typeof originalReadFile>) => {
+        reads.push(String(args[0]));
+        return originalReadFile(...args);
+      }) as typeof fs.readFile;
+      process.env = throwingIntegrationEnv({
+        ...Object.fromEntries([...SNAPSHOT_HIDDEN_INTEGRATION_KEYS].map((key) => [key, join(root, `${key}.ambient`)])),
+        HOME: root,
+        MUSE_LOCAL_ONLY: "true",
+        MUSE_MCP_CONFIG: join(root, "mcp.json"),
+        MUSE_MESSAGING_CREDENTIALS_FILE: ambientCredentials,
+        MUSE_MODEL_KEYS_FILE: modelFile,
+        MUSE_NOTES_DIR: join(root, "notes"),
+        MUSE_TASKS_FILE: join(root, "tasks.json")
+      });
+
+      const withoutTelegramStatus = await collectSetupStatusJson({ integrationEnv: withoutTelegram });
+      const withTelegramStatus = await collectSetupStatusJson({ integrationEnv: withTelegram });
+      expect(withoutTelegramStatus.localOnly).toMatchObject({ enabled: false });
+      expect(withTelegramStatus.localOnly).toMatchObject({ enabled: false });
+      expect(withoutTelegramStatus.messaging).toMatchObject({ providers: [], status: "info" });
+      expect(withTelegramStatus.messaging).toMatchObject({ providers: ["telegram (env)"], status: "ok" });
+      expect(withoutTelegramStatus.model).toMatchObject({ modelSource: "env", muse_model: "openai/gpt-4.1-mini" });
+      expect(reads).toContain(snapshotCredentials);
+      expect(reads).not.toContain(ambientCredentials);
+    } finally {
+      fs.readFile = originalReadFile;
+      process.env = previousEnv;
+      await fs.rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("uses a supplied local-only integration snapshot instead of ambient status posture", async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), "muse-status-local-only-"));
+    const previous = process.env.MUSE_LOCAL_ONLY;
+    const previousKeys = process.env.MUSE_MODEL_KEYS_FILE;
+    const previousCalendar = process.env.MUSE_CALENDAR_FILE;
+    const previousMessaging = process.env.MUSE_MESSAGING_CREDENTIALS_FILE;
+    try {
+      process.env.MUSE_LOCAL_ONLY = "false";
+      process.env.MUSE_MODEL_KEYS_FILE = join(root, "models.json");
+      process.env.MUSE_CALENDAR_FILE = join(root, "calendar.json");
+      process.env.MUSE_MESSAGING_CREDENTIALS_FILE = join(root, "ambient-messaging.json");
+      await fs.writeFile(join(root, "models.json"), JSON.stringify({ providers: {} }));
+      await fs.writeFile(join(root, "credentials.json"), JSON.stringify({ providers: { gcal: { refreshToken: "secret" } } }));
+      await fs.writeFile(join(root, "messaging.json"), JSON.stringify({ providers: { telegram: { token: "secret" } } }));
+
+      const snapshot = await collectSetupStatusJson({
+        integrationEnv: resolveIntegrationEnvironment({
+          MUSE_CALENDAR_FILE: join(root, "calendar.json"),
+          MUSE_CREDENTIALS_FILE: join(root, "credentials.json"),
+          MUSE_LOCAL_ONLY: "true",
+          MUSE_MESSAGING_CREDENTIALS_FILE: join(root, "messaging.json")
+        })
+      });
+
+      expect(snapshot.localOnly.enabled).toBe(true);
+      expect(snapshot.calendar.credentials).toEqual({
+        file: join(root, "credentials.json"),
+        nextStep: "Remote Google/CalDAV setup is disabled while MUSE_LOCAL_ONLY=true. Local file, exported ICS, and macOS Calendar.app remain available; set MUSE_MACOS_CALENDAR_NAME to scope Calendar.app.",
+        status: "info"
+      });
+      expect(snapshot.messaging).toEqual({
+        nextStep: "Remote messaging setup is disabled while MUSE_LOCAL_ONLY=true; local log/native notifications remain available.",
+        providers: [],
+        status: "info"
+      });
+    } finally {
+      if (previous === undefined) delete process.env.MUSE_LOCAL_ONLY; else process.env.MUSE_LOCAL_ONLY = previous;
+      if (previousKeys === undefined) delete process.env.MUSE_MODEL_KEYS_FILE; else process.env.MUSE_MODEL_KEYS_FILE = previousKeys;
+      if (previousCalendar === undefined) delete process.env.MUSE_CALENDAR_FILE; else process.env.MUSE_CALENDAR_FILE = previousCalendar;
+      if (previousMessaging === undefined) delete process.env.MUSE_MESSAGING_CREDENTIALS_FILE; else process.env.MUSE_MESSAGING_CREDENTIALS_FILE = previousMessaging;
+      await fs.rm(root, { force: true, recursive: true });
+    }
   });
 });
 

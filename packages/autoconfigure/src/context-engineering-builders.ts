@@ -29,6 +29,7 @@ import type { JsonObject } from "@muse/shared";
 import { readFadedMemoryKeys, readReminders, readVetoes, queryPlaybook, queryPlanCache, readRecallHits, recordPlanTemplate, recordRecallHits } from "@muse/stores";
 import { hashQuery, type ConversationSummaryStore, type TaskMemoryStore, type UserMemoryStore } from "@muse/memory";
 import { FileBackedInboxContextProvider, type InboxSourceConfig } from "@muse/messaging";
+import { isLocalOnlyEnabled } from "@muse/model";
 
 import {
   resolveDiscordInboxFile,
@@ -151,6 +152,12 @@ export function buildActiveContextProvider(
  * `MUSE_INBOX_CONTEXT_ENABLED=false`.
  */
 export function buildInboxContextProvider(env: MuseEnvironment): InboxContextProvider | undefined {
+  // T2-B1: do not resolve the enabled toggle, credential file, tokens, or
+  // inbox/cursor paths under local-only. This is a standard-runtime owner,
+  // so its early return closes a default-on assembly bypass.
+  if (isLocalOnlyEnabled(env)) {
+    return undefined;
+  }
   if (env.MUSE_INBOX_CONTEXT_ENABLED?.trim().toLowerCase() === "false") {
     return undefined;
   }

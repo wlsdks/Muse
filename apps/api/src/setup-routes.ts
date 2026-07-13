@@ -10,6 +10,7 @@
  */
 
 import { collectSetupStatusJson } from "@muse/autoconfigure";
+import type { ResolvedIntegrationEnvironment } from "@muse/autoconfigure";
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
@@ -17,6 +18,7 @@ import type { ServerOptions } from "./server.js";
 
 interface SetupRoutesGate {
   readonly authService: ServerOptions["authService"];
+  readonly integrationEnv: ResolvedIntegrationEnvironment;
 }
 
 export function registerSetupRoutes(server: FastifyInstance, gate: SetupRoutesGate): void {
@@ -24,7 +26,7 @@ export function registerSetupRoutes(server: FastifyInstance, gate: SetupRoutesGa
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) {
       return reply;
     }
-    const snapshot = await collectSetupStatusJson();
+    const snapshot = await collectSetupStatusJson({ integrationEnv: gate.integrationEnv });
     return reply.status(200).send(snapshot);
   });
 }

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { FileMessagingCredentialStore, MessagingProviderRegistry } from "@muse/messaging";
+import { resolveIntegrationEnvironment } from "@muse/autoconfigure";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 
@@ -34,8 +35,7 @@ function build(options: {
   };
   const server = Fastify({ logger: false });
   registerMessagingSetupRoutes(server, {
-    credentialsFile,
-    env,
+    integrationEnv: resolveIntegrationEnvironment({ MUSE_MESSAGING_CREDENTIALS_FILE: credentialsFile, ...env }),
     registry,
     ...(options.verify
       ? { verifyToken: async (providerId, token, verifyOptions) => options.verify!(providerId, token, verifyOptions) }
@@ -210,8 +210,7 @@ describe("onConnected hot-start hook", () => {
     const connected: string[] = [];
     const server = Fastify({ logger: false });
     registerMessagingSetupRoutes(server, {
-      credentialsFile: join(dir, "messaging.json"),
-      env: {},
+      integrationEnv: resolveIntegrationEnvironment({ MUSE_MESSAGING_CREDENTIALS_FILE: join(dir, "messaging.json") }),
       onConnected: (providerId) => {
         connected.push(providerId);
       },
@@ -243,8 +242,11 @@ describe("POST /api/messaging/setup/:providerId/test-send", () => {
     const ownersFile = join(dir, "channel-owners.json");
     const server = Fastify({ logger: false });
     registerMessagingSetupRoutes(server, {
-      credentialsFile: join(dir, "messaging.json"),
-      env: { MUSE_CHANNEL_OWNERS_FILE: ownersFile, MUSE_CHANNEL_PAIRING_CODES_FILE: join(dir, "channel-pairing-codes.json") },
+      integrationEnv: resolveIntegrationEnvironment({
+        MUSE_CHANNEL_OWNERS_FILE: ownersFile,
+        MUSE_CHANNEL_PAIRING_CODES_FILE: join(dir, "channel-pairing-codes.json"),
+        MUSE_MESSAGING_CREDENTIALS_FILE: join(dir, "messaging.json")
+      }),
       registry,
       verifyToken: async () => ({ ok: true })
     });
@@ -286,8 +288,11 @@ describe("pairing surface", () => {
     await adoptChannelOwner(ownersFile, "telegram", "8303165569");
     const server = Fastify({ logger: false });
     registerMessagingSetupRoutes(server, {
-      credentialsFile: join(dir, "messaging.json"),
-      env: { MUSE_CHANNEL_OWNERS_FILE: ownersFile, MUSE_CHANNEL_PAIRING_CODES_FILE: join(dir, "channel-pairing-codes.json") },
+      integrationEnv: resolveIntegrationEnvironment({
+        MUSE_CHANNEL_OWNERS_FILE: ownersFile,
+        MUSE_CHANNEL_PAIRING_CODES_FILE: join(dir, "channel-pairing-codes.json"),
+        MUSE_MESSAGING_CREDENTIALS_FILE: join(dir, "messaging.json")
+      }),
       registry: new MessagingProviderRegistry(),
       verifyToken: async () => ({ ok: true })
     });
@@ -304,13 +309,13 @@ describe("pairing surface", () => {
     await adoptChannelOwner(ownersFile, "discord", "already-owner");
     const server = Fastify({ logger: false });
     registerMessagingSetupRoutes(server, {
-      credentialsFile: join(dir, "messaging.json"),
-      env: {
+      integrationEnv: resolveIntegrationEnvironment({
         MUSE_CHANNEL_OWNERS_FILE: ownersFile,
         MUSE_CHANNEL_PAIRING_CODES_FILE: join(dir, "channel-pairing-codes.json"),
         MUSE_DISCORD_BOT_TOKEN: "disc-token",
+        MUSE_MESSAGING_CREDENTIALS_FILE: join(dir, "messaging.json"),
         MUSE_TELEGRAM_BOT_TOKEN: "123:secret"
-      },
+      }),
       registry: new MessagingProviderRegistry(),
       verifyToken: async () => ({ ok: true })
     });
@@ -331,12 +336,12 @@ describe("pairing surface", () => {
     const dir = mkdtempSync(join(tmpdir(), "muse-pair-code-stable-"));
     const server = Fastify({ logger: false });
     registerMessagingSetupRoutes(server, {
-      credentialsFile: join(dir, "messaging.json"),
-      env: {
+      integrationEnv: resolveIntegrationEnvironment({
         MUSE_CHANNEL_OWNERS_FILE: join(dir, "channel-owners.json"),
         MUSE_CHANNEL_PAIRING_CODES_FILE: join(dir, "channel-pairing-codes.json"),
+        MUSE_MESSAGING_CREDENTIALS_FILE: join(dir, "messaging.json"),
         MUSE_TELEGRAM_BOT_TOKEN: "123:secret"
-      },
+      }),
       registry: new MessagingProviderRegistry(),
       verifyToken: async () => ({ ok: true })
     });
@@ -356,8 +361,12 @@ describe("pairing surface", () => {
     await adoptChannelOwner(ownersFile, "telegram", "8303165569");
     const server = Fastify({ logger: false });
     registerMessagingSetupRoutes(server, {
-      credentialsFile: join(dir, "messaging.json"),
-      env: { MUSE_CHANNEL_OWNERS_FILE: ownersFile, MUSE_CHANNEL_PAIRING_CODES_FILE: pairingCodesFile, MUSE_TELEGRAM_BOT_TOKEN: "123:secret" },
+      integrationEnv: resolveIntegrationEnvironment({
+        MUSE_CHANNEL_OWNERS_FILE: ownersFile,
+        MUSE_CHANNEL_PAIRING_CODES_FILE: pairingCodesFile,
+        MUSE_MESSAGING_CREDENTIALS_FILE: join(dir, "messaging.json"),
+        MUSE_TELEGRAM_BOT_TOKEN: "123:secret"
+      }),
       registry: new MessagingProviderRegistry(),
       verifyToken: async () => ({ ok: true })
     });

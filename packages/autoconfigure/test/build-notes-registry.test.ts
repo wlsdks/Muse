@@ -109,3 +109,17 @@ describe("buildNotesRegistry — notion token gate (resolves credentials file, t
     ).toEqual(["notion"]);
   });
 });
+
+describe("T2-B1 local-only containment", () => {
+  it("keeps local and Apple Notes while omitting Notion before shared credential access", async () => {
+    await writeCredentials({ notion: { databaseId: "database", token: "file-token" } });
+
+    expect(ids({
+      MUSE_APPLE_NOTES_FOLDER: "Local Folder",
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_NOTES_PROVIDERS: "local,apple,notion",
+      MUSE_NOTION_DATABASE_ID: "env-database",
+      MUSE_NOTION_TOKEN: "env-token"
+    })).toEqual(["local", "apple"]);
+  });
+});

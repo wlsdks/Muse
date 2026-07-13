@@ -22,11 +22,14 @@ import { join as pathJoin } from "node:path";
 
 import { confirm, isCancel, multiselect, password } from "@clack/prompts";
 import { FileMessagingCredentialStore } from "@muse/messaging";
+import { isLocalOnlyEnabled } from "@muse/model";
 
 interface SetupMessagingIO {
   readonly stdout: (message: string) => void;
   readonly stderr: (message: string) => void;
   readonly home?: string;
+  /** Optional test seam; production commands inherit process.env. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 interface ProviderSpec {
@@ -69,6 +72,14 @@ const PROVIDER_SPECS: readonly ProviderSpec[] = [
 ];
 
 export async function runMessagingSetup(io: SetupMessagingIO): Promise<void> {
+  if (isLocalOnlyEnabled(io.env ?? process.env)) {
+    io.stdout(
+      "Remote bot setup is disabled while MUSE_LOCAL_ONLY=true. "
+      + "Local log/native notifications remain available. "
+      + "Set MUSE_LOCAL_ONLY=false to configure Telegram, Discord, Slack, LINE, or Matrix.\n"
+    );
+    return;
+  }
   const home = io.home ?? homedir();
   const credentialsFile = pathJoin(home, ".muse", "messaging.json");
   const store = new FileMessagingCredentialStore(credentialsFile);

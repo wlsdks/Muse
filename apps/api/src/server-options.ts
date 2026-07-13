@@ -22,6 +22,7 @@ import type {
   SessionTagStore
 } from "@muse/runtime-state";
 import type { VoiceProviderRegistry } from "@muse/voice";
+import type { ResolvedIntegrationEnvironment } from "@muse/autoconfigure";
 
 import type { InjectionDetectionCounter } from "@muse/policy";
 
@@ -77,6 +78,16 @@ export interface ServerOptions {
   readonly museObservabilitySnapshot?: () => Promise<MuseObservabilitySnapshot>;
   readonly calendar?: CalendarProviderRegistry;
   readonly calendarCredentialStore?: CalendarCredentialStore;
+  /**
+   * Frozen snapshot used by the calendar/messaging setup, LINE webhook, and
+   * setup-status composition path. It intentionally exposes no raw env.
+   */
+  readonly integrationEnv?: ResolvedIntegrationEnvironment;
+  /**
+   * Direct buildServer-only override when integrationEnv is absent. When both
+   * are supplied they must agree, otherwise server construction fails closed.
+   */
+  readonly localOnly?: boolean;
   readonly tasksFile?: string;
   readonly tasksProviderRegistry?: TasksProviderRegistry;
   readonly notesDir?: string;

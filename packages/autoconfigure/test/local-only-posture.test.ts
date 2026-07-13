@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveIntegrationEnvironment } from "../src/integration-environment.js";
 import { evaluateLocalOnlyPosture } from "../src/setup-status.js";
 
 describe("evaluateLocalOnlyPosture — single source of truth for doctor + setup status", () => {
@@ -58,5 +59,46 @@ describe("evaluateLocalOnlyPosture — single source of truth for doctor + setup
   it("explicit OFF (opt-out) + a remote OLLAMA_BASE_URL ⇒ NOT flagged by the embedder check (opt-out preserved)", () => {
     const p = evaluateLocalOnlyPosture({ MUSE_LOCAL_ONLY: "false", MUSE_MODEL: "ollama/llama3.2", OLLAMA_BASE_URL: "http://192.168.1.50:11434" });
     expect(p).toMatchObject({ enabled: false, status: "ok" });
+  });
+});
+
+describe("resolveIntegrationEnvironment — T2-B1 frozen composition input", () => {
+  it("returns before remote token or LINE-secret reads under local-only and exposes no raw env", () => {
+    const observed = new Set<string>();
+    const source = new Proxy({
+      MUSE_CALENDAR_FILE: "/tmp/calendar.json",
+      MUSE_CREDENTIALS_FILE: "/tmp/credentials.json",
+      MUSE_LINE_CHANNEL_SECRET: "line-secret",
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_MESSAGING_CREDENTIALS_FILE: "/tmp/messaging.json",
+      MUSE_TELEGRAM_BOT_TOKEN: "telegram-token"
+    }, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && ["MUSE_LINE_CHANNEL_SECRET", "MUSE_TELEGRAM_BOT_TOKEN"].includes(property)) {
+          observed.add(property);
+        }
+        return Reflect.get(target, property, receiver);
+      },
+      getOwnPropertyDescriptor: Reflect.getOwnPropertyDescriptor,
+      has: Reflect.has,
+      ownKeys: Reflect.ownKeys
+    });
+
+    const resolved = resolveIntegrationEnvironment(source);
+
+    expect(resolved.localOnly).toBe(true);
+    expect(observed).toEqual(new Set());
+    expect(resolved.messaging.lineChannelSecret).toBeUndefined();
+    expect(resolved.messaging.providers.telegram.envConfigured).toBe(false);
+    expect(Object.isFrozen(resolved)).toBe(true);
+    expect(Object.isFrozen(resolved.calendar)).toBe(true);
+    expect(Object.isFrozen(resolved.messaging)).toBe(true);
+    expect(Object.isFrozen(resolved.messaging.providers)).toBe(true);
+    expect("env" in resolved).toBe(false);
+  });
+
+  it("honors an explicit direct-server override before ambient local-only", () => {
+    expect(resolveIntegrationEnvironment({ MUSE_LOCAL_ONLY: "true" }, { localOnlyOverride: false }).localOnly).toBe(false);
+    expect(resolveIntegrationEnvironment({ MUSE_LOCAL_ONLY: "false" }, { localOnlyOverride: true }).localOnly).toBe(true);
   });
 });

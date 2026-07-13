@@ -122,3 +122,24 @@ describe("zero-config .ics auto-enable", () => {
     expect(got.filter((id) => id === "ics")).toHaveLength(1);
   });
 });
+
+describe("T2-B1 local-only containment", () => {
+  it("keeps only explicitly local calendar providers before reading remote credentials", async () => {
+    const icsFile = join(dir, "calendar.ics");
+    await fs.writeFile(icsFile, "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
+    await writeCredentials({
+      caldav: { password: "file-password", url: "https://caldav.example.test", username: "file-user" },
+      gcal: { clientId: "file-id", clientSecret: "file-secret", refreshToken: "file-refresh" }
+    });
+
+    expect(ids({
+      MUSE_CALENDAR_ICS_FILE: icsFile,
+      MUSE_CALENDAR_PROVIDERS: "local,ics,macos,gcal,caldav",
+      MUSE_GCAL_CLIENT_ID: "env-id",
+      MUSE_GCAL_CLIENT_SECRET: "env-secret",
+      MUSE_GCAL_REFRESH_TOKEN: "env-refresh",
+      MUSE_LOCAL_ONLY: "true",
+      ...CALDAV
+    })).toEqual(["local", "ics", "macos"]);
+  });
+});
