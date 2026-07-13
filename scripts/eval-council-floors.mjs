@@ -23,6 +23,7 @@ import {
   COSINE_ABS_FLOOR,
   QUESTION_RELEVANCE_FLOOR,
   councilMemberSupportsSemantic,
+  detectPairwiseContradictions,
   screenCouncilOutliers,
   screenOffTopicUtterancesSemantic
 } from "../packages/agent-core/dist/index.js";
@@ -186,9 +187,33 @@ check(
   JSON.stringify(dissentScreen.excluded)
 );
 
+// ---- Value-conflict detector: both arms on the real embedder ----
+// A value difference LOWERS the topic cosine (the embedding encodes the value),
+// so a high "same topic" floor selects paraphrases and skips real conflicts —
+// the inversion that made an AGREEING panel report a contradiction and a
+// genuinely disagreeing one report none. Pin both directions.
+const conflictCases = [
+  { want: 0, label: "agreeing near-identical KO", texts: ["월세는 매달 25일에 나가고 금액은 90만원이야.", "월세는 매달 25일에 나가고 금액은 90만원입니다."] },
+  { want: 0, label: "agreeing reworded KO", texts: ["월세는 매달 25일에 나가고 금액은 90만원이야.", "월세 납부일은 매달 25일이고 금액은 90만원이야."] },
+  { want: 0, label: "elaboration (subset values)", texts: ["meeting at 2pm", "meeting at 2pm in room 4"] },
+  { want: 0, label: "same value, different phrasing", texts: ["the deadline is may 5", "the deadline is may 5th"] },
+  { want: 0, label: "unrelated statements", texts: ["rent is due on the 25th", "the dodgers won 5 to 3"] },
+  { want: 1, label: "VALUE conflict KO (day + amount)", texts: ["월세는 매달 25일에 나가고 금액은 90만원이야.", "월세는 매달 3일에 나가고 금액은 130만원이야."] },
+  { want: 1, label: "VALUE conflict EN (time)", texts: ["the meeting is at 2pm", "the meeting is at 4pm"] },
+  { want: 1, label: "VALUE conflict EN (weekday)", texts: ["the deadline is tuesday", "the deadline is wednesday"] }
+];
+for (const c of conflictCases) {
+  const found = (await detectPairwiseContradictions(c.texts, embed)).length;
+  check(
+    `conflict: ${c.label}`,
+    c.want === 0 ? found === 0 : found > 0,
+    `found=${found}, want ${c.want === 0 ? "none" : "conflict"}`
+  );
+}
+
 console.log(report.join("\n"));
 if (failures.length > 0) {
   console.error(`\neval:council-floors FAILED — ${failures.length} case(s): ${failures.join("; ")}`);
   process.exit(1);
 }
-console.log(`\neval:council-floors PASSED — both floors live-validated on ${MODEL} (KO paraphrase + cross-lingual kept; derail/off-topic screened; dissent preserved).`);
+console.log(`\neval:council-floors PASSED — floors + the value-conflict detector live-validated on ${MODEL} (KO paraphrase + cross-lingual kept; derail/off-topic screened; dissent preserved; conflicts caught, paraphrases/elaborations not).`);

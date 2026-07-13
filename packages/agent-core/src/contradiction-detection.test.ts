@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { detectPairwiseContradictions } from "./evidence-conflicts.js";
 import { detectEvidenceContradictions } from "./knowledge-recall.js";
 import type { KnowledgeMatch } from "./knowledge-recall.js";
 
@@ -241,5 +242,67 @@ describe("detectEvidenceContradictions — genuine value-conflict detection (arX
     const noteB: KnowledgeMatch = { score: 0.85, source: "b.md", text: "the quarterly budget is set at 1350 dollars" };
     const pairs = await detectEvidenceContradictions([noteA, noteB], sameTopicEmbed());
     expect(pairs).toHaveLength(1);
+  });
+});
+
+// Live-calibrated regression pins (eval:council-floors). The detector previously
+// gated "same topic" on cosine ≥ 0.86 and compared ALL content tokens — but a
+// value difference LOWERS the cosine (the embedding encodes the value), so the
+// high floor skipped real conflicts while admitting paraphrases, which the
+// all-token neither-subset test then flagged. Net: an AGREEING panel reported a
+// contradiction and a genuinely disagreeing one reported none. These pin both
+// directions with an embedder faithful to the measured cosines.
+describe("detectPairwiseContradictions — value-token discrimination (measured bands)", () => {
+  // Faithful stub — reproduces the MEASURED nomic-v2-moe cosines exactly, so a
+  // regression in the topic floor is caught here and not only in the live
+  // battery: paraphrase 0.94, real value-conflict 0.79, elaboration 0.79,
+  // unrelated 0.05. Angles chosen so cos(Δθ) hits those numbers.
+  const angleFor = (t: string): number => {
+    if (t.includes("dodgers")) return 1.52;              // cos(1.52) ≈ 0.05 vs base
+    if (/130|3일|4pm|wednesday/u.test(t)) return 0.66;   // conflict variant: cos ≈ 0.79
+    if (/room 4|automatic/u.test(t)) return 0.66;        // elaboration / reworded: cos ≈ 0.79
+    if (/입니다/u.test(t)) return 0.35;                   // paraphrase: cos ≈ 0.94
+    return 0;                                            // the base statement
+  };
+  const embed = async (t: string): Promise<readonly number[]> => {
+    const theta = angleFor(t.toLowerCase());
+    return [Math.cos(theta), Math.sin(theta)];
+  };
+
+  it("does NOT flag an agreeing pair that differs only in phrasing (KO particle drift)", async () => {
+    const pairs = await detectPairwiseContradictions(
+      ["월세는 매달 25일에 나가고 금액은 90만원이야.", "월세는 매달 25일에 나가고 금액은 90만원입니다."],
+      embed
+    );
+    expect(pairs).toEqual([]);
+  });
+
+  it("flags a genuine value conflict on the same statement skeleton (KO)", async () => {
+    const pairs = await detectPairwiseContradictions(
+      ["월세는 매달 25일에 나가고 금액은 90만원이야.", "월세는 매달 3일에 나가고 금액은 130만원이야."],
+      embed
+    );
+    expect(pairs).toHaveLength(1);
+  });
+
+  it("flags a conflicting weekday (a value that carries no digits)", async () => {
+    const pairs = await detectPairwiseContradictions(
+      ["the deadline is tuesday", "the deadline is wednesday"],
+      embed
+    );
+    expect(pairs).toHaveLength(1);
+  });
+
+  it("does NOT flag an elaboration whose values are a superset", async () => {
+    const pairs = await detectPairwiseContradictions(["meeting at 2pm", "meeting at 2pm in room 4"], embed);
+    expect(pairs).toEqual([]);
+  });
+
+  it("does NOT flag a pair with no value tokens at all (precision-first: no values, no conflict)", async () => {
+    const pairs = await detectPairwiseContradictions(
+      ["the rent is paid by auto transfer", "the rent goes out by automatic transfer"],
+      embed
+    );
+    expect(pairs).toEqual([]);
   });
 });

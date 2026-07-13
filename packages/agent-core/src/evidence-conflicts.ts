@@ -27,8 +27,69 @@ export interface ContradictionPair {
   readonly topicSim: number;
 }
 
-const CONTRADICTION_TOPIC_SIM_MIN = 0.86;
+/**
+ * Same-topic floor. LIVE-CALIBRATED (eval:council-floors; nomic-embed-text-v2-moe)
+ * — and the calibration inverted the original assumption. A value difference
+ * LOWERS the cosine, because the embedding encodes the value: measured, real
+ * value-conflict pairs land at 0.66-0.87 ("meeting at 2pm" vs "at 4pm" = 0.664;
+ * "월세 25일 90만원" vs "3일 130만원" = 0.791) while benign PARAPHRASES land at
+ * 0.86-0.96. The previous 0.86 floor therefore selected almost exactly the wrong
+ * population — it skipped real conflicts and admitted paraphrases (which the
+ * lexical test then flagged on harmless wording differences: an agreeing panel
+ * produced a contradiction, a genuinely disagreeing one produced none).
+ *
+ * 0.6 admits the whole measured conflict band. Discriminating a conflict from a
+ * paraphrase or an elaboration is NOT cosine's job — `valueTokens` below does it.
+ */
+const CONTRADICTION_TOPIC_SIM_MIN = 0.6;
 const CONTRADICTION_STATEMENT_OVERLAP_MIN = 0.5;
+
+const WEEKDAY_MONTH_VALUES = new Set([
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+  "월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"
+]);
+
+/**
+ * The VALUE tokens of a statement — the parts a conflict is ABOUT: bare DIGIT
+ * RUNS (amounts, times, dates, counts) plus weekday/month names.
+ *
+ * Digit RUNS, not digit-bearing tokens: Korean is agglutinative, so the same
+ * value carries a different particle in each phrasing ("90만원이야" vs
+ * "90만원입니다"), and comparing whole tokens reads that rewording as a
+ * different value — which is exactly how an AGREEING panel produced a
+ * contradiction. `90` is `90` in both.
+ */
+function valueTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const run of text.match(/\d+/gu) ?? []) {
+    out.add(String(Number(run)));
+  }
+  for (const token of lexicalTokens(text)) {
+    if (WEEKDAY_MONTH_VALUES.has(token)) {
+      out.add(token);
+    }
+  }
+  return out;
+}
+
+/**
+ * The statement SKELETON — the content tokens that are not carrying a value.
+ * Overlap is measured here rather than over all tokens because stop-word
+ * stripping leaves short statements value-dominated ("the meeting is at 2pm" →
+ * {meeting, 2pm}), so an all-token overlap of a genuine conflict collapses to
+ * 0.33 and the pair is skipped before the value test can ever see it.
+ */
+function skeletonTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const token of lexicalTokens(text)) {
+    if (!/\d/u.test(token) && !WEEKDAY_MONTH_VALUES.has(token)) {
+      out.add(token);
+    }
+  }
+  return out;
+}
 
 /**
  * Detect evidence notes that make the SAME STATEMENT about the SAME TOPIC but
@@ -93,8 +154,10 @@ export async function detectPairwiseContradictions(
       const topicSim = cosineSimilarity(embA, embB);
       if (topicSim < topicSimMin) continue;
 
-      const tokA = lexicalTokens(a);
-      const tokB = lexicalTokens(b);
+      // Statement-skeleton gate: the two notes must be making the same statement
+      // (same non-value words) before a value difference means anything.
+      const tokA = skeletonTokens(a);
+      const tokB = skeletonTokens(b);
       const unionSize = new Set([...tokA, ...tokB]).size;
       if (unionSize === 0) continue;
       let intersect = 0;
@@ -104,10 +167,18 @@ export async function detectPairwiseContradictions(
       const overlapRatio = intersect / unionSize;
       if (overlapRatio < statementOverlapMin) continue;
 
-      // Neither-subset gate: both must each have ≥1 content token absent from the
-      // other. Kills elaboration false-positives — an elaboration (one is a superset
-      // of the other) has |A\B|=0 or |B\A|=0.
-      if (tokA.size - intersect === 0 || tokB.size - intersect === 0) continue;
+      // Value-difference gate. Both notes must assert a value, and each must assert
+      // one the other does not — a MUTUAL difference at the value level. This is what
+      // separates the three cases the previous all-token neither-subset test conflated:
+      //   paraphrase   ("…90만원이야" / "…90만원입니다")     → same values      → skip
+      //   elaboration  ("2pm" / "2pm in room 4")            → subset values    → skip
+      //   real conflict("2pm" / "4pm", "90만원" / "130만원") → mutual difference → PAIR
+      const valA = valueTokens(a);
+      const valB = valueTokens(b);
+      if (valA.size === 0 || valB.size === 0) continue;
+      const aHasOwn = [...valA].some((v) => !valB.has(v));
+      const bHasOwn = [...valB].some((v) => !valA.has(v));
+      if (!aHasOwn || !bHasOwn) continue;
 
       // aIndex = i (the earlier index in the array); no score-based ordering
       // because score reflects query relevance, not recency.
