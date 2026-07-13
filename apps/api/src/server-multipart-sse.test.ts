@@ -107,4 +107,42 @@ describe("toSseStream live citation gate on forwarded deltas", () => {
     expect(payload.answer).not.toContain("ghost.md");
     expect(payload.strippedCitations).toContain("notes/ghost.md");
   });
+
+  it("an ALL-fabricated answer (zero real evidence) degrades to the honest hedge, never the claim", async () => {
+    // The worst case for the fabrication=0 contract on the stream surface:
+    // the run produced NO grounding evidence at all, and every streamed
+    // sentence rests on an invented citation. The authoritative grounding
+    // frame must carry the hedge — not a cleaned-up version of the claim.
+    async function* allFabricated(): AsyncIterable<
+      | { type: "text-delta"; text: string; runId: string }
+      | { type: "done"; runId: string; response: { output: string; model: string; usage: undefined } }
+    > {
+      yield { runId: "r", text: "임대료는 130만원이야 [from notes/ghost.md].", type: "text-delta" };
+      yield { response: { model: "m", output: "", usage: undefined }, runId: "r", type: "done" };
+    }
+    const { toSseStream } = await import("./server-multipart-sse.js");
+    const frames: string[] = [];
+    for await (const frame of toSseStream(allFabricated() as never, "compat", { question: "임대료 얼마야?" })) {
+      frames.push(frame);
+    }
+    const groundingFrame = frames.find((f) => f.startsWith("event: grounding"));
+    expect(groundingFrame).toBeTruthy();
+    const payload = JSON.parse(groundingFrame!.split("data: ")[1]!) as {
+      answer: string;
+      strippedCitations: string[];
+    };
+    // The invented amount and its invented source are both gone; what
+    // remains is an honest not-sure, and the strip is auditable.
+    expect(payload.answer).not.toContain("130");
+    expect(payload.answer).not.toContain("ghost.md");
+    expect(payload.answer.length).toBeGreaterThan(0);
+    expect(payload.strippedCitations).toContain("notes/ghost.md");
+    // The live delta filter must ALSO have withheld the fabricated span, so
+    // even the transient raw-token display never showed the invented source.
+    const streamedText = frames
+      .filter((f) => f.startsWith("event: message"))
+      .map((f) => f.split("data: ").slice(1).join("data: "))
+      .join("");
+    expect(streamedText).not.toContain("ghost.md");
+  });
 });
