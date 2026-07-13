@@ -13,6 +13,23 @@ import {
 
 const env = (overrides: Record<string, string> = {}): MuseEnvironment => overrides as MuseEnvironment;
 const ids = (stages: readonly { readonly id: string }[]) => stages.map((s) => s.id);
+const runnerToolCases: readonly { readonly name: string; readonly runtimeEnv: MuseEnvironment }[] = [
+  { name: "unset", runtimeEnv: env() },
+  { name: "MUSE_RUNNER_ENABLED=false", runtimeEnv: env({ MUSE_RUNNER_ENABLED: "false" }) },
+  { name: "MUSE_RUNNER_ENABLED=true", runtimeEnv: env({ MUSE_RUNNER_ENABLED: "true" }) },
+  {
+    name: "MUSE_RUNNER_ENABLED=true with an arbitrary runner path",
+    runtimeEnv: env({ MUSE_RUNNER_ENABLED: "true", MUSE_RUNNER_PATH: "/arbitrary/muse-runner" })
+  },
+  {
+    name: "MUSE_LOCAL_ONLY=true with enabled runner and an invalid path",
+    runtimeEnv: env({
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_RUNNER_ENABLED: "true",
+      MUSE_RUNNER_PATH: "/definitely-not-a-muse-runner"
+    })
+  }
+];
 
 describe("createDefaultRuntimeHooks", () => {
   it("ships no default hooks", () => {
@@ -78,14 +95,11 @@ describe("createOutputGuards", () => {
 });
 
 describe("createRunnerTools", () => {
-  it("is empty unless the runner is explicitly enabled (default off)", () => {
-    expect(createRunnerTools(env())).toEqual([]);
-  });
-
-  it("exposes the run_command tool when enabled", () => {
-    const tools = createRunnerTools(env({ MUSE_RUNNER_ENABLED: "true" }));
-    expect(tools.map((t) => t.definition.name)).toEqual(["run_command"]);
-  });
+  for (const { name, runtimeEnv } of runnerToolCases) {
+    it(`does not create a model-callable general runner when ${name}`, () => {
+      expect(createRunnerTools(runtimeEnv)).toEqual([]);
+    });
+  }
 });
 
 describe("resolveStreamIdleTimeoutMs (MUSE_STREAM_IDLE_TIMEOUT_MS wiring)", () => {

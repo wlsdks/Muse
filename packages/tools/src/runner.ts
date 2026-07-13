@@ -27,7 +27,7 @@ export interface RunnerCommandRequest {
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
   /**
-   * Opt into network access under the seatbelt sandbox (`MUSE_RUNNER_SANDBOX=seatbelt`).
+   * Opt into network access under the seatbelt sandbox.
    * Caller-controlled ONLY — never read from model tool-args in
    * `parseRunnerCommandRequest`, so the model can never grant itself network access.
    */
@@ -44,7 +44,7 @@ export interface RunnerCommandResponse {
   readonly error: string | null;
   /** TX-11: deterministic failure category, present only on a failed result. */
   readonly failureKind?: RunnerFailureKind;
-  /** Set when `MUSE_RUNNER_SANDBOX=seatbelt` was requested but this platform can't honor it. */
+  /** Set when the seatbelt sandbox was requested but this platform can't honor it. */
   readonly sandboxWarning?: string;
 }
 

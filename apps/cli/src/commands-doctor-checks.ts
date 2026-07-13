@@ -776,27 +776,6 @@ export function permissionModeDriftCheck(results: readonly SensitiveFileModeResu
  */
 export const TOOL_OUTPUT_CAP_ADVISORY_FLOOR_CHARS = 1_000;
 
-/**
- * Runner sandbox posture (`MUSE_RUNNER_SANDBOX=seatbelt`) — whether risky
- * local execution through `crates/runner` actually runs confined. Off is not a failure (opt-in), but a request on a non-macOS
- * platform is worth a warn: the runner falls back to unsandboxed rather than
- * refusing, so the user should know execution is NOT actually confined there.
- */
-export function runnerSandboxPostureCheck(
-  env: Record<string, string | undefined>,
-  platform: NodeJS.Platform = process.platform
-): LocalCheck {
-  const name = "runner sandbox";
-  const requested = env.MUSE_RUNNER_SANDBOX?.trim() === "seatbelt";
-  if (!requested) {
-    return { detail: "off (default) — set MUSE_RUNNER_SANDBOX=seatbelt to confine runner exec writes to cwd + $TMPDIR + caches (macOS only)", name, status: "ok" };
-  }
-  if (platform === "darwin") {
-    return { detail: "seatbelt active (exec writes confined to cwd + $TMPDIR + caches; network opt-in per request)", name, status: "ok" };
-  }
-  return { detail: "MUSE_RUNNER_SANDBOX=seatbelt is set but unsupported on this platform — commands run unsandboxed", name, status: "warn" };
-}
-
 export function toolResultCapAdvisoryCheck(env: Record<string, string | undefined>): LocalCheck {
   const name = "tool-result cap";
   try {

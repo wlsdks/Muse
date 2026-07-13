@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **554** variables.
+Total: **557** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -116,8 +116,8 @@ Total: **554** variables.
 | `MUSE_CHANNEL_ALLOWED_CHATS` | apps/api |
 | `MUSE_CHANNEL_CHAT` | apps/api |
 | `MUSE_CHANNEL_GROUP_ENABLED` | apps/api |
-| `MUSE_CHANNEL_OWNERS_FILE` | apps/api |
-| `MUSE_CHANNEL_PAIRING_CODES_FILE` | apps/api |
+| `MUSE_CHANNEL_OWNERS_FILE` | apps/api, packages/autoconfigure |
+| `MUSE_CHANNEL_PAIRING_CODES_FILE` | apps/api, packages/autoconfigure |
 | `MUSE_CHAT_AUTO_REINDEX` | apps/cli |
 | `MUSE_CHAT_GROUNDING` | apps/cli |
 | `MUSE_CHAT_HISTORY_WINDOW` | apps/cli |
@@ -164,8 +164,9 @@ Total: **554** variables.
 | `MUSE_DIGEST_SENT_FILE` | packages/autoconfigure |
 | `MUSE_DIGEST_TICK_MS` | apps/api |
 | `MUSE_DISCORD_AFTER_FILE` | packages/autoconfigure |
-| `MUSE_DISCORD_BOT_TOKEN` | apps/api, apps/cli, packages/autoconfigure, packages/domain-tools |
+| `MUSE_DISCORD_BOT_TOKEN` | apps/cli, packages/autoconfigure, packages/domain-tools |
 | `MUSE_DISCORD_INBOX_FILE` | packages/autoconfigure |
+| `MUSE_DISCORD_INBOX_INJECTION_CURSOR_FILE` | packages/autoconfigure |
 | `MUSE_DISCORD_POLL_CHANNELS` | apps/api, packages/autoconfigure, packages/domain-tools |
 | `MUSE_DISCORD_POLL_ENABLED` | apps/api |
 | `MUSE_DISCORD_POLL_INTERVAL_MS` | apps/api |
@@ -219,7 +220,7 @@ Total: **554** variables.
 | `MUSE_GCAL_CLIENT_SECRET` | packages/autoconfigure |
 | `MUSE_GCAL_REFRESH_TOKEN` | packages/autoconfigure |
 | `MUSE_GITHUB_MCP_ENABLED` | packages/autoconfigure |
-| `MUSE_GIT_REFLOG_FILE` | apps/cli, packages/recall |
+| `MUSE_GIT_REFLOG_FILE` | packages/recall |
 | `MUSE_GMAIL_TOKEN` | apps/api, apps/cli, packages/autoconfigure, packages/domain-tools |
 | `MUSE_GROUNDING_MIN_COSINE` | apps/cli, packages/agent-core |
 | `MUSE_HEAVY_MODEL` | apps/api, apps/cli |
@@ -239,6 +240,7 @@ Total: **554** variables.
 | `MUSE_HUD` | apps/cli |
 | `MUSE_HUD_SEGMENTS` | apps/cli |
 | `MUSE_IDENTITY_CORE` | apps/api, packages/prompts |
+| `MUSE_IDENTITY_LEAD` | apps/api, packages/prompts |
 | `MUSE_IDENTITY_VERIFY_ROUNDS` | apps/api |
 | `MUSE_IDLE_LEARNING_ENABLED` | apps/cli |
 | `MUSE_INBOUND_AUTO_APPROVE` | apps/api |
@@ -261,23 +263,25 @@ Total: **554** variables.
 | `MUSE_LAST_PROACTIVE_FILE` | packages/autoconfigure |
 | `MUSE_LEARNING_PAUSE_FILE` | packages/autoconfigure |
 | `MUSE_LEARN_QUEUE_FILE` | packages/stores |
-| `MUSE_LINE_CHANNEL_ACCESS_TOKEN` | apps/api, apps/cli, packages/autoconfigure, packages/domain-tools |
-| `MUSE_LINE_CHANNEL_SECRET` | apps/api |
+| `MUSE_LINE_CHANNEL_ACCESS_TOKEN` | apps/cli, packages/autoconfigure, packages/domain-tools |
+| `MUSE_LINE_CHANNEL_SECRET` | apps/api, packages/autoconfigure |
 | `MUSE_LINE_INBOX_FILE` | packages/autoconfigure, packages/messaging |
+| `MUSE_LINE_INBOX_INJECTION_CURSOR_FILE` | packages/autoconfigure |
 | `MUSE_LLM_MAX_CONTEXT_WINDOW_TOKENS` | packages/autoconfigure |
 | `MUSE_LLM_MAX_OUTPUT_TOKENS` | packages/autoconfigure |
 | `MUSE_LLM_WORKING_BUDGET_TOKENS` | packages/autoconfigure |
-| `MUSE_LOCAL_ONLY` | apps/cli, packages/autoconfigure, packages/model, packages/policy, packages/recall |
+| `MUSE_LOCAL_ONLY` | apps/api, apps/cli, packages/autoconfigure, packages/model, packages/policy, packages/recall |
 | `MUSE_LOGPROBS` | apps/cli |
 | `MUSE_LOOPBACK_FETCH_HOSTS` | packages/autoconfigure |
 | `MUSE_LOOPBACK_FS_ROOTS` | packages/autoconfigure |
 | `MUSE_LOOPBACK_MCP_ENABLED` | packages/autoconfigure |
 | `MUSE_MACOS_ACTUATORS` | apps/cli |
-| `MUSE_MACOS_CALENDAR_NAME` | packages/autoconfigure |
+| `MUSE_MACOS_CALENDAR_NAME` | apps/cli, packages/autoconfigure |
 | `MUSE_MATH_ENABLED` | packages/autoconfigure |
-| `MUSE_MATRIX_ACCESS_TOKEN` | apps/api, packages/autoconfigure |
+| `MUSE_MATRIX_ACCESS_TOKEN` | packages/autoconfigure |
 | `MUSE_MATRIX_HOMESERVER_URL` | packages/autoconfigure |
 | `MUSE_MATRIX_INBOX_FILE` | packages/autoconfigure |
+| `MUSE_MATRIX_INBOX_INJECTION_CURSOR_FILE` | packages/autoconfigure |
 | `MUSE_MATRIX_LONG_POLL_SECONDS` | apps/api |
 | `MUSE_MATRIX_POLL_ENABLED` | apps/api, apps/web |
 | `MUSE_MATRIX_POLL_INTERVAL_MS` | apps/api |
@@ -448,9 +452,6 @@ Total: **554** variables.
 | `MUSE_RESPONSE_ZERO_RESULT_OVERCLAIM_FILTER_ENABLED` | packages/autoconfigure |
 | `MUSE_RETRY_INITIAL_DELAY_MS` | packages/autoconfigure |
 | `MUSE_RETRY_MAX_ATTEMPTS` | packages/autoconfigure |
-| `MUSE_RUNNER_ENABLED` | packages/autoconfigure |
-| `MUSE_RUNNER_PATH` | packages/autoconfigure |
-| `MUSE_RUNNER_SANDBOX` | apps/cli, packages/tools |
 | `MUSE_RUNTIME_SPEC` | apps/cli |
 | `MUSE_RUNTIME_SPEC_TEXT` | apps/cli |
 | `MUSE_RUN_LOG_MAX_FILES` | apps/cli |
@@ -471,7 +472,7 @@ Total: **554** variables.
 | `MUSE_SELFLEARN_ENABLED` | apps/cli |
 | `MUSE_SELFLEARN_INTERVAL_MS` | apps/cli |
 | `MUSE_SESSION_LOCK_FILE` | apps/cli, packages/autoconfigure |
-| `MUSE_SHELL_HISTORY_FILE` | apps/cli, packages/recall |
+| `MUSE_SHELL_HISTORY_FILE` | packages/recall |
 | `MUSE_SITE_URL` | packages/autoconfigure |
 | `MUSE_SKILLS_DIR` | apps/cli, packages/autoconfigure |
 | `MUSE_SKILLS_ENABLED` | packages/autoconfigure |
@@ -486,8 +487,9 @@ Total: **554** variables.
 | `MUSE_SKILL_REWARDS_FILE` | packages/autoconfigure |
 | `MUSE_SKIP_FIRST_RUN` | apps/cli |
 | `MUSE_SLACK_AFTER_FILE` | packages/autoconfigure |
-| `MUSE_SLACK_BOT_TOKEN` | apps/api, apps/cli, packages/autoconfigure, packages/domain-tools |
+| `MUSE_SLACK_BOT_TOKEN` | apps/cli, packages/autoconfigure, packages/domain-tools |
 | `MUSE_SLACK_INBOX_FILE` | packages/autoconfigure |
+| `MUSE_SLACK_INBOX_INJECTION_CURSOR_FILE` | packages/autoconfigure |
 | `MUSE_SLACK_POLL_CHANNELS` | apps/api, packages/autoconfigure, packages/domain-tools |
 | `MUSE_SLACK_POLL_ENABLED` | apps/api |
 | `MUSE_SLACK_POLL_INTERVAL_MS` | apps/api |
@@ -514,8 +516,9 @@ Total: **554** variables.
 | `MUSE_TASK_MEMORY_PERSIST` | packages/autoconfigure |
 | `MUSE_TASK_MEMORY_RETENTION_MS` | packages/autoconfigure |
 | `MUSE_TELEGRAM_ACK_REACTION` | apps/api |
-| `MUSE_TELEGRAM_BOT_TOKEN` | apps/api, apps/cli, packages/autoconfigure, packages/domain-tools |
+| `MUSE_TELEGRAM_BOT_TOKEN` | apps/cli, packages/autoconfigure, packages/domain-tools |
 | `MUSE_TELEGRAM_INBOX_FILE` | packages/autoconfigure |
+| `MUSE_TELEGRAM_INBOX_INJECTION_CURSOR_FILE` | packages/autoconfigure |
 | `MUSE_TELEGRAM_LONG_POLL_SECONDS` | apps/api |
 | `MUSE_TELEGRAM_OFFSET_FILE` | packages/autoconfigure |
 | `MUSE_TELEGRAM_POLL_ENABLED` | apps/api, apps/web |

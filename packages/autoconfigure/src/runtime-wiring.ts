@@ -12,8 +12,8 @@
  *     personal-Muse; runtimes wire hooks directly.
  *   - `createInputGuards` / `createOutputGuards` — env-toggled
  *     injection / PII / system-prompt-leakage stages.
- *   - `createRunnerTools` — MUSE_RUNNER_ENABLED-gated Rust runner
- *     bridge.
+ *   - `createRunnerTools` — explicit deny boundary for model-callable
+ *     general runners.
  *
  * Lifting these out of `index.ts` shrinks the big runtime-assembly
  * file by ~125 LOC and keeps each helper next to its peers rather
@@ -35,12 +35,11 @@ import { DEFAULT_WORKING_BUDGET_RATIO, type ConversationTrimOptions } from "@mus
 import type { ScheduledAgentExecutor } from "@muse/scheduler";
 import {
   createDefaultToolExposurePolicy,
-  createRustRunnerTool,
   type MuseTool,
   type ToolExposurePolicy
 } from "@muse/tools";
 
-import { parseBoolean, parseCsv, parseInteger, parseOptionalString } from "./env-parsers.js";
+import { parseBoolean, parseCsv, parseInteger } from "./env-parsers.js";
 import { ConfigurationError, type MuseEnvironment } from "./index.js";
 
 export function createPersonalToolExposurePolicy(env: MuseEnvironment): ToolExposurePolicy {
@@ -201,14 +200,9 @@ export function createOutputGuards(env: MuseEnvironment): readonly OutputGuardSt
   return guards;
 }
 
-export function createRunnerTools(env: MuseEnvironment): readonly MuseTool[] {
-  if (!parseBoolean(env.MUSE_RUNNER_ENABLED, false)) {
-    return [];
-  }
-
-  return [
-    createRustRunnerTool({
-      runnerPath: parseOptionalString(env.MUSE_RUNNER_PATH) ?? "muse-runner"
-    })
-  ];
+export function createRunnerTools(_env: MuseEnvironment): readonly MuseTool[] {
+  // Standard personal runtimes are non-coding product surfaces: they never
+  // register a model-callable general command runner. Legacy runner settings
+  // remain inert for compatibility and cannot grant execution capability.
+  return [];
 }

@@ -8,6 +8,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+### Changed
+
+- **Standard personal runtimes no longer expose a general command runner.** Existing
+  `MUSE_RUNNER_ENABLED` and `MUSE_RUNNER_PATH` values are inert compatibility settings;
+  they no longer enable model-callable `run_command`. Move coding or general command
+  execution to a dedicated coding tool outside Muse Work.
+
 ## [0.2.39] - 2026-07-12
 
 Chat now answers **as it thinks**: live token streaming through the citation

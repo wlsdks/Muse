@@ -96,6 +96,24 @@ const workingBudgetHistory = [
   { content: "What should we do next?", role: "user" as const }
 ];
 
+const standardRunnerContainmentCases: readonly { readonly name: string; readonly env: Record<string, string> }[] = [
+  { name: "unset", env: {} },
+  { name: "MUSE_RUNNER_ENABLED=false", env: { MUSE_RUNNER_ENABLED: "false" } },
+  { name: "MUSE_RUNNER_ENABLED=true", env: { MUSE_RUNNER_ENABLED: "true" } },
+  {
+    name: "MUSE_RUNNER_ENABLED=true with an arbitrary runner path",
+    env: { MUSE_RUNNER_ENABLED: "true", MUSE_RUNNER_PATH: "/arbitrary/muse-runner" }
+  },
+  {
+    name: "MUSE_LOCAL_ONLY=true with enabled runner and an invalid path",
+    env: {
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_RUNNER_ENABLED: "true",
+      MUSE_RUNNER_PATH: "/definitely-not-a-muse-runner"
+    }
+  }
+];
+
 describe("autoconfigure", () => {
   it("assembles default runtime without auth when no secret is configured", async () => {
     // PERSIST=false keeps the task store in-memory: this test verifies the assembly
@@ -617,17 +635,14 @@ describe("autoconfigure", () => {
     expect(events[0]?.totalTokens).toBeGreaterThan(0);
   });
 
-  it("adds the Rust runner tool only when explicitly enabled", () => {
-    const disabled = createMuseRuntimeAssembly({ env: {} });
-    const enabled = createMuseRuntimeAssembly({
-      env: {
-        MUSE_RUNNER_ENABLED: "true"
-      }
-    });
+  for (const { name, env } of standardRunnerContainmentCases) {
+    it(`does not register run_command in the standard runtime registry when ${name}`, () => {
+      const assembly = createMuseRuntimeAssembly({ env });
 
-    expect(disabled.toolRegistry.get("run_command")).toBeUndefined();
-    expect(enabled.toolRegistry.get("run_command")?.definition.risk).toBe("execute");
-  });
+      expect(assembly.toolRegistry.get("run_command")).toBeUndefined();
+      expect(assembly.toolRegistry.list().map((tool) => tool.definition.name)).not.toContain("run_command");
+    });
+  }
 
   it("assembles named model providers without forcing an OpenAI-compatible base URL", () => {
     const anthropic = createMuseRuntimeAssembly({

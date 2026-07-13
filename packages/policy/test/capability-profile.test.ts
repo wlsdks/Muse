@@ -17,6 +17,7 @@ const NON_CODING_BOUNDARY_TOOL_NAMES = [
   "repository_mutate",
   "shell_execute",
   "process_spawn",
+  "run_command",
   "runner_execute",
   "test_run",
   "debug_attach",
@@ -46,9 +47,9 @@ describe("personal-work capability profile", () => {
     expect(resolveToolExposureAuthority({ ...authority })).toBeUndefined();
   });
 
-  it("keeps a profile positive-only when an authority supplies a wider generic list", () => {
+  it("keeps a profile positive-only when an authority supplies a wider generic list including run_command", () => {
     const authority = createToolExposureAuthority({
-      allowedToolNames: ["code_write", "shell_execute", "outbound_send"],
+      allowedToolNames: ["code_write", "shell_execute", "run_command", "outbound_send"],
       localMode: true,
       profileId: PERSONAL_WORK_CAPABILITY_PROFILE_ID
     });
@@ -58,6 +59,7 @@ describe("personal-work capability profile", () => {
       selectToolNamesForExposureAuthority(resolved, [
         "code_write",
         "shell_execute",
+        "run_command",
         "outbound_send"
       ])
     ).toEqual([]);
@@ -111,7 +113,7 @@ describe("personal-work capability profile", () => {
       )
     ).toBe(true);
 
-    for (const operation of ["code.write", "repository.mutate", "shell.execute", "test.run", "debug.attach"]) {
+    for (const operation of ["code.write", "repository.mutate", "shell.execute", "process.spawn", "test.run", "debug.attach"]) {
       expect(isApprovalOperationAllowedForCapabilityProfile(PERSONAL_WORK_CAPABILITY_PROFILE_ID, operation)).toBe(false);
     }
   });

@@ -172,7 +172,8 @@ for a single call; it remembers you and shapes every future turn *and* every pro
   channel-approval gate — a reply toward a person is draft-first, never autonomous.
 - **Deterministic safety.** Guards are fail-close, hooks are fail-open, security lives in code
   (never in prompt instructions). Tool output is untrusted until sanitised. Risky local
-  execution flows through a separate Rust runner (`crates/runner`).
+  command execution is outside standard personal runtimes; use a dedicated coding tool
+  outside Muse Work when that capability is needed.
 
 <details>
 <summary><b>Repository layout</b></summary>
@@ -205,7 +206,7 @@ packages/
   db/ scheduler/ auth/ cache/ resilience/ runtime-state/ runtime-settings/ macos/ prompts/ shared/
 
 crates/
-  runner/        Rust sandbox: shell / process / file execution
+  runner/        Direct/test-only Rust runner artifact; never registered by standard model runtimes
 ```
 </details>
 

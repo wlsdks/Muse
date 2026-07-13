@@ -15,7 +15,7 @@ import { existsSync, promises as fs } from "node:fs";
 import { formatRelativeTime } from "./human-formatters.js";
 import { parseAlpha, runCalibrationDoctor } from "./commands-doctor-calibration.js";
 export { buildCalibrationReport, formatCalibration, parseAlpha } from "./commands-doctor-calibration.js";
-import { backgroundProcessCheck, cloudSyncFolderCheck, episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, permissionModeDriftCheck, platformPostureCheck, privacyRoutingCheck, readMuseSpeedEnv, readOllamaPerfEnv, readSensitiveFileModes, runnerSandboxPostureCheck, schedulerPauseCheck, secretSourcesCheck, selfLearningCheck, type SensitiveFileTarget, toolResultCapAdvisoryCheck, visionModelCheck, voiceSetupChecks, volatileMountCheck, weaknessFuelCheck, webEgressCheck, type LocalCheck } from "./commands-doctor-checks.js";
+import { backgroundProcessCheck, cloudSyncFolderCheck, episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, permissionModeDriftCheck, platformPostureCheck, privacyRoutingCheck, readMuseSpeedEnv, readOllamaPerfEnv, readSensitiveFileModes, schedulerPauseCheck, secretSourcesCheck, selfLearningCheck, type SensitiveFileTarget, toolResultCapAdvisoryCheck, visionModelCheck, voiceSetupChecks, volatileMountCheck, weaknessFuelCheck, webEgressCheck, type LocalCheck } from "./commands-doctor-checks.js";
 import { backgroundStoreFile } from "./commands-background.js";
 import { readProactiveHeartbeatCheck } from "./commands-doctor-heartbeat.js";
 export { heartbeatStatusToCheckStatus, proactiveHeartbeatCheck } from "./commands-doctor-heartbeat.js";
@@ -403,9 +403,6 @@ async function runLocalDoctor(): Promise<LocalDoctorReport> {
   // Tool-result-cap advisory — a `MUSE_MAX_TOOL_OUTPUT_CHARS` set too low
   // silently truncates tool evidence feeding the grounding/citation gate.
   checks.push(toolResultCapAdvisoryCheck(env));
-
-  // Runner sandbox posture — MUSE_RUNNER_SANDBOX=seatbelt confinement.
-  checks.push(runnerSandboxPostureCheck(env));
 
   // mcp.json
   const mcp_path = resolveMuseEnvPath(process.env.MUSE_MCP_CONFIG, join(muse_home, "mcp.json"));
