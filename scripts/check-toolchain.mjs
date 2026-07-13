@@ -6,11 +6,12 @@
 // typescript-eslint and knip — which import `typescript` directly — crash on it.
 // The split is Microsoft's own side-by-side configuration, and it is
 // deterministic BY CONSTRUCTION rather than by luck:
-//   `typescript`  -> npm:@typescript/typescript6  (the official compat package —
-//                    re-exports the 6.0 API for typescript-eslint / knip / the
-//                    IDE; its binary is `tsc6`, so it can never shadow `tsc`)
-//   `typescript7` -> npm:typescript@7             (the SOLE provider of `tsc`,
-//                    so every package's `tsc -b` runs the Go compiler)
+//   `typescript`         -> npm:@typescript/typescript6  (the official compat
+//                           package — re-exports the 6.0 API for
+//                           typescript-eslint / knip / the IDE; its binary is
+//                           `tsc6`, so it can never shadow `tsc`)
+//   `@typescript/native` -> npm:typescript@7  (the SOLE provider of `tsc`)
+// This is the exact package.json shape the TypeScript 7.0 GA guide prescribes.
 //
 // Measured on this repo (3 reps each, <5% spread):
 //   clean full build   8850ms -> 1325ms  (6.7x)
