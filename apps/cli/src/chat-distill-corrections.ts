@@ -101,6 +101,27 @@ export type DistillResult =
   | { readonly status: "recorded"; readonly strategies: readonly { readonly text: string; readonly tag?: string }[]; readonly decayed: readonly RewardedStrategy[]; readonly reinforced: readonly RewardedStrategy[]; readonly lowConsistencyRejected: number }
   | { readonly status: "skipped"; readonly reason: string; readonly decayed: readonly RewardedStrategy[]; readonly reinforced: readonly RewardedStrategy[]; readonly lowConsistencyRejected: number };
 
+/**
+ * The corrections THIS session is already learning from its own turns.
+ *
+ * The capture hook queues a correction on every surface, chat included, so the
+ * queue and the session turn-scan overlap exactly here. The session-end drain
+ * passes this set as its skip so the same thing the user said once is not counted
+ * twice — a double count is how a one-off remark gets promoted into a rule.
+ *
+ * Fail-soft: an unreadable history yields an empty set, and the drain then simply
+ * relearns what the turn scan already did (absorbed by bank dedup). Losing the
+ * skip degrades quality; it never loses a lesson.
+ */
+export async function sessionCorrectionTexts(userId?: string): Promise<ReadonlySet<string>> {
+  const [lines, boundaries] = await Promise.all([readLastChatHistory(), readSessionBoundaries()]);
+  const range = extractCurrentSessionTurns(lines, boundaries);
+  if (!range || !(range.userId ?? userId)) {
+    return new Set();
+  }
+  return new Set(detectCorrections(range.turns, { maxExchanges: DEFAULT_MAX_EXCHANGES }).map((c) => c.correction.trim()));
+}
+
 export async function distillSessionCorrections(options: DistillCorrectionsOptions): Promise<DistillResult> {
   const readLines = options.readLines ?? readLastChatHistory;
   const readBoundaries = options.readBoundaries ?? readSessionBoundaries;
@@ -281,6 +302,13 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
         id: idFactory(),
         // Grounded in the real correction; kept as the "why" `muse learned` shows.
         origin: "grounded",
+        // Probation is Muse's whole answer to "a single utterance must never become
+        // a standing rule" — a strategy on probation is banked but NOT injected until
+        // the user reinforces it. The unattended daemon path set it; this path, the
+        // one that runs at the end of every chat, did not. So the rule that mattered
+        // most was the one that skipped the gate, and a strategy distilled from a
+        // single remark could steer the very next turn with no confirmation.
+        probation: true,
         source: exchange.correction,
         text: distilled.text,
         userId: ownerId,

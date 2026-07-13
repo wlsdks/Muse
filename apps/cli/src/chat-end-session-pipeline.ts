@@ -51,7 +51,7 @@ export async function runEndOfSessionPipeline(args: {
     const { enqueueSessionCorrections } = await import("./chat-enqueue-corrections.js");
     await enqueueSessionCorrections({ userId }).catch(() => undefined);
   } else if (parseBoolean(process.env.MUSE_PLAYBOOK_DISTILL_ENABLED, true)) {
-    const { distillSessionCorrections } = await import("./chat-distill-corrections.js");
+    const { distillSessionCorrections, sessionCorrectionTexts } = await import("./chat-distill-corrections.js");
     const result = await distillSessionCorrections({
       model,
       modelProvider: modelProvider as Parameters<typeof distillSessionCorrections>[0]["modelProvider"],
@@ -61,6 +61,33 @@ export async function runEndOfSessionPipeline(args: {
       for (const s of result.strategies) {
         process.stderr.write(`💾 Learned strategy: ${s.text}\n`);
       }
+    }
+
+    // Drain the lessons taught on the surfaces that have no session of their own.
+    //
+    // The capture hook queues a correction wherever it happens — `muse ask`, the
+    // web app, Telegram, any API caller. Until now the ONLY thing that emptied that
+    // queue was the self-learn daemon tick, and `muse daemon` never auto-starts, so
+    // on a default install those lessons sat in the queue until the 30-day pruner
+    // deleted them unread. Chat is the one place a model and an embedder are already
+    // wired and the user is done waiting, so it is where the backlog gets learned.
+    //
+    // The skip is what keeps this honest: THIS session's own corrections are handled
+    // above by the turn scan, and distilling them again here would bump their
+    // observation count as if the user had taught the same thing twice.
+    const { distillQueuedCorrections, resolveLearningPauseFile, resolvePlaybookFile } = await import("@muse/autoconfigure");
+    const { resolveLearnQueueFile } = await import("@muse/stores");
+    const sessionSaid = await sessionCorrectionTexts(userId).catch(() => new Set<string>());
+    const drained = await distillQueuedCorrections({
+      model,
+      modelProvider: modelProvider as Parameters<typeof distillQueuedCorrections>[0]["modelProvider"],
+      pauseFile: resolveLearningPauseFile(process.env),
+      playbookFile: resolvePlaybookFile(process.env),
+      queueFile: resolveLearnQueueFile(process.env),
+      skipCorrection: (correction) => sessionSaid.has(correction.trim())
+    }).catch(() => 0);
+    if (drained > 0) {
+      process.stderr.write(`💾 Learned ${drained} lesson(s) you taught me elsewhere.\n`);
     }
   }
 

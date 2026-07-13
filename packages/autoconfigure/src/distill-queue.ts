@@ -55,6 +55,18 @@ export interface DistillQueuedDeps {
   readonly pauseFile?: string;
   /** ≤ this many events distilled per tick (the LLM call is the cost). Default 1. */
   readonly maxPerTick?: number;
+  /**
+   * Drop an event WITHOUT distilling it, and consume it so it cannot jam the queue.
+   *
+   * The capture hook enqueues on every surface, chat included — but the chat's
+   * end-of-session pipeline ALSO scans its own turns, so a correction typed in
+   * chat would otherwise be distilled twice. That is not a harmless duplicate: the
+   * bank dedup would absorb the second copy by BUMPING the strategy's observation
+   * count, and a single thing the user said once would look like they had said it
+   * twice — which is exactly how a one-off remark graduates into a standing rule.
+   * The session pipeline passes its own turns here so the queue skips them.
+   */
+  readonly skipCorrection?: (correction: string) => boolean;
   /** Injectable clock + id for tests. */
   readonly now?: () => Date;
   readonly newId?: () => string;
@@ -87,6 +99,9 @@ export async function distillQueuedCorrections(deps: DistillQueuedDeps): Promise
     doneIds.push(event.id); // consumed regardless — a dud signal must not jam the queue
     if (event.correction.trim().length === 0) {
       continue; // grounding fence: no real correction ⇒ no lesson
+    }
+    if (deps.skipCorrection?.(event.correction)) {
+      continue; // already being learned by the caller (the session's own turn scan)
     }
     // "Undo that teaches": if the user previously UNDID a lesson learned
     // from THIS correction, don't silently re-learn it. Match the incoming

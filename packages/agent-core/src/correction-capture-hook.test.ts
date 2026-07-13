@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import type { ModelMessage } from "@muse/model";
+
 import { createCorrectionCaptureHook } from "./correction-capture-hook.js";
-import type { AgentRunContext, Message } from "./types.js";
+import type { AgentRunContext } from "./types.js";
 
 type Captured = { correction: string; priorAnswer: string; userId: string; request?: string };
 
-const context = (messages: readonly Message[], userId = "stark") =>
+const context = (messages: readonly ModelMessage[], userId = "stark") =>
   ({
     input: { messages, metadata: { userId } },
     runId: "r1"
@@ -14,7 +16,7 @@ const context = (messages: readonly Message[], userId = "stark") =>
 const response = (output: string) => ({ output }) as never;
 
 const run = async (
-  messages: readonly Message[],
+  messages: readonly ModelMessage[],
   options: { isPaused?: () => boolean; userId?: string } = {}
 ): Promise<Captured[]> => {
   const captured: Captured[] = [];
@@ -28,7 +30,7 @@ const run = async (
   return captured;
 };
 
-const msg = (role: "user" | "assistant", content: string): Message => ({ content, role }) as Message;
+const msg = (role: "user" | "assistant", content: string): ModelMessage => ({ content, role });
 
 describe("correction-capture hook — learning on EVERY surface, not just the chat TUI", () => {
   // Until this hook existed, distillation ran from exactly one place: the

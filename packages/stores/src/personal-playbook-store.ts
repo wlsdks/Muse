@@ -30,6 +30,14 @@ export {
 /** Newest entries kept — bounds the file + the injected context. */
 export const MAX_PLAYBOOK_ENTRIES = 100;
 
+/**
+ * A learned strategy is one imperative sentence, and it is rendered verbatim into
+ * the SYSTEM prompt. 300 chars is generous for that and small enough that no single
+ * entry can crowd out the model's instructions. Enforced on READ, so a file that
+ * arrived by any route — hand-edit, restore, sync, a future writer — is bounded.
+ */
+export const MAX_PLAYBOOK_TEXT_CHARS = 300;
+
 export interface PlaybookEntry {
   readonly id: string;
   readonly userId: string;
@@ -289,6 +297,12 @@ function isPlaybookEntry(value: unknown): value is PlaybookEntry {
   if (typeof e.id !== "string" || e.id.length === 0) return false;
   if (typeof e.userId !== "string" || e.userId.length === 0) return false;
   if (typeof e.text !== "string" || e.text.trim().length === 0) return false;
+  // A strategy is one imperative sentence — the distiller's own output budget is 80
+  // tokens. Nothing enforced that as a STORE invariant, so `muse playbook add`, a
+  // restored file, a synced file, or any future writer could bank a 100KB "strategy"
+  // that then renders verbatim into every system prompt. The store drops entries it
+  // does not recognise, so a length bound here is fail-closed by construction.
+  if (e.text.length > MAX_PLAYBOOK_TEXT_CHARS) return false;
   if (typeof e.createdAt !== "string") return false;
   if (e.tag !== undefined && typeof e.tag !== "string") return false;
   if (e.reward !== undefined && (typeof e.reward !== "number" || !Number.isFinite(e.reward))) return false;
