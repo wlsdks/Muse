@@ -349,35 +349,40 @@ describe("embedModelCheck", () => {
 });
 
 describe("classifyMcpServersField — surface mcp.json shape problems instead of silently reporting 'ok with 0 servers'", () => {
-  it("returns 'ok' with the count when `servers` is a non-empty array", () => {
-    expect(classifyMcpServersField({ servers: [{ name: "x" }] }))
+  it("returns 'ok' with the count when `mcpServers` is a non-empty object keyed by name (the real schema)", () => {
+    expect(classifyMcpServersField({ mcpServers: { github: {} } }))
       .toEqual({ detail: "1 server(s) registered", status: "ok" });
-    expect(classifyMcpServersField({ servers: [{ name: "x" }, { name: "y" }, { name: "z" }] }))
+    expect(classifyMcpServersField({ mcpServers: { github: {}, notion: {}, linear: {} } }))
       .toEqual({ detail: "3 server(s) registered", status: "ok" });
   });
 
-  it("returns 'warn' when `servers` is an explicit empty array — file is well-formed, user just hasn't added any", () => {
-    expect(classifyMcpServersField({ servers: [] }))
+  it("returns 'warn' when `mcpServers` is an explicit empty object — file is well-formed, user just hasn't added any", () => {
+    expect(classifyMcpServersField({ mcpServers: {} }))
       .toEqual({ detail: "0 server(s) registered", status: "warn" });
   });
 
-  it("returns 'warn' when the `servers` key is absent — pre-fix the doctor silently reported 'ok with 0 servers' instead of surfacing the missing key", () => {
+  it("returns 'warn' when the `mcpServers` key is absent — pre-fix the doctor checked the wrong `servers` array key, so a valid config read as 0 servers", () => {
     expect(classifyMcpServersField({}))
-      .toMatchObject({ status: "warn", detail: expect.stringContaining("no `servers` key") });
+      .toMatchObject({ status: "warn", detail: expect.stringContaining("no `mcpServers` key") });
     expect(classifyMcpServersField({ otherSetting: "x" }))
+      .toMatchObject({ status: "warn" });
+    // The old wrong key is not the schema: a config using it reads as "no servers".
+    expect(classifyMcpServersField({ servers: [{ name: "x" }] }))
       .toMatchObject({ status: "warn" });
   });
 
-  it("returns 'fail' when `servers` exists but is the wrong shape — pre-fix `{servers: {foo: 'bar'}}` silently reported 'ok with 0 servers', masking a misconfiguration that would break MCP at runtime", () => {
-    expect(classifyMcpServersField({ servers: { foo: "bar" } }))
-      .toMatchObject({ status: "fail", detail: expect.stringContaining("must be an array") });
-    expect(classifyMcpServersField({ servers: null }))
+  it("returns 'fail' when `mcpServers` exists but is the wrong shape (array/null/string/number/boolean, not a name→config object)", () => {
+    expect(classifyMcpServersField({ mcpServers: [] }))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("must be a JSON object") });
+    expect(classifyMcpServersField({ mcpServers: [{ name: "x" }] }))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("array") });
+    expect(classifyMcpServersField({ mcpServers: null }))
       .toMatchObject({ status: "fail", detail: expect.stringContaining("null") });
-    expect(classifyMcpServersField({ servers: "stringy" }))
+    expect(classifyMcpServersField({ mcpServers: "stringy" }))
       .toMatchObject({ status: "fail", detail: expect.stringContaining("string") });
-    expect(classifyMcpServersField({ servers: 42 }))
+    expect(classifyMcpServersField({ mcpServers: 42 }))
       .toMatchObject({ status: "fail", detail: expect.stringContaining("number") });
-    expect(classifyMcpServersField({ servers: true }))
+    expect(classifyMcpServersField({ mcpServers: true }))
       .toMatchObject({ status: "fail", detail: expect.stringContaining("boolean") });
   });
 
