@@ -1097,16 +1097,19 @@ export function buildEgressAdvisorySink(env: MuseEnvironment): EgressAdvisorySin
  * already richer than the default via the contested/preference-slot logic.
  */
 export function buildUserModelComposer(env: MuseEnvironment): UserModelComposer | undefined {
-  if (!parseBoolean(env.MUSE_RICH_USER_MODEL, false)) {
+  if (!parseBoolean(env.MUSE_RICH_USER_MODEL, true)) {
     return undefined;
   }
-  return (memory) => {
+  return (memory, _userId, _maxEntries, scope) => {
     try {
-      return composeLearnedUserModelSection({
-        facts: memory.facts,
-        preferences: memory.preferences,
-        ...(memory.recentTopics ? { recentTopics: memory.recentTopics } : {})
-      });
+      return composeLearnedUserModelSection(
+        {
+          facts: memory.facts,
+          preferences: memory.preferences,
+          ...(memory.recentTopics ? { recentTopics: memory.recentTopics } : {})
+        },
+        { scope }
+      );
     } catch {
       return undefined;
     }

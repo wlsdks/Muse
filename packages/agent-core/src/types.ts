@@ -200,7 +200,8 @@ export interface UserMemoryProvider {
 export type UserModelComposer = (
   memory: UserMemorySnapshot,
   userId: string,
-  maxEntries: number
+  maxEntries: number,
+  scope: "owner" | "channel"
 ) => string | undefined;
 
 export interface UserMemoryInjectionOptions {
