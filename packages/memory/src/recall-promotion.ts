@@ -320,14 +320,22 @@ export interface ConsolidationScheduleInput {
  * the material threshold. Pure; non-finite/negative inputs fail safe to false.
  */
 export function shouldConsolidateMemory(input: ConsolidationScheduleInput): boolean {
-  const minInterval = Number.isFinite(input.minIntervalMs) && (input.minIntervalMs as number) > 0 ? (input.minIntervalMs as number) : DEFAULT_CONSOLIDATION_MIN_INTERVAL_MS;
-  const minNewHits = Number.isFinite(input.minNewHits) && (input.minNewHits as number) > 0 ? Math.trunc(input.minNewHits as number) : DEFAULT_CONSOLIDATION_MIN_NEW_HITS;
+  const minInterval = positiveOrDefaultMs(input.minIntervalMs, DEFAULT_CONSOLIDATION_MIN_INTERVAL_MS);
+  const minNewHits = positiveOrDefaultInt(input.minNewHits, DEFAULT_CONSOLIDATION_MIN_NEW_HITS);
   const newHits = Number.isFinite(input.newHitsSinceLastRun) ? input.newHitsSinceLastRun : 0;
   if (newHits < minNewHits) return false;
   if (!Number.isFinite(input.nowMs)) return false;
   if (input.lastRunMs === undefined) return true;
   if (!Number.isFinite(input.lastRunMs)) return true;
   return input.nowMs - input.lastRunMs >= minInterval;
+}
+
+function positiveOrDefaultMs(value: number | undefined, fallbackMs: number): number {
+  return Number.isFinite(value) && value > 0 ? value : fallbackMs;
+}
+
+function positiveOrDefaultInt(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
 }
 
 export interface ConsolidationPlan {
