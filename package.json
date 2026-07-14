@@ -20,6 +20,8 @@
   },
   "scripts": {
     "build": "tsc -b && pnpm --filter @muse/web build",
+    "build:ts7-fast": "tsc -b --checkers 4 --builders 4 --pretty false && pnpm --filter @muse/web build",
+    "build:ts7-single-thread": "tsc -b --singleThreaded",
     "check": "pnpm build && pnpm test",
     "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/ --cache-strategy content",
     "lint:comments": "node scripts/check-comment-markers.mjs",
