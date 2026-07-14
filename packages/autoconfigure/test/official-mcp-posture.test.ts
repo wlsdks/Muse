@@ -18,10 +18,10 @@ function github(postures: readonly { readonly name: string }[]): { readonly name
 }
 
 describe("describeOfficialMcpPosture — audit view per official preset", () => {
-  it("reports ALL curated presets (github + linear + notion + sentry) with provenance URLs", () => {
+  it("reports ALL curated presets (atlassian + github + linear + notion + sentry) with provenance URLs", () => {
     const postures = describeOfficialMcpPosture(baseEnv);
     const names = postures.map((p) => p.name).sort();
-    expect(names).toEqual(["github", "linear", "notion", "sentry"]);
+    expect(names).toEqual(["atlassian", "github", "linear", "notion", "sentry"]);
     for (const p of postures) {
       expect(p.provenanceUrl).toMatch(/^https:\/\//);
     }
@@ -134,10 +134,12 @@ describe("describeOfficialMcpPosture — audit view per official preset", () => 
   it("NEVER renders the secret — the token never appears in the serialized posture", () => {
     const env = {
       ...baseEnv,
+      ATLASSIAN_MCP_TOKEN: SECRET,
       GITHUB_MCP_TOKEN: SECRET,
       NOTION_MCP_TOKEN: SECRET,
       LINEAR_MCP_TOKEN: SECRET,
       SENTRY_MCP_TOKEN: SECRET,
+      MUSE_ATLASSIAN_MCP_ENABLED: "true",
       MUSE_GITHUB_MCP_ENABLED: "true",
       MUSE_NOTION_MCP_ENABLED: "true",
       MUSE_LINEAR_MCP_ENABLED: "true",
