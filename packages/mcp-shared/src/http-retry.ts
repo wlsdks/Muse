@@ -115,23 +115,12 @@ export async function fetchWithRetry(
     await options.beforeAttempt?.({ attempt, url });
 
     let retryAfterMs: number | undefined;
-    const controller = timeoutMs > 0 ? new AbortController() : undefined;
     const externalSignal = options.init?.signal ?? undefined;
-    let onExternalAbort: (() => void) | undefined;
-    if (controller && externalSignal) {
-      if (externalSignal.aborted) {
-        controller.abort(externalSignal.reason);
-      } else {
-        onExternalAbort = () => controller.abort(externalSignal.reason);
-        externalSignal.addEventListener("abort", onExternalAbort, { once: true });
-      }
-    }
-    const timer = controller
-      ? setTimeout(() => controller.abort(new Error(`fetchWithRetry: attempt timed out after ${timeoutMs.toString()}ms`)), timeoutMs)
-      : undefined;
+    const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+    const signal = externalSignal && timeoutSignal ? AbortSignal.any([externalSignal, timeoutSignal]) : (externalSignal ?? timeoutSignal);
+    const requestInit = signal ? { ...(options.init ?? {}), signal } : options.init;
     try {
-      const init = controller ? { ...(options.init ?? {}), signal: controller.signal } : options.init;
-      const response = init === undefined ? await fetchImpl(url) : await fetchImpl(url, init);
+      const response = requestInit === undefined ? await fetchImpl(url) : await fetchImpl(url, requestInit);
       if (response.ok || !isRetriableStatus(response.status) || attempt === retries) {
         return response;
       }
@@ -143,9 +132,6 @@ export async function fetchWithRetry(
       if (options.retryOnNetworkError === false || attempt === retries) {
         throw cause;
       }
-    } finally {
-      if (timer) clearTimeout(timer);
-      if (externalSignal && onExternalAbort) externalSignal.removeEventListener("abort", onExternalAbort);
     }
     const backoffMs = baseDelayMs * 2 ** attempt;
     await delay(retryAfterMs !== undefined ? Math.min(retryAfterMs, maxRetryAfterMs) : backoffMs);

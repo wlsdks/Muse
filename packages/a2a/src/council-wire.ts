@@ -121,22 +121,18 @@ export async function requestCouncilReasoning(options: RequestCouncilReasoningOp
   const signature = signCouncilRequest(options.fromPeerId, options.question, options.peer.secret);
   const fetchImpl = options.fetchImpl ?? fetch;
   const effectiveTimeoutMs = options.timeoutMs ?? DEFAULT_COUNCIL_TIMEOUT_MS;
-  const controller = effectiveTimeoutMs > 0 ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), effectiveTimeoutMs) : null;
+  const timeoutSignal = effectiveTimeoutMs > 0 ? AbortSignal.timeout(effectiveTimeoutMs) : null;
   try {
     const response = await fetchImpl(options.peer.url, {
       body: JSON.stringify(buildCouncilRequest(options.fromPeerId, options.question, randomUUID())),
       headers: { "content-type": "application/json", "x-muse-a2a-signature": signature },
       method: "POST",
-      signal: controller?.signal
+      ...(timeoutSignal ? { signal: timeoutSignal } : {})
     });
     if (!response.ok) return null;
     const parsed = parseCouncilResponse(await response.json());
     return parsed ? parsed.reasoning : null;
   } catch {
     return null;
-  } finally {
-    // Prevent the timer from outliving the fetch — avoids a dangling handle on the happy path.
-    if (timer !== null) clearTimeout(timer);
   }
 }

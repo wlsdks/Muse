@@ -63,23 +63,20 @@ export async function embed(text: string, model: string, options: EmbedOptions =
   const timeoutMs = Number.isFinite(options.timeoutMs) && (options.timeoutMs ?? 0) > 0
     ? (options.timeoutMs as number)
     : DEFAULT_EMBED_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
   let resp: Response;
   try {
     resp = await fetchImpl(`${baseUrl}/api/embeddings`, {
       body: JSON.stringify({ model, prompt: text }),
       headers: { "content-type": "application/json" },
       method: "POST",
-      signal: controller.signal
+      ...(timeoutSignal ? { signal: timeoutSignal } : {})
     });
   } catch (cause) {
-    if (controller.signal.aborted) {
+    if (cause instanceof DOMException && cause.name === "TimeoutError") {
       throw new Error(`embeddings ${baseUrl}/api/embeddings timed out after ${timeoutMs.toString()}ms`, { cause });
     }
     throw cause;
-  } finally {
-    clearTimeout(timer);
   }
   if (!resp.ok) {
     throw new Error(`embeddings ${resp.status.toString()}: ${await resp.text().catch(() => "")}`);

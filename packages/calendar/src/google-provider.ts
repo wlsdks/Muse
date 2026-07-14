@@ -92,7 +92,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   /**
-   * Wrap a fetch with an AbortController timeout so a hung Google endpoint can't
+   * Wrap a fetch with a timeout signal so a hung Google endpoint can't
    * block the call indefinitely. On timeout the fetch rejects → the caller's
    * existing network-failure handling decides (a GET retries; a WRITE throws,
    * networkRetries=0). `timeoutMs <= 0` disables the guard. An external signal
@@ -102,12 +102,15 @@ export class GoogleCalendarProvider implements CalendarProvider {
     if (this.timeoutMs <= 0) {
       return this.fetchImpl(url, init);
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error(`Google Calendar request timed out after ${this.timeoutMs.toString()}ms`)), this.timeoutMs);
+    const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
+    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
     try {
-      return await this.fetchImpl(url, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
+      return await this.fetchImpl(url, { ...init, signal });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "TimeoutError") {
+        throw new Error(`Google Calendar request timed out after ${this.timeoutMs.toString()}ms`, { cause });
+      }
+      throw cause;
     }
   }
 

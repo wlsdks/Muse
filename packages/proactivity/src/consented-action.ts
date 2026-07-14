@@ -148,8 +148,7 @@ export async function performConsentedAction(
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_CONSENTED_ACTION_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
   let response: Response;
   // Strip any caller-supplied authorization header (case-insensitively) so the
   // consent-gated credential is the ONLY Bearer token that ever leaves — a
@@ -172,17 +171,15 @@ export async function performConsentedAction(
       // un-consented host, exfiltrating the scoped credential (the same hole
       // web-action.ts closes). Handle the 3xx below, fail-closed.
       redirect: "manual",
-      signal: controller.signal
+      ...(timeoutSignal ? { signal: timeoutSignal } : {})
     });
   } catch (cause) {
-    const aborted = controller.signal.aborted;
+    const aborted = cause instanceof DOMException && cause.name === "TimeoutError";
     const reason = aborted
       ? `consented action timed out after ${timeoutMs.toString()}ms`
       : `consented action fetch failed: ${cause instanceof Error ? cause.message : String(cause)}`;
     await log("failed", reason);
     return { performed: false, reason };
-  } finally {
-    clearTimeout(timer);
   }
   // A redirect from the consented host would re-target the credential at an
   // unvetted host — refuse it (the credential is bound to the consented host,
