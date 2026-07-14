@@ -7,17 +7,21 @@
  * is required.
  */
 
-import { resolveActionLogFile } from "@muse/autoconfigure";
+import { resolveActionLogFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { decryptActionLogAtRest, encryptActionLogAtRest, isActionLogEncrypted, queryActionLog, serializeActionLogEntry, verifyActionLogChainFile, type ActionLogEntry } from "@muse/stores";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
+function environment(): MuseEnvironment {
+  return process.env;
+}
+
 const RESULT_FILTERS = ["performed", "refused", "failed", "noted", "all"] as const;
 
 function actionLogFile(): string {
-  return resolveActionLogFile(process.env as Record<string, string | undefined>);
+  return resolveActionLogFile(environment());
 }
 
 function assertResult(raw: string): void {

@@ -8,11 +8,15 @@
  */
 
 import { queryContacts, readReminders, readTasks } from "@muse/stores";
-import { findAcrossDomains, resolveContactsFile, resolveLocalCalendarFile, resolveRemindersFile, resolveTasksFile, type FindDomain } from "@muse/autoconfigure";
+import { findAcrossDomains, resolveContactsFile, resolveLocalCalendarFile, resolveRemindersFile, resolveTasksFile, type FindDomain, type MuseEnvironment } from "@muse/autoconfigure";
 import { LocalCalendarProvider, type CalendarEvent } from "@muse/calendar";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
+
+function environment(): MuseEnvironment {
+  return process.env;
+}
 
 const DOMAIN_LABELS: Record<FindDomain, string> = {
   task: "Tasks",
@@ -43,7 +47,7 @@ export function registerFindCommand(program: Command, io: ProgramIO): void {
       if (query.length === 0) {
         throw new Error("find needs a query, e.g. `muse find dentist`");
       }
-      const env = process.env as Record<string, string | undefined>;
+      const env = environment();
       const now = Date.now();
       const readLocalEvents = async (): Promise<readonly CalendarEvent[]> =>
         new LocalCalendarProvider({ file: resolveLocalCalendarFile(env) }).listEvents({

@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 
 import { clusterByTextSimilarity, mergePlaybookStrategies, PLAYBOOK_AVOID_BELOW, strategyTextSimilarity, validateMergeCoverage } from "@muse/agent-core";
-import { createGateEmbedder, createMuseRuntimeAssembly, resolveLearningPauseFile, resolvePlaybookFile, resolveSuppressedLessonsFile } from "@muse/autoconfigure";
+import { createGateEmbedder, createMuseRuntimeAssembly, resolveLearningPauseFile, resolvePlaybookFile, resolveSuppressedLessonsFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { stripUntrustedTerminalChars } from "@muse/shared";
 import { adjustPlaybookReward, decryptPlaybookAtRest, encryptPlaybookAtRest, isPlaybookEncrypted, queryPlaybook, recordPlaybookStrategy, recordSuppressedLesson, removePlaybookStrategy, setLearningPaused, type PlaybookEntry } from "@muse/stores";
 import type { Command } from "commander";
@@ -19,16 +19,20 @@ import { consolidatePlaybook } from "./playbook-consolidate.js";
 import type { ProgramIO } from "./program.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 
+function environment(): MuseEnvironment {
+  return process.env;
+}
+
 function playbookFile(): string {
-  return resolvePlaybookFile(process.env as Record<string, string | undefined>);
+  return resolvePlaybookFile(environment());
 }
 
 function suppressedLessonsFile(): string {
-  return resolveSuppressedLessonsFile(process.env as Record<string, string | undefined>);
+  return resolveSuppressedLessonsFile(environment());
 }
 
 function learningPauseFile(): string {
-  return resolveLearningPauseFile(process.env as Record<string, string | undefined>);
+  return resolveLearningPauseFile(environment());
 }
 
 /**

@@ -14,7 +14,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openLoops, type OpenLoop } from "@muse/agent-core";
-import { resolveTasksFile } from "@muse/autoconfigure";
+import { resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { compareTasksByDueDate, parseTaskDueAt, readTasks, readTaskStatusFilter, resolveTaskRef, serializeTask, writeTasks, type PersistedTask } from "@muse/stores";
 import type { Command } from "commander";
 
@@ -31,6 +31,10 @@ import {
   formatTaskList
 } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
+
+function environment(): MuseEnvironment {
+  return process.env;
+}
 
 /**
  * CLI-side strict validation for `muse tasks list
@@ -70,7 +74,7 @@ interface SharedOptions {
 }
 
 function localTasksFile(): string {
-  return resolveTasksFile(process.env as Record<string, string | undefined>);
+  return resolveTasksFile(environment());
 }
 
 /** Render the open-loops nudge — surface the planless nagging tasks + how to close them. Pure. */

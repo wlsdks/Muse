@@ -17,13 +17,17 @@
  * are tmp+rename atomic so concurrent reads here are safe.
  */
 
-import { resolveFollowupsFile } from "@muse/autoconfigure";
+import { resolveFollowupsFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { cancelFollowup, compareFollowupsByScheduledFor, parseReminderDueAt, readFollowups, readFollowupStatusFilter, serializeFollowup, snoozeFollowup, type FollowupStatusFilter, type PersistedFollowup } from "@muse/stores";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
 import { formatLocalDateTime as shortDateTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
+
+function environment(): MuseEnvironment {
+  return process.env;
+}
 
 const FOLLOWUP_STATUS_VALUES = ["scheduled", "fired", "cancelled", "all"] as const;
 
@@ -32,7 +36,7 @@ interface SharedOptions {
 }
 
 function localFollowupsFile(): string {
-  return resolveFollowupsFile(process.env as Record<string, string | undefined>);
+  return resolveFollowupsFile(environment());
 }
 
 export function registerFollowupCommands(program: Command, io: ProgramIO): void {
