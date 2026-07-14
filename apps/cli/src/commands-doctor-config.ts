@@ -22,13 +22,17 @@ export function classifyMcpServersField(parsed: unknown): {
   if (!isRecord(parsed)) {
     return { detail: "mcp.json root must be a JSON object", status: "fail" };
   }
-  if (parsed.servers === undefined) {
-    return { detail: "0 server(s) — no `servers` key in mcp.json", status: "warn" };
+  // The real schema (external-mcp-config.ts loader) is `{ mcpServers: { <name>:
+  // {...} } }` — an OBJECT keyed by server name, not a `servers` array. This
+  // checked the wrong key, so a perfectly valid mcp.json read as "0 server(s)".
+  const servers = parsed.mcpServers;
+  if (servers === undefined) {
+    return { detail: "0 server(s) — no `mcpServers` key in mcp.json", status: "warn" };
   }
-  if (!Array.isArray(parsed.servers)) {
-    return { detail: `\`servers\` must be an array (got ${parsed.servers === null ? "null" : typeof parsed.servers})`, status: "fail" };
+  if (!isRecord(servers)) {
+    return { detail: `\`mcpServers\` must be a JSON object (got ${servers === null ? "null" : Array.isArray(servers) ? "array" : typeof servers})`, status: "fail" };
   }
-  const count = parsed.servers.length;
+  const count = Object.keys(servers).length;
   return { detail: `${count.toString()} server(s) registered`, status: count > 0 ? "ok" : "warn" };
 }
 

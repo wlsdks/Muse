@@ -18,12 +18,18 @@ describe("resolveMuseEnvPath", () => {
 });
 
 describe("classifyMcpServersField", () => {
-  it("fails on non-object root and non-array servers, warns on missing/empty, ok on populated", () => {
+  it("reads the real `mcpServers` object schema: fail on non-object root/mcpServers, warn on missing/empty, ok on populated", () => {
     expect(classifyMcpServersField(42).status).toBe("fail");
     expect(classifyMcpServersField({}).status).toBe("warn");
-    expect(classifyMcpServersField({ servers: "x" }).status).toBe("fail");
-    expect(classifyMcpServersField({ servers: [] }).status).toBe("warn");
-    expect(classifyMcpServersField({ servers: [{}, {}] }).status).toBe("ok");
+    expect(classifyMcpServersField({ mcpServers: "x" }).status).toBe("fail");
+    expect(classifyMcpServersField({ mcpServers: [] }).status).toBe("fail");
+    expect(classifyMcpServersField({ mcpServers: {} }).status).toBe("warn");
+    expect(classifyMcpServersField({ mcpServers: { github: {}, notion: {} } }).status).toBe("ok");
+    expect(classifyMcpServersField({ mcpServers: { github: {}, notion: {} } }).detail).toContain("2 server(s)");
+  });
+
+  it("does NOT accept the old wrong `servers` array key (regression: a valid mcp.json read as 0 servers)", () => {
+    expect(classifyMcpServersField({ servers: [{}, {}] }).status).toBe("warn");
   });
 });
 
