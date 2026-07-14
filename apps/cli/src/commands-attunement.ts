@@ -232,7 +232,7 @@ function defaultMcpResourceCaller(): McpToolCaller {
         `connect the MCP server '${server}' first — tool '${toolName}' is not available (run \`muse mcp connect ${server}\`)`
       );
     }
-    return tool.execute(args as never, { runId: `attunement_resource_${Date.now().toString()}`, userId: "owner" });
+    return tool.execute(args, { runId: `attunement_resource_${Date.now().toString()}`, userId: "owner" });
   };
 }
 
