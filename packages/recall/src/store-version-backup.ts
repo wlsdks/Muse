@@ -16,6 +16,14 @@
 
 import { promises as fs } from "node:fs";
 
+type VersionBackupLogger = {
+  warn: (message: string) => void;
+};
+
+const defaultWarn = (message: string): void => {
+  process.stderr.write(`[recall] ${message}\n`);
+};
+
 /**
  * Renames the mismatched file to a sibling `<file>.bak-v<found>-<ts>`
  * path so its content survives even though the in-memory read falls back
@@ -23,15 +31,19 @@ import { promises as fs } from "node:fs";
  * file vanishing from under us) is logged and swallowed — the backup
  * attempt itself must never crash the read path that called it.
  */
-export async function backupVersionMismatchedStore(file: string, foundVersion: unknown): Promise<void> {
+export async function backupVersionMismatchedStore(
+  file: string,
+  foundVersion: unknown,
+  logger: VersionBackupLogger = { warn: defaultWarn }
+): Promise<void> {
   const backupPath = `${file}.bak-v${String(foundVersion)}-${Date.now().toString()}`;
   try {
     await fs.rename(file, backupPath);
-    console.warn(
+    logger.warn(
       `[recall] ${file}: schema version mismatch (found ${String(foundVersion)}) — preserved prior contents at ${backupPath} before falling back to an empty store`
     );
   } catch (cause) {
-    console.warn(
+    logger.warn(
       `[recall] ${file}: schema version mismatch (found ${String(foundVersion)}) — backup to ${backupPath} failed (${cause instanceof Error ? cause.message : String(cause)}); continuing with an empty store, ORIGINAL CONTENT MAY BE LOST on the next write`
     );
   }

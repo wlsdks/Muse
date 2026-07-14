@@ -4,6 +4,20 @@ import { resolveListenHost, resolveListenPort } from "./listen-config.js";
 import { buildServer } from "./server.js";
 import { watchParentProcess } from "./parent-watch.js";
 
+type StartupLogger = {
+  info: (message: string) => void;
+  warn: (message: string) => void;
+};
+
+const startupLogger: StartupLogger = {
+  info: (message) => {
+    process.stdout.write(`[muse] ${message}\n`);
+  },
+  warn: (message) => {
+    process.stderr.write(`[muse] ${message}\n`);
+  }
+};
+
 // When spawned by the desktop app, self-exit if that parent dies (no orphans).
 watchParentProcess();
 
@@ -12,20 +26,17 @@ const host = resolveListenHost(process.env.HOST);
 
 const options = createApiServerOptions();
 if (!options.agentRuntime) {
-
-  console.warn("[muse] Agent runtime is not configured — set MUSE_MODEL (e.g. gemini/gemini-2.0-flash) or export GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY for auto-default. /api/chat will return 503 until one is set.");
+  startupLogger.warn("Agent runtime is not configured — set MUSE_MODEL (e.g. gemini/gemini-2.0-flash) or export GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY for auto-default. /api/chat will return 503 until one is set.");
 }
 const seeded = await seedExternalMcpServers(
   options.mcpBootstrap.serverStore,
   options.mcpBootstrap.externalServerInputs
 );
 if (seeded.length > 0) {
-   
-  console.log(`[muse] seeded ${seeded.length} external MCP server(s) from ~/.muse/mcp.json: ${seeded.join(", ")}`);
+  startupLogger.info(`seeded ${seeded.length} external MCP server(s) from ~/.muse/mcp.json: ${seeded.join(", ")}`);
   for (const name of seeded) {
     void options.mcp.manager.connect(name).catch((cause: unknown) => {
-       
-      console.warn(`[muse] failed to connect external MCP server '${name}': ${cause instanceof Error ? cause.message : String(cause)}`);
+      startupLogger.warn(`failed to connect external MCP server '${name}': ${cause instanceof Error ? cause.message : String(cause)}`);
     });
   }
 }
@@ -40,7 +51,7 @@ const shutdown = createGracefulShutdown({
   drainScheduler: schedulerService ? () => schedulerService.shutdown() : undefined,
   closeServer: () => server.close(),
 
-  log: (message) => { console.log(`[muse] ${message}`); }
+  log: (message) => { startupLogger.info(message); }
 });
 process.on("SIGTERM", () => void shutdown());
 process.on("SIGINT", () => void shutdown());
