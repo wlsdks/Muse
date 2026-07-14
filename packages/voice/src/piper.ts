@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
+
+import { runCommandWithTimeout } from "@muse/shared";
 
 import { VoiceProviderError, VoiceValidationError } from "./errors.js";
 import type {
@@ -171,36 +172,20 @@ export class PiperTtsProvider implements TextToSpeechProvider {
  * timeout coverage.
  */
 export function createPiperRunner(timeoutMs: number = DEFAULT_PIPER_TIMEOUT_MS): PiperRunner {
-  return (binary, args, stdin) => new Promise<PiperRunResult>((resolve, reject) => {
-    const child = spawn(binary, [...args], { stdio: ["pipe", "ignore", "pipe"] });
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-
-    child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (exitCode) => {
-      clearTimeout(timer);
-      if (timedOut) {
-        reject(new Error(`piper timed out after ${timeoutMs.toString()}ms and was killed`));
-        return;
-      }
-      resolve({ exitCode, stderr });
+  return async (binary, args, stdin): Promise<PiperRunResult> => {
+    const result = await runCommandWithTimeout({
+      command: binary,
+      args: [...args],
+      timeoutMs,
+      maxStderrBytes: 200_000,
+      stdin,
+      killSignal: "SIGKILL"
     });
 
-    // A child that exits before consuming stdin (bad model,
-    // immediate crash) makes this write emit EPIPE on the stdin
-    // stream; an unhandled stream 'error' crashes the whole
-    // process. The real outcome is the exit code / timeout the
-    // close handler already reports, so absorb the write failure.
-    child.stdin?.on("error", () => undefined);
-    child.stdin?.write(stdin);
-    child.stdin?.end();
-  });
+    if (result.timedOut) {
+      throw new Error(`piper timed out after ${timeoutMs.toString()}ms and was killed`);
+    }
+
+    return { exitCode: result.exitCode, stderr: result.stderr };
+  };
 }

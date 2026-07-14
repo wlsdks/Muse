@@ -1,8 +1,9 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
+
+import { runCommandWithTimeout } from "@muse/shared";
 
 import { VoiceProviderError, VoiceValidationError } from "./errors.js";
 import type {
@@ -260,28 +261,19 @@ function extensionForMime(mime: string): string {
  * coverage.
  */
 export function createWhisperCppRunner(timeoutMs: number = DEFAULT_WHISPER_TIMEOUT_MS): WhisperCppRunner {
-  return (binary, args) => new Promise<WhisperCppRunResult>((resolve, reject) => {
-    const child = spawn(binary, [...args], { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
+  return async (binary, args): Promise<WhisperCppRunResult> => {
+    const result = await runCommandWithTimeout({
+      command: binary,
+      args: [...args],
+      timeoutMs,
+      maxStderrBytes: 200_000,
+      killSignal: "SIGKILL"
+    });
 
-    child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (exitCode) => {
-      clearTimeout(timer);
-      if (timedOut) {
-        reject(new Error(`whisper-cpp timed out after ${timeoutMs.toString()}ms and was killed`));
-        return;
-      }
-      resolve({ exitCode, stderr });
-    });
-  });
+    if (result.timedOut) {
+      throw new Error(`whisper-cpp timed out after ${timeoutMs.toString()}ms and was killed`);
+    }
+
+    return { exitCode: result.exitCode, stderr: result.stderr };
+  };
 }
-
