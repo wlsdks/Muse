@@ -96,8 +96,11 @@ export async function readChromeHistoryVisits(
   historyFile: string,
   options: ReadChromeHistoryOptions = {}
 ): Promise<readonly BrowsingVisit[]> {
-  const sinceVisitTime = Number.isFinite(options.sinceVisitTime) ? (options.sinceVisitTime as number) : 0;
-  const limit = Number.isFinite(options.limit) && (options.limit ?? 0) > 0 ? Math.trunc(options.limit as number) : 2000;
+  const sinceVisitTimeCandidate = options.sinceVisitTime ?? Number.NaN;
+  const sinceVisitTime = Number.isFinite(sinceVisitTimeCandidate) ? sinceVisitTimeCandidate : 0;
+
+  const limitCandidate = options.limit ?? 0;
+  const limit = Number.isFinite(limitCandidate) && limitCandidate > 0 ? Math.trunc(limitCandidate) : 2000;
 
   const tempCopy = join(tmpdir(), `muse-chrome-history-${process.pid.toString()}-${Date.now().toString()}-${Math.random().toString(36).slice(2)}.sqlite`);
   let rows: readonly RawVisitRow[];

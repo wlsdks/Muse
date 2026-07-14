@@ -71,6 +71,15 @@ export function selectObjectiveSpecsToSeed(
 }
 
 const MOVABLE: readonly TaskStatus[] = ["todo", "in_progress", "review", "blocked", "done", "failed"];
+const MOVABLE_SET: ReadonlySet<string> = new Set(["todo", "in_progress", "review", "blocked", "done", "failed"]);
+
+function parseTaskStatus(value: string): TaskStatus | undefined {
+  if (MOVABLE_SET.has(value) === false) return undefined;
+  if (value === "todo" || value === "in_progress" || value === "review" || value === "blocked" || value === "done" || value === "failed") {
+    return value;
+  }
+  return undefined;
+}
 
 /** Human-readable board grouped by column. Pure. */
 export function formatBoard(tasks: readonly AgentTask[]): string {
@@ -203,7 +212,11 @@ export function registerBoardCommand(program: Command, io: ProgramIO): void {
     .command("seed")
     .description("Seed the board from your ACTIVE standing objectives (skips objectives already on the board)")
     .action(async () => {
-      const objectives = await readObjectives(resolveObjectivesFile(environment())).catch(() => [] as const);
+      const objectives = await readObjectives(resolveObjectivesFile(environment())).catch(() => undefined);
+      if (objectives === undefined) {
+        io.stdout("No new active objectives to seed (none active, or all already on the board).\n");
+        return;
+      }
       const store = new FileAgentTaskBoard();
       const existing = new Set((await store.list()).map((t) => t.title.trim()));
       const specs = selectObjectiveSpecsToSeed(objectives, existing);
@@ -237,8 +250,8 @@ export function registerBoardCommand(program: Command, io: ProgramIO): void {
           const r = await assembly.modelProvider.generate({ maxOutputTokens: 256, messages: [{ content: p, role: "user" }], model: assembly.defaultModel, temperature: 0 });
           return r.output ?? "";
         };
-        const parallel = await planParallelSubtasks(parent.title, { generate }).catch(() => [] as string[]);
-        if (parallel.length >= 2) {
+        const parallel = await planParallelSubtasks(parent.title, { generate }).catch(() => undefined);
+        if (parallel !== undefined && parallel.length >= 2) {
           subs = parallel.map((title) => ({ id: randomUUID(), title }));
           mode = "parallel";
         } else {
@@ -256,8 +269,13 @@ export function registerBoardCommand(program: Command, io: ProgramIO): void {
     .command("move <id> <status>")
     .description(`Move a task to a column (${MOVABLE.join(" | ")})`)
     .action(async (id: string, status: string) => {
-      if (!MOVABLE.includes(status as TaskStatus)) { io.stderr(`muse board move: status must be one of ${MOVABLE.join(", ")}\n`); process.exitCode = 1; return; }
-      const tasks = await new FileAgentTaskBoard().mutate((ts) => transitionTask(ts, id, status as TaskStatus, new Date().toISOString()));
+      const nextStatus = parseTaskStatus(status);
+      if (nextStatus === undefined) {
+        io.stderr(`muse board move: status must be one of ${MOVABLE.join(", ")}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const tasks = await new FileAgentTaskBoard().mutate((ts) => transitionTask(ts, id, nextStatus, new Date().toISOString()));
       io.stdout(tasks.some((t) => t.id.startsWith(id)) ? `Moved ${id.slice(0, 8)} → ${status}\n` : `No task ${id}\n`);
     });
 
