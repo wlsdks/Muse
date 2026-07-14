@@ -13,7 +13,7 @@ import { createModelProviderFor, resolveAnswerTemperature } from "@muse/autoconf
 import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
 import { findPii, resolvePrivacyRoutedModel, type PrivacyRoutedModelResult } from "@muse/policy";
 
-import { formatCurrentContextLine } from "./muse-persona.js";
+import { formatCurrentContextLine } from "@muse/recall";
 
 /** Keep only the named keys from a fact map (preserving values). */
 export function filterFactsToKeys(facts: Readonly<Record<string, string>>, keys: readonly string[]): Record<string, string> {

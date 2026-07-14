@@ -287,7 +287,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
         }
         const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userId));
         if (userMemory) {
-          const { buildMusePersona } = await import("./muse-persona.js");
+          const { buildMusePersona } = await import("@muse/recall");
           personaPreamble = buildMusePersona(userMemory, userId);
           activeHourSet = resolveActiveHourBand(userMemory.facts?.routine_active_hours);
         }

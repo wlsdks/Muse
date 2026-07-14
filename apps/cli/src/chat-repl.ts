@@ -29,7 +29,7 @@ import type { ModelProvider } from "@muse/model";
 import { buildQueryRewritePrompt, chatTraceOutcome, defaultChatConflictEmbedder, factKeysToInject, finalizeGatedChatAnswer, isChatAbstention, isChatGroundedSuccess, needsContextualRewrite, parseQueryRewrite, QUERY_REWRITE_RESPONSE_FORMAT, QUERY_REWRITE_SYSTEM_PROMPT, retrieveChatGrounding } from "./chat-grounding.js";
 import { createQwenReverify } from "./grounding-eval-runner.js";
 import { isRecord } from "./credential-store.js";
-import { buildMusePersona, formatCurrentContextLine } from "./muse-persona.js";
+import { buildMusePersona, formatCurrentContextLine } from "@muse/recall";
 import { loadActivePersonaPreamble } from "./persona-store.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 import {

@@ -58,7 +58,7 @@ import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
 import { checkinsFile } from "./commands-checkins.js";
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from "./human-formatters.js";
 import { resolvePersona } from "./program-helpers.js";
-import { buildMusePersona } from "./muse-persona.js";
+import { buildMusePersona } from "@muse/recall";
 import type { ProgramIO } from "./program.js";
 
 interface BriefOptions {

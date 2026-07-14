@@ -65,7 +65,7 @@ import { createChatOrchestration, orchestrationCompletionsFrom } from "./chat-or
 import { buildLocalTodayText, parseLookaheadHours, readDueFollowups, readDueReminders } from "./commands-today.js";
 import { calendarEventItems, checkinItems, dueTaskItems, jobCompletionItems, patternSuggestionItems, type ProactiveItem } from "./chat-proactive.js";
 import { checkinsFile } from "./commands-checkins.js";
-import { buildMusePersona } from "./muse-persona.js";
+import { buildMusePersona } from "@muse/recall";
 import { resolvePersona } from "./program-helpers.js";
 import { idleLearnedNoticeForUser } from "./commands-learned.js";
 import { resolveDefaultUserKey } from "./user-id.js";

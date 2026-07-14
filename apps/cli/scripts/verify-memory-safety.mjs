@@ -18,7 +18,7 @@ if (!model.startsWith("ollama/")) { console.error("LOCAL OLLAMA ONLY"); process.
 process.env.HOME = mkdtempSync(path.join(os.tmpdir(), "muse-ms-"));
 process.env.MUSE_DEFAULT_MODEL = model;
 
-const { buildMusePersona } = await import("../dist/muse-persona.js");
+const { buildMusePersona } = await import("@muse/recall");
 const asm = createMuseRuntimeAssembly();
 
 async function ask(persona, prompt, userId) {

@@ -26,7 +26,7 @@ const home = mkdtempSync(path.join(os.tmpdir(), "muse-mda-"));
 process.env.HOME = home;
 process.env.MUSE_DEFAULT_MODEL = model;
 
-const { buildMusePersona } = await import("../dist/muse-persona.js");
+const { buildMusePersona } = await import("@muse/recall");
 const { recurringEpisodeThreads, formatMemoryView } = await import("../dist/chat-ink-core.js");
 const { synthesizeReflection } = await import("../dist/chat-reflection.js");
 

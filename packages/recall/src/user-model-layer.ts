@@ -13,19 +13,23 @@
  *     the 5 most-recent topics from prior sessions. Returns
  *     undefined when every section is empty so first-time users
  *     don't get a stub prompt.
+ *
+ * This is the shared user-model layer: a pure, synchronous, I/O-free
+ * builder every surface can compose (the CLI REPL/ask, the API, any
+ * future channel), not a CLI leaf.
  */
 
-import { admittedRuleKey } from "@muse/agent-core";
-import { composeIdentityPrompt } from "@muse/prompts";
 import {
   CONTESTED_FACT_MARK,
   PROVISIONAL_FACT_MARK,
   STALE_FACT_MARK,
+  admittedRuleKey,
   classifyPreferenceSlots,
   defangMemoryInjection as defangMemoryValue
-} from "@muse/recall";
+} from "@muse/agent-core";
+import { composeIdentityPrompt } from "@muse/prompts";
 
-interface JarvisPersonaMemory {
+export interface MusePersonaMemory {
   readonly facts: Readonly<Record<string, string>>;
   readonly preferences: Readonly<Record<string, string>>;
   readonly recentTopics?: readonly string[];
@@ -67,13 +71,13 @@ interface JarvisPersonaMemory {
  * — fewer moving parts, no manual input, the LLM does the matching
  * with the rest of the persona block.
  */
-interface EpisodicPersonaHint {
+export interface EpisodicPersonaHint {
   readonly endedAt: string;
   readonly summary: string;
   readonly topics?: readonly string[];
 }
 
-// Poisoned-memory defense lives in @muse/recall (the single pattern source shared
+// Poisoned-memory defense lives in @muse/agent-core (the single pattern source shared
 // with the ask-path memory block); `defangMemoryValue` is its alias here.
 export function formatCurrentContextLine(now: Date = new Date()): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
@@ -105,7 +109,7 @@ export function personaEntryCap(): number {
 }
 
 export function buildMusePersona(
-  memory: JarvisPersonaMemory,
+  memory: MusePersonaMemory,
   userId: string,
   options: {
     readonly now?: Date;
@@ -302,7 +306,7 @@ function formatEpisodeDate(iso: string): string {
 }
 
 function latestPriorByKey(
-  factHistory: JarvisPersonaMemory["factHistory"]
+  factHistory: MusePersonaMemory["factHistory"]
 ): Map<string, string> {
   const out = new Map<string, string>();
   // Walk oldest→newest so the freshest supersession for each key wins.

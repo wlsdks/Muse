@@ -64,7 +64,7 @@ import { parseAnswerMarkdown, type MdBlock, type MdListItem, type MdSpan } from 
 import { type AgentDef } from "./commands-agents.js";
 import { type ChatGrounding } from "./chat-grounding.js";
 import { groupProactiveNotice, imminentItems, pickUnseen, type ProactiveItem } from "./chat-proactive.js";
-import { formatCurrentContextLine } from "./muse-persona.js";
+import { formatCurrentContextLine } from "@muse/recall";
 import { selectDrainedProactiveTurns } from "./proactive-consume.js";
 
 export { runChatInk } from "./chat-ink-run.js";

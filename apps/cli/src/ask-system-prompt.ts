@@ -12,7 +12,7 @@ import { composeSurfacePrompt } from "@muse/prompts";
 import { groundingSectionLines, optionalGroundingRelevance, optionalGroundingSections } from "@muse/recall";
 
 import { CITATION_INSTRUCTION_LINES, REASONING_PRINCIPLE_LINES } from "./ask-prompt-constants.js";
-import { formatCurrentContextLine } from "./muse-persona.js";
+import { formatCurrentContextLine } from "@muse/recall";
 
 export function buildAskSystemPrompt(params: {
   readonly personaTemplatePreamble: string;

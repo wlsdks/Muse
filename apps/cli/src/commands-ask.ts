@@ -70,7 +70,7 @@ import type { Command } from "commander";
 import { filterLiveNoteIndexFiles } from "./commands-recall.js";
 import { embed } from "./embed.js";
 import { buildAskRunLog, writeRunLog } from "./program-helpers.js";
-import { buildMusePersona } from "./muse-persona.js";
+import { buildMusePersona } from "@muse/recall";
 import type { ProgramIO } from "./program.js";
 import { withSigintAbort } from "./sigint-abort.js";
 import { listNoteFiles, notesCorpusFileCount, selectGraphConnections } from "./ask-corpus-helpers.js";

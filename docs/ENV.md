@@ -183,7 +183,7 @@ Total: **565** variables.
 | `MUSE_EPISODES_FILE` | apps/cli, packages/autoconfigure |
 | `MUSE_EPISODES_INDEX_FILE` | apps/cli, packages/recall |
 | `MUSE_EPISODIC_MEMORY_ENABLED` | apps/api, apps/cli |
-| `MUSE_EPISODIC_MEMORY_MAX_ENTRIES` | apps/cli |
+| `MUSE_EPISODIC_MEMORY_MAX_ENTRIES` | apps/cli, packages/recall |
 | `MUSE_EPISODIC_RECALL_EMBED` | packages/autoconfigure |
 | `MUSE_EPISODIC_RECALL_EMBED_MODEL` | apps/cli, packages/autoconfigure |
 | `MUSE_EPISODIC_RECALL_ENABLED` | packages/autoconfigure |
@@ -375,7 +375,7 @@ Total: **565** variables.
 | `MUSE_PENDING_APPROVALS_FILE` | packages/autoconfigure |
 | `MUSE_PERSONA` | apps/cli |
 | `MUSE_PERSONA_FILE` | apps/cli |
-| `MUSE_PERSONA_MAX_ENTRIES` | apps/cli |
+| `MUSE_PERSONA_MAX_ENTRIES` | packages/recall |
 | `MUSE_PERSONA_MD_FILE` | packages/autoconfigure, packages/recall |
 | `MUSE_PIPER_PATH` | packages/autoconfigure |
 | `MUSE_PIPER_VOICE` | apps/cli, packages/autoconfigure |
