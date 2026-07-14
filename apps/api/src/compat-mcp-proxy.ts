@@ -138,21 +138,23 @@ export async function proxyMcpAdminRequest(
   }
 
   const timeoutMs = coerceNumber(serverConfig.config.adminTimeoutMs, 15_000);
-  const abort = new AbortController();
-  const timeout = setTimeout(() => abort.abort(), timeoutMs);
+  const timeoutSignal = Number.isFinite(timeoutMs) && timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+  const requestInit: RequestInit = {
+    body: body ? JSON.stringify(body) : undefined,
+    headers: {
+      "content-type": "application/json",
+      "x-admin-actor": "muse-admin",
+      "x-admin-token": adminToken,
+      "x-request-id": createRunId("mcp_admin")
+    },
+    method
+  };
+  if (timeoutSignal !== undefined) {
+    requestInit.signal = timeoutSignal;
+  }
 
   try {
-    const upstream = await fetch(new URL(path, adminUrl), {
-      body: body ? JSON.stringify(body) : undefined,
-      headers: {
-        "content-type": "application/json",
-        "x-admin-actor": "muse-admin",
-        "x-admin-token": adminToken,
-        "x-request-id": createRunId("mcp_admin")
-      },
-      method,
-      signal: abort.signal
-    });
+    const upstream = await fetch(new URL(path, adminUrl), requestInit);
     const text = await upstream.text();
 
     if (upstream.status === 204 || text.length === 0) {
@@ -161,15 +163,18 @@ export async function proxyMcpAdminRequest(
 
     return reply.status(upstream.status).send(parseJsonOrText(text));
   } catch (error) {
-    return reply.status(error instanceof DOMException && error.name === "AbortError" ? 504 : 502).send({
-      error: error instanceof DOMException && error.name === "AbortError"
-        ? `MCP admin API timed out after ${timeoutMs}ms`
-        : "Failed to call MCP admin API",
+    const isTimeout = isTimeoutError(error);
+    return reply.status(isTimeout ? 504 : 502).send({
+      error: isTimeout ? `MCP admin API timed out after ${timeoutMs}ms` : "Failed to call MCP admin API",
       timestamp: nowIso()
     });
-  } finally {
-    clearTimeout(timeout);
   }
+}
+
+function isTimeoutError(cause: unknown): cause is Error {
+  return cause instanceof DOMException
+    ? cause.name === "AbortError" || cause.name === "TimeoutError"
+    : cause instanceof Error && cause.name === "TimeoutError";
 }
 
 export function mcpExternalTransportBlocked(reply: FastifyReply) {
