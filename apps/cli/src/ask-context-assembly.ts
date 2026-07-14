@@ -23,7 +23,6 @@
 
 import {
   classifyActionRequest,
-  isInjectableStrategy,
   isMemoryInjection,
   lexicalTokens,
   normalizeContactCitations,
@@ -51,18 +50,16 @@ import {
   groundedSourceSummary,
   renderMemoryFact,
   selectMemoryFacts,
-  selectPlaybookSection,
   selectProbationSuggestion,
   stripGroundingFences,
-  topAppliedStrategy,
   type ScoredChunk
 } from "@muse/recall";
 import type { createStageTimer } from "@muse/recall";
 import type { SessionFeedReflectionGrounding } from "./ask-session-grounding.js";
 import { createRunId } from "@muse/shared";
 
+import { computeRuleAdmission } from "./ask-behavioural-rules.js";
 import { embed } from "./embed.js";
-import { rankPlaybookEntriesByRelevance } from "./playbook-embed-rank.js";
 import { rescueMemoryCrossLingual } from "./ask-cross-lingual.js";
 import { buildActivityGrounding } from "./ask-activity-grounding.js";
 import { buildPersonalStoreGrounding } from "./ask-personal-store-grounding.js";
@@ -198,33 +195,30 @@ export async function assembleAskContext(input: AskContextAssemblyInput) {
   // into the model's reasoning (the held graduation stays user-gated).
   let probationSuggestion: { readonly text: string; readonly id: string } | undefined;
   try {
-    const { queryPlaybook } = await import("@muse/stores");
-    const { resolvePlaybookFile } = await import("@muse/autoconfigure");
-    const envTopK = Number(process.env.MUSE_PLAYBOOK_INJECT_TOPK);
-    const topK = Number.isFinite(envTopK) && envTopK >= 1 ? envTopK : undefined;
-    const entries = await queryPlaybook(resolvePlaybookFile(process.env as Record<string, string | undefined>), userKey);
-    probationSuggestion = selectProbationSuggestion(entries, query);
     // Embedding-ranked strategy retrieval (opt-in): rank by semantic
     // similarity so a strategy phrased differently from the query still
     // surfaces, instead of pure lexical token-overlap. Off by default (it
     // adds a local nomic pass per strategy); fail-soft back to lexical.
-    if (process.env.MUSE_PLAYBOOK_EMBED_RANK === "true") {
-      const embedModel = process.env.MUSE_PLAYBOOK_EMBED_MODEL?.trim() || DEFAULT_EMBED_MODEL;
-      const ranked = await rankPlaybookEntriesByRelevance(
-        entries, query, (text) => embed(text, embedModel), topK, Date.now()
-      );
-      playbookSection = renderPlaybookSection(ranked);
-      appliedStrategy = playbookSection ? ranked[0]?.text : undefined;
-    } else {
-      playbookSection = selectPlaybookSection(entries, query, topK);
-      appliedStrategy = playbookSection ? topAppliedStrategy(entries, query, topK) : undefined;
-    }
-    // The applied strategy's id (for implicit reinforcement below) — matched in
-    // the store entries (which carry the id) by the injected text. MUST also be
-    // INJECTABLE: a probation/avoided entry with byte-identical text must never be
-    // the match, else a +0.1 reward would auto-graduate a probation strategy and
-    // break the user-gated self-confirmation guard.
-    appliedStrategyId = appliedStrategy ? entries.find((e) => e.text === appliedStrategy && isInjectableStrategy(e))?.id : undefined;
+    const embedForPlaybook = process.env.MUSE_PLAYBOOK_EMBED_RANK === "true"
+      ? (text: string) => embed(text, process.env.MUSE_PLAYBOOK_EMBED_MODEL?.trim() || DEFAULT_EMBED_MODEL)
+      : undefined;
+    // The shared behavioural-rule budget (agent-core's selectBehaviouralRules)
+    // is the REAL admission gate for this turn: it ranks the playbook's
+    // already-topK-bounded candidates alongside the user's vetoes/prefs/goals,
+    // guarantees any turn-relevant veto, resolves stored conflict edges, and
+    // cuts to the shared budget (default 7, ceiling 10) — see
+    // ask-behavioural-rules.ts / behavioural-rule-budget.ts.
+    const admission = await computeRuleAdmission(userMemory, userKey, query, { embed: embedForPlaybook });
+    probationSuggestion = selectProbationSuggestion(admission.entries, query);
+    playbookSection = renderPlaybookSection(admission.admittedPlaybook);
+    appliedStrategy = playbookSection ? admission.admittedPlaybook[0]?.text : undefined;
+    // The admitted playbook entries are ALREADY guaranteed injectable — both
+    // rankPlaybookStrategies and rankPlaybookStrategiesByRelevance filter to
+    // isInjectableStrategy && !isStaleStrategy before a candidate can ever
+    // reach the shared budget, so no separate re-check is needed here (unlike
+    // the old text-match lookup this replaces, which had to guard against
+    // matching a byte-identical probation/avoided entry by hand).
+    appliedStrategyId = admission.admittedPlaybook[0]?.id;
   } catch {
     playbookSection = undefined;
     appliedStrategy = undefined;

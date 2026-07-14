@@ -82,6 +82,7 @@ import { applyAdHocGrounding } from "./ask-adhoc-grounding.js";
 import { resolveSessionVisionModel, runVisionCommandAction } from "./ask-vision-command.js";
 import { runGroundingVerdict } from "./ask-grounding-verdict.js";
 import { finalizeAndRenderAsk } from "./ask-finalize.js";
+import { computeRuleAdmission } from "./ask-behavioural-rules.js";
 import { assembleAskContext } from "./ask-context-assembly.js";
 import { assertTrustedAskB1Preflight } from "./ask-trusted-preflight.js";
 import { applyAskOptions, type AskOptions } from "./ask-command-options.js";
@@ -126,6 +127,13 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
     .action(async (queryParts: readonly string[], options: AskOptions) => {
       if (!assertTrustedAskB1Preflight(options, io)) {
         return;
+      }
+      // A non-blocking, ONCE-EVER nudge toward `muse daemon --install` — see
+      // daemon-offer.ts's doc comment for the full gating contract. Skipped
+      // under --json so scripted callers never see stray non-JSON output.
+      if (!options.json) {
+        const { maybeOfferDaemonInstall } = await import("./daemon-offer.js");
+        await maybeOfferDaemonInstall({ env: process.env, print: (line) => io.stderr(`${line}\n`) }).catch(() => false);
       }
       const composedInput = await composeAskInput(queryParts, options, io);
       if (!composedInput.ok) {
@@ -293,7 +301,16 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       }
 
       const userMemory = await Promise.resolve(assembly.userMemoryStore.findByUserId(userKey));
-      const personaPrompt = userMemory ? buildMusePersona(userMemory, userKey) : undefined;
+      // The shared behavioural-rule budget (agent-core's selectBehaviouralRules)
+      // decides which vetoes/preferences/goals reach the persona for THIS
+      // turn's actual query — a turn-relevant veto is always admitted; see
+      // ask-behavioural-rules.ts / behavioural-rule-budget.ts. Fail-soft: an
+      // admission error (bad playbook file, etc.) falls back to buildMusePersona's
+      // own uncapped default rather than blocking the answer.
+      const admittedRuleKeys = await computeRuleAdmission(userMemory, userKey, query)
+        .then((admission) => admission.admittedRuleKeys)
+        .catch(() => undefined);
+      const personaPrompt = userMemory ? buildMusePersona(userMemory, userKey, { admittedRuleKeys }) : undefined;
       const { loadActivePersonaPreamble } = await import("./persona-store.js");
       const personaTemplatePreamble = await loadActivePersonaPreamble();
 

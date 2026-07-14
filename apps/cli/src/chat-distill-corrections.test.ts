@@ -39,6 +39,11 @@ const correctedSession = [
   { content: "문단으로 정리했습니다", role: "assistant" as const },
   { content: "그게 아니라 불릿으로 해줘", role: "user" as const }
 ];
+const schedulingSession = [
+  { content: "회의 잡아줘", role: "user" as const },
+  { content: "잡기 전에 확인차 여쭤볼게요, 시간 괜찮으세요?", role: "assistant" as const },
+  { content: "그게 아니라 물어보지 말고 그냥 바로 잡아줘", role: "user" as const }
+];
 const boundaries = [{ tsIso: "2026-05-28T00:00:00.000Z", userId: "stark" }];
 
 describe("distillSessionCorrections — end-of-session auto-distillation (ReasoningBank 2509.25140)", () => {
@@ -144,6 +149,88 @@ describe("distillSessionCorrections — end-of-session auto-distillation (Reason
     });
     expect(res.status).toBe("skipped");
     expect(await queryPlaybook(file, "stark")).toHaveLength(1); // only the seed survives
+  });
+
+  it("records a conflict edge against an existing injectable strategy it contradicts", async () => {
+    // The learn-time half of the behavioural-rule budget: when a new strategy is
+    // distilled, it is classified against every existing injectable strategy and the
+    // conflict edge is persisted, so inject-time resolution is a zero-model lookup.
+    const file = await tmpPlaybook();
+    await recordPlaybookStrategy(file, {
+      createdAt: "2026-05-01T00:00:00.000Z",
+      id: "pb_existing",
+      reward: 2,
+      text: "일정 잡기 전에 항상 확인하기",
+      userId: "stark"
+    });
+    // One provider, two jobs: the distiller call returns a strategy; the
+    // conflict-classifier call (its own system prompt) returns CONFLICT. Keyed on
+    // the prompt so the stub depends on WHICH question it was asked.
+    const provider: ModelProvider = {
+      id: "dual",
+      async generate({ messages }) {
+        const system = messages.find((m) => m.role === "system")?.content ?? "";
+        const output = system.includes("Reply with exactly one word: CONFLICT or OK")
+          ? "CONFLICT"
+          : "strategy: 일정은 물어보지 말고 바로 잡기\ntag: scheduling";
+        return { id: "r", model: "m", output };
+      },
+      async listModels() { return []; },
+      async *stream() {}
+    };
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: provider,
+      embed: async (text: string) => text.startsWith("그게") ? [1, 0, 0] : [0.8, 0.6, 0],
+      idFactory: () => "pb_new",
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
+      readLines: async () => schedulingSession,
+      strategyConsistencySamples: 1
+    });
+    expect(res.status).toBe("recorded");
+    const entries = await queryPlaybook(file, "stark");
+    const fresh = entries.find((e) => e.id === "pb_new");
+    expect(fresh?.conflictsWith).toEqual(["pb_existing"]);
+  });
+
+  it("a conflict-classifier failure records NO edge but still writes the strategy (fail-soft)", async () => {
+    const file = await tmpPlaybook();
+    await recordPlaybookStrategy(file, {
+      createdAt: "2026-05-01T00:00:00.000Z",
+      id: "pb_existing",
+      reward: 2,
+      text: "일정 잡기 전에 항상 확인하기",
+      userId: "stark"
+    });
+    const provider: ModelProvider = {
+      id: "dual",
+      async generate({ messages }) {
+        const system = messages.find((m) => m.role === "system")?.content ?? "";
+        if (system.includes("Reply with exactly one word: CONFLICT or OK")) {
+          throw new Error("classifier down");
+        }
+        return { id: "r", model: "m", output: "strategy: 일정은 물어보지 말고 바로 잡기\ntag: scheduling" };
+      },
+      async listModels() { return []; },
+      async *stream() {}
+    };
+    const res = await distillSessionCorrections({
+      model: "m",
+      modelProvider: provider,
+      embed: async (text: string) => text.startsWith("그게") ? [1, 0, 0] : [0.8, 0.6, 0],
+      idFactory: () => "pb_new",
+      playbookFile: file,
+      readBoundaries: async () => boundaries,
+      readInjectedIds: async () => new Set<string>(),
+      readLines: async () => schedulingSession,
+      strategyConsistencySamples: 1
+    });
+    expect(res.status).toBe("recorded");
+    const fresh = (await queryPlaybook(file, "stark")).find((e) => e.id === "pb_new");
+    expect(fresh).toBeDefined();
+    expect(fresh?.conflictsWith ?? []).toEqual([]);
   });
 
   it("skips when no userId resolves", async () => {

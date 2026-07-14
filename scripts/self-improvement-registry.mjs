@@ -62,6 +62,14 @@ export const SELF_IMPROVEMENT_SURFACES = [
     liveProof: "scripts/eval-playbook-credit.mjs"
   },
   {
+    surface: "rule conflict detection (which learned rule your new one contradicts)",
+    what: "When a new strategy is learned, decides which EXISTING rules it conflicts with, so at most one of the pair ever reaches the prompt.",
+    entry: { file: "packages/agent-core/src/rule-conflict.ts", symbol: "findConflictingRuleIds" },
+    firesFrom: "distillSessionCorrections (chat session end) and distillQueuedCorrections (idle daemon tick), each time a new strategy is recorded",
+    gate: null,
+    liveProof: "apps/cli/scripts/verify-rule-conflict.mjs"
+  },
+  {
     surface: "correction-decay (retiring a rule you contradicted)",
     what: "A new correction that contradicts an applied strategy drops it below the inject line.",
     entry: { file: "packages/autoconfigure/src/decay-contradicted.ts", symbol: "decayContradictedStrategies" },

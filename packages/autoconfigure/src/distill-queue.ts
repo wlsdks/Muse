@@ -17,6 +17,9 @@ import type { ModelProvider } from "@muse/model";
 import {
   distillConsistentStrategy,
   distillStrategyFromCorrection,
+  findConflictingRuleIds,
+  isInjectableStrategy,
+  isStaleStrategy,
   strategyTextSimilarity,
   type CorrectionExchange,
   type DistilledStrategy
@@ -151,6 +154,14 @@ export async function distillQueuedCorrections(deps: DistillQueuedDeps): Promise
       await bumpPlaybookObservation(deps.playbookFile, bestMatch.id);
       continue; // consolidated into the existing lesson — no duplicate, no graduation
     }
+    // Conflict detection at learn time — O(n), once, never in the per-turn hot
+    // path (see rule-conflict.ts / behavioural-rule-budget.ts for why cosine
+    // can't do this). Fail-soft: a classifier error records no conflicts.
+    const conflictCandidates = bankEntries.filter((entry) => isInjectableStrategy(entry) && !isStaleStrategy(entry, now().getTime()));
+    const conflictsWith = await findConflictingRuleIds(strategy.text, conflictCandidates, {
+      model: deps.model,
+      modelProvider: deps.modelProvider
+    }).catch(() => []);
     await recordPlaybookStrategy(deps.playbookFile, {
       createdAt: now().toISOString(),
       id: newId(),
@@ -163,7 +174,8 @@ export async function distillQueuedCorrections(deps: DistillQueuedDeps): Promise
       source: event.correction,
       text: strategy.text,
       userId: event.userId,
-      ...(strategy.tag ? { tag: strategy.tag } : {})
+      ...(strategy.tag ? { tag: strategy.tag } : {}),
+      ...(conflictsWith.length > 0 ? { conflictsWith } : {})
     });
     recorded += 1;
   }

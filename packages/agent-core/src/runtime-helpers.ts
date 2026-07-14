@@ -365,14 +365,27 @@ function safeSnapshotValue(value: string): string {
  *
  * Freshness: facts and plain preferences keep the FRESHEST `maxEntries`
  * (tail) because auto-extract appends chronologically — a head slice would
- * drop every newly-learned fact once memory grows. Vetoes and goals are
- * left uncapped (few + safety-critical), mirroring `buildMusePersona`.
+ * drop every newly-learned fact once memory grows. Vetoes and goals stay
+ * uncapped: no per-turn query reaches this synchronous helper, so the only cut
+ * available is by insertion order — which drops the OLDEST veto, and the oldest
+ * veto is as likely as not the one that matters most. See the note at the veto
+ * line below; the ranked path (behavioural-rule-budget.ts) is the real fix.
  */
 export function renderUserMemorySection(memory: UserMemorySnapshot, maxEntries: number): string | undefined {
   const lines: string[] = [];
   const factEntries = Object.entries(memory.facts).slice(-maxEntries);
   const { plain, vetoes, goals } = classifyPreferenceSlots(memory.preferences);
   const plainPrefs = plain.slice(-maxEntries);
+  // Vetoes are NOT capped here, and that is deliberate. A cap by insertion order
+  // drops the OLDEST veto — which is as likely as not the one that matters most
+  // ("never suggest anything with peanuts") — and this call site has no turn query
+  // to rank by, so it cannot tell a life-threatening veto from a trivial one. A
+  // blind cap on a safety list is a strict regression from letting them all
+  // through. The real fix is the ranked path (behavioural-rule-budget.ts), which
+  // admits any turn-relevant veto unconditionally; until this call site can pass a
+  // query, an unbounded veto list is the lesser harm.
+  const vetoesShown = vetoes;
+  const goalsShown = goals;
   // The typed user model (preferences/schedule/vetoes/goals) was only rendered
   // into the COMPACTION snapshot (buildPersonaSnapshot) — invisible on a normal
   // turn. Surface it here too so the always-on persona section actually uses
@@ -414,15 +427,15 @@ export function renderUserMemorySection(memory: UserMemorySnapshot, maxEntries: 
       lines.push(`- ${key}: ${safeMemoryValue(value)}`);
     }
   }
-  if (vetoes.length > 0) {
+  if (vetoesShown.length > 0) {
     lines.push("Vetoes (never propose or suggest these):");
-    for (const [key, value] of vetoes) {
+    for (const [key, value] of vetoesShown) {
       lines.push(`- ${key}: ${safeMemoryValue(value)}`);
     }
   }
-  if (goals.length > 0) {
+  if (goalsShown.length > 0) {
     lines.push("Goals:");
-    for (const [key, value] of goals) {
+    for (const [key, value] of goalsShown) {
       lines.push(`- ${key}: ${safeMemoryValue(value)}`);
     }
   }

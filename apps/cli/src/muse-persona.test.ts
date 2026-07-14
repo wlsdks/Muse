@@ -1,7 +1,7 @@
 import { MUSE_IDENTITY_CORE } from "@muse/prompts";
 import { describe, expect, it } from "vitest";
 
-import { buildMusePersona, formatCurrentContextLine, personaEntryCap } from "./muse-persona.js";
+import { buildMusePersona, formatCurrentContextLine, PERSONA_ENTRY_CAP_CEILING, personaEntryCap } from "./muse-persona.js";
 
 describe("formatCurrentContextLine", () => {
   it("emits a single 'Current local context: YYYY-MM-DD HH:MM Weekday <part-of-day> (TZ).' line", () => {
@@ -434,12 +434,38 @@ describe("buildMusePersona — persona size cap (performance)", () => {
     }
   });
 
-  it("does NOT cap vetoes (safety-critical, kept whole)", () => {
-    const preferences: Record<string, string> = {};
-    for (let i = 0; i < 60; i += 1) preferences[`veto:v${i}`] = `no${i}`;
+  it("never silently drops a veto — a safety list may not be cut by insertion order", () => {
+    // A tail-cap on vetoes was tried here and reverted. buildMusePersona has no turn
+    // query, so the only cut available is by insertion order — it drops the OLDEST
+    // veto. Measured on a realistic store, that silently dropped "never suggest
+    // anything containing peanuts — anaphylaxis" (learned first) to make room for
+    // twelve later trivia vetoes. An over-long veto list costs tokens; a blind cap
+    // costs the one veto that mattered. The ranked path (behavioural-rule-budget.ts)
+    // admits any turn-relevant veto unconditionally and is the real fix.
+    const preferences: Record<string, string> = { "veto:peanut": "never suggest anything with peanuts" };
+    for (let i = 0; i < 50; i += 1) preferences[`veto:v${i}`] = `no${i}`;
     const out = buildMusePersona({ facts: {}, preferences }, "u") ?? "";
-    expect(out).toContain("v0: no0");
-    expect(out).toContain("v59: no59");
+    expect(out).toContain("never suggest anything with peanuts");
+    expect(out).toContain("v49: no49");
+  });
+
+  it("keeps every goal too — the same insertion-order objection applies", () => {
+    const preferences: Record<string, string> = {};
+    for (let i = 0; i < 50; i += 1) preferences[`goal:g${i}`] = `goal${i}`;
+    const out = buildMusePersona({ facts: {}, preferences }, "u") ?? "";
+    expect(out).toContain("g0: goal0");
+    expect(out).toContain("g49: goal49");
+  });
+
+  it("personaEntryCap clamps a runaway MUSE_PERSONA_MAX_ENTRIES to the ceiling", () => {
+    const prev = process.env.MUSE_PERSONA_MAX_ENTRIES;
+    process.env.MUSE_PERSONA_MAX_ENTRIES = "999999";
+    try {
+      expect(personaEntryCap()).toBe(PERSONA_ENTRY_CAP_CEILING);
+    } finally {
+      if (prev === undefined) delete process.env.MUSE_PERSONA_MAX_ENTRIES;
+      else process.env.MUSE_PERSONA_MAX_ENTRIES = prev;
+    }
   });
 
   // Fact-caution parity with the ask surface (buildMemoryContextBlock):
@@ -541,5 +567,51 @@ describe("buildMusePersona — persona size cap (performance)", () => {
     const bare = buildMusePersona({ facts: { home_city: "Seoul" }, preferences: {} }, "u") ?? "";
     expect(out).toBe(bare);
     expect(out).not.toContain(STALE_MARK);
+  });
+});
+
+describe("buildMusePersona — admittedRuleKeys (the shared behavioural-rule budget)", () => {
+  const preferences: Record<string, string> = {
+    "goal:promotion": "get promoted this year",
+    "veto:peanuts": "never suggest anything containing peanuts",
+    "veto:sushi": "never recommend raw fish restaurants",
+    tone: "concise"
+  };
+
+  it("omitted admittedRuleKeys ⇒ unchanged (every veto/pref/goal shown, today's behaviour)", () => {
+    const withKeys = buildMusePersona({ facts: {}, preferences }, "u") ?? "";
+    expect(withKeys).toContain("peanuts");
+    expect(withKeys).toContain("sushi");
+    expect(withKeys).toContain("concise");
+    expect(withKeys).toContain("promotion");
+  });
+
+  it("filters vetoes/prefs/goals down to exactly the admitted set", () => {
+    const admittedRuleKeys = new Set(["veto:peanuts", "pref:tone"]);
+    const out = buildMusePersona({ facts: {}, preferences }, "u", { admittedRuleKeys }) ?? "";
+    expect(out).toContain("never suggest anything containing peanuts");
+    expect(out).toContain("tone: concise");
+    expect(out).not.toContain("raw fish");
+    expect(out).not.toContain("get promoted this year");
+    expect(out).toContain("more vetoes not relevant this turn");
+    expect(out).toContain("more goals not relevant this turn");
+  });
+
+  it("an empty admittedRuleKeys set drops every veto/pref/goal but keeps facts", () => {
+    const out = buildMusePersona({ facts: { name: "Jinan" }, preferences }, "u", { admittedRuleKeys: new Set() }) ?? "";
+    expect(out).toContain("name: Jinan");
+    expect(out).not.toContain("peanuts");
+    expect(out).not.toContain("sushi");
+    expect(out).not.toContain("concise");
+    expect(out).not.toContain("promotion");
+  });
+
+  it("a mutation that ignored admittedRuleKeys would fail this — the veto guarantee is what actually matters", () => {
+    // Mirrors the real selectBehaviouralRules contract: a relevant veto's key is
+    // ALWAYS in the admitted set even at a tiny budget, so it survives here too.
+    const admittedRuleKeys = new Set(["veto:peanuts"]);
+    const out = buildMusePersona({ facts: {}, preferences }, "u", { admittedRuleKeys }) ?? "";
+    expect(out).toContain("never suggest anything containing peanuts");
+    expect(out).not.toContain("raw fish");
   });
 });

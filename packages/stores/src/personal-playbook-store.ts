@@ -101,7 +101,20 @@ export interface PlaybookEntry {
    */
   readonly reinforcements?: number;
   readonly decays?: number;
+  /**
+   * Ids of OTHER playbook entries this one is known to CONFLICT with — computed
+   * ONCE at learn time (when this entry was distilled/recorded) by an LLM
+   * binary classifier comparing it against the then-existing injectable
+   * strategies (`findConflictingRuleIds`, `@muse/agent-core`). Consumed by
+   * `selectBehaviouralRules` as a deterministic lookup so conflict resolution
+   * at INJECT time costs zero model calls. Absent = no known conflicts.
+   */
+  readonly conflictsWith?: readonly string[];
 }
+
+/** Bounds `PlaybookEntry.conflictsWith` — a handful of conflicting ids is
+ * expected; an unbounded list is either corruption or an attack. */
+export const MAX_CONFLICTS_PER_ENTRY = 20;
 
 export async function readPlaybook(file: string, env: NodeJS.ProcessEnv = process.env): Promise<readonly PlaybookEntry[]> {
   // A WRONG key THROWS here (fail-closed) — propagate it; an undecryptable bank is
@@ -313,6 +326,15 @@ function isPlaybookEntry(value: unknown): value is PlaybookEntry {
   if (e.timesObserved !== undefined && (typeof e.timesObserved !== "number" || !Number.isFinite(e.timesObserved))) return false;
   if (e.reinforcements !== undefined && (typeof e.reinforcements !== "number" || !Number.isFinite(e.reinforcements))) return false;
   if (e.decays !== undefined && (typeof e.decays !== "number" || !Number.isFinite(e.decays))) return false;
+  if (e.conflictsWith !== undefined) {
+    if (!Array.isArray(e.conflictsWith) || e.conflictsWith.length > MAX_CONFLICTS_PER_ENTRY) return false;
+    if (!e.conflictsWith.every((id) => typeof id === "string" && id.length > 0 && id.length <= 200)) return false;
+    // A self-referential edge makes the rule its own conflict LOSER at inject time —
+    // it would suppress itself. It can't arise from the learn path (the id is fresh,
+    // absent from the bank it's compared against), so a self-edge is corruption or a
+    // hand-edit, exactly the case this field's bound exists for. Fail closed.
+    if (e.conflictsWith.includes(e.id)) return false;
+  }
   return true;
 }
 

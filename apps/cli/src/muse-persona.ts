@@ -15,6 +15,7 @@
  *     don't get a stub prompt.
  */
 
+import { admittedRuleKey } from "@muse/agent-core";
 import { composeIdentityPrompt } from "@muse/prompts";
 import {
   CONTESTED_FACT_MARK,
@@ -88,11 +89,19 @@ export function formatCurrentContextLine(now: Date = new Date()): string {
   return `Current local context: ${dateStr} ${timeStr} ${dayOfWeek} ${partOfDay} (${tz}).`;
 }
 
+/**
+ * Hard ceiling on `personaEntryCap()` regardless of env override — closes the
+ * unbounded path (MUSE_PERSONA_MAX_ENTRIES=999999 would otherwise render every
+ * fact/preference ever learned into every turn's system prompt).
+ */
+export const PERSONA_ENTRY_CAP_CEILING = 200;
+
 /** Max facts / plain-preferences rendered into the persona (env override,
- * default 40, floor 1). Bounds the per-turn system-prompt size as memory grows. */
+ * default 40, floor 1, clamped to PERSONA_ENTRY_CAP_CEILING). Bounds the
+ * per-turn system-prompt size as memory grows. */
 export function personaEntryCap(): number {
   const raw = Number(process.env.MUSE_PERSONA_MAX_ENTRIES);
-  return Number.isFinite(raw) && raw >= 1 ? Math.trunc(raw) : 40;
+  return Number.isFinite(raw) && raw >= 1 ? Math.min(PERSONA_ENTRY_CAP_CEILING, Math.trunc(raw)) : 40;
 }
 
 export function buildMusePersona(
@@ -103,6 +112,17 @@ export function buildMusePersona(
     readonly contestedKeys?: ReadonlySet<string>;
     readonly provisionalKeys?: ReadonlySet<string>;
     readonly staleKeys?: ReadonlySet<string>;
+    /**
+     * Composite `${kind}:${key}` keys admitted by the shared behavioural-rule
+     * budget (`selectBehaviouralRules`, agent-core) for THIS turn's query.
+     * When provided, vetoes/preferences/goals are filtered to this set instead
+     * of shown unconditionally — the ranked, safety-guaranteed replacement for
+     * the old uncapped list (a turn-relevant veto is ALWAYS admitted; see
+     * behavioural-rule-budget.ts). Omitted (every caller without a turn
+     * query — the REPL persona build, the verify scripts) preserves today's
+     * uncapped rendering.
+     */
+    readonly admittedRuleKeys?: ReadonlySet<string>;
   } = {}
 ): string | undefined {
   const facts = Object.entries(memory.facts);
@@ -123,13 +143,33 @@ export function buildMusePersona(
   const episodes = (memory.episodes ?? []).filter((entry) => entry.summary.trim().length > 0);
   // Bound the persona so a long-lived memory (auto-extract appends facts every
   // session) can't grow the per-turn system prompt without limit on local Qwen.
-  // Keep the freshest N (tail — auto-extract appends chronologically); vetoes/
-  // goals stay uncapped (few + safety-critical), topics/episodes capped already.
+  // Keep the freshest N (tail — auto-extract appends chronologically).
   const maxEntries = personaEntryCap();
   const factsShown = facts.length > maxEntries ? facts.slice(-maxEntries) : facts;
   const factsDropped = facts.length - factsShown.length;
-  const prefsShown = plainPrefs.length > maxEntries ? plainPrefs.slice(-maxEntries) : plainPrefs;
+  // `admittedRuleKeys` (when provided) is the shared behavioural-rule budget's
+  // verdict for THIS turn's query — a stronger, ranked replacement for the
+  // plain recency cap: a turn-relevant veto is admitted unconditionally
+  // (behavioural-rule-budget.ts), so filtering by it can only ever be SAFER
+  // than showing an insertion-order-capped subset. Absent ⇒ every caller
+  // without a turn query (the REPL persona build, the verify scripts) keeps
+  // today's uncapped-then-recency-capped rendering.
+  const admitted = options.admittedRuleKeys;
+  const prefsForBudget = admitted ? plainPrefs.filter(([key]) => admitted.has(admittedRuleKey("pref", key))) : plainPrefs;
+  const prefsShown = prefsForBudget.length > maxEntries ? prefsForBudget.slice(-maxEntries) : prefsForBudget;
   const prefsDropped = plainPrefs.length - prefsShown.length;
+  // Vetoes and goals stay UNCAPPED by insertion order at this call site — a cap
+  // by recency was tried here and had to come out. Measured on a realistic
+  // store, a blind recency cap silently dropped "never suggest anything
+  // containing peanuts — anaphylaxis" (learned first) to make room for twelve
+  // later trivia vetoes; a blind cap on a safety list is strictly worse than an
+  // over-long one. When `admittedRuleKeys` IS available (the real `muse ask`
+  // path), that ranked, veto-guaranteeing budget is the real fix and is used
+  // instead of the uncapped list.
+  const vetoesShown = admitted ? vetoes.filter(([key]) => admitted.has(admittedRuleKey("veto", key))) : vetoes;
+  const vetoesDropped = vetoes.length - vetoesShown.length;
+  const goalsShown = admitted ? goals.filter(([key]) => admitted.has(admittedRuleKey("goal", key))) : goals;
+  const goalsDropped = goals.length - goalsShown.length;
   const recurringThreads = (memory.recurringThreads ?? []).filter((thread) => thread.topic.trim().length > 0).slice(0, 3);
   if (
     facts.length === 0
@@ -195,17 +235,19 @@ export function buildMusePersona(
     lines.push("");
     lines.push("Preferences:");
     for (const [key, value] of prefsShown) lines.push(`  - ${key}: ${defangMemoryValue(value)}`);
-    if (prefsDropped > 0) lines.push(`  - …(+${prefsDropped} older preferences not shown)`);
+    if (prefsDropped > 0) lines.push(`  - …(+${prefsDropped} ${admitted ? "more preferences not relevant this turn" : "older preferences not shown"})`);
   }
   if (vetoes.length > 0) {
     lines.push("");
     lines.push("Vetoes (never do these, never suggest these):");
-    for (const [id, value] of vetoes) lines.push(`  - ${id}: ${defangMemoryValue(value)}`);
+    for (const [id, value] of vetoesShown) lines.push(`  - ${id}: ${defangMemoryValue(value)}`);
+    if (vetoesDropped > 0) lines.push(`  - …(+${vetoesDropped} more vetoes not relevant this turn)`);
   }
   if (goals.length > 0) {
     lines.push("");
     lines.push("Goals the user is pursuing:");
-    for (const [id, value] of goals) lines.push(`  - ${id}: ${defangMemoryValue(value)}`);
+    for (const [id, value] of goalsShown) lines.push(`  - ${id}: ${defangMemoryValue(value)}`);
+    if (goalsDropped > 0) lines.push(`  - …(+${goalsDropped} more goals not relevant this turn)`);
   }
   if (recentTopics.length > 0) {
     // Auto-extracted at REPL exit. Without this section the persona

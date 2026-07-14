@@ -26,6 +26,7 @@ import {
   distillConsistentStrategy,
   distillStrategyFromCorrection,
   extractCurrentSessionTurns,
+  findConflictingRuleIds,
   isInjectableStrategy,
   isStaleStrategy,
   selectCreditTargetLlm,
@@ -297,6 +298,19 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
       continue;
     }
     try {
+      // Conflict detection runs HERE — at learn time, once, O(n) — never in the
+      // per-turn hot path. Compares the freshly-distilled strategy against every
+      // currently-injectable existing strategy with the LLM binary classifier
+      // (rule-conflict.ts); embedding cosine cannot separate a conflict from a
+      // compatible pair (measured, see behavioural-rule-budget.ts). The edge is
+      // persisted on the entry so `selectBehaviouralRules` resolves it as a
+      // deterministic lookup at inject time, with zero model calls in the turn.
+      // Fail-soft: a classifier error records no conflicts, never blocks the write.
+      const conflictCandidates = existing.filter((entry) => isInjectableStrategy(entry) && !isStaleStrategy(entry, now().getTime()));
+      const conflictsWith = await findConflictingRuleIds(distilled.text, conflictCandidates, {
+        model: options.model,
+        modelProvider: options.modelProvider
+      }).catch(() => []);
       await recordPlaybookStrategy(playbookFile, {
         createdAt: now().toISOString(),
         id: idFactory(),
@@ -312,7 +326,8 @@ export async function distillSessionCorrections(options: DistillCorrectionsOptio
         source: exchange.correction,
         text: distilled.text,
         userId: ownerId,
-        ...(distilled.tag ? { tag: distilled.tag } : {})
+        ...(distilled.tag ? { tag: distilled.tag } : {}),
+        ...(conflictsWith.length > 0 ? { conflictsWith } : {})
       });
       recorded.push(distilled.tag ? { tag: distilled.tag, text: distilled.text } : { text: distilled.text });
     } catch {

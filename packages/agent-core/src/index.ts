@@ -542,6 +542,24 @@ export {
   type BrowserActionDecision
 } from "./browser-action-budget.js";
 export {
+  admittedRuleKey,
+  playbookPrefetchTopK,
+  ruleBudget,
+  selectBehaviouralRules,
+  RULE_BUDGET_CEILING,
+  RULE_BUDGET_DEFAULT,
+  type BehaviouralRule,
+  type BehaviouralRuleKind,
+  type SelectBehaviouralRulesOptions,
+  type SelectBehaviouralRulesResult,
+  type SuppressedRule
+} from "./behavioural-rule-budget.js";
+export {
+  classifyRuleConflict,
+  findConflictingRuleIds,
+  type ClassifyRuleConflictOptions
+} from "./rule-conflict.js";
+export {
   GeneralShellPhaseGate,
   GENERAL_SHELL_TOOL_NAMES,
   STRUCTURED_FILE_WRITE_TOOL_NAMES
