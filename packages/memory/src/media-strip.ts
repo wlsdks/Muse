@@ -35,6 +35,10 @@ function isInlineImage(mimeType: string, dataBase64: string | undefined): dataBa
   return typeof dataBase64 === "string" && dataBase64.length > 0 && mimeType.toLowerCase().startsWith("image/");
 }
 
+function isConversationMessage(message: ConversationMessage | undefined): message is ConversationMessage {
+  return message !== undefined;
+}
+
 function lastUserIndex(messages: readonly ConversationMessage[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]?.role === "user") return i;
@@ -62,6 +66,10 @@ export function stripStaleImageAttachments(
 
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
+    if (!isConversationMessage(message)) {
+      continue;
+    }
+
     // Only history strictly before the current (last user) turn is stale.
     if (i >= boundary || !message.attachments || message.attachments.length === 0) {
       out.push(message);
