@@ -77,6 +77,12 @@ export async function startOAuthCallbackServer(
   }, options.timeoutMs);
   timeout.unref();
 
+  // Keep callback path clean: once the wait has been resolved/rejected,
+  // clear the timer so an unused waiting path doesn't hold resources.
+  codeDeferred.promise.finally(() => {
+    clearTimeout(timeout);
+  });
+
   const close = async (): Promise<void> => {
     clearTimeout(timeout);
     if (!server.listening) {
