@@ -40,6 +40,9 @@ export interface LocalDirNotesProviderOptions {
   readonly maxListEntries?: number;
 }
 
+type DirEntry = { readonly name: string; isFile(): boolean; isDirectory(): boolean };
+type ReaddirFn = (path: string) => Promise<readonly DirEntry[]>;
+
 export class LocalDirNotesProvider implements NotesProvider {
   readonly id = "local";
   private readonly notesDir: string;
@@ -163,9 +166,10 @@ export class LocalDirNotesProvider implements NotesProvider {
     }
     const needle = trimmed.toLowerCase();
     const cap = Math.max(1, Math.trunc(limit));
+    const listDir: ReaddirFn = async (path) => fs.readdir(path, { withFileTypes: true });
 
     const files: string[] = [];
-    await this.walk(this.notesDir, (rel) => { files.push(rel); }, new Set(), fs.readdir as never, resolve, sep);
+    await this.walk(this.notesDir, (rel) => { files.push(rel); }, new Set(), listDir, resolve, sep);
 
     const matches: NotesSearchHit[] = [];
     for (const rel of files) {
@@ -294,7 +298,7 @@ export class LocalDirNotesProvider implements NotesProvider {
     dir: string,
     accept: (relPath: string) => void,
     visited: Set<string>,
-    readdir: (path: string, options: { withFileTypes: true }) => Promise<readonly { readonly name: string; isFile(): boolean; isDirectory(): boolean }[]>,
+    readdir: ReaddirFn,
     resolve: (...parts: readonly string[]) => string,
     sep: string
   ): Promise<void> {
@@ -304,7 +308,7 @@ export class LocalDirNotesProvider implements NotesProvider {
     visited.add(dir);
     let entries: readonly { readonly name: string; isFile(): boolean; isDirectory(): boolean }[];
     try {
-      entries = await readdir(dir, { withFileTypes: true });
+      entries = await readdir(dir);
     } catch {
       return;
     }

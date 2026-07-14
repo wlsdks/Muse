@@ -26,6 +26,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Readable } from "node:stream";
 
 import { requireAuthenticated } from "./server-helpers.js";
+import { toBody } from "./compat-parsers.js";
 import { sseData } from "./server-multipart-sse.js";
 import type { ServerOptions } from "./server.js";
 
@@ -98,7 +99,7 @@ export function registerAskRoutes(server: FastifyInstance, options: AskRoutesOpt
     if (!requireAuthenticated(request, reply, Boolean(options.authService))) {
       return reply;
     }
-    const body = (request.body ?? {}) as AskBody;
+    const body = toBody(request.body);
     const question = typeof body.question === "string" ? body.question.trim() : "";
     if (question.length === 0) {
       return reply.status(400).send({ error: "body.question (non-empty string) is required" });

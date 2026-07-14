@@ -11,7 +11,7 @@ export interface ApiClient {
   readonly post: <T>(path: string, body?: Record<string, unknown>) => Promise<T>;
   readonly put: <T>(path: string, body?: Record<string, unknown>) => Promise<T>;
   readonly patch: <T>(path: string, body?: Record<string, unknown>) => Promise<T>;
-  readonly del: <T>(path: string) => Promise<T>;
+  readonly del: (path: string) => Promise<void>;
 }
 
 export function createApiClient(baseUrl: string, token: string): ApiClient {
@@ -31,7 +31,7 @@ async function request<T>(
   path: string,
   body: Record<string, unknown> | undefined,
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
-): Promise<T> {
+): Promise<T | void> {
   const response = await fetch(new URL(path, baseUrl).toString(), {
     body: body ? JSON.stringify(body) : undefined,
     headers: {
@@ -45,9 +45,9 @@ async function request<T>(
     throw new Error(await errorDetail(response));
   }
   if (response.status === 204) {
-    return undefined as never as T;
+    return;
   }
-  return (await response.json()) as unknown as T;
+  return (await response.json()) as T;
 }
 
 // Prefer the server's actionable error body (`errorMessage` / `message`)

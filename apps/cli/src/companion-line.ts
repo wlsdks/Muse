@@ -565,6 +565,16 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | undefined>
   return Promise.race([p.catch(() => undefined), sleep(ms).then(() => undefined)]);
 }
 
+function toMuseEnvironment(processEnv: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(processEnv)) {
+    if (typeof value === "string") {
+      env[key] = value;
+    }
+  }
+  return env;
+}
+
 /**
  * Apply the model layer to a plan: for `proactive`, re-phrase and swap ONLY if
  * `phrasingIsGrounded`; for content-free modes, generate and swap ONLY if
@@ -596,12 +606,13 @@ export async function applyCompanionVoice(
 function resolveCompanionModel(env: NodeJS.ProcessEnv): CompanionModelFns | undefined {
   if ((env.MUSE_COMPANION_NO_MODEL ?? "").trim().length > 0) return undefined;
   let provider: ReturnType<typeof createModelProvider>;
+  const museEnvironment = toMuseEnvironment(env);
   try {
-    provider = createModelProvider(env as never);
+    provider = createModelProvider(museEnvironment);
   } catch {
     return undefined;
   }
-  const modelId = resolveDefaultModel(env as never);
+  const modelId = resolveDefaultModel(museEnvironment);
   if (!provider || !modelId) return undefined;
   const call = async ({ system, prompt }: { system: string; prompt: string }): Promise<string> => {
     const res = await provider.generate({
