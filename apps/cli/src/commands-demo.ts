@@ -12,7 +12,7 @@
  * `MUSE_NOTES_INDEX_FILE` are repointed at the sample corpus and a temp
  * index for the duration of the spawned `ask` calls only.
  */
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import type { Command } from "commander";
 
+import { waitForChildProcessResult } from "./async-promises.js";
 import type { ProgramIO } from "./program.js";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -103,7 +104,7 @@ export function buildDemoEnv(base: NodeJS.ProcessEnv, opts: DemoEnvOptions): Nod
 
 export type DemoAskRunner = (question: string, env: NodeJS.ProcessEnv) => void | Promise<void>;
 
-const defaultAskRunner: DemoAskRunner = (question, env) => {
+const defaultAskRunner: DemoAskRunner = async (question, env) => {
   const entry = process.argv[1];
   if (!entry) {
     throw new Error("muse demo: cannot resolve the CLI entrypoint to run `muse ask`");
@@ -111,10 +112,11 @@ const defaultAskRunner: DemoAskRunner = (question, env) => {
   // Inject every sample note (corpus is tiny) so a relevant note can
   // never be ranked out of the top-K — a false refusal on a question
   // the demo corpus DOES answer would misrepresent the edge.
-  spawnSync(process.execPath, [entry, "ask", question, "--top", String(DEMO_CORPUS_SIZE)], {
+  const askProcess = spawn(process.execPath, [entry, "ask", question, "--top", String(DEMO_CORPUS_SIZE)], {
     stdio: "inherit",
     env
   });
+  await waitForChildProcessResult(askProcess, "muse demo ask runner");
 };
 
 export function registerDemoCommand(
