@@ -336,10 +336,7 @@ async function runGroundingDoctor(io: ProgramIO): Promise<"ok" | "fail"> {
   const baseUrl = resolveOllamaUrl().replace(/\/$/, "");
   const reachable = await (async (): Promise<boolean> => {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3_000);
-      const response = await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
-      clearTimeout(timer);
+      const response = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(3_000) });
       return response.ok;
     } catch {
       return false;
@@ -559,10 +556,7 @@ export async function runLocalDoctor(runtimeOptions: DoctorLocalRuntimeOptions =
   const ollama_base = resolveOllamaUrl(env);
   let ollamaModels: readonly OllamaTagsEntry[] | undefined;
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
-    const r = await runtime.fetchImpl(`${ollama_base}/api/tags`, { signal: controller.signal });
-    clearTimeout(timeout);
+    const r = await runtime.fetchImpl(`${ollama_base}/api/tags`, { signal: AbortSignal.timeout(1_500) });
     if (r.ok) {
       const j = await r.json() as { models?: unknown[] };
       ollamaModels = Array.isArray(j.models) ? j.models.filter(isOllamaTagsEntry) : [];
@@ -698,10 +692,7 @@ export async function runLocalDoctor(runtimeOptions: DoctorLocalRuntimeOptions =
     const base = searxng_url.replace(/\/+$/u, "");
     let health_ok: boolean;
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1500);
-      const r = await runtime.fetchImpl(`${base}/healthz`, { signal: controller.signal });
-      clearTimeout(timeout);
+      const r = await runtime.fetchImpl(`${base}/healthz`, { signal: AbortSignal.timeout(1_500) });
       health_ok = r.ok;
     } catch {
       health_ok = false;
@@ -715,13 +706,10 @@ export async function runLocalDoctor(runtimeOptions: DoctorLocalRuntimeOptions =
     } else {
       // JSON-format probe — the actual code path muse.search uses.
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2_500);
         const r = await runtime.fetchImpl(`${base}/search?q=health&format=json`, {
           headers: { "accept": "application/json" },
-          signal: controller.signal
+          signal: AbortSignal.timeout(2_500)
         });
-        clearTimeout(timeout);
         if (!r.ok) {
           checks.push({
             detail: `${base} up but /search?format=json returned ${r.status.toString()} — enable JSON in settings.yml (see docs/setup-local-llm.md)`,

@@ -135,11 +135,8 @@ async function gatherState(io: ProgramIO): Promise<OnboardingState> {
   let ollamaReachable = false;
   let installedModels: string[] = [];
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3_000);
     const fetchImpl = io.fetch ?? globalThis.fetch;
-    const response = await fetchImpl(`${baseUrl}/api/tags`, { signal: controller.signal });
-    clearTimeout(timer);
+    const response = await fetchImpl(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(3_000) });
     if (response.ok) {
       ollamaReachable = true;
       const body = await response.json() as { models?: { name?: string }[] };

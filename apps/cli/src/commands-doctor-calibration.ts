@@ -74,10 +74,7 @@ export async function runCalibrationDoctor(io: ProgramIO, alpha: number, asJson:
   const baseUrl = resolveOllamaUrl().replace(/\/$/, "");
   const reachable = await (async (): Promise<boolean> => {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3_000);
-      const response = await fetch(`${baseUrl}/api/tags`, { signal: controller.signal });
-      clearTimeout(timer);
+      const response = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(3_000) });
       return response.ok;
     } catch {
       return false;

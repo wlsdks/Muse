@@ -555,10 +555,7 @@ export async function runFirstRunSetupInteractive(deps: RunFirstRunInteractiveDe
 async function probeLocalOllama(env: NodeJS.ProcessEnv, fetchImpl?: typeof globalThis.fetch): Promise<{ reachable: boolean; detail: string }> {
   const baseUrl = (env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/u, "");
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2_000);
-    const response = await (fetchImpl ?? globalThis.fetch)(`${baseUrl}/api/tags`, { signal: controller.signal });
-    clearTimeout(timer);
+    const response = await (fetchImpl ?? globalThis.fetch)(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(2_000) });
     if (response.ok) {
       const body = (await response.json()) as { models?: { name?: string }[] };
       const count = (body.models ?? []).length;
