@@ -62,7 +62,8 @@ import type {
   OutputGuardStage,
   ResponseFilterStage,
   UserMemoryInjectionOptions,
-  UserMemoryProvider
+  UserMemoryProvider,
+  UserModelComposer
 } from "./types.js";
 
 export interface AgentRuntimeOptions {
@@ -157,6 +158,7 @@ export interface AgentRuntimeOptions {
   readonly tracer?: MuseTracer;
   readonly tokenUsageSink?: TokenUsageSink;
   readonly userMemoryProvider?: UserMemoryProvider;
+  readonly userModelComposer?: UserModelComposer;
   readonly userMemoryInjection?: UserMemoryInjectionOptions;
   readonly conversationSummaryStore?: ConversationSummaryStore;
   readonly guards?: readonly GuardStage[];

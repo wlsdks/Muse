@@ -186,6 +186,23 @@ export interface UserMemoryProvider {
   findByUserId(userId: string): Awaitable<UserMemorySnapshot | undefined>;
 }
 
+/**
+ * Optional richer composer for the "user-memory" system section. When supplied
+ * (runtime-assembly wires `@muse/recall`'s `buildMusePersona` behind an opt-in
+ * flag), its output REPLACES the default `renderUserMemorySection` for that
+ * section — so every surface shares ONE learned-user-model composition instead
+ * of the CLI hand-injecting a richer block the API never sees. Returns
+ * `undefined` to fall back to the default rendering, so no composer / an empty
+ * result is byte-identical to today. agent-core defines only the TYPE; the impl
+ * lives in the assembly, keeping agent-core → recall out of the dependency
+ * graph (recall already depends on agent-core).
+ */
+export type UserModelComposer = (
+  memory: UserMemorySnapshot,
+  userId: string,
+  maxEntries: number
+) => string | undefined;
+
 export interface UserMemoryInjectionOptions {
   readonly maxEntries?: number;
 }

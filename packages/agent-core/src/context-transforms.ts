@@ -54,7 +54,8 @@ import type {
   AgentRunInput,
   AgentSpecResolver,
   UserMemoryProvider,
-  UserMemorySnapshot
+  UserMemorySnapshot,
+  UserModelComposer
 } from "./types.js";
 
 export async function applyAgentSpec(
@@ -314,7 +315,8 @@ export async function applyEpisodicRecall(
 export async function applyUserMemory(
   context: AgentRunContext,
   provider: UserMemoryProvider | undefined,
-  maxEntries: number
+  maxEntries: number,
+  composer?: UserModelComposer
 ): Promise<AgentRunInput> {
   if (!provider) {
     return context.input;
@@ -332,7 +334,10 @@ export async function applyUserMemory(
   if (!memory) {
     return context.input;
   }
-  const rendered = renderUserMemorySection(memory, maxEntries);
+  // A supplied composer (the shared @muse/recall user-model layer, wired at the
+  // assembly) REPLACES the default section; declining (undefined) falls back to
+  // the built-in rendering, so no composer / an empty result is byte-identical.
+  const rendered = composer?.(memory, userId, maxEntries) ?? renderUserMemorySection(memory, maxEntries);
   if (!rendered) {
     return context.input;
   }

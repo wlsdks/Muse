@@ -170,7 +170,8 @@ import type {
   HookStage,
   OutputGuardStage,
   ResponseFilterStage,
-  UserMemoryProvider
+  UserMemoryProvider,
+  UserModelComposer
 } from "./types.js";
 import type {
   AgentRuntimeOptions,
@@ -292,6 +293,7 @@ export class AgentRuntime {
   private readonly tracer: MuseTracer;
   private readonly tokenUsageSink?: TokenUsageSink;
   private readonly userMemoryProvider?: UserMemoryProvider;
+  private readonly userModelComposer?: UserModelComposer;
   private readonly userMemoryMaxEntries: number;
   private readonly conversationSummaryStore?: ConversationSummaryStore;
   private readonly guards: readonly GuardStage[];
@@ -374,6 +376,7 @@ export class AgentRuntime {
     this.tracer = options.tracer ?? createNoOpMuseTracer();
     this.tokenUsageSink = options.tokenUsageSink;
     this.userMemoryProvider = options.userMemoryProvider;
+    this.userModelComposer = options.userModelComposer;
     this.userMemoryMaxEntries = Math.max(1, options.userMemoryInjection?.maxEntries ?? 12);
     this.conversationSummaryStore = options.conversationSummaryStore;
     this.guards = options.guards ?? [];
@@ -612,7 +615,7 @@ export class AgentRuntime {
     const tools = this.modelTools(layeredContext);
     await this.assertModelCanUseTools(selected, tools.length);
 
-    const memoryAppliedInput = await applyUserMemoryFn(layeredContext, this.userMemoryProvider, this.userMemoryMaxEntries);
+    const memoryAppliedInput = await applyUserMemoryFn(layeredContext, this.userMemoryProvider, this.userMemoryMaxEntries, this.userModelComposer);
     const clarifyAppliedInput = applyClarifyDirectiveFn({ ...layeredContext, input: memoryAppliedInput });
     const memoryAppliedContext: AgentRunContext = { ...layeredContext, input: clarifyAppliedInput };
     const activeContextSnapshot = await resolveActiveContextSnapshotFn(memoryAppliedContext, this.activeContextProvider);
