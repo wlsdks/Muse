@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { setTimeout as sleepWithTimer } from "node:timers/promises";
 
 export interface RunCommandResult {
   readonly stdout: string;
@@ -140,7 +139,6 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
     })
   ]);
 
-  const timeoutController = new AbortController();
   const hasFiniteTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0;
 
   const abortPromise = abortSignal
@@ -167,18 +165,22 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
     return await Promise.race([outcome, abortPromise]);
   }
 
-  const timeout = sleepWithTimer(timeoutMs, undefined, {
-    signal: timeoutController.signal,
-    ref: false
-  }).then(() => {
-    child.kill(killSignal);
-    return {
-      exitCode: null,
-      signal: typeof killSignal === "string" ? killSignal : null,
-      stderr: Buffer.concat(stderr.chunks).toString(encoding),
-      stdout: Buffer.concat(stdout.chunks).toString(encoding),
-      timedOut: true
-    };
+  // Plain setTimeout, not node:timers/promises — vi.useFakeTimers() cannot
+  // intercept timers/promises, and downstream watchdog tests drive this
+  // timeout with fake timers.
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<RunCommandResult>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      child.kill(killSignal);
+      resolve({
+        exitCode: null,
+        signal: typeof killSignal === "string" ? killSignal : null,
+        stderr: Buffer.concat(stderr.chunks).toString(encoding),
+        stdout: Buffer.concat(stdout.chunks).toString(encoding),
+        timedOut: true
+      });
+    }, timeoutMs);
+    timeoutHandle.unref?.();
   });
 
   try {
@@ -188,6 +190,6 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
   } finally {
     child.stdout.off("data", onStdoutData);
     child.stderr.off("data", onStderrData);
-    timeoutController.abort();
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
   }
 }

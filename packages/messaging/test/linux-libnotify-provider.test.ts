@@ -13,6 +13,8 @@ import { defaultRunner } from "../src/linux-libnotify-provider.js";
 
 interface FakeChild extends EventEmitter {
   stderr: EventEmitter;
+  stdout: EventEmitter;
+  stdin: { on: () => void; write: () => void; end: () => void };
   kill: (signal?: string) => boolean;
   killedWith?: string;
 }
@@ -20,6 +22,10 @@ interface FakeChild extends EventEmitter {
 function fakeSpawn(): { spawnFn: typeof spawn; child: FakeChild } {
   const child = new EventEmitter() as FakeChild;
   child.stderr = new EventEmitter();
+  // The shared runCommandWithTimeout spawns with full pipes and wires
+  // stdout/stdin too — the fake must carry all three streams.
+  child.stdout = new EventEmitter();
+  child.stdin = { end: () => undefined, on: () => undefined, write: () => undefined };
   child.kill = (signal?: string): boolean => {
     child.killedWith = signal ?? "SIGTERM";
     return true;
