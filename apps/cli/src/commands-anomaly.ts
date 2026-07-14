@@ -7,11 +7,15 @@
  */
 
 import { dailyCounts, mostAnomalousDays, type DayAnomaly } from "@muse/agent-core";
-import { resolveActionLogFile, resolveEpisodesFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { resolveActionLogFile, resolveEpisodesFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { readActionLog, readEpisodes, readReminders, readTasks } from "@muse/stores";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
+
+function environment(): MuseEnvironment {
+  return process.env;
+}
 
 const parseMs = (iso: string | undefined): number => (iso ? Date.parse(iso) : Number.NaN);
 
@@ -61,7 +65,7 @@ export function registerAnomalyCommand(program: Command, io: ProgramIO): void {
     .description("Spot your most unusual days — activity that stands out against your own history (local, robust, draft-first)")
     .option("--json", "Print the raw anomalies")
     .action(async (options: { readonly json?: boolean }) => {
-      const stamps = await gatherActivityTimestamps(process.env as Record<string, string | undefined>);
+      const stamps = await gatherActivityTimestamps(environment());
       const days = dailyCounts(stamps);
       const anomalies = mostAnomalousDays(days);
       if (options.json) {

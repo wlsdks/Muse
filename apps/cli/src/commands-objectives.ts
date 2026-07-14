@@ -8,18 +8,22 @@
 
 import { randomUUID } from "node:crypto";
 
-import { resolveObjectivesFile } from "@muse/autoconfigure";
+import { resolveObjectivesFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { addObjective, patchObjective, readObjectives, serializeObjective, type ObjectiveKind, type ObjectiveStatus } from "@muse/stores";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
+function environment(): MuseEnvironment {
+  return process.env;
+}
+
 const KINDS = ["watch", "until", "notify"] as const;
 const STATUS_FILTERS = ["active", "done", "escalated", "cancelled", "all"] as const;
 
 function objectivesFile(): string {
-  return resolveObjectivesFile(process.env as Record<string, string | undefined>);
+  return resolveObjectivesFile(environment());
 }
 
 function assertOneOf(raw: string, allowed: readonly string[], flag: string): void {

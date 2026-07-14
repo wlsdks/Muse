@@ -10,7 +10,7 @@
  */
 
 import { overdueContacts, type OverdueContact } from "@muse/agent-core";
-import { interactionsFromEvents, resolveContactsFile, resolveLocalCalendarFile, resolveNotesDir } from "@muse/autoconfigure";
+import { interactionsFromEvents, resolveContactsFile, resolveLocalCalendarFile, resolveNotesDir, type MuseEnvironment } from "@muse/autoconfigure";
 import { readLocalEvents } from "./today-local-sources.js";
 import { addContact, contactIdentifier, decryptContactsAtRest, encryptContactsAtRest, isContactsEncrypted, linkContacts, queryContacts, resolveContact, resolveUpcomingBirthdays, writeContacts, type Contact } from "@muse/stores";
 
@@ -22,8 +22,12 @@ import type { Command } from "commander";
 import { buildContactNetwork, formatContactNetwork } from "./contact-network.js";
 import type { ProgramIO } from "./program.js";
 
+function environment(): MuseEnvironment {
+  return process.env;
+}
+
 function contactsFile(): string {
-  return resolveContactsFile(process.env as Record<string, string | undefined>);
+  return resolveContactsFile(environment());
 }
 
 /** Read every note body from the local notes dir (best-effort; an unreadable note is skipped). */
@@ -387,7 +391,7 @@ export function registerContactsCommands(program: Command, io: ProgramIO): void 
         // reconnect section) — so the two never diverge, and a recurring event
         // (a weekly standup with Bob) is expanded into its instances, giving a
         // real interaction history instead of a single stored row.
-        const provided = await readLocalEvents(resolveLocalCalendarFile(process.env as Record<string, string | undefined>), new Date(0), new Date());
+        const provided = await readLocalEvents(resolveLocalCalendarFile(environment()), new Date(0), new Date());
         events = provided.map((event) => ({ startsAt: event.startsAtIso, title: event.title }));
       } catch {
         // no local calendar → no interaction history → nothing overdue
@@ -526,7 +530,7 @@ export function registerContactsCommands(program: Command, io: ProgramIO): void 
         return;
       }
       const target = resolution.contact;
-      const noteBodies = await readNoteBodies(resolveNotesDir(process.env as Record<string, string | undefined>));
+      const noteBodies = await readNoteBodies(resolveNotesDir(environment()));
       const related = relatedByCooccurrence({
         contacts: all.map((c) => ({ aliases: c.aliases, id: c.id, name: c.name })),
         limit,

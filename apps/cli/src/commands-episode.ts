@@ -16,7 +16,7 @@
  */
 
 import { clearEpisodes, decryptEpisodesAtRest, encryptEpisodesAtRest, isEpisodesEncrypted, planEpisodeConsolidation, readEpisodes, recurringThemes, removeEpisode, serializeEpisode, writeEpisodes, type PersistedEpisode } from "@muse/stores";
-import { resolveEpisodesFile } from "@muse/autoconfigure";
+import { resolveEpisodesFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { copyFile } from "node:fs/promises";
 import type { Command } from "commander";
 
@@ -31,12 +31,16 @@ import { formatLocalDateTime as shortDateTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 import { DEFAULT_EMBED_MODEL } from "./embed-model-default.js";
 
+function environment(): MuseEnvironment {
+  return process.env;
+}
+
 interface SharedOptions {
   readonly json?: boolean;
 }
 
 function localEpisodesFile(): string {
-  return resolveEpisodesFile(process.env as Record<string, string | undefined>);
+  return resolveEpisodesFile(environment());
 }
 
 export interface EpisodeSinceOptions {

@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { resolveNotesDir } from "@muse/autoconfigure";
+import { resolveNotesDir, type MuseEnvironment } from "@muse/autoconfigure";
 import { createNotesMcpServer } from "@muse/domain-tools";
 import type { SpeechToTextProvider } from "@muse/voice";
 import type { Command } from "commander";
@@ -22,6 +22,10 @@ import { defaultBuildVoiceProviders, defaultShells, type ListenShells } from "./
 import type { ProgramIO } from "./program.js";
 import { captureVoiceText } from "./voice-capture.js";
 import { DEFAULT_EMBED_MODEL } from "./embed-model-default.js";
+
+function environment(): MuseEnvironment {
+  return process.env;
+}
 
 function pad(n: number): string {
   return n.toString().padStart(2, "0");
@@ -152,7 +156,7 @@ export function registerNoteCommand(program: Command, io: ProgramIO, helpers: No
       const path = dailyInboxNotePath(now);
       const line = formatCaptureLine(text, now);
 
-      const notesDir = resolveNotesDir(process.env as Record<string, string | undefined>);
+      const notesDir = resolveNotesDir(environment());
       const server = createNotesMcpServer({ notesDir });
       const append = server.tools.find((t) => t.name === "append");
       if (!append) {
