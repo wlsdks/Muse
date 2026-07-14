@@ -28,7 +28,7 @@ import { createToolExposureAuthority, type ToolExposureAuthority } from "@muse/p
 import { gateChatAnswerGrounding } from "@muse/recall";
 
 import { createChannelPendingRecorder } from "./channel-pending-recorder.js";
-import { createChatApprovalGate, formatApprovalNotice, type ChatPendingDraft } from "./chat-approval-gate.js";
+import { createChatApprovalGate, formatApprovalNotice, type ChatPendingDraft, type PersistedApproval } from "./chat-approval-gate.js";
 import { CHANNEL_APPROVAL_EXPOSURE_ALLOWLIST } from "./chat-write-allowlist.js";
 import type { AgentSpecInput } from "@muse/agent-specs";
 import type { RuntimeSettingType } from "@muse/runtime-settings";
@@ -84,7 +84,7 @@ export interface ChatWriteApprovalWiring {
   readonly toolExposureAuthority: ToolExposureAuthority;
   readonly toolApprovalGate: ToolApprovalGate;
   readonly drafts: ChatPendingDraft[];
-  readonly persist: (userId?: string) => Promise<void>;
+  readonly persist: (userId?: string) => Promise<readonly PersistedApproval[]>;
 }
 
 /**
@@ -104,18 +104,21 @@ export function chatWriteApprovalWiring(options: ServerOptions): ChatWriteApprov
   const env = options.env ?? {};
   const pendingFile = resolvePendingApprovalsFile(env);
   const drafts: ChatPendingDraft[] = [];
-  const persist = async (userId?: string): Promise<void> => {
+  const persist = async (userId?: string): Promise<readonly PersistedApproval[]> => {
     const recorder = createChannelPendingRecorder({ pendingFile, providerId: "chat", source: "api-chat" });
+    const created: PersistedApproval[] = [];
     for (const draft of drafts) {
       const resolvedUserId = draft.userId ?? userId;
-      await recorder({
+      const entry = await recorder({
         arguments: draft.arguments,
         draft: draft.draft,
         risk: draft.risk,
         tool: draft.tool,
         ...(resolvedUserId ? { userId: resolvedUserId } : {})
       });
+      created.push({ draft: entry.draft, id: entry.id, tool: entry.tool });
     }
+    return created;
   };
   return {
     drafts,
@@ -203,10 +206,10 @@ export async function runChat(
     // captured drafts. The userId falls back to the request's authenticated id.
     const delivered = writeWiring && writeWiring.drafts.length > 0
       ? await withApprovalNotice(finalResult, writeWiring, chatUserId(runInput, authUserId))
-      : finalResult;
+      : { pendingApprovals: [] as readonly PersistedApproval[], result: finalResult };
     return responseMode === "compat"
-      ? toCompatChatResponse(delivered, finalGate)
-      : toExtendedChatResponse(delivered, finalGate);
+      ? toCompatChatResponse(delivered.result, finalGate, delivered.pendingApprovals)
+      : toExtendedChatResponse(delivered.result, finalGate, delivered.pendingApprovals);
   } catch (error) {
     return sendAgentError(reply, error, responseMode);
   }
@@ -216,10 +219,10 @@ async function withApprovalNotice(
   result: AgentRunResult,
   wiring: ChatWriteApprovalWiring,
   userId?: string
-): Promise<AgentRunResult> {
-  await wiring.persist(userId);
+): Promise<{ readonly result: AgentRunResult; readonly pendingApprovals: readonly PersistedApproval[] }> {
+  const pendingApprovals = await wiring.persist(userId);
   const output = `${result.response.output}${formatApprovalNotice(wiring.drafts)}`;
-  return { ...result, response: { ...result.response, output } };
+  return { pendingApprovals, result: { ...result, response: { ...result.response, output } } };
 }
 
 function chatUserId(runInput: AgentRunInput, authUserId?: string): string | undefined {

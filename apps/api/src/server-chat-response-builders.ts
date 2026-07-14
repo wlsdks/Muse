@@ -11,7 +11,22 @@ import type { JsonObject } from "@muse/shared";
  */
 export type ChatGroundingReport = Pick<GatedChatAnswer, "groundingVerdict" | "strippedCitations">;
 
-export function toCompatChatResponse(result: AgentRunResult, grounding?: ChatGroundingReport) {
+/**
+ * A write the run captured but did NOT execute (draft-first), carrying the `id`
+ * the client posts to `/api/chat/approvals/:id/approve`. Always present on the
+ * envelope (empty when nothing was captured / the write-approval flag is off).
+ */
+export interface ChatPendingApprovalView {
+  readonly id: string;
+  readonly tool: string;
+  readonly draft: string;
+}
+
+export function toCompatChatResponse(
+  result: AgentRunResult,
+  grounding?: ChatGroundingReport,
+  pendingApprovals: readonly ChatPendingApprovalView[] = []
+) {
   const tokenUsage = compatTokenUsage(result.response.usage);
   const metadata = compatResponseMetadata(result);
 
@@ -26,6 +41,7 @@ export function toCompatChatResponse(result: AgentRunResult, grounding?: ChatGro
     groundingVerdict: grounding?.groundingVerdict ?? null,
     metadata,
     model: result.response.model,
+    pendingApprovals: [...pendingApprovals],
     strippedCitations: grounding ? [...grounding.strippedCitations] : [],
     success: true,
     tokenUsage,
@@ -49,9 +65,13 @@ function previewText(value: string, maxLength: number): string {
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1)}…`;
 }
 
-export function toExtendedChatResponse(result: AgentRunResult, grounding?: ChatGroundingReport) {
+export function toExtendedChatResponse(
+  result: AgentRunResult,
+  grounding?: ChatGroundingReport,
+  pendingApprovals: readonly ChatPendingApprovalView[] = []
+) {
   return {
-    ...toCompatChatResponse(result, grounding),
+    ...toCompatChatResponse(result, grounding, pendingApprovals),
     agentSpec: result.agentSpec,
     contextWindow: result.contextWindow,
     fromCache: result.fromCache ?? false,

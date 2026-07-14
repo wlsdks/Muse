@@ -23,7 +23,7 @@ export function createChannelPendingRecorder(deps: {
   readonly ttlMs?: number;
   readonly recordPendingApproval?: (file: string, entry: PendingApproval) => Promise<void>;
   readonly now?: () => Date;
-}): (refusal: ChannelApprovalRefusal) => Promise<void> {
+}): (refusal: ChannelApprovalRefusal) => Promise<PendingApproval> {
   const record = deps.recordPendingApproval ?? defaultRecordPendingApproval;
   const now = deps.now ?? (() => new Date());
   const ttlMs = deps.ttlMs !== undefined && Number.isFinite(deps.ttlMs) && deps.ttlMs > 0
@@ -31,7 +31,7 @@ export function createChannelPendingRecorder(deps: {
     : DEFAULT_PENDING_TTL_MS;
   return async (refusal) => {
     const at = now();
-    await record(deps.pendingFile, {
+    const entry: PendingApproval = {
       arguments: refusal.arguments,
       createdAt: at.toISOString(),
       draft: refusal.draft,
@@ -42,6 +42,8 @@ export function createChannelPendingRecorder(deps: {
       source: deps.source,
       tool: refusal.tool,
       ...(refusal.userId ? { userId: refusal.userId } : {})
-    });
+    };
+    await record(deps.pendingFile, entry);
+    return entry;
   };
 }

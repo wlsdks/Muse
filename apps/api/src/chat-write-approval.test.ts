@@ -99,7 +99,10 @@ describe("runChat write-approval wiring", () => {
   it("flag ON: write is captured (not executed), persisted, and the notice appended", async () => {
     const runtime = fakeRuntime();
     const options = optionsFor(runtime, { MUSE_CHAT_WRITE_ENABLED: "true", MUSE_PENDING_APPROVALS_FILE: pendingFile });
-    const res = await runChat({ message: "add buy milk", userId: "owner" }, stubReply, options, "compat") as { content: string };
+    const res = await runChat({ message: "add buy milk", userId: "owner" }, stubReply, options, "compat") as {
+      content: string;
+      pendingApprovals: { id: string; tool: string; draft: string }[];
+    };
 
     expect(runtime.captured[0]?.toolApprovalGate).toBeDefined();
     expect(runtime.captured[0]?.toolExposureAuthority).toBeDefined();
@@ -118,6 +121,18 @@ describe("runChat write-approval wiring", () => {
 
     expect(res.content).toContain("🔒 These actions need your approval before I run them:");
     expect(res.content).toContain("muse.tasks.add");
+
+    // The envelope carries the structured pending approval WITH the persisted id
+    // (the text notice alone has none), so the client can call the approve route.
+    expect(res.pendingApprovals).toHaveLength(1);
+    expect(res.pendingApprovals[0]).toEqual({ draft: "title=Buy milk", id: pending[0]!.id, tool: "muse.tasks.add" });
+  });
+
+  it("flag OFF: pendingApprovals is an empty array (no ids surfaced)", async () => {
+    const runtime = fakeRuntime();
+    const options = optionsFor(runtime, { MUSE_PENDING_APPROVALS_FILE: pendingFile });
+    const res = await runChat({ message: "hi" }, stubReply, options, "compat") as { pendingApprovals: unknown[] };
+    expect(res.pendingApprovals).toEqual([]);
   });
 });
 
@@ -203,5 +218,36 @@ describe("executeChatApproval confirm-execute", () => {
     expect(out.body).toMatchObject({ ran: false, tool: "muse.tasks.add" });
     expect(calls).toHaveLength(1);
     expect(await listPendingApprovals(pendingFile)).toHaveLength(1);
+  });
+
+  it("user-scope: a DIFFERENT authenticated user cannot approve — 403, no execution, entry left pending", async () => {
+    await recordPendingApproval(pendingFile, pendingEntry({ id: "s1", tool: "muse.tasks.add", userId: "owner" }));
+    const { tool, calls } = recordingTool("muse.tasks.add", { ok: true });
+
+    const out = await executeChatApproval({ id: "s1", pendingFile, requestUserId: "intruder", resolveTool: () => tool });
+
+    expect(out.statusCode).toBe(403);
+    expect(calls).toHaveLength(0);
+    expect(await listPendingApprovals(pendingFile)).toHaveLength(1);
+  });
+
+  it("user-scope: the SAME user approves normally", async () => {
+    await recordPendingApproval(pendingFile, pendingEntry({ id: "s2", tool: "muse.tasks.add", userId: "owner" }));
+    const { tool, calls } = recordingTool("muse.tasks.add", { ok: true });
+
+    const out = await executeChatApproval({ id: "s2", pendingFile, requestUserId: "owner", resolveTool: () => tool });
+
+    expect(out.statusCode).toBe(200);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("user-scope: no auth (requestUserId absent) still approves a user-owned entry — the single-user local posture", async () => {
+    await recordPendingApproval(pendingFile, pendingEntry({ id: "s3", tool: "muse.tasks.add", userId: "owner" }));
+    const { tool, calls } = recordingTool("muse.tasks.add", { ok: true });
+
+    const out = await executeChatApproval({ id: "s3", pendingFile, resolveTool: () => tool });
+
+    expect(out.statusCode).toBe(200);
+    expect(calls).toHaveLength(1);
   });
 });

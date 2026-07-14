@@ -16,6 +16,17 @@ export interface ChatPendingDraft {
 }
 
 /**
+ * A pending write the run PERSISTED, carrying the `id` a later
+ * `POST /api/chat/approvals/:id/approve` needs. Surfaced on the chat response so
+ * the client can render a confirm affordance — the text notice alone has no id.
+ */
+export interface PersistedApproval {
+  readonly id: string;
+  readonly tool: string;
+  readonly draft: string;
+}
+
+/**
  * The code-appended notice listing the write/execute actions Muse captured but
  * did NOT run — one line each. Appended AFTER the grounding/honest-action gates
  * (it is code text, not model output) so it can never be dropped as fabricated.

@@ -37,6 +37,14 @@ export async function executeChatApproval(opts: {
   readonly id: string;
   readonly pendingFile: string;
   readonly resolveTool?: (name: string) => MuseTool | undefined;
+  /**
+   * The authenticated caller (when auth is on). A pending entry that RECORDED a
+   * `userId` may be approved only by that same user — a different authenticated
+   * user is refused (403) with no execution. When either side is absent (the
+   * single-user local posture, no auth) the id alone authorises, matching the
+   * unguessable-UUID model the CLI `muse approvals approve` uses.
+   */
+  readonly requestUserId?: string;
   readonly now?: () => Date;
 }): Promise<ChatApprovalExecuteResult> {
   const id = opts.id.trim();
@@ -44,6 +52,9 @@ export async function executeChatApproval(opts: {
   const entry = pending.find((candidate) => candidate.id === id);
   if (!entry) {
     return { statusCode: 404, body: { error: "no pending approval with that id (it may have expired)" } };
+  }
+  if (entry.userId !== undefined && opts.requestUserId !== undefined && entry.userId !== opts.requestUserId) {
+    return { statusCode: 403, body: { error: "this approval belongs to a different user" } };
   }
   const tool = opts.resolveTool?.(entry.tool);
   if (!tool) {

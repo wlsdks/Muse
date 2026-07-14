@@ -2,7 +2,7 @@ import { enforceAnswerCitations, guardAgainstUnbackedActionClaim, type AgentRunt
 import { chatAllowedCitations, createCitationStreamFilter, gateChatAnswerGrounding, type ChatGroundingSource } from "@muse/recall";
 import type { JsonObject } from "@muse/shared";
 
-import { formatApprovalNotice, type ChatPendingDraft } from "./chat-approval-gate.js";
+import { formatApprovalNotice, type ChatPendingDraft, type PersistedApproval } from "./chat-approval-gate.js";
 
 export function parseMultipartBody(contentType: string | string[] | undefined, body: Buffer): JsonObject {
   const header = Array.isArray(contentType) ? contentType[0] : contentType;
@@ -84,7 +84,7 @@ export async function* toSseStream(
      */
     readonly chatWrite?: {
       readonly drafts: readonly ChatPendingDraft[];
-      readonly persist: (userId?: string) => Promise<void>;
+      readonly persist: (userId?: string) => Promise<readonly PersistedApproval[]>;
       readonly userId?: string;
     };
   }
@@ -219,8 +219,11 @@ export async function* toSseStream(
     }
 
     if (grounding?.chatWrite && grounding.chatWrite.drafts.length > 0) {
-      await grounding.chatWrite.persist(grounding.chatWrite.userId);
+      const pendingApprovals = await grounding.chatWrite.persist(grounding.chatWrite.userId);
       yield `event: message\ndata: ${sseData(formatApprovalNotice(grounding.chatWrite.drafts))}\n\n`;
+      // Structured companion to the text notice: carries the id each pending
+      // write needs so the client can POST /api/chat/approvals/:id/approve.
+      yield `event: pending-approvals\ndata: ${sseData(JSON.stringify({ pendingApprovals: [...pendingApprovals] }))}\n\n`;
     }
 
     if (responseMode === "compat") {

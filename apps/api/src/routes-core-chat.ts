@@ -80,9 +80,11 @@ export function registerChatRoutes(server: FastifyInstance, options: ServerOptio
   server.post("/api/chat/approvals/:id/approve", async (request, reply) => {
     if (!enforce(request, reply)) return reply;
     const id = (request.params as { id?: string }).id ?? "";
+    const requestUserId = getAuthIdentity(request)?.userId;
     const result = await executeChatApproval({
       id,
       pendingFile: resolvePendingApprovalsFile(options.env ?? {}),
+      ...(requestUserId ? { requestUserId } : {}),
       ...(options.approvalToolResolver ? { resolveTool: options.approvalToolResolver } : {})
     });
     return reply.status(result.statusCode).send(result.body);
