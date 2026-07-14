@@ -1490,25 +1490,19 @@ export class AgentRuntime {
     return this.responseFilters.length === 0 && this.outputGuards.length === 0;
   }
 
-  private async invokeHooks(name: "beforeStart", context: AgentRunContext): Promise<void>;
-  private async invokeHooks(name: "beforeTool", context: AgentRunContext, toolCall: ModelToolCall): Promise<void>;
-  private async invokeHooks(
-    name: "afterTool",
+  private async invokeHooks<Name extends keyof HookStage>(
+    name: Name,
     context: AgentRunContext,
-    value: { readonly result: ToolExecutionResult; readonly toolCall: ModelToolCall }
-  ): Promise<void>;
-  private async invokeHooks(
-    name: "afterComplete",
-    context: AgentRunContext,
-    response: ModelResponse
-  ): Promise<void>;
-  private async invokeHooks(name: "onError", context: AgentRunContext, error: unknown): Promise<void>;
-  private async invokeHooks(name: keyof HookStage, context: AgentRunContext, value?: unknown): Promise<void> {
+    value?: Name extends "beforeStart" ? never : Name extends "beforeTool" ? ModelToolCall : Name extends "afterTool" ? {
+      readonly result: ToolExecutionResult;
+      readonly toolCall: ModelToolCall;
+    } : Name extends "afterComplete" ? ModelResponse : Name extends "onError" ? unknown : never
+  ): Promise<void> {
     return invokeHooks(name, context, {
       hooks: this.hooks,
       ...(this.hookRegistry ? { hookRegistry: this.hookRegistry } : {}),
       ...(this.hookTraceStore ? { hookTraceStore: this.hookTraceStore } : {})
-    }, value as never);
+    }, value);
   }
 
   private recordAgentRun(
