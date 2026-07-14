@@ -91,9 +91,15 @@ describe("performWebActionWithApproval — outbound-safety contract", () => {
     // controller aborts it. This is the `timed-out` branch — a slow third party,
     // distinct from an outright connection error — and must not report performed.
     const actionLogFile = logFile();
-    const fetchImpl = ((_url: string, init: { signal?: AbortSignal }) => new Promise((_resolve, reject) => {
-      init.signal?.addEventListener("abort", () => { reject(new Error("aborted")); });
-    })) as unknown as typeof fetch;
+    const fetchImpl = ((_url: string, init: { signal?: AbortSignal }) => {
+      const { promise, reject } = Promise.withResolvers<Response>();
+
+      init.signal?.addEventListener("abort", () => {
+        reject(new Error("aborted"));
+      }, { once: true });
+
+      return promise;
+    }) as unknown as typeof fetch;
     const outcome = await performWebActionWithApproval({
       actionLogFile, approvalGate: approve, fetchImpl, request, summary: "Book", timeoutMs: 5, userId: "stark"
     });

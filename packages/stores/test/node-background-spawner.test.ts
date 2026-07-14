@@ -10,8 +10,11 @@ function tmpLog(): string {
   return join(mkdtempSync(join(tmpdir(), "muse-nodespawn-")), "out.log");
 }
 
-const exitPromise = (child: { onExit(l: (c: number | null) => void): void }): Promise<number | null> =>
-  new Promise((resolve) => child.onExit(resolve));
+const exitPromise = (child: { onExit(l: (c: number | null) => void): void }): Promise<number | null> => {
+  const { promise, resolve } = Promise.withResolvers<number | null>();
+  child.onExit(resolve);
+  return promise;
+};
 
 describe.skipIf(process.platform === "win32")("createNodeBackgroundSpawner (X-3 slice 4 — real detached spawn)", () => {
   it("spawns a real process, returns a pid, and fires onExit with the code", async () => {

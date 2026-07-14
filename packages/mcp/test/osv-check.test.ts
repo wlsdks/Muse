@@ -12,6 +12,21 @@ function osvResponse(vulns: readonly { id: string; summary?: string }[]): Respon
   return new Response(JSON.stringify({ vulns }), { status: 200 });
 }
 
+function abortingFetchPromise(signal?: AbortSignal): Promise<Response> {
+  const { promise, reject } = Promise.withResolvers<Response>();
+
+  if (signal?.aborted) {
+    reject(new DOMException("The operation was aborted", "AbortError"));
+    return promise;
+  }
+
+  signal?.addEventListener("abort", () => {
+    reject(new DOMException("The operation was aborted", "AbortError"));
+  }, { once: true });
+
+  return promise;
+}
+
 const okConnection: McpConnection = {
   callTool: async () => "ok",
   listTools: () => [{ description: "noop", inputSchema: { type: "object" }, name: "noop", risk: "read" }]
@@ -78,14 +93,11 @@ describe("checkPackageForMalwareAdvisory — direct OSV query behavior", () => {
 
   it("fails OPEN on a timeout — resolves quickly in-test via a mocked fetch that rejects with AbortError, never hangs", async () => {
     const fetchImpl = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-      return new Promise((_resolve, reject) => {
-        // Simulate the AbortSignal.timeout(12000) firing without an
-        // actual 12s wait — proves the caller's fail-open path, not
-        // real wall-clock behavior (which is covered by production
-        // AbortSignal.timeout wiring, not something to fake-clock here).
-        init?.signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted", "AbortError")));
-        if (init?.signal?.aborted) reject(new DOMException("The operation was aborted", "AbortError"));
-      });
+      // Simulate the AbortSignal.timeout(12000) firing without an
+      // actual 12s wait — proves the caller's fail-open path, not
+      // real wall-clock behavior (which is covered by production
+      // AbortSignal.timeout wiring, not something to fake-clock here).
+      return abortingFetchPromise(init?.signal);
     });
     const start = Date.now();
     const result = await checkPackageForMalwareAdvisory("npm", "slow-pkg", undefined, {
@@ -242,9 +254,7 @@ describe("McpManager — live OSV preflight is opt-in and gates connect() alongs
 
   it("connect() fails OPEN and still connects when the OSV call times out — never hangs the connect path", async () => {
     const fetchImpl = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-      return new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted", "AbortError")));
-      });
+      return abortingFetchPromise(init?.signal);
     });
     const connect = vi.fn(async () => okConnection);
     const manager = new McpManager(new InMemoryMcpServerStore(), {

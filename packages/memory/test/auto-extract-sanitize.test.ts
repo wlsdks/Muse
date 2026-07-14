@@ -31,6 +31,8 @@ describe("auto-extract value sanitisation at store boundary", () => {
     };
   }
 
+  const neverSettle = <T>(): Promise<T> => Promise.withResolvers<T>().promise;
+
   it("requests native structured output (responseFormat JSON Schema) so the model is constrained, not parse-and-hoped", async () => {
     const captured: { responseFormat?: Record<string, unknown> } = {};
     const provider = {
@@ -275,9 +277,7 @@ describe("auto-extract value sanitisation at store boundary", () => {
       id: "diagnostic",
       // Never resolves — simulates a network stall / runaway model
       generate(): Promise<{ id: string; model: string; output: string }> {
-        return new Promise(() => {
-          // intentionally empty
-        });
+        return neverSettle<{ id: string; model: string; output: string }>();
       },
       async listModels() {
         return [];
