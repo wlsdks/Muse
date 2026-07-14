@@ -35,6 +35,7 @@ import { resolveJobIdByPrefix } from "./job-id-prefix.js";
 import { jobConcurrencyRefusal, resolveJobsMaxConcurrent } from "./job-concurrency.js";
 import { firstNonEmpty, resolvePersona } from "./program-helpers.js";
 import { neverResolve } from "./async-promises.js";
+import { waitForChildProcessClose } from "./async-promises.js";
 import type { ProgramIO } from "./program.js";
 
 /**
@@ -351,7 +352,7 @@ export function registerJobCommands(program: Command, io: ProgramIO): void {
         // Inline mode — spawn but stream stdout/stderr through.
         const { file, argv } = buildJobInvocation(prompt, runOpts);
         const child = spawn(process.execPath, [pathJoin(here, "job-worker.js"), ...argv], { stdio: "inherit" });
-        await new Promise<void>((resolve) => child.on("close", () => resolve()));
+        await waitForChildProcessClose(child);
         io.stdout(`\nDone. Job log: ${file}\n`);
         return;
       }

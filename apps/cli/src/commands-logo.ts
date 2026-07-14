@@ -10,8 +10,7 @@ import type { Command } from "commander";
 import { MUSE_TAGLINE } from "./muse-identity.js";
 import { MUSE_BIRD_ANSI, MUSE_BIRD_BLINK_ANSI, MUSE_BIRD_ROWS, MUSE_WORDMARK } from "./muse-mascot.js";
 import type { ProgramIO } from "./program.js";
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+import { sleep } from "./async-promises.js";
 
 /** Redraw the top `rows` lines in place: cursor up, clear each line, reprint. */
 function redrawBird(io: ProgramIO, art: string): void {

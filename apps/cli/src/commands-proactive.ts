@@ -37,6 +37,7 @@ import { createTerminalProactiveSink } from "./proactive-terminal-sink.js";
 import { buildSpeakingRegistry, hasUrgentImminentTask, resolveActiveHourBand, runProactiveTick } from "./proactive-watch-helpers.js";
 import type { ProgramIO } from "./program.js";
 import { resolveDefaultUserKey } from "./user-id.js";
+import { sleep } from "./async-promises.js";
 
 export interface ProactiveHelpers {
   /** Test seam — defaults to `process.env`. */
@@ -340,7 +341,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
           if (!urgentImminent) {
             // Quiet — sleep until the next interval. No log spam.
             if (!stopped) {
-              await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+              await sleep(interval * 1000);
             }
             continue;
           }
@@ -365,7 +366,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
           dailyCap
         }, startedAt);
         if (!stopped) {
-          await new Promise((resolve) => setTimeout(resolve, interval * 1000));
+          await sleep(interval * 1000);
         }
       }
     });

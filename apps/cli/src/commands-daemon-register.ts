@@ -40,7 +40,7 @@ import { defaultScheduledJobsFile } from "@muse/scheduler";
 import { defaultSchedulerPauseFile, queryActionLog, readReminders, readTasks } from "@muse/stores";
 import { createAmbientNoticeRunner, createMessagingObjectiveActuator, createModelObjectiveEvaluator, createProposingObjectiveActuator, createWebWatchRunner, FileAmbientSignalSource, gateProactiveNoticeSink, parseQuietHours, MacOsActiveWindowSource, parseAmbientNoticeRules, WindowsActiveWindowSource, webWatchesFromConfig, type AmbientNoticeRunner, type BriefingCalendarLister, type ChromeSnapshotConnection, type InterruptionBudgetWiring, type ProactiveNoticeSink, type WebWatchRunner } from "@muse/proactivity";
 import { homeWatchesFromConfig, type EmailProvider } from "@muse/domain-tools";
-import { execFile } from "node:child_process";
+import { execFile } from "node:child_process/promises";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { buildLaunchAgentPlist, LAUNCH_AGENT_LABEL, parseLaunchctlListInfo, resolveLaunchAgentFile } from "./commands-daemon-launchagent.js";
@@ -249,13 +249,13 @@ const defaultSchtasksRun = (args: readonly string[]): Promise<{ exitCode: number
       `refusing to exec real schtasks under vitest (args: ${args.join(" ")}) — inject DaemonHelpers.schtasksRun in this test`
     ));
   }
-  return new Promise((resolve) => {
-    execFile("schtasks", [...args], { timeout: 15_000 }, (error, stdout, stderr) => {
-      const rawCode = (error as { code?: number | string } | null)?.code;
-      const exitCode = error ? (typeof rawCode === "number" ? rawCode : 1) : 0;
-      resolve({ exitCode, stderr: stderr.toString(), stdout: stdout.toString() });
-    });
-  });
+  return execFile("schtasks", [...args], { timeout: 15_000 })
+    .then((result) => ({ exitCode: 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() }))
+    .catch((cause: unknown) => ({
+      exitCode: normalizeExecFileCode(cause),
+      stdout: extractOutputFromExecError(cause, "stdout").toString(),
+      stderr: extractOutputFromExecError(cause, "stderr").toString()
+    }));
 };
 
 /**
@@ -271,14 +271,32 @@ const defaultRunLaunchctl = (args: readonly string[]): Promise<{ code: number; s
       `refusing to exec real launchctl under vitest (args: ${args.join(" ")}) — inject DaemonHelpers.runLaunchctl in this test`
     ));
   }
-  return new Promise((resolve) => {
-    execFile("launchctl", [...args], { timeout: 15_000 }, (error, stdout, stderr) => {
-      const rawCode = (error as { code?: number | string } | null)?.code;
-      const code = error ? (typeof rawCode === "number" ? rawCode : 1) : 0;
-      resolve({ code, stderr: stderr.toString(), stdout: stdout.toString() });
-    });
-  });
+  return execFile("launchctl", [...args], { timeout: 15_000 })
+    .then((result) => ({ code: 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() }))
+    .catch((cause: unknown) => ({
+      code: normalizeExecFileCode(cause),
+      stdout: extractOutputFromExecError(cause, "stdout").toString(),
+      stderr: extractOutputFromExecError(cause, "stderr").toString()
+    }));
 };
+
+function normalizeExecFileCode(cause: unknown): number {
+  const rawCode = (cause as { code?: number | string } | undefined)?.code;
+  if (typeof rawCode === "number") return rawCode;
+  if (typeof rawCode === "string") {
+    const parsed = Number(rawCode);
+    return Number.isFinite(parsed) ? parsed : 1;
+  }
+  return 1;
+}
+
+function extractOutputFromExecError(cause: unknown, key: "stdout" | "stderr"): string | Buffer {
+  if (cause && typeof cause === "object" && key in cause) {
+    const value = (cause as Record<"stdout" | "stderr", string | Buffer | undefined>)[key];
+    if (value !== undefined) return value;
+  }
+  return "";
+}
 
 export function registerDaemonCommands(program: Command, io: ProgramIO, helpers: DaemonHelpers = {}): void {
   const env = () => helpers.env?.() ?? process.env;

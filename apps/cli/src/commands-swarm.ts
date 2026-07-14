@@ -22,27 +22,15 @@ import type { Command } from "commander";
 import { councilCorpusMatches, defaultEmbedModel, isCouncilGroundedMode } from "./council-corpus.js";
 import { embed } from "./embed.js";
 import type { ProgramIO } from "./program.js";
+import { readRequestBody } from "./async-promises.js";
 
 /**
  * Read an inbound A2A request body with a hard size cap so an unbounded
  * (or malicious) POST can't exhaust memory — mirrors the webhook server's
  * `readBody`. Rejects with "payload too large" once the cap is exceeded.
  */
-export function readSwarmBody(req: import("node:http").IncomingMessage, maxBytes = 1024 * 1024): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let received = 0;
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => {
-      received += chunk.length;
-      if (received > maxBytes) {
-        req.destroy(new Error("payload too large"));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
+export function readSwarmBody(req: Parameters<typeof readRequestBody>[0], maxBytes = 1024 * 1024): Promise<string> {
+  return readRequestBody(req, maxBytes);
 }
 
 /**

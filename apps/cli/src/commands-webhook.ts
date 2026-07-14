@@ -35,6 +35,7 @@ import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
 import { neverResolve } from "./async-promises.js";
+import { readRequestBody } from "./async-promises.js";
 import type { ProgramIO } from "./program.js";
 
 interface ServeOptions {
@@ -102,21 +103,8 @@ export function buildWebhookNotify(payload: NotifyBody, now: () => Date): Webhoo
   };
 }
 
-function readBody(req: import("node:http").IncomingMessage, maxBytes = 64 * 1024): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let received = 0;
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => {
-      received += chunk.length;
-      if (received > maxBytes) {
-        req.destroy(new Error("payload too large"));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
+function readBody(req: Parameters<typeof readRequestBody>[0], maxBytes = 64 * 1024): Promise<string> {
+  return readRequestBody(req, maxBytes);
 }
 
 export function registerWebhookCommand(program: Command, io: ProgramIO): void {
