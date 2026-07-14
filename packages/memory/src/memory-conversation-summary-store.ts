@@ -53,7 +53,12 @@ interface RequiredConversationSummary {
 const DEFAULT_LIST_LIMIT = 200;
 const MAX_LIST_LIMIT = 1_000;
 
-type SerializedStructuredFact = Readonly<Record<string, string>>;
+interface SerializedStructuredFact {
+  readonly key: string;
+  readonly value: string;
+  readonly category: FactCategory;
+  readonly extractedAt: string;
+}
 
 export class InMemoryConversationSummaryStore implements ConversationSummaryStore {
   private readonly summaries = new Map<string, RequiredConversationSummary>();
@@ -98,7 +103,7 @@ export class InMemoryConversationSummaryStore implements ConversationSummaryStor
 interface SerializedConversationSummary {
   readonly sessionId: string;
   readonly narrative: string;
-  readonly facts: readonly { readonly key: string; readonly value: string; readonly category: FactCategory; readonly extractedAt: string }[];
+  readonly facts: readonly SerializedStructuredFact[];
   readonly summarizedUpToIndex: number;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -119,12 +124,12 @@ function serializeSummary(s: RequiredConversationSummary): SerializedConversatio
 
 function deserializeSummary(r: SerializedConversationSummary): RequiredConversationSummary {
   return {
-    createdAt: new Date(r.createdAt),
-    facts: (r.facts ?? []).map((f) => ({ category: f.category, extractedAt: new Date(f.extractedAt), key: f.key, value: f.value })),
+    createdAt: toRequiredDate(r.createdAt),
+    facts: r.facts.map(deserializeStructuredFact),
     narrative: r.narrative,
     sessionId: r.sessionId,
     summarizedUpToIndex: r.summarizedUpToIndex,
-    updatedAt: new Date(r.updatedAt),
+    updatedAt: toRequiredDate(r.updatedAt),
     ...(r.userId ? { userId: r.userId } : {})
   };
 }
@@ -318,12 +323,12 @@ export function createConversationSummaryInsert(
 
 export function mapConversationSummaryRow(row: ConversationSummaryRow): ConversationSummary {
   return {
-    createdAt: dateValue(row.created_at),
+    createdAt: toRequiredDate(row.created_at),
     facts: parseJsonArray(row.facts_json, isSerializedStructuredFact).map(deserializeStructuredFact),
     narrative: row.narrative,
     sessionId: row.session_id,
     summarizedUpToIndex: row.summarized_up_to,
-    updatedAt: dateValue(row.updated_at),
+    updatedAt: toRequiredDate(row.updated_at),
     userId: typeof row.user_id === "string" ? row.user_id : undefined
   };
 }
@@ -364,7 +369,7 @@ function serializeStructuredFact(fact: RequiredStructuredFact): SerializedStruct
 function deserializeStructuredFact(fact: SerializedStructuredFact): RequiredStructuredFact {
   return {
     category: factCategoryValue(fact.category),
-    extractedAt: dateValue(fact.extractedAt),
+    extractedAt: toRequiredDate(fact.extractedAt),
     key: stringValue(fact.key),
     value: stringValue(fact.value)
   };
@@ -385,8 +390,17 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function dateValue(value: unknown): Date {
-  return value instanceof Date ? value : new Date(typeof value === "string" ? value : 0);
+function toRequiredDate(value: unknown): Date {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value : new Date(0);
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : new Date(0);
+  }
+
+  return new Date(0);
 }
 
 function parseConversationSummariesPayload(raw: string): readonly RequiredConversationSummary[] {
@@ -470,7 +484,7 @@ function parseConversationSummaryCore(value: unknown): Omit<SerializedConversati
 
 function parseStructuredFacts(
   value: unknown
-): readonly { readonly key: string; readonly value: string; readonly category: FactCategory; readonly extractedAt: string }[] | undefined {
+): readonly SerializedStructuredFact[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
