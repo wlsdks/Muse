@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -34,11 +33,12 @@ describe("resolveInterruptionBudgetWiring (muse daemon) — channel-veto fields"
       .toMatchObject({ lastDeliveryFile: "/tmp/x/last.json" });
   });
 
-  it("falls back to the OS home dir when HOME is unset — never the filesystem root", () => {
+  it("refuses to resolve to the real home when HOME is unset under vitest — the isolation guard fires instead of silently landing on ~/.muse or the filesystem root", () => {
     delete process.env.HOME;
-    const wiring = resolveInterruptionBudgetWiring({});
-    expect(wiring.trustLedgerFile.startsWith(homedir())).toBe(true);
-    expect(wiring.trustLedgerFile.startsWith("/.muse")).toBe(false);
-    expect(wiring.lastDeliveryFile.replaceAll("\\", "/").endsWith("/.muse/last-proactive-delivery.json")).toBe(true);
+    // With HOME unset the resolver would fall back to the genuine OS-account
+    // home; the @muse/autoconfigure provider-paths guard turns that into a loud
+    // throw under vitest, which is exactly the "never write the real store"
+    // protection this test guards (and it can never be the `/.muse` root bug).
+    expect(() => resolveInterruptionBudgetWiring({})).toThrow(/test isolation/);
   });
 });

@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vitest/config";
 
 // vitest 4 dropped `**/dist/**` from its default test exclude, so the
@@ -7,6 +9,11 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     exclude: ["**/node_modules/**", "**/dist/**"],
+    // Repo-wide per-file HOME isolation (see vitest.isolate-home.ts). Paired
+    // with the @muse/autoconfigure provider-paths fail-close guard, which is a
+    // SHARED module every package reaches — so the isolation must be repo-wide
+    // or the guard reddens whole suites that never got the setup.
+    setupFiles: [fileURLToPath(new URL("./vitest.isolate-home.ts", import.meta.url))],
     // The windows-latest runner is 3-6x slower than a dev Mac (fsync, spawn,
     // Add-Type); the 5s default turns ordinarily-fast suites into flakes
     // there. On other platforms 15s absorbs CPU starvation when several
