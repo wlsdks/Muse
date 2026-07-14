@@ -165,9 +165,9 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
       // fail-soft (missing file → empty rows → empty summary)
       // because a fresh install hasn't written any of these yet.
       const [reminders, followups, objectives, episodesDoc, patternsDoc] = await Promise.all([
-        readReminders(remindersFile).catch(() => [] as const),
-        readFollowups(followupsFile).catch(() => [] as const),
-        readObjectives(objectivesFile).catch(() => [] as const),
+        readReminders(remindersFile).catch(() => []),
+        readFollowups(followupsFile).catch(() => []),
+        readObjectives(objectivesFile).catch(() => []),
         safeReadJson(episodesFile).catch(() => undefined),
         safeReadJson(patternsFiredFile).catch(() => undefined)
       ]);

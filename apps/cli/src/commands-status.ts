@@ -19,7 +19,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { evaluateLocalOnlyPosture, mergeModelKeysFromFile, resolveDefaultModel, type LocalOnlyStatusSnapshot, type MuseEnvironment } from "@muse/autoconfigure";
+import { evaluateLocalOnlyPosture, mergeModelKeysFromFile, resolveDefaultModel, type LocalOnlyStatusSnapshot } from "@muse/autoconfigure";
 import { FileUserMemoryStore, projectRecentlyLearned, readBeliefProvenance, selectRecentlyForgotten, summarizeRecentlyLearned } from "@muse/memory";
 import {
   classifyDaemonLoopHeartbeat,
@@ -105,7 +105,7 @@ export interface StatusPaths {
 }
 
 export interface StatusRuntime {
-  readonly env: MuseEnvironment;
+  readonly env: NodeJS.ProcessEnv;
   readonly homeDir: string;
   readonly paths: StatusPaths;
   readonly readTrust: (userKey: string) => ReturnType<typeof readTrust>;
@@ -114,7 +114,7 @@ export interface StatusRuntime {
 }
 
 export interface StatusRuntimeOptions {
-  readonly env?: MuseEnvironment;
+  readonly env?: NodeJS.ProcessEnv;
   readonly homeDir?: string;
   readonly paths?: Partial<StatusPaths>;
   readonly readTrust?: StatusRuntime["readTrust"];
@@ -126,9 +126,13 @@ function envValue(runtime: StatusRuntime, key: string): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
-function statusPath(env: MuseEnvironment, homeDir: string, envKey: string, filename: string): string {
+function statusPath(env: NodeJS.ProcessEnv, homeDir: string, envKey: string, filename: string): string {
   const explicit = env[envKey]?.trim();
   return explicit && explicit.length > 0 ? explicit : join(homeDir, ".muse", filename);
+}
+
+function cloneProcessEnv(env: Readonly<Record<string, string | undefined>>): NodeJS.ProcessEnv {
+  return { ...env };
 }
 
 /**
@@ -137,7 +141,7 @@ function statusPath(env: MuseEnvironment, homeDir: string, envKey: string, filen
  * accidentally inspecting a developer's real personal stores.
  */
 export function resolveStatusRuntime(options: StatusRuntimeOptions = {}): StatusRuntime {
-  const env: MuseEnvironment = options.env ?? process.env;
+  const env: NodeJS.ProcessEnv = options.env ?? process.env;
   const homeDir = options.homeDir?.trim() || env.HOME?.trim() || homedir();
   const defaults: StatusPaths = {
     beliefProvenanceFile: statusPath(env, homeDir, "MUSE_BELIEF_PROVENANCE_FILE", "belief-provenance.json"),
@@ -264,9 +268,9 @@ export async function readRecentlyLearnedLine(
   memoryFile: string,
   userId: string,
   nowMs: number = Date.now(),
-  env: MuseEnvironment = process.env
+  env: NodeJS.ProcessEnv = process.env
 ): Promise<string | undefined> {
-  const memory = await new FileUserMemoryStore({ file: memoryFile, env: env as NodeJS.ProcessEnv }).findByUserId(userId);
+  const memory = await new FileUserMemoryStore({ file: memoryFile, env: cloneProcessEnv(env) }).findByUserId(userId);
   return memory
     ? summarizeRecentlyLearned(projectRecentlyLearned(memory, { sinceMs: nowMs - RECENTLY_LEARNED_WINDOW_MS }))
     : undefined;
@@ -345,6 +349,7 @@ export async function readDaemonStatus(
 
 async function collectStatus(userId: string, runtime: StatusRuntime) {
   const { env, paths } = runtime;
+  const storeEnv = cloneProcessEnv(env);
   const userMemoryFile = paths.userMemoryFile;
   const tasksFile = paths.tasksFile;
   const historyFile = paths.proactiveHistoryFile;
@@ -363,7 +368,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   // Read through the store API (not a raw JSON parse) so status sees exactly
   // what ask/chat/recall see — including the encrypted-at-rest format and the
   // legacy "default"-bucket healing a raw read would miss.
-  const personaMemory = await new FileUserMemoryStore({ file: userMemoryFile, env: env as NodeJS.ProcessEnv })
+  const personaMemory = await new FileUserMemoryStore({ file: userMemoryFile, env: storeEnv })
     .findByUserId(effectiveUserKey)
     .catch(() => undefined);
   const persona = personaMemory
@@ -373,7 +378,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   const recentlyLearnedLine = await readRecentlyLearnedLine(userMemoryFile, effectiveUserKey, Date.now(), env).catch(() => undefined);
   const recentlyForgottenLine = await readRecentlyForgottenLine(paths.beliefProvenanceFile).catch(() => undefined);
 
-  const trust = await runtime.readTrust(effectiveUserKey).catch(() => ({ blockedTools: [] as string[], trustedTools: [] as string[] }));
+  const trust = await runtime.readTrust(effectiveUserKey).catch(() => ({ blockedTools: [], trustedTools: [] }));
   const routineHours = persona?.facts?.routine_active_hours;
   const routineDays = persona?.facts?.routine_active_days;
 
@@ -389,7 +394,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   const historyDoc = await safeReadJson(historyFile) as { entries?: readonly ProactiveHistoryEntry[] } | undefined;
   const lastNotice = historyDoc?.entries?.[historyDoc.entries.length - 1];
 
-  const followups = await readFollowups(paths.followupsFile).catch(() => [] as const);
+  const followups = await readFollowups(paths.followupsFile).catch(() => []);
   const followupsByStatus = summariseFollowupsRows(followups, userId);
 
   const episodesDoc = await safeReadJson(paths.episodesFile) as { episodes?: readonly unknown[] } | undefined;
@@ -401,10 +406,10 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   // patterns-fired sidecar.
   const suggestions = suggestPatternHints(patternsFiredDoc?.fired ?? [], new Date());
 
-  const reminders = await readReminders(paths.remindersFile).catch(() => [] as const);
+  const reminders = await readReminders(paths.remindersFile).catch(() => []);
   const remindersSummary = summariseRemindersRows(reminders, now);
 
-  const objectives = await readObjectives(paths.objectivesFile).catch(() => [] as const);
+  const objectives = await readObjectives(paths.objectivesFile).catch(() => []);
   const objectivesSummary = summariseObjectivesRows(objectives, userId);
 
   // Do-Not-Disturb: the proactive loop skips firing while a session
@@ -455,7 +460,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
       // effectiveUserKey is the slot-composed key memory + trust
       // actually use — surfaced so callers don't recompose it.
       ...(slot
-        ? { slot, slotSource: "MUSE_PERSONA" as const, effectiveUserKey }
+        ? { slot, slotSource: "MUSE_PERSONA", effectiveUserKey }
         : {}),
       template: {
         activeId: activeTemplateId,
@@ -613,7 +618,7 @@ export function suggestPatternHints(
  * matches the `muse doctor` warn-detail format
  * ("inferred from GEMINI_API_KEY").
  */
-function resolveModelInfo(sourceEnv: MuseEnvironment): { model?: string; modelInferredFrom?: string; modelLocalOnlyIgnoredKey?: string } {
+function resolveModelInfo(sourceEnv: NodeJS.ProcessEnv): { model?: string; modelInferredFrom?: string; modelLocalOnlyIgnoredKey?: string } {
   const merged = mergeModelKeysFromFile(sourceEnv);
   const explicit = (merged.MUSE_MODEL?.trim() || merged.MUSE_DEFAULT_MODEL?.trim() || "") || undefined;
   if (explicit) {
@@ -664,7 +669,7 @@ function resolveModelInfo(sourceEnv: MuseEnvironment): { model?: string; modelIn
  * exist on a fresh install (mergeModelKeysFromFile returns the
  * input env unchanged in that case).
  */
-function summariseProviders(sourceEnv: MuseEnvironment) {
+function summariseProviders(sourceEnv: NodeJS.ProcessEnv) {
   const checks: ReadonlyArray<{ id: string; envKey: string }> = [
     { envKey: "GEMINI_API_KEY", id: "gemini" },
     { envKey: "ANTHROPIC_API_KEY", id: "anthropic" },

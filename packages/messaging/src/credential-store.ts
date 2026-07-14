@@ -137,5 +137,5 @@ function isFileNotFound(error: unknown): boolean {
 // otherwise `load` returns a bogus truthy value and `remove`'s `in`
 // check false-hits. Mirrors FileCalendarCredentialStore.
 function emptyProviderMap(): Record<string, MessagingCredentials> {
-  return Object.create(null) as Record<string, MessagingCredentials>;
+  return Object.create(null);
 }
