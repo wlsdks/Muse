@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { createUserMemoryAutoExtractHook, InMemoryUserMemoryStore } from "../src/index.js";
 
@@ -230,11 +231,11 @@ describe("auto-extract value sanitisation at store boundary", () => {
     const slowStore = {
       async findByUserId() { return undefined; },
       async upsertFact(_userId: string, key: string) {
-        await new Promise<void>((resolve) => setTimeout(resolve, WRITE_DELAY_MS));
+        await sleep(WRITE_DELAY_MS);
         writeCalls.push({ kind: "fact", key });
       },
       async upsertPreference(_userId: string, key: string) {
-        await new Promise<void>((resolve) => setTimeout(resolve, WRITE_DELAY_MS));
+        await sleep(WRITE_DELAY_MS);
         writeCalls.push({ kind: "pref", key });
       }
     } as unknown as InstanceType<typeof InMemoryUserMemoryStore>;

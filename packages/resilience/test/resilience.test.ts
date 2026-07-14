@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { setTimeout as sleep } from "node:timers/promises";
+
 import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
 import {
   CircuitBreakerOpenError,
@@ -206,7 +208,7 @@ describe("retry and timeout", () => {
   });
 
   it("aborts operations that exceed the timeout", async () => {
-    await expect(withTimeout(() => new Promise((resolve) => setTimeout(resolve, 20)), 1))
+    await expect(withTimeout(() => sleep(20), 1))
       .rejects.toBeInstanceOf(TimeoutError);
   });
 
@@ -215,7 +217,7 @@ describe("retry and timeout", () => {
     // ~1ms — the operation must still run to completion, not die.
     for (const bad of [Number.NaN, Number.POSITIVE_INFINITY]) {
       const value = await withTimeout(
-        () => new Promise<string>((resolve) => setTimeout(() => resolve("done"), 15)),
+        () => sleep(15, "done"),
         bad
       );
       expect(value).toBe("done");
