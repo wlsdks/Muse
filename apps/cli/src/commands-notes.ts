@@ -313,7 +313,7 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
         helpers.writeOutput(io, payload);
         return;
       }
-      io.stdout(formatNotesList(payload as unknown as Parameters<typeof formatNotesList>[0]));
+      io.stdout(formatNotesList(payload as Parameters<typeof formatNotesList>[0]));
     });
 
   notes
@@ -334,7 +334,7 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
         helpers.writeOutput(io, payload);
         return;
       }
-      io.stdout(formatNoteRead(payload as unknown as Parameters<typeof formatNoteRead>[0]));
+      io.stdout(formatNoteRead(payload as Parameters<typeof formatNoteRead>[0]));
     });
 
   notes
@@ -372,7 +372,7 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
         helpers.writeOutput(io, payload);
         return;
       }
-      io.stdout(formatNoteSearch(payload as unknown as Parameters<typeof formatNoteSearch>[0]));
+      io.stdout(formatNoteSearch(payload as Parameters<typeof formatNoteSearch>[0]));
     });
 
   notes
@@ -427,7 +427,7 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
       if (typeof payload.mirrorNote === "string" && payload.mirrorNote.length > 0) {
         io.stderr(`muse: ${payload.mirrorNote}\n`);
       }
-      io.stdout(formatNoteSaved(payload as unknown as Parameters<typeof formatNoteSaved>[0]));
+      io.stdout(formatNoteSaved(payload as Parameters<typeof formatNoteSaved>[0]));
     });
 
   notes
@@ -497,7 +497,7 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
         helpers.writeOutput(io, payload);
         return;
       }
-      io.stdout(formatNoteSaved(payload as unknown as Parameters<typeof formatNoteSaved>[0]));
+      io.stdout(formatNoteSaved(payload as Parameters<typeof formatNoteSaved>[0]));
     });
 
   notes
@@ -524,7 +524,7 @@ export function registerNotesCommands(program: Command, io: ProgramIO, helpers: 
         helpers.writeOutput(io, payload);
         return;
       }
-      io.stdout(formatNoteAppended(payload as unknown as Parameters<typeof formatNoteAppended>[0]));
+      io.stdout(formatNoteAppended(payload as Parameters<typeof formatNoteAppended>[0]));
     });
 
   notes

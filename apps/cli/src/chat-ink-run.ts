@@ -281,7 +281,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     lastExtract.current = now;
     try {
       const { facts, preferences } = await extractMemoryFromTurn({
-        assistant, model, provider: provider as unknown as AutoMemoryProvider, user
+        assistant, model, provider: provider as AutoMemoryProvider, user
       });
       const { summary, confirmation } = await applyTurnLearnings(memoryStore!, userId, facts, preferences);
       // The cited "Got it — X is now Y (changed from Z)" confirmation for a
@@ -408,7 +408,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     try {
       const all = await readEpisodes(resolveEpisodesFile(process.env)).catch(() => []);
       const mine = all.filter((episode) => episode.userId === userId);
-      const reflectionProvider = provider as unknown as ReflectionProvider;
+      const reflectionProvider = provider as ReflectionProvider;
       return await synthesizeReflection({
         episodes: mine,
         model,

@@ -19,7 +19,7 @@ export async function defaultFollowupModel(_env: NodeJS.ProcessEnv): Promise<Fol
     if (assembly.modelProvider && assembly.defaultModel) {
       return {
         model: assembly.defaultModel,
-        modelProvider: assembly.modelProvider as unknown as FollowupModel["modelProvider"]
+        modelProvider: assembly.modelProvider as FollowupModel["modelProvider"]
       };
     }
   } catch { /* fail-soft — followup tick skipped when no model */ }
@@ -39,7 +39,7 @@ export function chromeSnapshotConnectionFromTools(tools: readonly MuseTool[]): C
         throw new Error(`chrome-devtools tool '${toolName}' is not available`);
       }
       // The projected MCP tool ignores the context; web-watch is read-only.
-      return tool.execute(args as unknown as Parameters<MuseTool["execute"]>[0], { runId: "muse-daemon-web-watch" });
+      return tool.execute(args as Parameters<MuseTool["execute"]>[0], { runId: "muse-daemon-web-watch" });
     }
   };
 }
@@ -74,7 +74,7 @@ export async function defaultKnowledgeEnrich(env: NodeJS.ProcessEnv): Promise<((
   try {
     const { createKnowledgeEnricher, createOllamaEmbedder, resolveNotesDir } = await import("@muse/autoconfigure");
     const { LocalDirNotesProvider } = await import("@muse/domain-tools");
-    const notesDir = resolveNotesDir(env as unknown as Parameters<typeof resolveNotesDir>[0]);
+    const notesDir = resolveNotesDir(env as Parameters<typeof resolveNotesDir>[0]);
     return createKnowledgeEnricher({
       embed: createOllamaEmbedder(env.MUSE_KNOWLEDGE_SEARCH_EMBED_MODEL?.trim() ?? DEFAULT_EMBED_MODEL),
       notesProvider: new LocalDirNotesProvider({ notesDir })

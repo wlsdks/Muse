@@ -189,7 +189,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           last_ended_at: episodesSummary.lastEndedAt ?? null,
           last_summary: episodesSummary.lastSummary ?? null,
           total: episodesSummary.total
-        } as unknown as JsonValue,
+        } as JsonValue,
         followups: {
           cancelled: followupsSummary.cancelled,
           fired: followupsSummary.fired,
@@ -197,7 +197,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           next_scheduled_summary: followupsSummary.nextScheduledSummary ?? null,
           scheduled: followupsSummary.scheduled,
           total: followupsSummary.total
-        } as unknown as JsonValue,
+        } as JsonValue,
         objectives: {
           active: objectivesSummary.active,
           cancelled: objectivesSummary.cancelled,
@@ -205,15 +205,15 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           escalated: objectivesSummary.escalated,
           escalated_sample: objectivesSummary.escalatedSample ?? null,
           total: objectivesSummary.total
-        } as unknown as JsonValue,
+        } as JsonValue,
         session: {
           dnd: sessionLockUntil !== undefined,
           until: sessionLockUntil ?? null
-        } as unknown as JsonValue,
+        } as JsonValue,
         patterns: {
           last_fired_at: patternsSummary.lastFiredAtIso ?? null,
           total: patternsSummary.total
-        } as unknown as JsonValue,
+        } as JsonValue,
         reminders: {
           fired: remindersSummary.fired,
           next_due_at: remindersSummary.nextDueAt ?? null,
@@ -221,7 +221,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           overdue: remindersSummary.overdue,
           pending: remindersSummary.pending,
           total: remindersSummary.total
-        } as unknown as JsonValue,
+        } as JsonValue,
         log: {
           bytes: logBytes ?? null,
           file: logFile
@@ -233,7 +233,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           status: lastNotice.status,
           text: lastNotice.text,
           title: lastNotice.title
-        } as unknown as JsonValue) : null,
+        } as JsonValue) : null,
         model: (options.model?.trim() || process.env.MUSE_MODEL?.trim() || null) as JsonValue,
         persona: {
           fact_count: factCount,
@@ -242,21 +242,21 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           updated_at: persona?.updatedAt ?? null,
           user_id: userId,
           veto_count: vetoCount
-        } as unknown as JsonValue,
+        } as JsonValue,
         tasks: {
           due_next_24h: due24h.slice(0, 5).map((task) => ({
             due_at: task.dueAt ?? null,
             id: task.id ?? null,
             title: task.title ?? null,
             urgent: task.urgent === true
-          })) as unknown as JsonValue,
+          })) as JsonValue,
           total_open: allTasks.filter((task) => task.status === "open").length
-        } as unknown as JsonValue,
+        } as JsonValue,
         trust: {
           blocked_count: trust?.blockedTools?.length ?? 0,
           trusted_count: trust?.trustedTools?.length ?? 0,
-          trusted_sample: (trust?.trustedTools ?? []).slice(0, 3) as unknown as JsonValue
-        } as unknown as JsonValue
+          trusted_sample: (trust?.trustedTools ?? []).slice(0, 3) as JsonValue
+        } as JsonValue
       };
       return snapshot;
     },
@@ -293,7 +293,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
         );
         return {
           dir,
-          files: files as unknown as JsonValue,
+          files: files as JsonValue,
           total: files.length
         };
       } catch (cause) {

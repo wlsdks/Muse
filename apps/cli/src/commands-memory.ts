@@ -186,14 +186,14 @@ export function formatBeliefWhy(
   // value as if Muse still holds it. deriveFactProvenance excludes retraction
   // markers, so the prov below would otherwise rebuild the dropped fact and the
   // "show your work" surface would lie about a fact you deleted.
-  if (keysWithActiveRetraction(records as unknown as readonly BeliefProvenance[]).has(key)) {
+  if (keysWithActiveRetraction(records as readonly BeliefProvenance[]).has(key)) {
     const forgottenAt = [...records]
       .filter((r) => r.key === key && r.retraction === true)
       .sort((a, b) => Date.parse(b.learnedAt) - Date.parse(a.learnedAt))[0]?.learnedAt;
     const when = forgottenAt ? ` on ${forgottenAt.slice(0, 10)}` : "";
     return `(you had me forget "${key}"${when} — I no longer hold it)\n`;
   }
-  const prov = deriveFactProvenance(records as unknown as readonly BeliefProvenance[]).find((p) => p.key === key);
+  const prov = deriveFactProvenance(records as readonly BeliefProvenance[]).find((p) => p.key === key);
   if (!prov) {
     return `(no recorded provenance for "${key}" — learned before provenance tracking, or not remembered)\n`;
   }
@@ -212,7 +212,7 @@ export function formatBeliefWhy(
   // For a belief that CHANGED, show the actual value path (not just the count) —
   // the deepest "show your work": Seoul (date) → Busan (date).
   if (prov.distinctValueCount > 1) {
-    const timeline = beliefValueTimeline(records as unknown as readonly BeliefProvenance[], key);
+    const timeline = beliefValueTimeline(records as readonly BeliefProvenance[], key);
     if (timeline.length > 1) {
       lines.push(`  ↳ value path: ${timeline.map((step) => `${step.value} (${step.learnedAt.slice(0, 10)})`).join(" → ")}`);
     }
@@ -291,7 +291,7 @@ Examples:
         return;
       }
       const merged = { userId, ...(payload ?? {}) };
-      io.stdout(formatMemoryShow(merged as unknown as Parameters<typeof formatMemoryShow>[0]));
+      io.stdout(formatMemoryShow(merged as Parameters<typeof formatMemoryShow>[0]));
     });
 
   memory

@@ -144,7 +144,7 @@ export function createMacSpotlightSearchTool(deps: MacSpotlightSearchToolDeps = 
       const all = result.stdout.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line.length > 0);
       const matched = imagesOnly ? all.filter(isImagePath) : all;
       return {
-        paths: matched.slice(0, SPOTLIGHT_MAX_RESULTS) as unknown as JsonValue,
+        paths: matched.slice(0, SPOTLIGHT_MAX_RESULTS) as JsonValue,
         query,
         total: matched.length,
         ...(imagesOnly ? { imagesOnly: true } : {}),

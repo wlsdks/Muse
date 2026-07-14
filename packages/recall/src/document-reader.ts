@@ -23,7 +23,7 @@ export interface PdfParsed {
  * tiny `{ text, pageCount }` subset the CLI cares about. Exported for testing.
  */
 export async function parsePdfBuffer(buffer: Buffer): Promise<PdfParsed> {
-  const mod = await import("pdf-parse") as unknown as {
+  const mod = await import("pdf-parse") as {
     PDFParse: new (opts: { data: Buffer }) => {
       getText(): Promise<{ text?: string; total?: number; pages?: unknown[] }>;
     };

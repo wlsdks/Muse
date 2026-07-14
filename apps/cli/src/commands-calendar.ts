@@ -170,7 +170,7 @@ export function registerCalendarCommands(program: Command, io: ProgramIO, helper
         helpers.writeOutput(io, payload);
         return;
       }
-      io.stdout(formatCalendarEvents(payload as unknown as Parameters<typeof formatCalendarEvents>[0]));
+      io.stdout(formatCalendarEvents(payload as Parameters<typeof formatCalendarEvents>[0]));
     });
 
   calendar
@@ -711,7 +711,7 @@ export function registerCalendarCommands(program: Command, io: ProgramIO, helper
           helpers.writeOutput(io, payload);
           return;
         }
-        io.stdout(formatCalendarEvents(payload as unknown as Parameters<typeof formatCalendarEvents>[0]));
+        io.stdout(formatCalendarEvents(payload as Parameters<typeof formatCalendarEvents>[0]));
       });
   };
 

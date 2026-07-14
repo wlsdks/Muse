@@ -283,7 +283,7 @@ export function registerProactiveCommands(program: Command, io: ProgramIO, helpe
         const { createMuseRuntimeAssembly } = await import("@muse/autoconfigure");
         const assembly = createMuseRuntimeAssembly();
         if (assembly.modelProvider && assembly.defaultModel) {
-          modelProvider = assembly.modelProvider as unknown as Parameters<typeof runDueProactiveNotices>[0]["modelProvider"];
+          modelProvider = assembly.modelProvider as Parameters<typeof runDueProactiveNotices>[0]["modelProvider"];
           agentModel = assembly.defaultModel;
         }
         const userMemory = await assembly.userMemoryStore.findByUserId(userId);

@@ -106,8 +106,8 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
       try {
         const result = await pollAll();
         return {
-          errors: result.errors as unknown as JsonValue,
-          ingestedByProvider: result.ingestedByProvider as unknown as JsonValue
+          errors: result.errors,
+          ingestedByProvider: result.ingestedByProvider
         };
       } catch (error) {
         return { error: errorMessage(error) };
@@ -186,7 +186,7 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
           "`displayName`, and a free-form `description`. Empty array means no provider is configured.",
         execute: async (): Promise<JsonObject> => {
           const providers = registry.describe();
-          return { providers: providers as unknown as JsonValue };
+          return { providers };
         },
         inputSchema: {
           additionalProperties: false,
@@ -223,7 +223,10 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
           try {
             const inbound = await registry.fetchInbound(providerId, Object.keys(opts).length > 0 ? opts : undefined);
             return {
-              inbound: inbound as unknown as JsonValue,
+              inbound: inbound.map((entry) => ({
+                ...entry,
+                ...(entry.raw === undefined ? {} : { raw: sanitizeJsonValue(entry.raw) })
+              })),
               providerId,
               total: inbound.length
             };
@@ -353,4 +356,24 @@ export function createMessagingMcpServer(options: MessagingMcpServerOptions): Lo
       }
     ]
   };
+}
+
+function sanitizeJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || value === false || value === true || typeof value === "string" || typeof value === "number") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeJsonValue(item)).filter((item): item is JsonValue => item !== undefined);
+  }
+  if (value === undefined || typeof value !== "object") {
+    return undefined;
+  }
+  const out: JsonObject = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const nested = sanitizeJsonValue(raw);
+    if (nested !== undefined) {
+      out[key] = nested;
+    }
+  }
+  return out;
 }

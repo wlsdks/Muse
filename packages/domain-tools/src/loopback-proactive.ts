@@ -38,7 +38,7 @@ export function createProactiveMcpServer(options: ProactiveMcpServerOptions): Lo
       try {
         const entries = await readProactiveHistory(options.historyFile, limit);
         return {
-          entries: entries as unknown as JsonValue,
+          entries: entries as JsonValue,
           total: entries.length
         };
       } catch (error) {

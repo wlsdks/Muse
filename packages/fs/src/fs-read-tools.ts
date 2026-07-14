@@ -182,7 +182,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
         .map((candidate: FileCandidate) => candidate.name);
       return {
         ok: false,
-        result: { read: false, reason: `no file matching "${input}" in your everyday folders`, recent: recent as unknown as JsonValue }
+        result: { read: false, reason: `no file matching "${input}" in your everyday folders`, recent: recent as JsonValue }
       };
     }
     const safe = await resolveSafePath(top.path, { ...options, baseDir: docRoots[0] }, resolved);

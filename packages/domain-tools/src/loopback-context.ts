@@ -74,7 +74,7 @@ export function createContextReferenceMcpServer(
             if (!snapshot) {
               return { found: false };
             }
-            return { found: true, snapshot: snapshot as unknown as JsonValue };
+            return { found: true, snapshot: snapshot as JsonValue };
           },
           inputSchema: {
             additionalProperties: false,

@@ -57,7 +57,7 @@ export function buildJsonToolSchema(
 ): JsonObject {
   return {
     additionalProperties: false,
-    properties: properties as unknown as JsonObject,
+    properties: properties as JsonObject,
     type: "object",
     ...(required && required.length > 0 ? { required: [...required] } : {})
   };

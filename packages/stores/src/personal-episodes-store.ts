@@ -140,7 +140,7 @@ export function serializeEpisode(episode: PersistedEpisode): JsonObject {
     summary: episode.summary,
     userId: episode.userId,
     ...(episode.topics && episode.topics.length > 0
-      ? { topics: episode.topics as unknown as JsonValue }
+      ? { topics: episode.topics as JsonValue }
       : {}),
     ...(typeof episode.importance === "number" && Number.isFinite(episode.importance)
       ? { importance: episode.importance }
