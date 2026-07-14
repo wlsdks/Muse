@@ -181,7 +181,7 @@ function createSnapshotStatusEnvironmentView(
   // another Proxy whose invariant validation reaches hidden descriptors when
   // this view filters ownKeys. A fresh extensible, null-prototype target keeps
   // every virtual key configurable and makes all traps self-contained.
-  const snapshotTarget = Object.create(null) as Record<string, never>;
+  const snapshotTarget: Record<string, never> = Object.create(null);
   return new Proxy(snapshotTarget, {
     defineProperty: () => false,
     deleteProperty: () => false,
@@ -375,7 +375,13 @@ export interface LocalOnlyStatusSnapshot {
   readonly detail: string;
 }
 
-const CLOUD_CREDENTIAL_ENV_KEYS = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"] as const;
+const CLOUD_CREDENTIAL_ENV_KEYS: readonly string[] = [
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY"
+];
 
 export function evaluateLocalOnlyPosture(env: Readonly<Record<string, string | undefined>>): LocalOnlyStatusSnapshot {
   // Local-only is an OPT-IN posture (MUSE_LOCAL_ONLY=true); cloud is allowed by
@@ -893,11 +899,11 @@ export async function collectSetupStatusJson(options: {
     voice: voiceStatus,
     webSearch: {
       ...readWebSearchEnvSnapshot(env),
-      status: "ok" as const
+      status: "ok"
     },
     userMemory: {
       autoExtract: autoExtractEnabled,
-      status: "ok" as const,
+      status: "ok",
       ...(autoExtractEnabled && autoExtractModel ? { model: autoExtractModel } : {}),
       ...(autoExtractEnabled
         ? {}
@@ -911,7 +917,7 @@ export async function collectSetupStatusJson(options: {
       ...(proactiveProvider ? { providerId: proactiveProvider } : {}),
       ...(proactiveQuietHours ? { quietHours: proactiveQuietHours } : {}),
       sidecarFile: proactiveSidecarFile,
-      status: proactiveEnabled ? "ok" as const : "info" as const,
+      status: proactiveEnabled ? "ok" : "info",
       tickMs: proactiveTickMs,
       ...(proactiveEnabled
         ? {}
@@ -923,7 +929,7 @@ export async function collectSetupStatusJson(options: {
       enabled: reminderEnabled,
       ...(reminderProvider ? { providerId: reminderProvider } : {}),
       ...(reminderQuietHours ? { quietHours: reminderQuietHours } : {}),
-      status: reminderEnabled ? "ok" as const : "info" as const,
+      status: reminderEnabled ? "ok" : "info",
       tickMs: reminderTickMs,
       ...(reminderEnabled
         ? {}

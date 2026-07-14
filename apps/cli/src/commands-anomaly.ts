@@ -7,13 +7,15 @@
  */
 
 import { dailyCounts, mostAnomalousDays, type DayAnomaly } from "@muse/agent-core";
-import { resolveActionLogFile, resolveEpisodesFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
+import { resolveActionLogFile, resolveEpisodesFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
 import { readActionLog, readEpisodes, readReminders, readTasks } from "@muse/stores";
 import type { Command } from "commander";
 
 import type { ProgramIO } from "./program.js";
 
-function environment(): MuseEnvironment {
+type ActionLogEnvironment = NodeJS.ProcessEnv;
+
+function environment(): ActionLogEnvironment {
   return process.env;
 }
 
@@ -26,12 +28,12 @@ const parseMs = (iso: string | undefined): number => (iso ? Date.parse(iso) : Nu
  * median is 0 and "your busiest day" degenerates into "any day you did anything".
  * Fail-soft per store.
  */
-export async function gatherActivityTimestamps(env: Record<string, string | undefined>): Promise<number[]> {
+export async function gatherActivityTimestamps(env: ActionLogEnvironment): Promise<number[]> {
   const [tasks, episodes, reminders, actions] = await Promise.all([
     readTasks(resolveTasksFile(env)).catch(() => []),
     readEpisodes(resolveEpisodesFile(env)).catch(() => []),
     readReminders(resolveRemindersFile(env)).catch(() => []),
-    readActionLog(resolveActionLogFile(env), env as NodeJS.ProcessEnv).catch(() => [])
+    readActionLog(resolveActionLogFile(env), env).catch(() => [])
   ]);
   return [
     ...tasks.map((task) => parseMs(task.createdAt)),

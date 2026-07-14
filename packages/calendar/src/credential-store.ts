@@ -109,7 +109,7 @@ export class FileCalendarCredentialStore implements CalendarCredentialStore {
 // can't index an inherited Object.prototype member (load would
 // otherwise return a bogus truthy {} and `in` would false-hit).
 function emptyProviderMap(): Record<string, ProviderCredentials> {
-  return Object.create(null) as Record<string, ProviderCredentials>;
+  return Object.create(null);
 }
 
 function isFileNotFound(error: unknown): boolean {
