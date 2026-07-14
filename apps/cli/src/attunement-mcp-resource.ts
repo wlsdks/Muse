@@ -11,6 +11,7 @@
  */
 
 import { AttunementStoreError, mcpProviderId, type ArtifactRole, type ResolvedArtifact } from "@muse/attunement";
+import type { JsonObject } from "@muse/shared";
 
 /**
  * Calls a READ tool on a connected MCP server. Injected so tests use a
@@ -18,11 +19,11 @@ import { AttunementStoreError, mcpProviderId, type ArtifactRole, type ResolvedAr
  * the raw (untrusted) tool result; throws when the server is unreachable / the
  * tool errors.
  */
-export type McpToolCaller = (server: string, toolName: string, args: Record<string, unknown>) => Promise<unknown>;
+export type McpToolCaller = (server: string, toolName: string, args: JsonObject) => Promise<unknown>;
 
 interface ResourceReadPlan {
   readonly toolName: string;
-  readonly args: Record<string, unknown>;
+  readonly args: JsonObject;
   /** The normalized, canonical resource id stored and re-resolved later. */
   readonly canonicalId: string;
 }

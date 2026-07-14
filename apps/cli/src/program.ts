@@ -567,8 +567,8 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
 
   // One shared dependency bag handed to every lazily-loaded registrar; each
   // destructures the subset it needs and ignores the rest, so a single object
-  // serves all of them. `shells` is present only when the test harness injects
-  // TTS/speaker fakes for `today --brief --speak`.
+  // serves all of them. `todayShells` is present only when the test harness
+  // injects TTS/speaker fakes for `today --brief --speak`.
   const lazyDeps: LazyDeps = {
     apiRequest,
     writeOutput,
@@ -582,7 +582,7 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
     deleteStoredToken,
     readStoredToken,
     writeStoredToken,
-    ...(io.todayShells ? { shells: io.todayShells } : {})
+    ...(io.todayShells ? { todayShells: io.todayShells } : {})
   };
 
   // Register a lightweight STUB (name + description + help term + subcommand
@@ -909,4 +909,3 @@ export function formatUnknownCommand(attempted: string, known: readonly string[]
   }
   return `${lines.join("\n")}\n`;
 }
-
