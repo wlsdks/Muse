@@ -244,6 +244,21 @@ export interface PromotableFact {
 
 const DEFAULT_PROMOTE_MIN_CONFIRM = 3;
 const DEFAULT_PROMOTE_RECENT_DAYS = 90;
+const DEFAULT_PROMOTE_MIN_RECALL_COUNT = 3;
+const DEFAULT_PROMOTE_MIN_UNIQUE_QUERIES = 3;
+
+/**
+ * Per-key RECALL evidence — how often a fact was actually SURFACED in retrieval
+ * results (not merely written). `count` is the total surfaced-into-results hits;
+ * `uniqueQueries` is the distinct query hashes (so one query repeated N times
+ * can't fake demonstrated usefulness — same diversity guard as
+ * `selectPromotableMemories.minUniqueQueries`). Fed to {@link selectPromotableFacts}
+ * as an OPTIONAL additional gate.
+ */
+export interface FactRecallStat {
+  readonly count: number;
+  readonly uniqueQueries: number;
+}
 
 /**
  * The durable-promotion gate: which facts have EARNED durable trust. A
@@ -257,11 +272,30 @@ const DEFAULT_PROMOTE_RECENT_DAYS = 90;
  * confirms it. FAIL-CLOSE: a value the injection detector flags is NEVER promoted,
  * however often confirmed. The injection check is INJECTED (`isInjection`) so this
  * layer stays free of the agent-core dependency; the caller passes `isMemoryInjection`.
- * Pure.
+ *
+ * ADDITIONAL recall gate (T2-c) — OPT-IN, off by omission. When `recallStats` is
+ * ABSENT the behaviour is BYTE-IDENTICAL to the write-side gate above (no recall
+ * requirement). When PRESENT it is an ADDITIONAL, ANDed requirement: a fact
+ * promotes only if it was ALSO SURFACED in retrieval results at least
+ * `minRecallCount` times across ≥ `minUniqueQueries` distinct queries — a fact
+ * nobody ever recalls hasn't earned a spot in the always-on persona, however
+ * often it was written. A key with no recall entry has zero recall and fails the
+ * bar. The caller passes `recallStats` only when its (fail-soft) read of the
+ * fact-recall ledger succeeded; on a read error it OMITS `recallStats`, which
+ * falls this back to the legacy (no-recall) arm rather than blocking every
+ * promotion. Pure.
  */
 export function selectPromotableFacts(
   provenance: readonly FactProvenance[],
-  opts: { readonly now: number; readonly minConfirmCount?: number; readonly recentDays?: number; readonly isInjection?: (value: string) => boolean }
+  opts: {
+    readonly now: number;
+    readonly minConfirmCount?: number;
+    readonly recentDays?: number;
+    readonly isInjection?: (value: string) => boolean;
+    readonly recallStats?: ReadonlyMap<string, FactRecallStat>;
+    readonly minRecallCount?: number;
+    readonly minUniqueQueries?: number;
+  }
 ): readonly PromotableFact[] {
   const minConfirm = Math.max(1, Math.trunc(opts.minConfirmCount ?? DEFAULT_PROMOTE_MIN_CONFIRM));
   const recentMs = Math.max(1, opts.recentDays ?? DEFAULT_PROMOTE_RECENT_DAYS) * 86_400_000;
@@ -270,9 +304,19 @@ export function selectPromotableFacts(
     const age = opts.now - Date.parse(lastConfirmed);
     return Number.isFinite(age) && age <= recentMs;
   };
+  const { recallStats } = opts;
+  const minRecallCount = Math.max(1, Math.trunc(opts.minRecallCount ?? DEFAULT_PROMOTE_MIN_RECALL_COUNT));
+  const minUniqueQueries = Math.max(1, Math.trunc(opts.minUniqueQueries ?? DEFAULT_PROMOTE_MIN_UNIQUE_QUERIES));
+  const recalledEnough = (key: string): boolean => {
+    if (!recallStats) return true; // recall gate inactive ⇒ legacy behaviour
+    const stat = recallStats.get(key);
+    if (!stat) return false; // never surfaced in retrieval ⇒ fails the recall bar
+    return stat.count >= minRecallCount && stat.uniqueQueries >= minUniqueQueries;
+  };
   return provenance
     .filter((p) => !isInjection(p.value))
     .filter((p) => p.source === "user" || (p.confirmCount >= minConfirm && recent(p.lastConfirmed) && p.distinctValueCount === 1))
+    .filter((p) => recalledEnough(p.key))
     .map((p) => ({ confirmCount: p.confirmCount, key: p.key, lastConfirmed: p.lastConfirmed, source: p.source, value: p.value }));
 }
 

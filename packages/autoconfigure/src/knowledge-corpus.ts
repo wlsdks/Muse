@@ -200,6 +200,30 @@ function labelSource(prefix: string, label: string | undefined, fallbackId: stri
  * Deterministic EXACT match (whitespace-collapsed); near-duplicates are
  * left to MMR at rank time. Empty passages are dropped too.
  */
+/**
+ * Parse the remembered-fact KEY out of a corpus chunk's `source`, or `undefined`
+ * if the chunk is not a `memory/`-sourced fact. Memory chunks are labelled
+ * `memory/<kind>:<key>` (kind ∈ fact|preference) or `memory/<key>` (no kind), so
+ * this strips the `memory/` prefix and a leading `fact:` / `preference:` kind
+ * tag to recover the same key space `deriveFactProvenance` uses. Pure — the
+ * inverse of `assembleKnowledgeCorpus`'s memory `labelSource` call.
+ */
+export function parseMemoryFactKey(source: string): string | undefined {
+  const prefix = "memory/";
+  if (!source.startsWith(prefix)) return undefined;
+  const rest = source.slice(prefix.length).trim();
+  if (rest.length === 0) return undefined;
+  const colon = rest.indexOf(":");
+  if (colon > 0) {
+    const kind = rest.slice(0, colon);
+    if (kind === "fact" || kind === "preference") {
+      const key = rest.slice(colon + 1).trim();
+      return key.length > 0 ? key : undefined;
+    }
+  }
+  return rest;
+}
+
 export function dedupeKnowledgeChunks(chunks: readonly KnowledgeChunk[]): KnowledgeChunk[] {
   const seen = new Set<string>();
   const out: KnowledgeChunk[] = [];
@@ -531,6 +555,16 @@ export interface NotesKnowledgeSearchToolOptions {
   readonly maxFeedEntries?: number;
   readonly maxEpisodes?: number;
   readonly extraChunks?: readonly KnowledgeChunk[];
+  /**
+   * Fail-soft recorder invoked with the fact KEYS of `memory/`-sourced chunks
+   * that PASSED ranking (i.e. are in the returned top-N), plus the raw query.
+   * Wired in production to record a FACT-recall hit into the SEPARATE
+   * fact-recall-hits ledger (NOT the episode ledger) so the fact-promotion gate
+   * can count demonstrated recall. Called at SURFACED-INTO-RESULTS time, never at
+   * corpus assembly (assembly enumerates ALL facts). Absent ⇒ no recording. Any
+   * throw is swallowed here so recording can never break the recall path.
+   */
+  readonly onFactRecall?: (memoryKeys: readonly string[], query: string) => void;
 }
 
 /**
@@ -587,6 +621,22 @@ export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchTool
         ...(process.env.MUSE_RECALL_SECOND_HOP === "true" ? { secondHop: true } : {}),
         ...(options.topK !== undefined ? { topK: options.topK } : {})
       });
+      // Record a FACT-recall hit ONLY for a memory-sourced chunk that PASSED
+      // ranking and is in the returned top-N (`matches`), NOT at corpus assembly
+      // (which enumerates every fact). Fail-soft — recording must never break the
+      // returned results.
+      if (options.onFactRecall) {
+        const factKeys = matches
+          .map((match) => parseMemoryFactKey(match.source))
+          .filter((key): key is string => key !== undefined);
+        if (factKeys.length > 0) {
+          try {
+            options.onFactRecall(factKeys, query);
+          } catch {
+            // fail-soft: a recording error can never alter the recall path
+          }
+        }
+      }
       return renderKnowledgeMatches(edgeLoadByRelevance(matches));
     }
   };

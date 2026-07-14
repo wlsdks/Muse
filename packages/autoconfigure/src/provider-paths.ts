@@ -214,6 +214,17 @@ export function resolveRecallHitsFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_RECALL_HITS_FILE", "recall-hits.json");
 }
 
+/**
+ * FACT recall-hits ledger — a SEPARATE file from the episode `recall-hits.json`.
+ * Kept apart on purpose: the memory-consolidate / fade passes iterate the EPISODE
+ * ledger's keys AS episode sessionIds, so mixing fact keys into it would corrupt
+ * episode fade/promotion. Fact-recall hits (a fact SURFACED in retrieval results)
+ * therefore live here and feed the fact-promotion recall gate only.
+ */
+export function resolveFactRecallHitsFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(env, "MUSE_FACT_RECALL_HITS_FILE", "fact-recall-hits.json");
+}
+
 export function resolveFadedMemoriesFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_FADED_MEMORIES_FILE", "memory-fade.json");
 }

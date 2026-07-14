@@ -19,7 +19,7 @@ import { isLocalOnlyEnabled } from "@muse/model";
 import { createSchedulerTools, DynamicScheduler } from "@muse/scheduler";
 import { createRunToolPlanTool, type MuseTool } from "@muse/tools";
 
-import { createOllamaEmbedder } from "./context-engineering-builders.js";
+import { createOllamaEmbedder, recordFactRecallHits } from "./context-engineering-builders.js";
 import { readEpisodeKnowledgeEntries } from "./episodes-knowledge-source.js";
 import { parseBoolean } from "./env-parsers.js";
 import { readFeedKnowledgeEntries } from "./feeds-knowledge-source.js";
@@ -32,7 +32,8 @@ import {
   resolveBrowsingFile,
   resolveObjectivesFile,
   resolveRemindersFile,
-  resolveFollowupsFile
+  resolveFollowupsFile,
+  resolveFactRecallHitsFile
 } from "./personal-providers.js";
 import { createDayRecapTool } from "./day-recap-tool.js";
 import { createFindItemsTool } from "./find-items-tool.js";
@@ -164,7 +165,8 @@ export function buildRuntimeToolRegistry(deps: RuntimeToolRegistryDeps): Dynamic
       episodesSource: {
         recentEpisodes: (limit) => readEpisodeKnowledgeEntries(episodesFile, resolveDefaultUserId(env), limit)
       },
-      userMemorySource: createUserMemoryKnowledgeSource(userMemoryStore, resolveDefaultUserId(env))
+      userMemorySource: createUserMemoryKnowledgeSource(userMemoryStore, resolveDefaultUserId(env)),
+      onFactRecall: (memoryKeys, query) => recordFactRecallHits(resolveFactRecallHitsFile(env), memoryKeys, query)
     })];
   })();
 

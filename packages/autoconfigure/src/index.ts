@@ -48,6 +48,7 @@ export {
   resolveLastProactiveDeliveryFile,
   resolvePatternsFiredFile,
   resolveRecallHitsFile,
+  resolveFactRecallHitsFile,
   resolveCheckinsFile,
   resolveInboxInjectionCursorFile,
   resolveLineInboxFile,
@@ -135,7 +136,7 @@ export {
   type ResolveHomeAssistantEnvironmentOptions
 } from "./home-assistant-environment.js";
 
-export { createGateEmbedder, createOllamaEmbedder } from "./context-engineering-builders.js";
+export { createGateEmbedder, createOllamaEmbedder, recordFactRecallHits } from "./context-engineering-builders.js";
 
 export { distillQueuedCorrections, type DistillQueuedDeps } from "./distill-queue.js";
 export { decayContradictedStrategies, type CorrectionSignal, type DecayContradictedDeps, type DecayedStrategy } from "./decay-contradicted.js";
@@ -146,6 +147,7 @@ export {
   assembleKnowledgeCorpus,
   createKnowledgeEnricher,
   createNotesKnowledgeSearchTool,
+  parseMemoryFactKey,
   type AssembleKnowledgeCorpusOptions,
   type FeedEntryLike,
   type FeedsKnowledgeSource,

@@ -293,6 +293,25 @@ export function withRecallHitRecording(
 }
 
 /**
+ * Record a FACT-recall hit for each remembered fact that was SURFACED in a
+ * `knowledge_search`'s returned top-N results (its `memory/`-sourced chunk
+ * PASSED ranking). Mirrors {@link withRecallHitRecording} for the fact path:
+ * it reuses the `recordRecallHits` store FUNCTION but over a SEPARATE
+ * `fact-recall-hits.json` file (never the episode ledger — see
+ * `resolveFactRecallHitsFile`). Records `{ key, queryHash }` so the promotion
+ * gate can count unique-query recall. FAIL-SOFT: fire-and-forget with a
+ * swallowed rejection — a hit-store write must never block or alter the recall
+ * path.
+ */
+export function recordFactRecallHits(hitsFile: string, memoryKeys: readonly string[], query: string): void {
+  const uniqueKeys = [...new Set(memoryKeys.map((key) => key.trim()).filter((key) => key.length > 0))];
+  if (uniqueKeys.length === 0) return;
+  const queryHash = hashQuery(query);
+  const entries = uniqueKeys.map((key) => ({ key, queryHash }));
+  void recordRecallHits(hitsFile, entries, Date.now()).catch(() => undefined);
+}
+
+/**
  * Background-review engine wiring. Decides the MEMORY-learning hooks.
  *
  * - Default (`MUSE_BACKGROUND_REVIEW_ENABLED` unset/false): the standalone

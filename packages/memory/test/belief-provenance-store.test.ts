@@ -275,6 +275,36 @@ describe("selectPromotableFacts — the durable-promotion gate (G4, fail-close)"
     );
     expect(out).toEqual([]);
   });
+
+  describe("recall gate (T2-c) — OPT-IN additional bar, byte-identical when recallStats is absent", () => {
+    const writeConfirmed = fp({ key: "a", confirmCount: 3, distinctValueCount: 1 }); // clears the legacy write-side gate
+    it("opts ABSENT (or recallStats: undefined) ⇒ legacy outcome unchanged — the store-read-error fallback arm", () => {
+      // No recallStats: promotes on write-confirm alone (byte-identical to today).
+      expect(selectPromotableFacts([writeConfirmed], { now }).map((p) => p.key)).toEqual(["a"]);
+      // A caller whose fact-recall read FAILED passes recallStats: undefined — same legacy arm, never blocks.
+      expect(selectPromotableFacts([writeConfirmed], { now, recallStats: undefined }).map((p) => p.key)).toEqual(["a"]);
+    });
+    it("recallStats PRESENT ⇒ a write-confirmed fact with recall-count < min is NOT promoted", () => {
+      const recallStats = new Map([["a", { count: 2, uniqueQueries: 2 }]]); // below the default 3/3 bar
+      expect(selectPromotableFacts([writeConfirmed], { now, recallStats })).toEqual([]);
+    });
+    it("recallStats PRESENT ⇒ a fact NEVER surfaced in retrieval (no ledger entry) is NOT promoted", () => {
+      const recallStats = new Map<string, { count: number; uniqueQueries: number }>(); // empty ledger
+      expect(selectPromotableFacts([writeConfirmed], { now, recallStats })).toEqual([]);
+    });
+    it("recallStats PRESENT ⇒ a write-confirmed fact recalled >= min across >= min unique queries IS promoted", () => {
+      const recallStats = new Map([["a", { count: 3, uniqueQueries: 3 }]]);
+      expect(selectPromotableFacts([writeConfirmed], { now, recallStats }).map((p) => p.key)).toEqual(["a"]);
+    });
+    it("recallStats PRESENT ⇒ enough total recall but too FEW distinct queries is NOT promoted (one query repeated can't fake usefulness)", () => {
+      const recallStats = new Map([["a", { count: 9, uniqueQueries: 1 }]]);
+      expect(selectPromotableFacts([writeConfirmed], { now, recallStats })).toEqual([]);
+    });
+    it("honours custom minRecallCount / minUniqueQueries thresholds", () => {
+      const recallStats = new Map([["a", { count: 1, uniqueQueries: 1 }]]);
+      expect(selectPromotableFacts([writeConfirmed], { now, recallStats, minRecallCount: 1, minUniqueQueries: 1 }).map((p) => p.key)).toEqual(["a"]);
+    });
+  });
 });
 
 describe("provisionalFactKeys — matched facts that are KNOWN but not durable (G4-followup)", () => {

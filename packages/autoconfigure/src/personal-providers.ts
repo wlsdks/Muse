@@ -72,6 +72,7 @@ export {
   resolveLastProactiveDeliveryFile,
   resolvePatternsFiredFile,
   resolveRecallHitsFile,
+  resolveFactRecallHitsFile,
   resolveCheckinsFile,
   resolveLineInboxFile,
   resolveLocalCalendarFile,

@@ -477,6 +477,7 @@ export {
   type BeliefProvenanceStore,
   type FactFreshness,
   type FactProvenance,
+  type FactRecallStat,
   type BeliefValueStep,
   type PromotableFact,
   type RecentlyForgotten,

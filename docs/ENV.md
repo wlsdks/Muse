@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **566** variables.
+Total: **567** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -196,6 +196,7 @@ Total: **566** variables.
 | `MUSE_EXPORT_MAGIC` | apps/cli |
 | `MUSE_EXPORT_PASSPHRASE` | apps/cli |
 | `MUSE_EXPORT_VERSION` | apps/cli |
+| `MUSE_FACT_RECALL_HITS_FILE` | packages/autoconfigure |
 | `MUSE_FADED_MEMORIES_FILE` | packages/autoconfigure |
 | `MUSE_FAITHFULNESS_TRIPWIRE` | apps/cli |
 | `MUSE_FAST_MODEL` | apps/api, apps/cli |

@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { readRecallHits } from "@muse/stores";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { recordFactRecallHits } from "../src/context-engineering-builders.js";
 import {
   assembleKnowledgeCorpus,
   createNotesKnowledgeSearchTool,
+  parseMemoryFactKey,
   type EpisodesKnowledgeSource,
   type UserMemoryKnowledgeSource
 } from "../src/knowledge-corpus.js";
@@ -107,5 +114,86 @@ describe("knowledge_search spans episodes + user-memory (SB-1 unified recall)", 
     const result = String(await tool.execute({ query: "what was the plan for the acme renewal?" }, { runId: "r1" }));
     expect(result).toContain("[episode/2026-05-20]");
     expect(result).toContain("Acme renewal");
+  });
+});
+
+describe("parseMemoryFactKey — recover the fact key from a memory/-sourced chunk label", () => {
+  it("strips the memory/ prefix and a leading fact:/preference: kind tag; ignores non-memory sources", () => {
+    expect(parseMemoryFactKey("memory/fact:blood_type")).toBe("blood_type");
+    expect(parseMemoryFactKey("memory/preference:tone")).toBe("tone");
+    expect(parseMemoryFactKey("memory/city")).toBe("city"); // no kind tag
+    expect(parseMemoryFactKey("note/cat")).toBeUndefined();
+    expect(parseMemoryFactKey("episode/2026-05-20")).toBeUndefined();
+    expect(parseMemoryFactKey("memory/")).toBeUndefined();
+  });
+});
+
+describe("fact-recall recording — surfaced-into-results, SEPARATE ledger, fail-soft (T1-b-i)", () => {
+  let dir: string;
+  let factFile: string;
+  let episodeFile: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "muse-fact-recall-"));
+    factFile = join(dir, "fact-recall-hits.json");
+    episodeFile = join(dir, "recall-hits.json");
+  });
+  afterEach(async () => {
+    await rm(dir, { force: true, recursive: true });
+  });
+
+  async function waitForFactHits(expected: number): Promise<Awaited<ReturnType<typeof readRecallHits>>> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const hits = await readRecallHits(factFile);
+      if (hits.length >= expected) return hits;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return readRecallHits(factFile);
+  }
+
+  it("records exactly one fact-recall hit for a memory-sourced chunk that passed ranking, into the SEPARATE fact file (never the episode one)", async () => {
+    const userMemorySource: UserMemoryKnowledgeSource = {
+      facts: () => [{ key: "blood_type", kind: "fact", value: "O-negative" }]
+    };
+    const tool = createNotesKnowledgeSearchTool({
+      embed,
+      userMemorySource,
+      extraChunks: [{ source: "note/cat", text: "My cat is a tabby." }], // decoy — must NOT be recorded (not memory/)
+      onFactRecall: (keys, query) => recordFactRecallHits(factFile, keys, query)
+    });
+    const result = String(await tool.execute({ query: "what is my blood type?" }, { runId: "r1" }));
+    expect(result).toContain("[memory/fact:blood_type]");
+
+    const hits = await waitForFactHits(1);
+    expect(hits.map((h) => h.key)).toEqual(["blood_type"]);
+    expect(hits[0]?.hits).toBe(1);
+    expect(hits[0]?.queryHashes).toHaveLength(1); // one distinct query recorded
+    // The SEPARATE-file invariant: the episode recall-hits ledger is untouched.
+    await expect(stat(episodeFile)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("records ZERO fact hits (file never created) when no memory chunk is in the results", async () => {
+    const tool = createNotesKnowledgeSearchTool({
+      embed,
+      extraChunks: [{ source: "note/ticket", text: "acme renewal planning notes" }],
+      onFactRecall: (keys, query) => recordFactRecallHits(factFile, keys, query)
+    });
+    const result = String(await tool.execute({ query: "acme renewal" }, { runId: "r1" }));
+    expect(result).toContain("[note/ticket]");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await expect(stat(factFile)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("is fail-soft: a throwing onFactRecall never breaks the returned recall results", async () => {
+    const userMemorySource: UserMemoryKnowledgeSource = {
+      facts: () => [{ key: "blood_type", kind: "fact", value: "O-negative" }]
+    };
+    const tool = createNotesKnowledgeSearchTool({
+      embed,
+      userMemorySource,
+      onFactRecall: () => { throw new Error("recorder exploded"); }
+    });
+    const result = String(await tool.execute({ query: "what is my blood type?" }, { runId: "r1" }));
+    expect(result).toContain("[memory/fact:blood_type]");
+    expect(result).toContain("O-negative");
   });
 });
