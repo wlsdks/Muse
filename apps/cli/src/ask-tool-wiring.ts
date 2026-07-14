@@ -79,7 +79,7 @@ export async function buildAskToolWiring(params: {
     // name fragment, incl. PDF/Word/image), file_list (glob), file_grep
     // (content search) — read-risk, home-sandboxed, fail-closed on a denied
     // path. The home-wide sandbox supersedes the old 3-folder file_read.
-    const { createFsReadTools, createFsWriteTools, fileReadCharBudget, pathSafetyOptionsFromEnv } = await import("@muse/fs");
+    const { createFsReadTools, createFsWriteTools, defaultCheckpointsDir, FileCheckpointStore, fileReadCharBudget, pathSafetyOptionsFromEnv } = await import("@muse/fs");
     const { createWebDownloadTool } = await import("@muse/domain-tools");
     const { DEFAULT_OLLAMA_NUM_CTX, isWebEgressAllowed } = await import("@muse/model");
     // Sandbox overrides: MUSE_FS_ROOTS narrows the allow-root (default home),
@@ -129,14 +129,16 @@ export async function buildAskToolWiring(params: {
     });
     // file_write / file_edit / file_multi_edit: home-sandboxed + deny-listed
     // and gated by a fail-close confirm (the exposure policy only surfaces
-    // them when the prompt shows mutation intent). A wrong overwrite isn't
-    // trivially reversible, so the gate denies in any non-interactive run.
+    // them when the prompt shows mutation intent). Every approved write is
+    // ALSO checkpointed here — `muse rollback` restores it — so a wrong
+    // overwrite is undoable, not just gated.
     const { confirm: fsConfirm, isCancel: fsIsCancel } = await import("@clack/prompts");
     const fsWriteTools = createFsWriteTools({
       ...fsSandbox,
       wasPathRead: (canonicalPath) => fsReadPaths.has(canonicalPath),
       wasPathFullyRead: (canonicalPath) => fsFullReadPaths.has(canonicalPath),
       checkEditIntegrity: true,
+      checkpointStore: new FileCheckpointStore({ dir: defaultCheckpointsDir(process.env) }),
       approvalGate: actuatorMod.buildFsWriteApprovalGate({
         confirmAction: (message: string) => fsConfirm({ message }).then((answer) => !fsIsCancel(answer) && answer === true),
         io,

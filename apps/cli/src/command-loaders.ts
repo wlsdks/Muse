@@ -758,6 +758,14 @@ export const COMMAND_LOADERS: readonly LazyCommandLoader[] = [
     },
   },
   {
+    id: "rollback",
+    names: ["rollback"],
+    load: async (program, io, _deps) => {
+      const m = await import("./commands-rollback.js");
+      m.registerRollbackCommand(program, io);
+    },
+  },
+  {
     id: "trace",
     names: ["trace"],
     load: async (program, io, _deps) => {

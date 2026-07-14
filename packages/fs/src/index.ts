@@ -13,6 +13,7 @@
  */
 
 export * from "./edit-integrity.js";
+export * from "./fs-checkpoints.js";
 export * from "./fs-document.js";
 export * from "./fs-gitignore.js";
 export * from "./fs-path-safety.js";

@@ -20,6 +20,7 @@ import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { checkEditIntegrity } from "./edit-integrity.js";
+import { createInMemoryCheckpointStore, type CheckpointStore } from "./fs-checkpoints.js";
 import { applyEdits, type FsEditSpec } from "./fs-edit-engine.js";
 import { isPathSafetyError, resolvePolicy, resolveSafePath, type PathSafetyOptions, type ResolvedPolicy } from "./fs-path-safety.js";
 
@@ -73,6 +74,23 @@ export interface FsWriteToolsOptions extends PathSafetyOptions {
    * for the agent write path.
    */
   readonly checkEditIntegrity?: boolean;
+  /**
+   * Undo substrate: AFTER the approval gate approves but BEFORE the write
+   * executes, the CURRENT state of the target is snapshotted here so `muse
+   * rollback` can restore it — a snapshot failure (disk full, perms) fails
+   * the whole write closed (an un-undoable write is refused). REQUIRED in
+   * practice at the CLI construction site (the real agent write path always
+   * wires a persistent `FileCheckpointStore`); left OPTIONAL on the type
+   * only so call sites that don't care about rollback (most existing unit
+   * tests) keep compiling — absent, an ephemeral in-memory store is used
+   * (`createInMemoryCheckpointStore`), so writes still succeed but nothing
+   * survives the process.
+   */
+  readonly checkpointStore?: CheckpointStore;
+}
+
+function resolveCheckpointStore(options: FsWriteToolsOptions): CheckpointStore {
+  return options.checkpointStore ?? createInMemoryCheckpointStore();
 }
 
 function asString(value: unknown): string {
@@ -116,11 +134,20 @@ async function writeFileNoFollow(safePath: string, content: string): Promise<voi
   }
 }
 
-/** Read an existing file without following a symlink leaf (ELOOP on a symlink). */
-async function readFileNoFollow(safePath: string): Promise<string> {
+/**
+ * Read an existing file's RAW bytes without following a symlink leaf (ELOOP
+ * on a symlink). Every reader of a file's content here is either the edit
+ * engine (which decodes to a string itself, see `editExecutor`) or a
+ * checkpoint snapshot — and a checkpoint of a binary file (or any file with a
+ * byte sequence that isn't valid UTF-8) must survive a round-trip through
+ * `muse rollback`, so this NEVER decodes through `"utf8"` itself; reading as
+ * text first would silently replace invalid sequences with U+FFFD and
+ * corrupt the snapshot forever.
+ */
+async function readFileNoFollowBuffer(safePath: string): Promise<Buffer> {
   const handle = await open(safePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   try {
-    return await handle.readFile("utf8");
+    return await handle.readFile();
   } finally {
     await handle.close();
   }
@@ -202,6 +229,25 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
         if (!decision.approved) {
           return { path: safe, reason: decision.reason ?? "not confirmed", written: false };
         }
+        // Snapshot the CURRENT state right before writing (freshest truth, closest
+        // to the actual mutation) — a re-read here rather than reusing the earlier
+        // `exists`/`info` also closes the gap where the gate-await window let the
+        // file appear/change underneath us. Snapshot failure fails the write closed:
+        // an un-undoable write is refused rather than silently skipping the checkpoint.
+        let originalForSnapshot: Buffer | undefined;
+        try {
+          originalForSnapshot = await readFileNoFollowBuffer(safe);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
+          }
+          originalForSnapshot = undefined;
+        }
+        try {
+          await resolveCheckpointStore(options).record({ action: "write", originalContent: originalForSnapshot, path: safe, summary: draft.summary });
+        } catch (error) {
+          return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
+        }
         await mkdir(dirname(safe), { recursive: true });
         await writeFileNoFollow(safe, content);
         return { bytes: Buffer.byteLength(content, "utf8"), created: !exists, path: safe, written: true };
@@ -235,12 +281,18 @@ function editExecutor(
       };
     }
     let original: string;
+    let originalBuffer: Buffer;
     try {
       const info = await stat(safe);
       if (info.isDirectory()) {
         return { path: safe, reason: `'${path}' is a directory`, written: false };
       }
-      original = await readFileNoFollow(safe);
+      // Read the RAW bytes once — `original` (the string the edit engine
+      // matches against) is derived from it, and the SAME buffer is what gets
+      // checkpointed, so an invalid-UTF-8 file's snapshot survives byte-exact
+      // even though text-matching against it is inherently best-effort.
+      originalBuffer = await readFileNoFollowBuffer(safe);
+      original = originalBuffer.toString("utf8");
     } catch (error) {
       return refusal(error, path);
     }
@@ -271,6 +323,16 @@ function editExecutor(
     }
     if (!decision.approved) {
       return { path: safe, reason: decision.reason ?? "not confirmed", written: false };
+    }
+    // `originalBuffer` was already read fresh right before computing the edit
+    // outcome (above) — reusing it here (rather than re-reading post-gate) keeps
+    // the checkpoint consistent with what `outcome.content` was actually derived
+    // from, and preserves the file's exact original bytes. Snapshot failure fails
+    // the write closed.
+    try {
+      await resolveCheckpointStore(options).record({ action, originalContent: originalBuffer, path: safe, summary: draft.summary });
+    } catch (error) {
+      return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
     }
     try {
       await writeFileNoFollow(safe, outcome.content);
@@ -441,6 +503,24 @@ export function createFileDeleteTool(options: FsWriteToolsOptions, policyPromise
         if (!decision.approved) {
           return { deleted: false, path: safe, reason: decision.reason ?? "not confirmed" };
         }
+        // A symlink leaf can't be content-snapshotted (readFileNoFollowBuffer's
+        // O_NOFOLLOW would ELOOP on it, which would fail-close a delete that
+        // worked fine before checkpointing existed) — record it manifest-only
+        // (existedBefore:false); a regular file always gets its RAW bytes read
+        // (never "utf8" — a deleted JPEG/binary must round-trip byte-exact).
+        let originalForSnapshot: Buffer | undefined;
+        if (!info.isSymbolicLink()) {
+          try {
+            originalForSnapshot = await readFileNoFollowBuffer(safe);
+          } catch (error) {
+            return { deleted: false, path: safe, reason: `checkpoint snapshot failed — delete refused: ${error instanceof Error ? error.message : String(error)}` };
+          }
+        }
+        try {
+          await resolveCheckpointStore(options).record({ action: "delete", originalContent: originalForSnapshot, path: safe, summary: draft.summary });
+        } catch (error) {
+          return { deleted: false, path: safe, reason: `checkpoint snapshot failed — delete refused: ${error instanceof Error ? error.message : String(error)}` };
+        }
         await unlink(safe);
         return { deleted: true, path: safe };
       } catch (error) {
@@ -510,6 +590,14 @@ export function createFileMoveTool(options: FsWriteToolsOptions, policyPromise?:
         }
         if (!decision.approved) {
           return { moved: false, reason: decision.reason ?? "not confirmed" };
+        }
+        // `to` was already confirmed absent above, so there is nothing to
+        // content-snapshot — the undo of a move is a rename BACK, tracked via
+        // `fromPath` rather than a content restore.
+        try {
+          await resolveCheckpointStore(options).record({ action: "move", fromPath: from, originalContent: undefined, path: to, summary: draft.summary });
+        } catch (error) {
+          return { moved: false, reason: `checkpoint snapshot failed — move refused: ${error instanceof Error ? error.message : String(error)}` };
         }
         await mkdir(dirname(to), { recursive: true });
         await rename(from, to);

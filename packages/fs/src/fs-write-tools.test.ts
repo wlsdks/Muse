@@ -5,11 +5,35 @@ import { join } from "node:path";
 import type { JsonObject } from "@muse/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { FileCheckpointStore, type CheckpointRecordInput, type CheckpointStore } from "./fs-checkpoints.js";
 import { applyEdit, applyEdits, createFileDeleteTool, createFileEditTool, createFileMoveTool, createFileMultiEditTool, createFileWriteTool, type FsWriteApprovalGate } from "./fs-write-tools.js";
 
 const ctx = { runId: "test-run" };
 const allow: FsWriteApprovalGate = () => ({ approved: true });
 const deny: FsWriteApprovalGate = () => ({ approved: false, reason: "user said no" });
+
+/** Records every `record()` call so a test can assert what got checkpointed (and when). */
+function spyCheckpointStore(): { readonly calls: CheckpointRecordInput[]; readonly store: CheckpointStore } {
+  const calls: CheckpointRecordInput[] = [];
+  return {
+    calls,
+    store: {
+      get: async () => undefined,
+      list: async () => [],
+      record: async (input) => {
+        calls.push(input);
+        return "ckpt_test";
+      }
+    }
+  };
+}
+
+/** A checkpoint store whose `record()` always fails — the fail-close snapshot case. */
+const failingCheckpointStore: CheckpointStore = {
+  get: async () => undefined,
+  list: async () => [],
+  record: async () => { throw new Error("disk full"); }
+};
 
 describe("applyEdit / applyEdits (pure, no disk)", () => {
   it("replaces a unique match", () => {
@@ -445,5 +469,174 @@ describe("file_write / file_edit / file_multi_edit — gated writes", () => {
         await rm(outside, { force: true, recursive: true });
       }
     });
+  });
+});
+
+describe("checkpoint wiring (undo substrate)", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "muse-fs-checkpoints-"));
+  });
+
+  afterEach(async () => {
+    await rm(root, { force: true, recursive: true });
+  });
+
+  describe("file_write", () => {
+    it("records a checkpoint (existedBefore:false) BEFORE creating a brand-new file", async () => {
+      const spy = spyCheckpointStore();
+      const tool = createFileWriteTool({ approvalGate: allow, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      const out = (await tool.execute({ content: "hello", path: join(root, "new.md") }, ctx)) as JsonObject;
+      expect(out["written"]).toBe(true);
+      expect(spy.calls).toHaveLength(1);
+      expect(spy.calls[0]).toMatchObject({ action: "write" });
+      expect(spy.calls[0]?.originalContent).toBeUndefined();
+    });
+
+    it("records the CURRENT content BEFORE overwriting an existing file", async () => {
+      await writeFile(join(root, "exists.md"), "original");
+      const spy = spyCheckpointStore();
+      const tool = createFileWriteTool({ approvalGate: allow, baseDir: root, checkpointStore: spy.store, roots: [root], wasPathRead: () => true });
+      await tool.execute({ content: "REPLACED", path: join(root, "exists.md") }, ctx);
+      expect(spy.calls).toHaveLength(1);
+      expect(spy.calls[0]?.originalContent).toBeInstanceOf(Buffer);
+      expect((spy.calls[0]?.originalContent as Buffer).toString("utf8")).toBe("original");
+    });
+
+    it("records NO checkpoint when the gate denies", async () => {
+      const spy = spyCheckpointStore();
+      const tool = createFileWriteTool({ approvalGate: deny, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      await tool.execute({ content: "x", path: join(root, "denied.md") }, ctx);
+      expect(spy.calls).toHaveLength(0);
+    });
+
+    it("a snapshot failure fails the write closed (file unchanged, checkpoint store still tried)", async () => {
+      const tool = createFileWriteTool({ approvalGate: allow, baseDir: root, checkpointStore: failingCheckpointStore, roots: [root] });
+      const out = (await tool.execute({ content: "PWNED", path: join(root, "new.md") }, ctx)) as JsonObject;
+      expect(out["written"]).toBe(false);
+      expect(String(out["reason"])).toMatch(/checkpoint|snapshot/iu);
+      await expect(readFile(join(root, "new.md"), "utf8")).rejects.toThrow();
+    });
+  });
+
+  describe("file_edit", () => {
+    it("records the pre-edit content on approval", async () => {
+      await writeFile(join(root, "c.ts"), "const PORT = 3000;");
+      const spy = spyCheckpointStore();
+      const tool = createFileEditTool({ approvalGate: allow, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      await tool.execute({ new_string: "const PORT = 8080;", old_string: "const PORT = 3000;", path: join(root, "c.ts") }, ctx);
+      expect(spy.calls).toHaveLength(1);
+      expect(spy.calls[0]).toMatchObject({ action: "edit" });
+      expect(spy.calls[0]?.originalContent).toBeInstanceOf(Buffer);
+      expect((spy.calls[0]?.originalContent as Buffer).toString("utf8")).toBe("const PORT = 3000;");
+    });
+
+    it("an invalid-UTF-8 file's pre-edit snapshot round-trips byte-for-byte through a REAL FileCheckpointStore (AC1 regression)", async () => {
+      const checkpointDir = await mkdtemp(join(tmpdir(), "muse-fs-checkpoint-store-"));
+      // 0xC3 with no valid UTF-8 continuation byte, followed by a plain-ASCII
+      // target the edit engine can still text-match against — proves the
+      // SNAPSHOT survives byte-exact even though the edit's own decode-to-
+      // string step is inherently best-effort on non-UTF-8 content.
+      const fileBytes = Buffer.concat([Buffer.from([0xc3, 0x28]), Buffer.from("const PORT = 3000;", "utf8")]);
+      await writeFile(join(root, "invalid.ts"), fileBytes);
+
+      const store = new FileCheckpointStore({ dir: checkpointDir });
+      const tool = createFileEditTool({ approvalGate: allow, baseDir: root, checkpointStore: store, roots: [root] });
+      const out = (await tool.execute({ new_string: "const PORT = 8080;", old_string: "const PORT = 3000;", path: join(root, "invalid.ts") }, ctx)) as JsonObject;
+      expect(out["written"]).toBe(true);
+
+      const [manifest] = await store.list();
+      expect(manifest).toBeDefined();
+      const record = await store.get(manifest!.id);
+      expect(record?.content).toBeInstanceOf(Buffer);
+      expect(Buffer.compare(record!.content as Buffer, fileBytes)).toBe(0);
+    });
+
+    it("records NO checkpoint when the gate denies", async () => {
+      await writeFile(join(root, "c.ts"), "original");
+      const spy = spyCheckpointStore();
+      const tool = createFileEditTool({ approvalGate: deny, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      await tool.execute({ new_string: "changed", old_string: "original", path: join(root, "c.ts") }, ctx);
+      expect(spy.calls).toHaveLength(0);
+    });
+
+    it("a snapshot failure fails the edit closed (file byte-identical)", async () => {
+      await writeFile(join(root, "c.ts"), "original");
+      const tool = createFileEditTool({ approvalGate: allow, baseDir: root, checkpointStore: failingCheckpointStore, roots: [root] });
+      const out = (await tool.execute({ new_string: "changed", old_string: "original", path: join(root, "c.ts") }, ctx)) as JsonObject;
+      expect(out["written"]).toBe(false);
+      expect(await readFile(join(root, "c.ts"), "utf8")).toBe("original");
+    });
+  });
+
+  describe("file_delete", () => {
+    it("records the deleted file's content on approval", async () => {
+      await writeFile(join(root, "old.md"), "gone soon");
+      const spy = spyCheckpointStore();
+      const tool = createFileDeleteTool({ approvalGate: allow, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      const out = (await tool.execute({ path: join(root, "old.md") }, ctx)) as JsonObject;
+      expect(out["deleted"]).toBe(true);
+      expect(spy.calls).toHaveLength(1);
+      expect(spy.calls[0]).toMatchObject({ action: "delete" });
+      expect(spy.calls[0]?.originalContent).toBeInstanceOf(Buffer);
+      expect((spy.calls[0]?.originalContent as Buffer).toString("utf8")).toBe("gone soon");
+    });
+
+    it("records NO checkpoint when the gate denies", async () => {
+      await writeFile(join(root, "keep.md"), "x");
+      const spy = spyCheckpointStore();
+      const tool = createFileDeleteTool({ approvalGate: deny, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      await tool.execute({ path: join(root, "keep.md") }, ctx);
+      expect(spy.calls).toHaveLength(0);
+    });
+
+    it("a snapshot failure fails the delete closed (file still present)", async () => {
+      await writeFile(join(root, "old.md"), "x");
+      const tool = createFileDeleteTool({ approvalGate: allow, baseDir: root, checkpointStore: failingCheckpointStore, roots: [root] });
+      const out = (await tool.execute({ path: join(root, "old.md") }, ctx)) as JsonObject;
+      expect(out["deleted"]).toBe(false);
+      expect(await readFile(join(root, "old.md"), "utf8")).toBe("x");
+    });
+  });
+
+  describe("file_move", () => {
+    it("records a move checkpoint with fromPath, no content needed (destination never existed)", async () => {
+      await writeFile(join(root, "a.md"), "body");
+      const spy = spyCheckpointStore();
+      const tool = createFileMoveTool({ approvalGate: allow, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      const out = (await tool.execute({ from: join(root, "a.md"), to: join(root, "b.md") }, ctx)) as JsonObject;
+      expect(out["moved"]).toBe(true);
+      expect(spy.calls).toHaveLength(1);
+      // Compare against the RESOLVED from/to the tool itself returns — `root`
+      // may still contain a symlink component (e.g. macOS /var -> /private/var)
+      // that resolveSafePath's realpath canonicalizes away.
+      expect(spy.calls[0]).toMatchObject({ action: "move", fromPath: out["from"], path: out["to"] });
+      expect(spy.calls[0]?.originalContent).toBeUndefined();
+    });
+
+    it("records NO checkpoint when the gate denies", async () => {
+      await writeFile(join(root, "a.md"), "body");
+      const spy = spyCheckpointStore();
+      const tool = createFileMoveTool({ approvalGate: deny, baseDir: root, checkpointStore: spy.store, roots: [root] });
+      await tool.execute({ from: join(root, "a.md"), to: join(root, "b.md") }, ctx);
+      expect(spy.calls).toHaveLength(0);
+    });
+
+    it("a snapshot failure fails the move closed (source stays put)", async () => {
+      await writeFile(join(root, "a.md"), "body");
+      const tool = createFileMoveTool({ approvalGate: allow, baseDir: root, checkpointStore: failingCheckpointStore, roots: [root] });
+      const out = (await tool.execute({ from: join(root, "a.md"), to: join(root, "b.md") }, ctx)) as JsonObject;
+      expect(out["moved"]).toBe(false);
+      expect(await readFile(join(root, "a.md"), "utf8")).toBe("body");
+      await expect(readFile(join(root, "b.md"), "utf8")).rejects.toThrow();
+    });
+  });
+
+  it("without an injected checkpointStore, writes still succeed via the ephemeral in-memory default", async () => {
+    const tool = createFileWriteTool({ approvalGate: allow, baseDir: root, roots: [root] });
+    const out = (await tool.execute({ content: "no store injected", path: join(root, "fallback.md") }, ctx)) as JsonObject;
+    expect(out["written"]).toBe(true);
+    expect(await readFile(join(root, "fallback.md"), "utf8")).toBe("no store injected");
   });
 });
