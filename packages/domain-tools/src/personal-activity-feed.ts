@@ -68,7 +68,7 @@ interface EpisodeRow {
 async function safeReadJson(path: string): Promise<unknown | undefined> {
   try {
     const raw = await fs.readFile(path, "utf8");
-    return JSON.parse(raw) as unknown;
+    return JSON.parse(raw);
   } catch {
     return undefined;
   }
@@ -76,7 +76,8 @@ async function safeReadJson(path: string): Promise<unknown | undefined> {
 
 async function readReminderActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const rows = await readReminderHistory(file).catch(() => [] as const);
+  const rows = await readReminderHistory(file).catch(() => undefined);
+  if (rows === undefined) return [];
   return rows.map((row): ActivityEntry => ({
     destination: row.destination,
     id: row.reminderId,
@@ -90,7 +91,8 @@ async function readReminderActivity(file: string | undefined): Promise<readonly 
 
 async function readProactiveActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const rows = await readProactiveHistory(file).catch(() => [] as const);
+  const rows = await readProactiveHistory(file).catch(() => undefined);
+  if (rows === undefined) return [];
   return rows.map((row): ActivityEntry => ({
     destination: row.destination,
     id: row.itemId,
@@ -104,22 +106,23 @@ async function readProactiveActivity(file: string | undefined): Promise<readonly
 
 async function readFollowupActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const rows = await readFollowups(file).catch(() => [] as const);
+  const rows = await readFollowups(file).catch(() => undefined);
+  if (rows === undefined) return [];
   return rows
-    .filter((row: PersistedFollowup) => row.status === "fired" && typeof row.firedAt === "string")
+    .filter((row): row is PersistedFollowup & { firedAt: string } => row.status === "fired" && typeof row.firedAt === "string")
     .map((row): ActivityEntry => ({
       id: row.id,
       kind: "followup",
       status: "fired",
       summary: row.summary,
-      whenIso: row.firedAt as string
+      whenIso: row.firedAt
     }));
 }
 
 async function readPatternActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const doc = await safeReadJson(file) as { fired?: readonly PatternFiredRow[] } | undefined;
-  const rows = doc?.fired ?? [];
+  const doc = await safeReadJson(file);
+  const rows = readRowsFromDocument(doc, "fired");
   return rows.flatMap((row): readonly ActivityEntry[] => {
     // Number.isFinite(firedAtMs) isn't enough: a finite but
     // out-of-range ms makes an Invalid Date whose toISOString()
@@ -140,8 +143,8 @@ async function readPatternActivity(file: string | undefined): Promise<readonly A
 
 async function readEpisodeActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const doc = await safeReadJson(file) as { episodes?: readonly EpisodeRow[] } | undefined;
-  const rows = doc?.episodes ?? [];
+  const doc = await safeReadJson(file);
+  const rows = readRowsFromDocument(doc, "episodes");
   return rows.flatMap((row): readonly ActivityEntry[] => {
     if (typeof row.id !== "string" || typeof row.endedAt !== "string" || typeof row.summary !== "string") {
       return [];
@@ -153,6 +156,16 @@ async function readEpisodeActivity(file: string | undefined): Promise<readonly A
       whenIso: row.endedAt
     }];
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readRowsFromDocument(document: unknown, key: "fired" | "episodes"): readonly unknown[] {
+  if (!isRecord(document)) return [];
+  const rows = document[key];
+  return Array.isArray(rows) ? rows : [];
 }
 
 export const ACTIVITY_KINDS: ReadonlySet<ActivityKind> = new Set([

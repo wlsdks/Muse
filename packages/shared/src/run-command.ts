@@ -73,6 +73,16 @@ function abortError(reason: unknown): Error {
     );
 }
 
+function createRunCommandResult(
+  exitCode: number | null,
+  signal: string | null,
+  stdout: string,
+  stderr: string,
+  timedOut: boolean
+): RunCommandResult {
+  return { exitCode, signal, stdout, stderr, timedOut };
+}
+
 export async function runCommandWithTimeout(options: RunCommandOptions): Promise<RunCommandResult> {
   const {
     command,
@@ -133,7 +143,7 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
       stderr: Buffer.concat(stderr.chunks).toString(encoding),
       stdout: Buffer.concat(stdout.chunks).toString(encoding),
       timedOut: false
-    }) as RunCommandResult),
+    }).then((result) => createRunCommandResult(result.exitCode, result.signal, result.stdout, result.stderr, result.timedOut)),
     once(child, "error").then(([error]) => {
       throw asError(error);
     })
