@@ -256,7 +256,7 @@ export async function buildMuseExport(args: {
 
     await Promise.race([
       onError.then(([cause]) => {
-        throw cause as Error;
+        throw normalizeChildError(cause);
       }),
       onClose.then(([code]) => {
         if (code === 0 || code === null) {
@@ -287,6 +287,10 @@ export async function buildMuseExport(args: {
     notesIncluded: sources.notesDir !== undefined,
     encrypted: Boolean(passphrase)
   };
+}
+
+function normalizeChildError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(typeof cause === "string" ? cause : "command execution failed");
 }
 
 /**

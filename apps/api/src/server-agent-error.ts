@@ -118,7 +118,7 @@ export function unwrapErrorMessage(error: unknown): string {
   while (current instanceof Error && !seen.has(current)) {
     seen.add(current);
     segments.push(current.message);
-    current = (current as Error & { readonly cause?: unknown }).cause;
+    current = current.cause;
   }
 
   return redactSecretsInText(segments.join(" — "));

@@ -32,7 +32,7 @@ export async function waitForChildProcessResult(
   stderrChunks?: readonly Buffer[]
 ): Promise<void> {
   const result = await Promise.race([
-    once(child, "error").then(([cause]) => ({ kind: "error" as const, error: cause as Error })),
+    once(child, "error").then(([cause]) => ({ kind: "error" as const, error: normalizeChildError(cause) })),
     once(child, "close").then(([code, signal]) => ({ kind: "close" as const, code: code ?? 0, signal: signal ?? null }))
   ]);
 
@@ -53,6 +53,10 @@ export async function waitForChildProcessResult(
   }
 
   throw new Error(`${context} terminated by ${result.signal} after code ${result.code.toString()}${stderrMessage}`);
+}
+
+function normalizeChildError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(typeof cause === "string" ? cause : "child process failed");
 }
 
 export async function readRequestBody(

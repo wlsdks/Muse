@@ -114,7 +114,7 @@ export async function listMuseImportEntries(
 
   const exitCode = await Promise.race([
     onError.then(([cause]) => {
-      throw cause as Error;
+      throw normalizeChildError(cause);
     }),
     onClose.then(([code]) => {
       if (code === 0 || code === null) {
@@ -184,7 +184,7 @@ export async function extractMuseBundle(
 
   await Promise.race([
     onError.then(([cause]) => {
-      throw cause as Error;
+      throw normalizeChildError(cause);
     }),
     onClose.then(([code]) => {
       if (code === 0 || code === null) {
@@ -193,6 +193,10 @@ export async function extractMuseBundle(
       throw new Error(`tar -xzf exited with code ${(code ?? -1).toString()}: ${Buffer.concat(errChunks).toString("utf8").trim()}`);
     })
   ]);
+}
+
+function normalizeChildError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(typeof cause === "string" ? cause : "command execution failed");
 }
 
 export function registerImportCommand(program: Command, io: ProgramIO): void {
