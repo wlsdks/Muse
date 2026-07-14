@@ -34,6 +34,22 @@ interface PersistedShape {
   readonly threads: Readonly<Record<string, readonly ThreadTurn[]>>;
 }
 
+type ThreadStore = Record<string, ThreadTurn[]>;
+
+function normalizePersistedThreads(threads: unknown): ThreadStore {
+  if (!isRecord(threads)) {
+    return {};
+  }
+
+  const normalized: ThreadStore = {};
+  for (const [key, value] of Object.entries(threads)) {
+    if (Array.isArray(value)) {
+      normalized[key] = value.filter(isTurn);
+    }
+  }
+  return normalized;
+}
+
 function isTurn(value: unknown): value is ThreadTurn {
   if (!isRecord(value)) {
     return false;
@@ -50,7 +66,7 @@ function isPersistedThreadStore(value: unknown): value is PersistedShape {
   );
 }
 
-async function readAll(file: string): Promise<Record<string, ThreadTurn[]>> {
+async function readAll(file: string): Promise<ThreadStore> {
   let raw: string;
   try {
     raw = await fs.readFile(file, "utf8");
@@ -60,16 +76,10 @@ async function readAll(file: string): Promise<Record<string, ThreadTurn[]>> {
   try {
     const parsed = JSON.parse(raw);
     if (isPersistedThreadStore(parsed)) {
-      return { ...parsed.threads };
+      return normalizePersistedThreads(parsed.threads);
     }
     if (isRecord(parsed) && parsed.version === 1 && isRecord(parsed.threads)) {
-      const out: Record<string, ThreadTurn[]> = {};
-      for (const [key, value] of Object.entries(parsed.threads)) {
-        if (Array.isArray(value)) {
-          out[key] = value.filter(isTurn);
-        }
-      }
-      return out;
+      return normalizePersistedThreads(parsed.threads);
     }
   } catch {
     // malformed → treat as no history (the chat just starts fresh)

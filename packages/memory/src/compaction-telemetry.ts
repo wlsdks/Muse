@@ -38,7 +38,7 @@ const COMPACTION_FAILURE_REASONS: readonly CompactionFailureReason[] = [
 ];
 
 function isCompactionFailureReason(value: string): value is CompactionFailureReason {
-  return COMPACTION_FAILURE_REASONS.includes(value);
+  return (COMPACTION_FAILURE_REASONS as readonly string[]).includes(value);
 }
 
 /**

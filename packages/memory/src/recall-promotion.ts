@@ -325,17 +325,21 @@ export function shouldConsolidateMemory(input: ConsolidationScheduleInput): bool
   const newHits = Number.isFinite(input.newHitsSinceLastRun) ? input.newHitsSinceLastRun : 0;
   if (newHits < minNewHits) return false;
   if (!Number.isFinite(input.nowMs)) return false;
-  if (input.lastRunMs === undefined) return true;
-  if (!Number.isFinite(input.lastRunMs)) return true;
-  return input.nowMs - input.lastRunMs >= minInterval;
+
+  const lastRunMs = input.lastRunMs;
+  if (lastRunMs === undefined || !Number.isFinite(lastRunMs)) {
+    return true;
+  }
+
+  return input.nowMs - lastRunMs >= minInterval;
 }
 
 function positiveOrDefaultMs(value: number | undefined, fallbackMs: number): number {
-  return Number.isFinite(value) && value > 0 ? value : fallbackMs;
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallbackMs;
 }
 
 function positiveOrDefaultInt(value: number | undefined, fallback: number): number {
-  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
+  return value !== undefined && Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
 }
 
 export interface ConsolidationPlan {

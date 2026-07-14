@@ -131,6 +131,10 @@ export function refinementAwareDistinctValueCount(values: readonly string[]): nu
   let count = 0;
   for (let i = 0; i < unique.length; i++) {
     const ti = tokenSets[i];
+    if (ti === undefined) {
+      continue;
+    }
+
     // A value is a refinement (absorbed) iff its tokens are a STRICT subset of another's.
     const absorbed = ti.size > 0 && tokenSets.some((tj, j) => j !== i && ti.size < tj.size && isTokenSubset(ti, tj));
     if (!absorbed) count++;

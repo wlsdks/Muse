@@ -133,6 +133,9 @@ describe("formatFirstLearned (honest attribution: how Muse learned it)", () => {
     kind: "fact",
     value: "Busan",
     firstSeen: "2026-06-20T12:00:00Z",
+    lastConfirmed: "2026-06-20T12:00:00Z",
+    confirmCount: 1,
+    distinctValueCount: 1,
     source
   });
 
