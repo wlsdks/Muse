@@ -170,6 +170,34 @@ export function detectRegressions(prev, curr) {
   return out;
 }
 
+/**
+ * The comparison baseline for the next run: the last entry, but every numeric
+ * gate raised to its historical HIGH-WATER mark. `main()` persists every entry
+ * (the audit trail), so without this a run that regressed and was written would
+ * BECOME the baseline — the drop laundered to green on the next run, and a loop
+ * that crashed mid-fire or one ignored red run would bury the regression
+ * permanently. A ratchet must not fall below its peak, so the peak is what the
+ * next run is measured against. Boolean status and the gate key set still come
+ * from the last entry (pass→fail and present→missing are correctly per-previous,
+ * not per-peak). Empty history ⇒ nothing to compare against.
+ */
+export function highWaterBaseline(history) {
+  if (!Array.isArray(history) || history.length === 0) {
+    return undefined;
+  }
+  const last = history[history.length - 1];
+  const gates = { ...last.gates };
+  for (const entry of history) {
+    for (const [name, g] of Object.entries(entry.gates ?? {})) {
+      const cur = gates[name];
+      if (cur && typeof cur.value === "number" && typeof g.value === "number") {
+        gates[name] = { ...cur, value: Math.max(cur.value, g.value) };
+      }
+    }
+  }
+  return { ...last, gates };
+}
+
 /** One-line human summary of an entry plus any regressions. */
 export function summarize(entry, regressions) {
   const parts = Object.entries(entry.gates).map(([name, g]) =>
@@ -297,7 +325,7 @@ function main() {
 
   const entry = { at: new Date().toISOString(), gates };
   const history = readScoreboard();
-  const prev = history[history.length - 1];
+  const prev = highWaterBaseline(history);
   const regressions = detectRegressions(prev, entry);
 
   const next = [...history, entry].slice(-MAX_HISTORY);

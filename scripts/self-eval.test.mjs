@@ -13,6 +13,7 @@ import {
   countVerifiedCapabilityLines,
   detectRegressions,
   ERASURE_ALLOWLIST,
+  highWaterBaseline,
   summarize
 } from "./self-eval.mjs";
 
@@ -227,4 +228,32 @@ test("countPromptCases counts prompt-bearing battery cases (ratchet for every go
   `;
   assert.equal(countPromptCases(src), 3);
   assert.equal(countPromptCases(""), 0);
+});
+
+test("highWaterBaseline: a persisted regression cannot launder the ratchet", () => {
+  // run 1 wrote a drop (100→90) which persisted; the next run at 90 must STILL
+  // regress against the peak of 100, not read green because 90 became the baseline.
+  const history = [{ gates: { testFiles: { status: "pass", value: 100 } } }, { gates: { testFiles: { status: "pass", value: 90 } } }];
+  const baseline = highWaterBaseline(history);
+  assert.equal(baseline.gates.testFiles.value, 100);
+  const curr = { gates: { testFiles: { status: "pass", value: 90 } } };
+  assert.deepEqual(detectRegressions(baseline, curr), ["testFiles: 100→90"]);
+});
+
+test("highWaterBaseline: recovering to the peak clears the regression", () => {
+  const history = [{ gates: { testFiles: { status: "pass", value: 100 } } }, { gates: { testFiles: { status: "pass", value: 90 } } }];
+  const recovered = { gates: { testFiles: { status: "pass", value: 100 } } };
+  assert.deepEqual(detectRegressions(highWaterBaseline(history), recovered), []);
+});
+
+test("highWaterBaseline: boolean status and gate keys come from the LAST entry, not the peak", () => {
+  // present→missing must be per-previous: a gate in an OLD entry but not the last
+  // one is not resurrected into the baseline (so its long-ago removal isn't re-flagged).
+  const history = [{ gates: { a: { status: "pass" }, gone: { status: "pass", value: 5 } } }, { gates: { a: { status: "pass" } } }];
+  const baseline = highWaterBaseline(history);
+  assert.equal("gone" in baseline.gates, false);
+});
+
+test("highWaterBaseline: empty history has no baseline", () => {
+  assert.equal(highWaterBaseline([]), undefined);
 });
