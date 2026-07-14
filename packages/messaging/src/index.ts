@@ -32,6 +32,7 @@ export {
 
 export {
   createChannelApprovalGate,
+  summarizeToolDraft,
   type ChannelApprovalGate,
   type ChannelApprovalGateDecision,
   type ChannelApprovalGateInput,

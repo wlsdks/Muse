@@ -59,6 +59,11 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
       resilience: assembly.resilience
     },
     agentRuntime: assembly.agentRuntime,
+    // The chat-write approval path reads its opt-in flag + pending-file path
+    // from this merged env; the confirm-execute endpoint resolves the approved
+    // tool straight from the runtime's own registry.
+    env,
+    approvalToolResolver: (name: string) => assembly.toolRegistry.get(name),
     agentSpecRegistry: assembly.agentSpecRegistry,
     authService: assembly.authService,
     cors: {

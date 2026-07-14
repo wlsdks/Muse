@@ -43,6 +43,20 @@ export interface ServerOptions {
    */
   readonly chatRateLimiter?: import("./chat-rate-limiter.js").ChatRateLimiter;
   readonly agentRuntime?: AgentRuntime;
+  /**
+   * Process/merged environment the chat-write approval path reads its opt-in
+   * flag (`MUSE_CHAT_WRITE_ENABLED`) and pending-approval file path from. The
+   * frozen `integrationEnv` deliberately exposes no raw env, so this minimal
+   * seam carries only what that path needs. Absent ⇒ the flag reads false and
+   * chat stays read-only (today's default posture).
+   */
+  readonly env?: Record<string, string | undefined>;
+  /**
+   * Resolves a tool by name for the `/api/chat/approvals/:id/approve`
+   * confirm-execute endpoint. Wired from the runtime assembly's tool registry;
+   * absent ⇒ the endpoint fails closed (409, no execution).
+   */
+  readonly approvalToolResolver?: (name: string) => import("@muse/tools").MuseTool | undefined;
   readonly admin?: AdminRouteState;
   readonly agentSpecRegistry?: AgentSpecRegistry;
   readonly authService?: MuseAuth;

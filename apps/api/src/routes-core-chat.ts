@@ -1,9 +1,10 @@
 // Health/spec/openapi + chat (incl. rate-limit) registrars — split out of server-routes.ts (domain cohesion).
 
-import { parseBoolean } from "@muse/autoconfigure";
+import { parseBoolean, resolvePendingApprovalsFile } from "@muse/autoconfigure";
 import type { FastifyInstance } from "fastify";
 
 import { serverBuildId, serverStartedAtIso } from "./build-info.js";
+import { executeChatApproval } from "./chat-approval-execute.js";
 import { ChatRateLimiter, clientKeyFromRequest } from "./chat-rate-limiter.js";
 import {
   createOpenApiDocument,
@@ -71,6 +72,20 @@ export function registerChatRoutes(server: FastifyInstance, options: ServerOptio
   server.post("/api/chat/multipart", async (request, reply) => {
     if (!enforce(request, reply)) return reply;
     return runMultipartChat(request.body, reply, options, getAuthIdentity(request)?.userId);
+  });
+  // Confirm-execute for a draft-first chat write (outbound-safety): the ONLY
+  // path that runs a captured write/execute action, and only after the user
+  // POSTs its id. Fail paths (unknown/expired id, no resolver, unknown tool)
+  // execute nothing; a successful run is cleared so a replay 404s.
+  server.post("/api/chat/approvals/:id/approve", async (request, reply) => {
+    if (!enforce(request, reply)) return reply;
+    const id = (request.params as { id?: string }).id ?? "";
+    const result = await executeChatApproval({
+      id,
+      pendingFile: resolvePendingApprovalsFile(options.env ?? {}),
+      ...(options.approvalToolResolver ? { resolveTool: options.approvalToolResolver } : {})
+    });
+    return reply.status(result.statusCode).send(result.body);
   });
 }
 

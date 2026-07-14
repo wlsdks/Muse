@@ -42,6 +42,7 @@ import {
   verifyPairingCodeAttempt
 } from "./channel-owner-store.js";
 import { createChannelPendingRecorder } from "./channel-pending-recorder.js";
+import { CHANNEL_APPROVAL_EXPOSURE_ALLOWLIST } from "./chat-write-allowlist.js";
 import { createChannelRefusalRecorder } from "./channel-refusal-recorder.js";
 import { loadChatPersonaSnapshot } from "./chat-persona-snapshot.js";
 import { handleInboundApprovalReply } from "./inbound-approval-handler.js";
@@ -122,12 +123,7 @@ const PAIRING_CODE_REQUIRED_NOTICE =
 const PAIRING_CODE_SUCCESS_NOTICE =
   "This chat is now paired as the owner — talk to Muse normally from here.";
 
-export const CHANNEL_APPROVAL_EXPOSURE_ALLOWLIST = [
-  "muse.notes.list", "muse.notes.read", "muse.notes.search", "muse.notes.save", "muse.notes.append",
-  "muse.tasks.list", "muse.tasks.search", "muse.tasks.add", "muse.tasks.complete", "muse.tasks.update",
-  "muse.calendar.providers", "muse.calendar.list", "muse.calendar.availability", "muse.calendar.conflicts", "muse.calendar.add", "muse.calendar.update",
-  "muse.reminders.list", "muse.reminders.search", "muse.reminders.add", "muse.reminders.snooze"
-] as const;
+export { CHANNEL_APPROVAL_EXPOSURE_ALLOWLIST };
 
 // False-done backstop (the guard layer, not the parser): when the user asked
 // Muse to remember something date-shaped this turn and NO followup actually

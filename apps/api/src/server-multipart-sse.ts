@@ -2,6 +2,8 @@ import { enforceAnswerCitations, guardAgainstUnbackedActionClaim, type AgentRunt
 import { chatAllowedCitations, createCitationStreamFilter, gateChatAnswerGrounding, type ChatGroundingSource } from "@muse/recall";
 import type { JsonObject } from "@muse/shared";
 
+import { formatApprovalNotice, type ChatPendingDraft } from "./chat-approval-gate.js";
+
 export function parseMultipartBody(contentType: string | string[] | undefined, body: Buffer): JsonObject {
   const header = Array.isArray(contentType) ? contentType[0] : contentType;
   const boundary = header?.match(/boundary=(?:"([^"]+)"|([^;]+))/iu)?.slice(1).find(Boolean);
@@ -70,7 +72,22 @@ export function sseData(value: string): string {
 export async function* toSseStream(
   events: ReturnType<AgentRuntime["stream"]>,
   responseMode: "extended" | "compat",
-  grounding?: { readonly question: string }
+  grounding?: {
+    readonly question: string;
+    /**
+     * Opt-in `/api/chat` write path (`MUSE_CHAT_WRITE_ENABLED`). `drafts` is
+     * populated live by the approval gate as write/execute tools are captured;
+     * once the turn's tool calls are done it holds every captured draft. After
+     * the answer's grounding frame, its captured drafts are persisted and a
+     * code-appended approval notice is emitted as a `message` event — before
+     * `done`, so a client that stops at `done` still sees it.
+     */
+    readonly chatWrite?: {
+      readonly drafts: readonly ChatPendingDraft[];
+      readonly persist: (userId?: string) => Promise<void>;
+      readonly userId?: string;
+    };
+  }
 ): AsyncIterable<string> {
   // Post-stream grounding gate (CLI-chat parity): raw deltas stream live, then the
   // FULL assembled answer is gated over the evidence THIS turn produced (the
@@ -199,6 +216,11 @@ export async function* toSseStream(
         strippedCitations: gate.strippedCitations,
         verdict: gate.groundingVerdict
       }))}\n\n`;
+    }
+
+    if (grounding?.chatWrite && grounding.chatWrite.drafts.length > 0) {
+      await grounding.chatWrite.persist(grounding.chatWrite.userId);
+      yield `event: message\ndata: ${sseData(formatApprovalNotice(grounding.chatWrite.drafts))}\n\n`;
     }
 
     if (responseMode === "compat") {

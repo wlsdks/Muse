@@ -19,9 +19,17 @@ import { Readable } from "node:stream";
 import {
   buildModelRequestWithWebSearch,
   guardAgainstUnbackedActionClaim,
-  type AgentRunInput
+  type AgentRunInput,
+  type AgentRunResult,
+  type ToolApprovalGate
 } from "@muse/agent-core";
+import { parseBoolean, resolvePendingApprovalsFile } from "@muse/autoconfigure";
+import { createToolExposureAuthority, type ToolExposureAuthority } from "@muse/policy";
 import { gateChatAnswerGrounding } from "@muse/recall";
+
+import { createChannelPendingRecorder } from "./channel-pending-recorder.js";
+import { createChatApprovalGate, formatApprovalNotice, type ChatPendingDraft } from "./chat-approval-gate.js";
+import { CHANNEL_APPROVAL_EXPOSURE_ALLOWLIST } from "./chat-write-allowlist.js";
 import type { AgentSpecInput } from "@muse/agent-specs";
 import type { RuntimeSettingType } from "@muse/runtime-settings";
 import type { JsonObject, JsonValue } from "@muse/shared";
@@ -72,6 +80,54 @@ function sanitizeUntrustedAgentMetadata(metadata: Record<string, JsonValue>): Js
 // Chat runners
 // ---------------------------------------------------------------------------
 
+export interface ChatWriteApprovalWiring {
+  readonly toolExposureAuthority: ToolExposureAuthority;
+  readonly toolApprovalGate: ToolApprovalGate;
+  readonly drafts: ChatPendingDraft[];
+  readonly persist: (userId?: string) => Promise<void>;
+}
+
+/**
+ * Opt-in write-tool wiring for the direct `/api/chat` surface
+ * (`MUSE_CHAT_WRITE_ENABLED`, off by default). Returns the exposure authority
+ * that widens chat to the notes/tasks/calendar/reminders allowlist plus a
+ * draft-first gate that captures — never executes — a write/execute call
+ * (outbound-safety.md). `persist` flushes the captured drafts to the pending
+ * store AFTER the run, so a run the model abandons leaves nothing on disk.
+ * Absent flag ⇒ `undefined`, and the caller adds no authority/gate — chat
+ * behaves byte-identically to the read-only default.
+ */
+export function chatWriteApprovalWiring(options: ServerOptions): ChatWriteApprovalWiring | undefined {
+  if (!parseBoolean(options.env?.MUSE_CHAT_WRITE_ENABLED, false)) {
+    return undefined;
+  }
+  const env = options.env ?? {};
+  const pendingFile = resolvePendingApprovalsFile(env);
+  const drafts: ChatPendingDraft[] = [];
+  const persist = async (userId?: string): Promise<void> => {
+    const recorder = createChannelPendingRecorder({ pendingFile, providerId: "chat", source: "api-chat" });
+    for (const draft of drafts) {
+      const resolvedUserId = draft.userId ?? userId;
+      await recorder({
+        arguments: draft.arguments,
+        draft: draft.draft,
+        risk: draft.risk,
+        tool: draft.tool,
+        ...(resolvedUserId ? { userId: resolvedUserId } : {})
+      });
+    }
+  };
+  return {
+    drafts,
+    persist,
+    toolApprovalGate: createChatApprovalGate(drafts),
+    toolExposureAuthority: createToolExposureAuthority({
+      allowedToolNames: [...CHANNEL_APPROVAL_EXPOSURE_ALLOWLIST],
+      localMode: false
+    })
+  };
+}
+
 export async function runChat(
   body: unknown,
   reply: { status(statusCode: number): { send(payload: unknown): void } },
@@ -93,7 +149,15 @@ export async function runChat(
     return reply.status(400).send(parsed.error);
   }
 
-  const runInput = await applyWebSearchPolicy(parsed.value, body, options);
+  const baseInput = await applyWebSearchPolicy(parsed.value, body, options);
+  const writeWiring = chatWriteApprovalWiring(options);
+  const runInput = writeWiring
+    ? {
+        ...baseInput,
+        toolApprovalGate: writeWiring.toolApprovalGate,
+        toolExposureAuthority: writeWiring.toolExposureAuthority
+      }
+    : baseInput;
 
   try {
     const result = await agentRuntime.run(runInput);
@@ -133,12 +197,34 @@ export async function runChat(
     const finalResult = finalGate.gated && finalGate.answer !== honest.response.output
       ? { ...honest, response: { ...honest.response, output: finalGate.answer } }
       : honest;
+    // Pending-approval notice is code-appended AFTER the grounding + honest-action
+    // gates (never model text) so it can't be dropped as fabricated, and persisted
+    // only now — a run the model abandoned before any write never reaches here with
+    // captured drafts. The userId falls back to the request's authenticated id.
+    const delivered = writeWiring && writeWiring.drafts.length > 0
+      ? await withApprovalNotice(finalResult, writeWiring, chatUserId(runInput, authUserId))
+      : finalResult;
     return responseMode === "compat"
-      ? toCompatChatResponse(finalResult, finalGate)
-      : toExtendedChatResponse(finalResult, finalGate);
+      ? toCompatChatResponse(delivered, finalGate)
+      : toExtendedChatResponse(delivered, finalGate);
   } catch (error) {
     return sendAgentError(reply, error, responseMode);
   }
+}
+
+async function withApprovalNotice(
+  result: AgentRunResult,
+  wiring: ChatWriteApprovalWiring,
+  userId?: string
+): Promise<AgentRunResult> {
+  await wiring.persist(userId);
+  const output = `${result.response.output}${formatApprovalNotice(wiring.drafts)}`;
+  return { ...result, response: { ...result.response, output } };
+}
+
+function chatUserId(runInput: AgentRunInput, authUserId?: string): string | undefined {
+  const fromMetadata = runInput.metadata?.["userId"];
+  return typeof fromMetadata === "string" ? fromMetadata : authUserId;
 }
 
 /** A CLEAN-history retry payload — system message(s) + only the latest user
@@ -186,7 +272,15 @@ export async function runChatStream(
     return reply.status(400).send(parsed.error);
   }
 
-  const runInput = await applyWebSearchPolicy(parsed.value, body, options);
+  const baseInput = await applyWebSearchPolicy(parsed.value, body, options);
+  const writeWiring = chatWriteApprovalWiring(options);
+  const runInput = writeWiring
+    ? {
+        ...baseInput,
+        toolApprovalGate: writeWiring.toolApprovalGate,
+        toolExposureAuthority: writeWiring.toolExposureAuthority
+      }
+    : baseInput;
 
   reply.header("content-type", "text/event-stream; charset=utf-8");
   reply.header("cache-control", "no-cache");
@@ -196,7 +290,10 @@ export async function runChatStream(
   return reply.send(
     Readable.from(
       toSseStream(options.agentRuntime.stream({ ...runInput, streamRawDeltas: true }), responseMode, {
-        question: lastUserQuestion(runInput.messages)
+        question: lastUserQuestion(runInput.messages),
+        ...(writeWiring
+          ? { chatWrite: { drafts: writeWiring.drafts, persist: writeWiring.persist, userId: chatUserId(runInput, authUserId) } }
+          : {})
       })
     )
   );
