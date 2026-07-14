@@ -16,12 +16,11 @@
  */
 
 import type { MuseDatabase } from "@muse/db";
-import { redactSecretsInText, type JsonValue } from "@muse/shared";
+import { isRecord, redactSecretsInText, type JsonObject, type JsonValue } from "@muse/shared";
 import type { Insertable, Kysely } from "kysely";
 import { classifyValueChange } from "./belief-provenance-store.js";
 import { EMPTY_USER_MODEL, type FactSupersession, type UserMemory, type UserMemoryStore, type UserModel, type UserModelSlot } from "./index.js";
 
-type UserMemoryRow = Record<string, unknown>;
 type UserMemoryInsert = Insertable<MuseDatabase["user_memories"]>;
 
 /**
@@ -299,7 +298,7 @@ export class KyselyUserMemoryStore implements UserMemoryStore {
 
   async findByUserId(userId: string): Promise<UserMemory | undefined> {
     const row = await this.db.selectFrom("user_memories").selectAll().where("user_id", "=", userId).executeTakeFirst();
-    return row ? mapUserMemoryRow(row as UserMemoryRow) : undefined;
+    return row ? mapUserMemoryRow(row) : undefined;
   }
 
   async upsertFact(userId: string, key: string, value: string): Promise<UserMemory> {
@@ -364,7 +363,7 @@ export class KyselyUserMemoryStore implements UserMemoryStore {
       .returningAll()
       .executeTakeFirstOrThrow();
 
-    return mapUserMemoryRow(row as UserMemoryRow);
+    return mapUserMemoryRow(row);
   }
 }
 
@@ -382,16 +381,17 @@ export function createUserMemoryInsert(memory: UserMemory): UserMemoryInsert {
   };
 }
 
-export function mapUserMemoryRow(row: UserMemoryRow): UserMemory {
-  const userModel = parseUserModelJson(row.user_model);
+export function mapUserMemoryRow(row: unknown): UserMemory {
+  const source = isRecord(row) ? row : {};
+  const userModel = parseUserModelJson(source.user_model);
   return {
-    facts: jsonStringRecord(row.facts),
-    preferences: jsonStringRecord(row.preferences),
-    recentTopics: typeof row.recent_topics === "string"
-      ? row.recent_topics.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean)
+    facts: jsonStringRecord(source.facts),
+    preferences: jsonStringRecord(source.preferences),
+    recentTopics: typeof source.recent_topics === "string"
+      ? source.recent_topics.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean)
       : [],
-    updatedAt: dateValue(row.updated_at),
-    userId: stringValue(row.user_id),
+    updatedAt: dateValue(source.updated_at),
+    userId: stringValue(source.user_id),
     ...(userModel ? { userModel } : {})
   };
 }
@@ -401,20 +401,20 @@ export function mapUserMemoryRow(row: UserMemoryRow): UserMemory {
  * as ISO strings so the column round-trips through JSON.parse
  * cleanly — `parseUserModelJson` rehydrates the Dates on read.
  */
-function serializeUserModel(model: UserModel): JsonValue {
+function serializeUserModel(model: UserModel): JsonObject {
   return {
     goals: model.goals.map((slot) => slotToJson(slot)),
     preferences: model.preferences.map((slot) => slotToJson(slot)),
     schedule: model.schedule.map((slot) => slotToJson(slot)),
     vetoes: model.vetoes.map((slot) => slotToJson(slot))
-  } as JsonValue;
+  };
 }
 
-function slotToJson(slot: UserModelSlot): JsonValue {
+function slotToJson(slot: UserModelSlot): JsonObject {
   // Drop optional Date fields when undefined and serialize present
-  // ones to ISO strings. Cast through Record<string, JsonValue> at
-  // the boundary; the runtime enforces the discriminated-union
-  // invariants on read.
+  // ones to ISO strings. Keep this boundary narrow and explicit;
+  // runtime checks still enforce the discriminated-union invariants
+  // when hydrating `UserModelSlot`s.
   const base: Record<string, JsonValue> = {
     id: slot.id,
     kind: slot.kind,
@@ -436,19 +436,18 @@ function slotToJson(slot: UserModelSlot): JsonValue {
       base.progress = slot.progress;
     }
   }
-  return base as JsonValue;
+  return base;
 }
 
 function parseUserModelJson(raw: unknown): UserModel | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isRecord(raw)) {
     return undefined;
   }
-  const record = raw as Record<string, unknown>;
   const result: UserModel = {
-    goals: parseSlotArray(record.goals, "goal") as UserModel["goals"],
-    preferences: parseSlotArray(record.preferences, "preference") as UserModel["preferences"],
-    schedule: parseSlotArray(record.schedule, "schedule") as UserModel["schedule"],
-    vetoes: parseSlotArray(record.vetoes, "veto") as UserModel["vetoes"]
+    goals: parseSlotArray(raw.goals, "goal"),
+    preferences: parseSlotArray(raw.preferences, "preference"),
+    schedule: parseSlotArray(raw.schedule, "schedule"),
+    vetoes: parseSlotArray(raw.vetoes, "veto")
   };
   // Any kind populated → return; otherwise undefined so callers see
   // legacy (no-userModel) shape for users who never wrote one.
@@ -469,51 +468,50 @@ function parseSlotArray(raw: unknown, expectedKind: UserModelSlot["kind"]): read
   }
   const out: UserModelSlot[] = [];
   for (const entry of raw) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    if (!isRecord(entry)) {
       continue;
     }
-    const slot = entry as Record<string, unknown>;
-    if (slot.kind !== expectedKind) {
+    if (entry.kind !== expectedKind) {
       continue;
     }
-    if (typeof slot.id !== "string" || typeof slot.value !== "string") {
+    if (typeof entry.id !== "string" || typeof entry.value !== "string") {
       continue;
     }
-    const updatedAt = typeof slot.updatedAt === "string" ? new Date(slot.updatedAt) : undefined;
+    const updatedAt = typeof entry.updatedAt === "string" ? new Date(entry.updatedAt) : undefined;
     if (!updatedAt || Number.isNaN(updatedAt.getTime())) {
       continue;
     }
     const base = {
-      id: slot.id,
+      id: entry.id,
       updatedAt,
-      value: slot.value,
-      ...(typeof slot.confidence === "number" ? { confidence: slot.confidence } : {})
+      value: entry.value,
+      ...(typeof entry.confidence === "number" ? { confidence: entry.confidence } : {})
     };
     if (expectedKind === "preference") {
       out.push({
         ...base,
         kind: "preference",
-        ...(typeof slot.category === "string" ? { category: slot.category } : {})
+        ...(typeof entry.category === "string" ? { category: entry.category } : {})
       });
     } else if (expectedKind === "schedule") {
       out.push({
         ...base,
         kind: "schedule",
-        ...(typeof slot.recurrence === "string" ? { recurrence: slot.recurrence } : {})
+        ...(typeof entry.recurrence === "string" ? { recurrence: entry.recurrence } : {})
       });
     } else if (expectedKind === "veto") {
       out.push({
         ...base,
         kind: "veto",
-        ...(typeof slot.scope === "string" ? { scope: slot.scope } : {})
+        ...(typeof entry.scope === "string" ? { scope: entry.scope } : {})
       });
     } else if (expectedKind === "goal") {
-      const dueAt = typeof slot.dueAt === "string" ? new Date(slot.dueAt) : undefined;
+      const dueAt = typeof entry.dueAt === "string" ? new Date(entry.dueAt) : undefined;
       out.push({
         ...base,
         kind: "goal",
         ...(dueAt && !Number.isNaN(dueAt.getTime()) ? { dueAt } : {}),
-        ...(typeof slot.progress === "number" ? { progress: slot.progress } : {})
+        ...(typeof entry.progress === "number" ? { progress: entry.progress } : {})
       });
     }
   }
@@ -588,7 +586,7 @@ function dateValue(value: unknown): Date {
 }
 
 function jsonStringRecord(value: unknown): Readonly<Record<string, string>> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     if (typeof value === "string") {
       try {
         return jsonStringRecord(JSON.parse(value));
@@ -599,7 +597,7 @@ function jsonStringRecord(value: unknown): Readonly<Record<string, string>> {
     return {};
   }
   const result: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(value)) {
     if (typeof entry === "string") {
       result[key] = entry;
     }
