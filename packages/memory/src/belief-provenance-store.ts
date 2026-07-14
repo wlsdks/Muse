@@ -130,7 +130,7 @@ export function refinementAwareDistinctValueCount(values: readonly string[]): nu
   const tokenSets = unique.map((v) => valueTokens(v));
   let count = 0;
   for (let i = 0; i < unique.length; i++) {
-    const ti = tokenSets[i] as Set<string>;
+    const ti = tokenSets[i];
     // A value is a refinement (absorbed) iff its tokens are a STRICT subset of another's.
     const absorbed = ti.size > 0 && tokenSets.some((tj, j) => j !== i && ti.size < tj.size && isTokenSubset(ti, tj));
     if (!absorbed) count++;
@@ -200,8 +200,9 @@ export function deriveFactProvenance(entries: readonly BeliefProvenance[]): read
   const out: FactProvenance[] = [];
   for (const [key, group] of byKey) {
     const sorted = [...group].sort((a, b) => Date.parse(a.learnedAt) - Date.parse(b.learnedAt));
-    const first = sorted[0] as BeliefProvenance;
-    const last = sorted[sorted.length - 1] as BeliefProvenance;
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    if (!first || !last) continue;
     out.push({
       confirmCount: group.length,
       distinctValueCount: refinementAwareDistinctValueCount(group.map((e) => e.value)),
@@ -679,8 +680,8 @@ export class FileBeliefProvenanceStore implements BeliefProvenanceStore {
 }
 
 function isBeliefProvenance(value: unknown): value is BeliefProvenance {
-  if (!value || typeof value !== "object") return false;
-  const e = value as Partial<BeliefProvenance>;
+  if (!isRecord(value)) return false;
+  const e = value;
   if (typeof e.userId !== "string" || e.userId.length === 0) return false;
   if (typeof e.key !== "string" || e.key.length === 0) return false;
   if (e.kind !== "fact" && e.kind !== "preference") return false;
