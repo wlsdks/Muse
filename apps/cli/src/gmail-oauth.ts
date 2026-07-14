@@ -38,6 +38,68 @@ export class GmailOAuthInvalidGrantError extends Error {}
 /** A 5xx or network failure talking to the token endpoint — transient, safe to retry later, never mutates stored token state. */
 export class GmailOAuthRetryableError extends Error {}
 
+export interface GmailClientPreflightResult {
+  readonly ok: boolean;
+  /** true when the probe couldn't run (network) — advisory only, never blocks setup. */
+  readonly skipped?: boolean;
+  readonly errorCode?: string;
+  readonly message?: string;
+}
+
+/**
+ * Google's authorization endpoint 302-redirects a bad client_id to
+ * `/signin/oauth/error?authError=<base64url blob>` BEFORE any consent UI.
+ * Probing it lets the wizard explain "invalid_client" in the terminal
+ * instead of the user meeting Google's opaque error page in the browser.
+ * The blob is a length-prefixed proto (field 1 = error code, field 2 =
+ * human message) — extracting printable runs is enough and avoids a proto
+ * dependency.
+ */
+export function decodeGoogleAuthError(blob: string): { readonly code?: string; readonly message?: string } | undefined {
+  try {
+    const runs = Buffer.from(blob, "base64url").toString("latin1").match(/[\x20-\x7e]{4,}/gu) ?? [];
+    if (runs.length === 0) return undefined;
+    return { code: runs[0]?.trim(), message: runs[1]?.trim() };
+  } catch {
+    return undefined;
+  }
+}
+
+export async function preflightGmailClient(
+  clientId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<GmailClientPreflightResult> {
+  // A test that forgets to inject fetch must never probe the real Google
+  // endpoint (same hard boundary as the daemon's launchctl seam).
+  const underVitest = (process.env.VITEST ?? "").trim().length > 0 || process.env.VITEST_WORKER_ID !== undefined;
+  if (underVitest && fetchImpl === globalThis.fetch) {
+    return { ok: true, skipped: true };
+  }
+  try {
+    const url = new URL(GMAIL_AUTH_ENDPOINT);
+    url.search = new URLSearchParams({
+      client_id: clientId,
+      // Any loopback URI works for the probe: an invalid client errors
+      // before redirect_uri validation matters for Desktop clients.
+      redirect_uri: "http://127.0.0.1:1/callback",
+      response_type: "code",
+      scope: GMAIL_SCOPES
+    }).toString();
+    const response = await fetchImpl(url.toString(), { redirect: "manual" });
+    const location = response.headers.get("location") ?? "";
+    if (!location.includes("/signin/oauth/error")) return { ok: true };
+    const authError = new URL(location).searchParams.get("authError");
+    const decoded = authError ? decodeGoogleAuthError(authError) : undefined;
+    return {
+      ok: false,
+      ...(decoded?.code ? { errorCode: decoded.code } : {}),
+      ...(decoded?.message ? { message: decoded.message } : {})
+    };
+  } catch {
+    return { ok: true, skipped: true };
+  }
+}
+
 export interface GmailTokenExchangeResult {
   readonly accessToken: string;
   readonly refreshToken: string;

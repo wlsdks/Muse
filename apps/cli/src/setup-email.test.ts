@@ -248,3 +248,37 @@ describe("runEmailSetup — the full wizard (clack prompts injected, never real 
     }
   });
 });
+
+describe("runGmailOAuthLoopback — client preflight", () => {
+  it("aborts BEFORE opening any browser or binding the callback server when Google rejects the client id", async () => {
+    const openedUrls: string[] = [];
+    let serverStarted = false;
+    let exchangeCalled = false;
+    const printed: string[] = [];
+    const result = await runGmailOAuthLoopback({
+      clientId: "bad.apps.googleusercontent.com",
+      clientSecret: "csecret",
+      exchangeCode: async () => {
+        exchangeCalled = true;
+        return { accessToken: "x", expiresAt: 0, refreshToken: "y" };
+      },
+      openBrowser: (url) => { openedUrls.push(url); },
+      preflightClient: async () => ({ errorCode: "invalid_client", message: "The OAuth client was not found.", ok: false }),
+      startCallbackServer: async () => {
+        serverStarted = true;
+        return { close: async () => undefined, port: 1, waitForCode: async () => ({ code: "never" }) };
+      },
+      stdout: (message) => { printed.push(message); }
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain("invalid_client");
+      expect(result.reason).toContain("The OAuth client was not found.");
+    }
+    expect(openedUrls).toHaveLength(0);
+    expect(serverStarted).toBe(false);
+    expect(exchangeCalled).toBe(false);
+    expect(printed.join("")).toContain("console.cloud.google.com/auth/clients");
+  });
+});

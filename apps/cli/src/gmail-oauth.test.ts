@@ -257,3 +257,52 @@ describe("createGmailTokenSource", () => {
     expect(fetchCalls).toBe(1);
   });
 });
+
+describe("preflightGmailClient — catches Google's invalid_client before any browser opens", () => {
+  const realAuthErrorBlob = "Cg5pbnZhbGlkX2NsaWVudBIfVGhlIE9BdXRoIGNsaWVudCB3YXMgbm90IGZvdW5kLiCRAw";
+
+  it("decodes Google's real authError blob into code + message", async () => {
+    const { decodeGoogleAuthError } = await import("./gmail-oauth.js");
+    const decoded = decodeGoogleAuthError(realAuthErrorBlob);
+    expect(decoded?.code).toBe("invalid_client");
+    expect(decoded?.message).toBe("The OAuth client was not found.");
+  });
+
+  it("returns ok:false with the decoded error when Google 302s to the oauth error page", async () => {
+    const { preflightGmailClient } = await import("./gmail-oauth.js");
+    const fetchImpl = (async (input: unknown) => {
+      expect(String(input)).toContain("client_id=bad.apps.googleusercontent.com");
+      return {
+        headers: new Headers({
+          location: `https://accounts.google.com/signin/oauth/error?authError=${realAuthErrorBlob}&flowName=GeneralOAuthFlow`
+        }),
+        status: 302
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const result = await preflightGmailClient("bad.apps.googleusercontent.com", fetchImpl);
+    expect(result.ok).toBe(false);
+    expect(result.errorCode).toBe("invalid_client");
+    expect(result.message).toBe("The OAuth client was not found.");
+  });
+
+  it("returns ok:true when Google 302s into the normal sign-in flow", async () => {
+    const { preflightGmailClient } = await import("./gmail-oauth.js");
+    const fetchImpl = (async () => ({
+      headers: new Headers({ location: "https://accounts.google.com/v3/signin/identifier?opparams=x" }),
+      status: 302
+    } as unknown as Response)) as unknown as typeof fetch;
+    const result = await preflightGmailClient("good.apps.googleusercontent.com", fetchImpl);
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBeUndefined();
+  });
+
+  it("fails open (ok:true, skipped) when the probe itself cannot run", async () => {
+    const { preflightGmailClient } = await import("./gmail-oauth.js");
+    const fetchImpl = (async () => {
+      throw new Error("offline");
+    }) as unknown as typeof fetch;
+    const result = await preflightGmailClient("any.apps.googleusercontent.com", fetchImpl);
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBe(true);
+  });
+});

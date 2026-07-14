@@ -24,7 +24,7 @@ import { startOAuthCallbackServer, type OAuthCallbackServer } from "@muse/mcp";
 
 import { writeGmailCredential, type GmailOAuthCredential } from "./credential-store.js";
 import { generateOAuthState, generatePkcePair } from "./setup-calendar.js";
-import { exchangeGmailAuthorizationCode, GMAIL_AUTH_ENDPOINT, GMAIL_SCOPES, type GmailTokenExchangeResult } from "./gmail-oauth.js";
+import { exchangeGmailAuthorizationCode, GMAIL_AUTH_ENDPOINT, GMAIL_SCOPES, preflightGmailClient, type GmailClientPreflightResult, type GmailTokenExchangeResult } from "./gmail-oauth.js";
 import type { ProgramIO } from "./program.js";
 
 const WALKTHROUGH = `
@@ -32,25 +32,40 @@ Gmail setup — one-time browser consent, then it refreshes itself forever.
 
   1. Open https://console.cloud.google.com/apis/library/gmail.googleapis.com
      (create a project first if you don't have one) and click "Enable".
-  2. Configure the OAuth consent screen:
-     https://console.cloud.google.com/apis/credentials/consent
-     Choose "External", add yourself as a test user, and add scopes:
-       - https://www.googleapis.com/auth/gmail.readonly
-       - https://www.googleapis.com/auth/gmail.send
-  3. Create credentials:
-     https://console.cloud.google.com/apis/credentials
-     "Create Credentials" → "OAuth client ID" → Application type "Desktop app".
-  4. Copy the Client ID and Client Secret it shows you — paste them below.
+  2. Open the Google Auth Platform: https://console.cloud.google.com/auth/overview
+     First time: click "Get started" and fill in the app name + your email
+     (this is the consent-screen "Branding" step). Choose "External".
+  3. Add yourself as a test user:
+     https://console.cloud.google.com/auth/audience → "Test users" → + Add users.
+  4. Create the client: https://console.cloud.google.com/auth/clients
+     "+ Create client" → Application type "Desktop app".
+  5. Copy the Client ID (ends in .apps.googleusercontent.com) AND the Client
+     Secret from the creation dialog — paste them below.
 
-  ⚠️  While the consent screen is in "Testing" status, Google expires your
+  ⚠️  Google shows the Client Secret ONLY ONCE, in that creation dialog.
+      If you closed it, create a new client — the secret is not viewable later.
+  ⚠️  While the app's publishing status is "Testing", Google expires your
       refresh token every 7 days (you'll re-run this wizard weekly). Publish
-      the app to "Production" in the consent-screen settings to avoid that.
+      to "Production" on https://console.cloud.google.com/auth/audience to
+      avoid that — for personal use no verification review is needed.
 
+`;
+
+const PREFLIGHT_GUIDANCE = `
+Google rejected this Client ID before showing any consent screen.
+Most common causes, in order:
+  - The ID was pasted incompletely (it must end with .apps.googleusercontent.com)
+  - The OAuth client was created in a DIFFERENT Google Cloud project
+  - The client was deleted, or hasn't been created yet
+Fix: open https://console.cloud.google.com/auth/clients (check the project
+selector at the top), create an "OAuth client ID" of type "Desktop app",
+and re-run \`muse setup email\` with the new ID + secret.
 `;
 
 export interface GmailOAuthLoopbackDeps {
   readonly stdout: (message: string) => void;
   readonly openBrowser?: (url: string) => Promise<void> | void;
+  readonly preflightClient?: (clientId: string, fetchImpl: typeof fetch) => Promise<GmailClientPreflightResult>;
   readonly startCallbackServer?: (options: { readonly expectedState: string; readonly timeoutMs: number }) => Promise<OAuthCallbackServer>;
   readonly exchangeCode?: typeof exchangeGmailAuthorizationCode;
   readonly fetchImpl?: typeof fetch;
@@ -81,6 +96,16 @@ export async function runGmailOAuthLoopback(params: {
   const timeoutMs = params.timeoutMs ?? 5 * 60_000;
   const state = generateOAuthState();
   const pkce = generatePkcePair();
+
+  const preflight = await (params.preflightClient ?? preflightGmailClient)(
+    params.clientId,
+    params.fetchImpl ?? globalThis.fetch
+  );
+  if (!preflight.ok) {
+    params.stdout(PREFLIGHT_GUIDANCE);
+    const detail = [preflight.errorCode, preflight.message].filter(Boolean).join(": ");
+    return { ok: false, reason: `Google rejected the OAuth client before consent${detail ? ` (${detail})` : ""}` };
+  }
 
   const callback = await startCallbackServer({ expectedState: state, timeoutMs });
   try {
