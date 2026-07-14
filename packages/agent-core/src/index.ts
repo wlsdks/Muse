@@ -18,6 +18,7 @@ export type {
   UserMemoryInjectionOptions,
   UserMemoryProvider,
   UserMemorySnapshot,
+  UserModelComposer,
   VerifiedSource
 } from "./types.js";
 

@@ -25,7 +25,8 @@ import {
   type CapturedFollowup,
   type EgressAdvisorySink,
   type HookStage,
-  type PersonaRegister
+  type PersonaRegister,
+  type UserModelComposer
 } from "@muse/agent-core";
 import {
   DEFAULT_AGENT_SPECS,
@@ -74,7 +75,7 @@ import {
   type TokenUsageSink
 } from "@muse/observability";
 
-import { loadUserPersonaSync, PersonaHotReloadRegistry, resolvePersonaFilePath } from "@muse/recall";
+import { composeLearnedUserModelSection, loadUserPersonaSync, PersonaHotReloadRegistry, resolvePersonaFilePath } from "@muse/recall";
 import type { InMemoryPromptLayerRegistry } from "@muse/prompts";
 import { CircuitBreakerRegistry } from "@muse/resilience";
 import { redactSecretsInText } from "@muse/shared";
@@ -1073,6 +1074,46 @@ export function buildEgressAdvisorySink(env: MuseEnvironment): EgressAdvisorySin
 }
 
 /**
+ * The opt-in learned-user-model composer for the runtime's "user-memory"
+ * system section (user-model S1b). Active ONLY under MUSE_RICH_USER_MODEL
+ * (default OFF ⇒ returns undefined ⇒ agent-core falls back to the built-in
+ * `renderUserMemorySection`, byte-identical to today). When on, it maps the
+ * runtime's `UserMemorySnapshot` to `@muse/recall`'s shared learned block
+ * (contested/preference-slot logic — richer than the flat default), emitting
+ * ONLY that block: identity (L1 promptLayerRegistry) and the context line
+ * (activeContextProvider) are already injected upstream, so re-emitting them
+ * here would double-inject.
+ *
+ * Scope-safe by construction: the composer is handed the RUN's OWN userId +
+ * memory, so a channel identity only ever composes ITS memory — the owner's
+ * learned block never leaks to another user. Per-userId composition IS the
+ * scope-safe design.
+ *
+ * Fail-soft: any throw inside the recall composition returns undefined (the
+ * default section renders instead) rather than breaking the run.
+ *
+ * `episodes` / `recurringThreads` / `factHistory` are intentionally NOT passed —
+ * they aren't on `UserMemorySnapshot` and enrich later (S1c); the block is
+ * already richer than the default via the contested/preference-slot logic.
+ */
+export function buildUserModelComposer(env: MuseEnvironment): UserModelComposer | undefined {
+  if (!parseBoolean(env.MUSE_RICH_USER_MODEL, false)) {
+    return undefined;
+  }
+  return (memory) => {
+    try {
+      return composeLearnedUserModelSection({
+        facts: memory.facts,
+        preferences: memory.preferences,
+        ...(memory.recentTopics ? { recentTopics: memory.recentTopics } : {})
+      });
+    } catch {
+      return undefined;
+    }
+  };
+}
+
+/**
  * The `createAgentRuntime` composition itself — the single largest block
  * in the original function. Returns `undefined` when no model provider /
  * default model is configured (fresh, unconfigured install), same guard
@@ -1203,6 +1244,12 @@ function buildAgentRuntime(params: {
       userMemoryProvider: parseBoolean(env.MUSE_USER_MEMORY_INJECTION, true)
         ? userMemoryStore
         : undefined,
+      // Opt-in (MUSE_RICH_USER_MODEL) shared learned-user-model composer. Absent
+      // ⇒ agent-core renders the byte-identical default section.
+      ...((): { userModelComposer?: UserModelComposer } => {
+        const userModelComposer = buildUserModelComposer(env);
+        return userModelComposer ? { userModelComposer } : {};
+      })(),
       conversationSummaryStore: parseBoolean(env.MUSE_CONVERSATION_SUMMARY_PERSIST, true)
         ? conversationSummaryStore
         : undefined,

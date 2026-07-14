@@ -1,7 +1,7 @@
 import { MUSE_IDENTITY_CORE } from "@muse/prompts";
 import { describe, expect, it } from "vitest";
 
-import { buildMusePersona, formatCurrentContextLine, PERSONA_ENTRY_CAP_CEILING, personaEntryCap } from "./user-model-layer.js";
+import { buildMusePersona, composeLearnedUserModelSection, formatCurrentContextLine, PERSONA_ENTRY_CAP_CEILING, personaEntryCap } from "./user-model-layer.js";
 
 describe("formatCurrentContextLine", () => {
   it("emits a single 'Current local context: YYYY-MM-DD HH:MM Weekday <part-of-day> (TZ).' line", () => {
@@ -395,6 +395,62 @@ describe("buildMusePersona", () => {
     // Untagged entry stays clean — no empty `[]` suffix.
     expect(prompt).toContain("  - 2026-05-11: No tags here.");
     expect(prompt).not.toContain("No tags here. [");
+  });
+});
+
+describe("composeLearnedUserModelSection — learned block WITHOUT the identity/context preamble", () => {
+  // A distinctive substring of MUSE_IDENTITY_CORE's opening line — its presence
+  // would mean the identity preamble double-injected into a runtime composer's
+  // output (the runtime already injects it via L1).
+  const IDENTITY_MARKER = "Learns you, not the world.";
+
+  it("contains the Facts / Preferences / Vetoes / Goals it should", () => {
+    const section = composeLearnedUserModelSection({
+      facts: { name: "Jinan", city: "Seoul" },
+      preferences: {
+        language: "Korean",
+        "veto:no_coffee": "never suggest coffee",
+        "goal:fitness": "run 5 km three times a week"
+      }
+    });
+    expect(section).toBeDefined();
+    expect(section).toContain("Facts the user has shared:");
+    expect(section).toContain("name: Jinan");
+    expect(section).toContain("city: Seoul");
+    expect(section).toContain("Preferences:");
+    expect(section).toContain("language: Korean");
+    expect(section).toContain("Vetoes");
+    expect(section).toContain("no_coffee: never suggest coffee");
+    expect(section).toContain("Goals the user is pursuing");
+    expect(section).toContain("fitness: run 5 km three times a week");
+  });
+
+  it("does NOT carry the identity core nor the 'Current local context:' line", () => {
+    const section = composeLearnedUserModelSection(
+      { facts: { name: "Jinan" }, preferences: { language: "Korean" } },
+      { now: new Date("2026-05-12T13:45:00Z") }
+    ) ?? "";
+    expect(section).not.toContain(IDENTITY_MARKER);
+    expect(section).not.toContain(MUSE_IDENTITY_CORE);
+    expect(section).not.toContain("You are Muse");
+    expect(section).not.toContain("Current local context:");
+    // …and it starts at the first real header, not a leading blank line.
+    expect(section.startsWith("Facts the user has shared:")).toBe(true);
+  });
+
+  it("returns undefined when the memory is empty (no stub block)", () => {
+    expect(composeLearnedUserModelSection({ facts: {}, preferences: {} })).toBeUndefined();
+  });
+
+  it("is exactly buildMusePersona's learned block — the tail after the context line", () => {
+    const memory = { facts: { name: "Jinan", city: "Seoul" }, preferences: { language: "Korean" } };
+    const persona = buildMusePersona(memory, "u") ?? "";
+    const section = composeLearnedUserModelSection(memory) ?? "";
+    expect(persona.endsWith(section)).toBe(true);
+    // The context line sits immediately before the learned block in the persona.
+    const contextIdx = persona.indexOf("Current local context:");
+    expect(contextIdx).toBeGreaterThanOrEqual(0);
+    expect(persona.indexOf(section)).toBeGreaterThan(contextIdx);
   });
 });
 
