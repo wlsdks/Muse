@@ -69,8 +69,8 @@ async function ask(image, question) {
     timeoutMs: 150_000
   });
 
-  if (r.status !== 0) {
-    console.log(`Command failed while asking vision grounding question: exit=${r.status} stderr=${r.stderr.slice(0, 200)}`);
+  if (r.exitCode !== 0) {
+    console.log(`Command failed while asking vision grounding question: exit=${r.exitCode} stderr=${r.stderr.slice(0, 200)}`);
   }
 
   return r.stdout;

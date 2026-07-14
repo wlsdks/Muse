@@ -62,16 +62,16 @@ export class LocalIcsCalendarProvider implements CalendarProvider {
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   }
 
-  createEvent(_input: CalendarEventInput): Promise<CalendarEvent> {
-    return Promise.reject(this.readOnly());
+  async createEvent(_input: CalendarEventInput): Promise<CalendarEvent> {
+    throw this.readOnly();
   }
 
-  updateEvent(_id: string, _input: CalendarEventUpdate): Promise<CalendarEvent> {
-    return Promise.reject(this.readOnly());
+  async updateEvent(_id: string, _input: CalendarEventUpdate): Promise<CalendarEvent> {
+    throw this.readOnly();
   }
 
-  deleteEvent(_id: string): Promise<void> {
-    return Promise.reject(this.readOnly());
+  async deleteEvent(_id: string): Promise<void> {
+    throw this.readOnly();
   }
 
   private readOnly(): CalendarProviderError {

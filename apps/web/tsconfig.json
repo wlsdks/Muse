@@ -2,11 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
-    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "lib": ["ES2025", "DOM", "DOM.Iterable"],
     "outDir": "dist",
     "rootDir": "src",
     "types": ["vite/client", "vitest/globals", "node"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
-

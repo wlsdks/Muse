@@ -62,8 +62,8 @@ async function askAndReadLabel(query) {
   const runsDir = path.join(ws, ".muse", "runs");
   let files = [];
   try { files = readdirSync(runsDir).filter((f) => f.endsWith(".jsonl")); } catch { /* none yet */ }
-  if (r.status !== 0) {
-    return { label: "<command-failed>", answer: `vision-grounding command failed (exit=${r.status}): ${r.stderr || r.stdout}` };
+  if (r.exitCode !== 0) {
+    return { label: "<command-failed>", answer: `vision-grounding command failed (exit=${r.exitCode}): ${r.stderr || r.stdout}` };
   }
 
   if (files.length === 0) return { label: "<no-trace>", answer: r.stdout };

@@ -244,19 +244,22 @@ function isRunningUnderVitest(): boolean {
   return (process.env.VITEST ?? "").trim().length > 0 || process.env.VITEST_WORKER_ID !== undefined;
 }
 
-const defaultSchtasksRun = (args: readonly string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
+const defaultSchtasksRun = async (args: readonly string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
   if (isRunningUnderVitest()) {
-    return Promise.reject(new Error(
+    throw new Error(
       `refusing to exec real schtasks under vitest (args: ${args.join(" ")}) — inject DaemonHelpers.schtasksRun in this test`
-    ));
+    );
   }
-  return execFile("schtasks", [...args], { timeout: 15_000 })
-    .then((result) => ({ exitCode: 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() }))
-    .catch((cause: unknown) => ({
+  try {
+    const result = await execFile("schtasks", [...args], { timeout: 15_000 });
+    return { exitCode: 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  } catch (cause: unknown) {
+    return {
       exitCode: normalizeExecFileCode(cause),
       stdout: extractOutputFromExecError(cause, "stdout").toString(),
       stderr: extractOutputFromExecError(cause, "stderr").toString()
-    }));
+    };
+  }
 };
 
 /**
@@ -266,19 +269,22 @@ const defaultSchtasksRun = (args: readonly string[]): Promise<{ exitCode: number
  * LaunchAgent from a test run would leave a KeepAlive daemon resident on the
  * contributor's machine.
  */
-const defaultRunLaunchctl = (args: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
+const defaultRunLaunchctl = async (args: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
   if (isRunningUnderVitest()) {
-    return Promise.reject(new Error(
+    throw new Error(
       `refusing to exec real launchctl under vitest (args: ${args.join(" ")}) — inject DaemonHelpers.runLaunchctl in this test`
-    ));
+    );
   }
-  return execFile("launchctl", [...args], { timeout: 15_000 })
-    .then((result) => ({ code: 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() }))
-    .catch((cause: unknown) => ({
+  try {
+    const result = await execFile("launchctl", [...args], { timeout: 15_000 });
+    return { code: 0, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  } catch (cause: unknown) {
+    return {
       code: normalizeExecFileCode(cause),
       stdout: extractOutputFromExecError(cause, "stdout").toString(),
       stderr: extractOutputFromExecError(cause, "stderr").toString()
-    }));
+    };
+  }
 };
 
 function normalizeExecFileCode(cause: unknown): number {

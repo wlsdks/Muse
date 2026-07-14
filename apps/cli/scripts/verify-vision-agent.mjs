@@ -78,7 +78,7 @@ for (const c of cases) {
   } catch {
     const stdoutTail = r.stdout ? `\n   stdout: ${r.stdout.slice(-200)}` : "";
     const stderrTail = r.stderr ? `\n stderr: ${r.stderr.slice(-200)}` : "";
-    check(c.name, false, `no ${c.store} written. exit=${r.status}${stdoutTail}${stderrTail}`);
+    check(c.name, false, `no ${c.store} written. exit=${r.exitCode}${stdoutTail}${stderrTail}`);
     continue;
   }
   check(c.name, c.assert(json), `store: ${JSON.stringify(json).slice(0, 200)}`);
