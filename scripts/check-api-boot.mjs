@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export const BOOT_TIMEOUT_MS = 40_000;
 
@@ -39,14 +40,20 @@ export function bootFailureHint(output) {
 }
 
 export function findFreePort() {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.listen(0, "127.0.0.1", () => {
-      const { port } = srv.address();
-      srv.close(() => resolve(port));
+  const { promise, resolve, reject } = Promise.withResolvers<number>();
+  const srv = net.createServer();
+  srv.once("error", reject);
+  srv.listen(0, "127.0.0.1", () => {
+    const { port } = srv.address();
+    srv.close(() => {
+      if (typeof port === "number") {
+        resolve(port);
+      } else {
+        reject(new Error("Could not allocate a local API test port"));
+      }
     });
-    srv.on("error", reject);
   });
+  return promise;
 }
 
 async function main() {
@@ -86,7 +93,7 @@ async function main() {
     } catch {
       /* not up yet */
     }
-    await new Promise((r) => setTimeout(r, 500));
+    await sleep(500);
   }
 
   api.kill("SIGKILL");

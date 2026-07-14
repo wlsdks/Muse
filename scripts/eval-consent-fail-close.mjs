@@ -99,10 +99,14 @@ try {
   // ── 6. A consented endpoint that hangs ⇒ bounded timeout, fail-closed ────────
   {
     let calls = 0;
-    const hangingFetch = (url, init) => new Promise((_resolve, reject) => {
+    const hangingFetch = (_url, init) => {
       calls += 1;
-      init.signal.addEventListener("abort", () => reject(new Error("aborted")));
-    });
+      const { promise, reject } = Promise.withResolvers<Response>();
+      init?.signal?.addEventListener("abort", () => {
+        reject(new Error("aborted"));
+      }, { once: true });
+      return promise;
+    };
     const out = await performConsentedAction(base("obj-ok", "email:send", { url: "https://api.example.com/send" }, { fetchImpl: hangingFetch, timeoutMs: 30 }));
     check("a hung consented endpoint ⇒ performed:false (bounded timeout, loop can't stall)", out.performed === false && /timed out/u.test(out.reason));
     void calls;

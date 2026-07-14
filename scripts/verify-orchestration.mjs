@@ -22,6 +22,7 @@ const parsedRepeat = Number(process.env.MUSE_EVAL_REPEAT ?? 3);
 const REPEAT = Number.isFinite(parsedRepeat) && parsedRepeat >= 1 ? Math.floor(parsedRepeat) : 3;
 
 const instructionInput = { messages: [{ content: "Plan a 30-minute morning run for tomorrow.", role: "user" }], model: MODEL };
+const neverResolve = <T>() => Promise.withResolvers<T>().promise;
 
 function ruleWorker(id, handler) {
   return new RuleBasedAgentWorker(id, `${id} worker`, ["plan"], handler);
@@ -51,7 +52,7 @@ async function runStepRepetitionCase() {
  *  and the run must still finish, carrying the surviving worker. */
 async function runTerminationCase() {
   const timeoutMs = 200;
-  const hung = ruleWorker("hung", () => new Promise(() => {}));
+  const hung = ruleWorker("hung", () => neverResolve());
   const fast = instantWorker("fast");
   const orchestrator = new MultiAgentOrchestrator({ workers: [hung, fast], workerTimeoutMs: timeoutMs });
 

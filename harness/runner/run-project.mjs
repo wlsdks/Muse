@@ -11,11 +11,13 @@ import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
 import { runProject } from './project.mjs';
 import { redactSecrets } from './tracer.mjs';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const here = dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 
 const ROLE_FRAMING = {
   orchestrator:
@@ -32,16 +34,19 @@ const ROLE_FRAMING = {
     'one JSON line: {"verdict":"PASS|FAIL","reason":"..."}. No prose.',
 };
 
-function claude(prompt) {
-  return new Promise((resolve, reject) => {
-    const child = execFile(
-      CLAUDE_BIN,
-      ['-p', prompt, '--output-format', 'text'],
-      { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 },
-      (err, stdout) => (err && !stdout ? reject(err) : resolve(String(stdout || ''))),
-    );
-    child.stdin.end();
-  });
+async function claude(prompt) {
+  try {
+    const { stdout } = await execFileAsync(CLAUDE_BIN, ['-p', prompt, '--output-format', 'text'], {
+      timeout: 120_000,
+      maxBuffer: 10 * 1024 * 1024
+    });
+    return String(stdout || '');
+  } catch (error) {
+    if (error && typeof error === "object" && "stdout" in error && String(error.stdout || "") !== "") {
+      return String(error.stdout);
+    }
+    throw error;
+  }
 }
 
 const callAgent = (role, body) => claude(`${ROLE_FRAMING[role]}\n\n${body}`);
