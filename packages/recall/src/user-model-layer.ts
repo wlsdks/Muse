@@ -25,14 +25,24 @@ import {
   STALE_FACT_MARK,
   admittedRuleKey,
   classifyPreferenceSlots,
-  defangMemoryInjection as defangMemoryValue
+  defangMemoryInjection,
+  escapeSystemPromptMarkers
 } from "@muse/agent-core";
+import { composeUserModelSnapshot, type UserModel } from "@muse/memory";
 import { composeIdentityPrompt } from "@muse/prompts";
 
 export interface MusePersonaMemory {
   readonly facts: Readonly<Record<string, string>>;
   readonly preferences: Readonly<Record<string, string>>;
   readonly recentTopics?: readonly string[];
+  /**
+   * Typed user-model slots (Context Engineering 1.c). When present, the learned
+   * block appends a `Typed model: <...>` line — the SAME structured snapshot the
+   * default `renderUserMemorySection` renders — so this block is a content
+   * superset of the flat default, not a non-overlapping sibling. Decay-gated at
+   * render time (inferred slots below the confidence floor fade; vetoes never).
+   */
+  readonly userModel?: UserModel;
   /**
    * Optional injected episodes. The caller
    * resolves them from `~/.muse/episodes.json` (per-user filter +
@@ -77,8 +87,13 @@ export interface EpisodicPersonaHint {
   readonly topics?: readonly string[];
 }
 
-// Poisoned-memory defense lives in @muse/agent-core (the single pattern source shared
-// with the ask-path memory block); `defangMemoryValue` is its alias here.
+// Per-value poisoned-memory defense, matched to the default renderUserMemorySection
+// (agent-core `safeMemoryValue`): the command-injection defang PLUS
+// `escapeSystemPromptMarkers`, which neutralises `<<memory …>>` / `[memory: …]`
+// grounding-fence forgery. Composing both here makes this block a marker-escape
+// SUPERSET of the flat default AND hardens the CLI persona that reuses it — a
+// poisoned stored value can never forge a fence into the system prompt.
+const defangMemoryValue = (value: string): string => escapeSystemPromptMarkers(defangMemoryInjection(value));
 export function formatCurrentContextLine(now: Date = new Date()): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
   const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long", timeZone: tz });
@@ -271,6 +286,22 @@ function buildLearnedBlockLines(
         ? ` [${entry.topics.join(", ")}]`
         : "";
       lines.push(`  - ${date}: ${entry.summary.trim()}${topicSuffix}`);
+    }
+  }
+  if (memory.userModel) {
+    // The typed slot snapshot the default `renderUserMemorySection` renders —
+    // emitted here too so this block is a content superset of that default, not a
+    // sibling that drops it. Same compose options as the default (confidence floor
+    // 0.2, per-kind cap = the block's entry cap) so a shared caller gets a
+    // byte-identical `Typed model:` line. Undefined/empty snapshot ⇒ no line.
+    const typed = composeUserModelSnapshot(memory.userModel, {
+      confidenceFloor: 0.2,
+      maxPerKind: maxEntries,
+      now: options.now ?? new Date()
+    });
+    if (typed) {
+      lines.push("");
+      lines.push(`Typed model: ${typed}`);
     }
   }
   return lines;

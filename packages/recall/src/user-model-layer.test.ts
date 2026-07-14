@@ -396,6 +396,37 @@ describe("buildMusePersona", () => {
     expect(prompt).toContain("  - 2026-05-11: No tags here.");
     expect(prompt).not.toContain("No tags here. [");
   });
+
+  it("renders the typed userModel as a `Typed model:` line — the same snapshot the built-in section carries (deliberate content enrichment)", () => {
+    const prompt = buildMusePersona(
+      {
+        facts: { name: "Stark" },
+        preferences: {},
+        userModel: {
+          goals: [],
+          preferences: [{ id: "reply_len", kind: "preference", value: "short", updatedAt: new Date("2026-05-01T00:00:00Z") }],
+          schedule: [{ id: "wake", kind: "schedule", value: "07:00 KST", updatedAt: new Date("2026-05-01T00:00:00Z") }],
+          vetoes: []
+        }
+      },
+      "stark",
+      { now: new Date("2026-05-02T00:00:00Z") }
+    );
+    expect(prompt).toContain("Typed model: ");
+    expect(prompt).toContain("pref.reply_len=short");
+    expect(prompt).toContain("sched.wake=07:00 KST");
+  });
+
+  it("omits the typed line entirely when no userModel is present (no-userModel output is byte-unchanged)", () => {
+    const bare = buildMusePersona({ facts: { name: "Stark" }, preferences: {} }, "stark") ?? "";
+    const withEmptyModel = buildMusePersona(
+      { facts: { name: "Stark" }, preferences: {}, userModel: { goals: [], preferences: [], schedule: [], vetoes: [] } },
+      "stark"
+    ) ?? "";
+    expect(bare).not.toContain("Typed model:");
+    // An empty userModel composes to undefined ⇒ no line ⇒ byte-identical to bare.
+    expect(withEmptyModel).toBe(bare);
+  });
 });
 
 describe("composeLearnedUserModelSection — learned block WITHOUT the identity/context preamble", () => {
@@ -440,6 +471,26 @@ describe("composeLearnedUserModelSection — learned block WITHOUT the identity/
 
   it("returns undefined when the memory is empty (no stub block)", () => {
     expect(composeLearnedUserModelSection({ facts: {}, preferences: {} })).toBeUndefined();
+  });
+
+  it("carries a recall-only enrichment (contested mark) AND the typed model together — richer than the flat default section", () => {
+    const section = composeLearnedUserModelSection(
+      {
+        facts: { home_city: "Busan" },
+        preferences: {},
+        userModel: {
+          goals: [],
+          preferences: [],
+          schedule: [{ id: "wake", kind: "schedule", value: "07:00 KST", updatedAt: new Date("2026-05-01T00:00:00Z") }],
+          vetoes: []
+        }
+      },
+      { contestedKeys: new Set(["home_city"]), now: new Date("2026-05-02T00:00:00Z") }
+    ) ?? "";
+    // Recall-only: the contested caution the flat renderUserMemorySection cannot emit.
+    expect(section).toContain("home_city: Busan (value has changed before — confirm it's current)");
+    // …AND the typed snapshot the default section DOES emit — both present, proving superset.
+    expect(section).toContain("Typed model: sched.wake=07:00 KST");
   });
 
   it("is exactly buildMusePersona's learned block — the tail after the context line", () => {

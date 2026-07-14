@@ -318,6 +318,14 @@ export async function applyUserMemory(
   maxEntries: number,
   composer?: UserModelComposer
 ): Promise<AgentRunInput> {
+  // A surface that already HAND-INJECTED a content-complete user-model block
+  // (the CLI's buildMusePersona — itself a superset of this section) marks the
+  // run `personaPreinjected`. Skip re-injecting here, else the run carries the
+  // learned block twice. Checked before the store read so a pre-injected run
+  // never even loads memory it won't use.
+  if (context.input.metadata?.personaPreinjected === true) {
+    return context.input;
+  }
   if (!provider) {
     return context.input;
   }

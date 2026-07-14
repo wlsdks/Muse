@@ -305,7 +305,7 @@ export async function runLocalChat(
   // prompt-eval on the big tool block). Detect it deterministically and drop the
   // tools, taking that turn from ~22s to ~2s (measured) with no capability loss.
   const isCasual = classifyCasualPrompt(message) !== null;
-  const metadata: Record<string, string | number> = {};
+  const metadata: Record<string, string | number | boolean> = {};
   if (agentMode) metadata.agentMode = agentMode;
   if (options.disableTools || isCasual) {
     metadata.maxTools = 0;
@@ -318,7 +318,6 @@ export async function runLocalChat(
     const cap = Math.trunc(Number(process.env.MUSE_CHAT_MAX_TOOLS ?? "6"));
     if (Number.isFinite(cap) && cap > 0) metadata.maxTools = cap;
   }
-  const hasMetadata = Object.keys(metadata).length > 0;
 
   // System content grounds the model in `now`, the base persona, AND what Muse
   // durably knows about the user (name, language preference, …). Loading the
@@ -362,6 +361,14 @@ export async function runLocalChat(
   const userMemoryBlock = personaMemory
     ? (buildMusePersona(personaMemory, userId, { contestedKeys: personaContestedKeys, provisionalKeys: personaProvisionalKeys, staleKeys: personaStaleKeys }) ?? "").trim()
     : "";
+  // The persona block below is hand-injected into `systemContent` (the run's
+  // system message), so flag the run to STOP the runtime re-injecting its own
+  // user-memory section — the buildMusePersona block already carries it (typed
+  // model + defense line included). Set ONLY when a persona is actually present:
+  // an empty block means no learned data was injected, so the runtime's section
+  // (also empty) must be allowed to run rather than skipped (no hole).
+  if (userMemoryBlock.length > 0) metadata.personaPreinjected = true;
+  const hasMetadata = Object.keys(metadata).length > 0;
   const personaPreamble = (await loadActivePersonaPreamble().catch(() => "")).trim();
   // Multi-turn recall: resolve an anaphoric turn into a self-contained
   // retrieval query (one constrained inference, fail-open to the raw turn).

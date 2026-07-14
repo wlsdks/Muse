@@ -406,6 +406,13 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           userId: userKey,
           skipUserMemoryAutoExtract: true,
           maxTools: trustedToolRun.maxTools,
+          // The persona (buildMusePersona — a content superset of the runtime's
+          // user-memory section) is already folded into `systemPrompt` via
+          // buildFullSystemPrompt, so stop the runtime re-injecting its own copy.
+          // Gated on personaPrompt being present: when there's no user memory the
+          // system prompt carries no persona, so the runtime's section (also
+          // empty) must run rather than be skipped (no hole).
+          ...(personaPrompt ? { personaPreinjected: true } : {}),
           ...(webSearchPolicy ? { webSearchPolicy } : {})
         };
         const toolExposureAuthority = trustedToolRun.toolExposureAuthority;

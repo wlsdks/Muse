@@ -203,6 +203,14 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
       // every write/execute call must be confirmed by the user with its content
       // shown, reads run silently, and a denial / gate error blocks the call
       // (runtime fail-close). This is the in-chat "act" path per outbound-safety.md.
+      // NOTE: this path deliberately does NOT set `personaPreinjected`. The runtime
+      // auto-extract hook writes to the store mid-session, and the persona source
+      // (`memoryHolder.current`) is only refreshed at start / on autoLearn / on a
+      // slash command — so skipping the runtime's fresh per-turn re-read would drop
+      // a just-learned fact (breaks the auto-extract-refresh contract, fable review).
+      // The hand-injected persona + the runtime section is a benign content-complete
+      // redundancy here; the real de-dup is routing this path through the runtime
+      // (a separate slice), not a stale-persona skip.
       metadata: { localMode: true, userId },
       model: useModel,
       toolApprovalGate: chatToolApprovalGate(OUTBOUND_ACTUATORS, requestApproval)

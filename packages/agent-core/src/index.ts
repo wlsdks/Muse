@@ -123,6 +123,7 @@ export {
   type InboxSnapshot
 } from "./inbox-context.js";
 export { inboxGroundingSources } from "./context-transforms.js";
+export { renderUserMemorySection, USER_MEMORY_DATA_NOT_INSTRUCTIONS_LINE, USER_MEMORY_INTRO_LINE } from "./runtime-helpers.js";
 export { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from "./model-loop.js";
 export { applyClarifyDirective, detectUnderspecifiedRequest } from "./clarify-directive.js";
 export {

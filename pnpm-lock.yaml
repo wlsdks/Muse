@@ -703,6 +703,9 @@ importers:
       '@muse/mcp-shared':
         specifier: workspace:*
         version: link:../mcp-shared
+      '@muse/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@muse/model':
         specifier: workspace:*
         version: link:../model
