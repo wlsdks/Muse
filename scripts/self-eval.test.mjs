@@ -12,6 +12,7 @@ import {
   countTestFileNames,
   countVerifiedCapabilityLines,
   detectRegressions,
+  ERASURE_ALLOWLIST,
   summarize
 } from "./self-eval.mjs";
 
@@ -90,6 +91,34 @@ test("detectRegressions ignores gates absent from the previous entry", () => {
   const prev = { gates: { lint: { status: "pass" } } };
   const curr = { gates: { lint: { status: "pass" }, tests: { status: "fail" } } };
   assert.deepEqual(detectRegressions(prev, curr), []); // `tests` is new, not a regression
+});
+
+test("detectRegressions: a gate present in prev and erased from curr is a regression", () => {
+  const prev = { gates: { lint: { status: "pass" }, groundedSurfaces: { status: "pass", value: 27 } } };
+  const curr = { gates: { lint: { status: "pass" } } };
+  assert.deepEqual(detectRegressions(prev, curr), ["groundedSurfaces: present→missing (erased)"]);
+});
+
+test("detectRegressions: an ALLOWLISTED gate erased from curr is NOT a regression", () => {
+  const prev = {
+    gates: { lint: { status: "pass" }, verifiedCapabilities: { status: "pass", value: 35 } }
+  };
+  const curr = { gates: { lint: { status: "pass" } } };
+  assert.deepEqual(detectRegressions(prev, curr), []);
+});
+
+test("the allowlist entry is load-bearing: removing it from ERASURE_ALLOWLIST un-suppresses the regression", () => {
+  const prev = {
+    gates: { lint: { status: "pass" }, verifiedCapabilities: { status: "pass", value: 35 } }
+  };
+  const curr = { gates: { lint: { status: "pass" } } };
+  assert.ok(ERASURE_ALLOWLIST.has("verifiedCapabilities"));
+  ERASURE_ALLOWLIST.delete("verifiedCapabilities");
+  try {
+    assert.deepEqual(detectRegressions(prev, curr), ["verifiedCapabilities: present→missing (erased)"]);
+  } finally {
+    ERASURE_ALLOWLIST.add("verifiedCapabilities");
+  }
 });
 
 test("summarize flags regressions and renders gate values", () => {

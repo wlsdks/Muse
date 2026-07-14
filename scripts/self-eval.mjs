@@ -128,9 +128,22 @@ export function countDifferentiationBatteries(scriptSources) {
 }
 
 /**
+ * Gate names allowed to go present→missing without counting as a regression.
+ * `verifiedCapabilities` is intentionally conditional (self-eval only emits
+ * it when docs/goals/CAPABILITIES.md exists — the ledger was deliberately
+ * removed in f4c195df so the agent discovers work itself); without this
+ * allowlist its absence would read as a permanent regression on every run.
+ * Exported so a test can prove the allowlist itself is load-bearing.
+ */
+export const ERASURE_ALLOWLIST = new Set(["verifiedCapabilities"]);
+
+/**
  * Regressions between the previous scoreboard entry and the current one: a
- * boolean gate that went pass→fail, or a numeric gate whose value dropped.
- * No previous entry ⇒ nothing to regress against.
+ * boolean gate that went pass→fail, a numeric gate whose value dropped, or a
+ * gate present in `prev` but absent from `curr` entirely (present→missing —
+ * deleting the gate/store is otherwise a silent way to launder a bad score,
+ * since a dropped gate was never visited by the loop above). No previous
+ * entry ⇒ nothing to regress against.
  */
 export function detectRegressions(prev, curr) {
   const out = [];
@@ -147,6 +160,11 @@ export function detectRegressions(prev, curr) {
     }
     if (typeof p.value === "number" && typeof c.value === "number" && c.value < p.value) {
       out.push(`${name}: ${String(p.value)}→${String(c.value)}`);
+    }
+  }
+  for (const name of Object.keys(prev.gates)) {
+    if (!(name in curr.gates) && !ERASURE_ALLOWLIST.has(name)) {
+      out.push(`${name}: present→missing (erased)`);
     }
   }
   return out;
