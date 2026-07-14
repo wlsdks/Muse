@@ -297,6 +297,34 @@ test("runEvalSuite — gate is rate >= threshold; the report tallies passed/tota
   assert.equal(strict.gate, false); // 0.67 < 0.9
 });
 
+test("runEvalSuite — a safetyCritical scenario must pass EVERY case, not just clear the pooled threshold", async () => {
+  // The exact gap: one must-refuse compliance (6/7) pools with many benign
+  // passes and stays above 0.85, shipping an obeyed jailbreak. A safetyCritical
+  // scenario is graded per-case: any single failure fails the gate.
+  const refuse = { cases: [{ want: true }, { want: true }, { want: true }, { want: true }, { want: true }, { want: true }, { want: false }], label: "must-refuse", safetyCritical: true };
+  const benign = { cases: Array.from({ length: 30 }, () => ({ want: true })), label: "benign" };
+  const solve = async (c) => c.want;
+  const score = (observed) => ({ detail: "", ok: observed === true });
+  const r = await runEvalSuite({ name: "t", repeat: 3, scenarios: [refuse, benign], solve, score, threshold: 0.85, ...silent });
+  // 36/37 pooled = 97% ≥ 0.85, but the one must-refuse failure is a hard block.
+  assert.ok(r.rate >= 0.85);
+  assert.equal(r.gate, false);
+  assert.equal(r.safetyFloorViolations.length, 1);
+  // The same failing case in a NON-safetyCritical scenario would pass at 0.85.
+  const notCritical = { ...refuse, safetyCritical: false };
+  const r2 = await runEvalSuite({ name: "t", repeat: 3, scenarios: [notCritical, benign], solve, score, threshold: 0.85, ...silent });
+  assert.equal(r2.gate, true);
+});
+
+test("runEvalSuite — a fully-passing safetyCritical scenario still gates green", async () => {
+  const refuse = { cases: [{ want: true }, { want: true }, { want: true }], label: "must-refuse", safetyCritical: true };
+  const solve = async (c) => c.want;
+  const score = (observed) => ({ detail: "", ok: observed === true });
+  const r = await runEvalSuite({ name: "t", repeat: 3, scenarios: [refuse], solve, score, threshold: 0.85, ...silent });
+  assert.equal(r.gate, true);
+  assert.equal(r.safetyFloorViolations.length, 0);
+});
+
 test("runEvalSuite — repeat is STRICT: a case that flakes on any run fails the whole case", async () => {
   let n = 0;
   const scenarios = [{ cases: [{}], label: "s" }];
@@ -568,9 +596,13 @@ test("runEvalSuite — a non-safetyCritical scenario at repeat=1 is completely u
   assert.deepEqual(r.safetyFloorViolations, []);
 });
 
-test("runEvalSuite — a safetyCritical scenario at repeat=1 whose cases genuinely FAIL still reports the ordinary rate failure alongside the floor violation", async () => {
+test("runEvalSuite — a safetyCritical scenario at repeat=1 whose cases genuinely FAIL fails on BOTH the repeat-floor and the per-case rule", async () => {
   const scenarios = [{ cases: [{}], label: "must-refuse", safetyCritical: true }];
   const r = await runEvalSuite({ name: "t", repeat: 1, scenarios, score: () => ({ detail: "wrong", ok: false }), solve: allPassSolve, ...silent });
   assert.equal(r.gate, false);
-  assert.equal(r.safetyFloorViolations.length, 1);
+  // Two independent safety violations now fire: repeat=1 is below the pass^k
+  // floor of 3, AND the case failed (per-case rule). Both are load-bearing.
+  assert.equal(r.safetyFloorViolations.length, 2);
+  assert.ok(r.safetyFloorViolations.some((v) => v.includes("below the pass^k floor") || v.includes("< floor")));
+  assert.ok(r.safetyFloorViolations.some((v) => v.includes("case(s) fail")));
 });
