@@ -15,6 +15,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { isRecord } from "@muse/shared";
 import { decryptMemoryEnvelope, encryptMemoryEnvelope, isEncryptedMemoryEnvelope } from "./memory-encryption.js";
 
 /** Newest entries kept; bounds the file so a chatty extractor can't grow it without limit. */
@@ -599,7 +600,7 @@ export async function readBeliefProvenance(file: string, env: NodeJS.ProcessEnv 
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return [];
@@ -615,11 +616,11 @@ export async function readBeliefProvenance(file: string, env: NodeJS.ProcessEnv 
       return [];
     }
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { entries?: unknown }).entries)) {
+  if (!isRecord(parsed) || !Array.isArray(parsed.entries)) {
     await quarantineCorruptStore(file);
     return [];
   }
-  return (parsed as { entries: unknown[] }).entries.flatMap((entry): readonly BeliefProvenance[] =>
+  return parsed.entries.flatMap((entry): readonly BeliefProvenance[] =>
     isBeliefProvenance(entry) ? [entry] : []
   );
 }
