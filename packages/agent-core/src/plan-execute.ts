@@ -36,7 +36,7 @@ export const PLAN_RESPONSE_SCHEMA = {
     },
     required: ["tool"]
   }
-} as const;
+} satisfies JsonObject;
 
 export interface PlanValidationError {
   readonly stepIndex: number;

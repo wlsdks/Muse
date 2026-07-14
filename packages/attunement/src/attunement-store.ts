@@ -218,7 +218,14 @@ function parseState(value: unknown): AttunementState {
     || value.nextPolicyVersion < 1) {
     throw new AttunementStoreError("attunement store is invalid; refusing to guess or overwrite it");
   }
-  const state = value as unknown as AttunementState;
+  const state: AttunementState = {
+    deliveries: value.deliveries,
+    nextPolicyVersion: value.nextPolicyVersion,
+    resetReceipts: value.resetReceipts,
+    schemaVersion: value.schemaVersion,
+    threads: value.threads,
+    undoResetReceipts: value.undoResetReceipts
+  };
   validateStateRelations(state);
   return state;
 }

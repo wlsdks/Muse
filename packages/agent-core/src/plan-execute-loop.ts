@@ -9,7 +9,6 @@
  */
 
 import { buildPlanningSystemPrompt } from "@muse/prompts";
-import type { JsonObject } from "@muse/shared";
 import type {
   ModelProvider,
   ModelRequest,
@@ -410,7 +409,7 @@ async function generatePlan(
     ],
     // Constrain the plan to the schema where the provider supports it (Ollama);
     // parsePlan/extractJsonArray below stays the fallback for others.
-    responseFormat: PLAN_RESPONSE_SCHEMA as unknown as JsonObject,
+    responseFormat: PLAN_RESPONSE_SCHEMA,
     tools: []
   };
 
