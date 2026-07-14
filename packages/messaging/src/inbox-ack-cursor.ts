@@ -43,12 +43,13 @@ export async function readAckCursor(file: string): Promise<ReadonlySet<string>> 
 // exactly the duplicate this cursor exists to prevent). Per-file mutation
 // queue + randomUUID tmp, mirrored from `appendReplyCursor`.
 const appendQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 
 export async function appendAckCursor(file: string, newKeys: readonly string[]): Promise<void> {
   if (newKeys.length === 0) {
     return;
   }
-  const prior = appendQueues.get(file) ?? Promise.resolve();
+  const prior = appendQueues.get(file) ?? resolvedPromise();
   const op = async (): Promise<void> => {
     const merged = new Set(await readAckCursor(file));
     for (const key of newKeys) {

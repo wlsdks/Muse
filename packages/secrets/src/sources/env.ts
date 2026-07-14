@@ -17,9 +17,9 @@ export function createEnvSource(env: NodeJS.ProcessEnv = process.env): SecretSou
   return {
     id: "env",
     local: true,
-    get(ref: SecretRef): Promise<string | undefined> {
+    async get(ref: SecretRef): Promise<string | undefined> {
       const value = env[envVarNameFor(ref.name)];
-      return Promise.resolve(value !== undefined && value.length > 0 ? value : undefined);
+      return value !== undefined && value.length > 0 ? value : undefined;
     }
   };
 }

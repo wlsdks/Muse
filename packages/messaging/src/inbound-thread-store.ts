@@ -61,6 +61,7 @@ export async function readThread(file: string, key: string): Promise<readonly Th
 }
 
 const writeQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 
 export async function appendThreadTurns(
   file: string,
@@ -70,7 +71,7 @@ export async function appendThreadTurns(
   if (turns.length === 0) {
     return;
   }
-  const prior = writeQueues.get(file) ?? Promise.resolve();
+  const prior = writeQueues.get(file) ?? resolvedPromise();
   const next = prior.then(
     () => doAppendThreadTurns(file, key, turns),
     () => doAppendThreadTurns(file, key, turns)

@@ -113,7 +113,7 @@ export function createFindItemsTool(deps: FindItemsToolDeps): MuseTool {
     },
     execute: async (args): Promise<JsonObject> => {
       const query = typeof args["query"] === "string" ? args["query"] : "";
-      const hits = findAcrossDomains(await Promise.resolve(deps.find()), query);
+      const hits = findAcrossDomains(await deps.find(), query);
       return { hits: hits.map((h) => ({ ...h })), total: hits.length };
     }
   };

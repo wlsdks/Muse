@@ -222,6 +222,7 @@ async function writeActionLog(file: string, entries: readonly ActionLogEntry[], 
 // append (multi-channel actions / daemons) must NOT lose an entry to a
 // last-writer-wins read-modify-write. Serialise the whole append per file.
 const appendQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 
 /** Mask any registered secret value in the entry's free-text fields. No-op when nothing is registered. */
 function redactActionLogEntry(entry: ActionLogEntry): ActionLogEntry {
@@ -243,7 +244,7 @@ export async function appendActionLog(file: string, entry: ActionLogEntry, env: 
   // never holds a credential in clear. Done here (the single append seam) so a
   // value seen once is masked in every action-log write.
   const redacted = redactActionLogEntry(entry);
-  const prior = appendQueues.get(file) ?? Promise.resolve();
+  const prior = appendQueues.get(file) ?? resolvedPromise();
   const op = async (): Promise<void> => {
     const existing = await readActionLog(file, env);
     // Seal the new entry to the chain tip — its prevHash binds it to all prior

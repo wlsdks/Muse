@@ -42,7 +42,7 @@ export function createBackgroundListTool(deps: BackgroundListToolDeps): MuseTool
     },
     execute: async (args): Promise<JsonObject> => {
       const statusFilter = typeof args["status"] === "string" ? args["status"] : undefined;
-      const all = await Promise.resolve(deps.processes());
+      const all = await deps.processes();
       const selected = statusFilter ? all.filter((record) => record.status === statusFilter) : all;
       return {
         count: selected.length,

@@ -159,6 +159,8 @@ function legacyDefaultEntry(data: StoredFile, userId: string): StoredMemory | un
   return data.users["default"];
 }
 
+const resolvedPromise = async (): Promise<unknown> => undefined;
+
 export class FileUserMemoryStore implements UserMemoryStore {
   private static readonly writeQueues = new Map<string, Promise<unknown>>();
   private readonly file: string;
@@ -302,7 +304,7 @@ export class FileUserMemoryStore implements UserMemoryStore {
   }
 
   private async serializeWrite<T>(fn: () => Promise<T>): Promise<T> {
-    const prior = FileUserMemoryStore.writeQueues.get(this.file) ?? Promise.resolve();
+    const prior = FileUserMemoryStore.writeQueues.get(this.file) ?? resolvedPromise();
     const next = prior.then(fn, fn);
     FileUserMemoryStore.writeQueues.set(this.file, next.catch(() => undefined));
     return next;

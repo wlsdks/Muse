@@ -46,7 +46,7 @@ export function createRecentActionsTool(deps: RecentActionsToolDeps): MuseTool {
       const raw = args["limit"];
       const limit = typeof raw === "number" && Number.isFinite(raw) && raw >= 1 ? Math.min(100, Math.trunc(raw)) : 20;
       const resultFilter = typeof args["result"] === "string" ? args["result"] : undefined;
-      const all = await Promise.resolve(deps.actions());
+      const all = await deps.actions();
       // Filter by outcome BEFORE capping to `limit` — so a refusal/failure still
       // surfaces for "did you refuse anything?" even when it is older than the
       // most-recent window (limit-then-filter would wrongly answer "nothing").

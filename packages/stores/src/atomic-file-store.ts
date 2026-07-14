@@ -104,6 +104,7 @@ export async function atomicWriteFile(file: string, contents: string, options: A
 }
 
 const mutationQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 
 /**
  * Serialise a read-modify-write `op` against `file` so concurrent callers run
@@ -112,7 +113,7 @@ const mutationQueues = new Map<string, Promise<unknown>>();
  * rejection for sequencing while still rejecting the returned promise.
  */
 export async function withFileMutationQueue<T>(file: string, op: () => Promise<T>): Promise<T> {
-  const prior = mutationQueues.get(file) ?? Promise.resolve();
+  const prior = mutationQueues.get(file) ?? resolvedPromise();
   const next = prior.then(op, op);
   mutationQueues.set(file, next.then(() => undefined, () => undefined));
   return next;

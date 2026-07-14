@@ -33,7 +33,7 @@ export function createCachingEmbedder(
     if (hit) {
       return hit;
     }
-    const pending = Promise.resolve().then(() => embed(text));
+    const pending = (async () => embed(text))();
     pending.catch(() => cache.delete(text));
     cache.set(text, pending);
     if (cache.size > maxEntries) {

@@ -126,7 +126,7 @@ export function createWeekAgendaTool(deps: WeekAgendaToolDeps): MuseTool {
       const rawDays = args["days"];
       const days = typeof rawDays === "number" && Number.isFinite(rawDays) && rawDays >= 1 ? Math.min(14, Math.trunc(rawDays)) : 7;
       const now = deps.now ? deps.now() : new Date();
-      const week = groupWeekAgenda(await Promise.resolve(deps.weekInput()), now, days);
+      const week = groupWeekAgenda(await deps.weekInput(), now, days);
       return {
         days,
         week: week.map((d) => ({ items: [...d.lines], label: d.label }))

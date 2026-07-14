@@ -54,7 +54,7 @@ export function createBrowsingSearchTool(deps: BrowsingSearchToolDeps): MuseTool
         return { count: 0, found: false, hits: [], reason: "query is required (e.g. 'rust ownership')" };
       }
       const needle = query.toLowerCase();
-      const visits = await Promise.resolve(deps.browsingVisits());
+      const visits = await deps.browsingVisits();
       const hits = visits
         .filter((v) => `${v.title} ${v.url}`.toLowerCase().includes(needle))
         .slice(0, limit)

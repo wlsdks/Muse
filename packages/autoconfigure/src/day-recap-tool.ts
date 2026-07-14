@@ -89,7 +89,7 @@ export function createDayRecapTool(deps: DayRecapToolDeps): MuseTool {
       risk: "read"
     },
     execute: async (): Promise<JsonObject> => {
-      const recap = composeDayRecap(await Promise.resolve(deps.recapInput()));
+      const recap = composeDayRecap(await deps.recapInput());
       return { accomplished: [...recap.accomplished], slipping: [...recap.slipping] };
     }
   };

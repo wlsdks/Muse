@@ -65,7 +65,7 @@ export async function loadChatPersonaSnapshot(input: {
   const userId = `${input.providerId}:${input.source}`;
   let memory: UserMemory | undefined;
   try {
-    memory = await Promise.resolve(input.userMemoryStore.findByUserId(userId));
+    memory = await input.userMemoryStore.findByUserId(userId);
   } catch {
     return null;
   }

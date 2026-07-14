@@ -77,9 +77,9 @@ export function createRememberFactTool(options: { readonly store: RememberFactSt
       }
       const slug = normalizeMemoryKey(key);
       if (kind === "preference") {
-        await Promise.resolve(options.store.upsertPreference(userId, slug, value));
+        await options.store.upsertPreference(userId, slug, value);
       } else {
-        await Promise.resolve(options.store.upsertFact(userId, slug, value));
+        await options.store.upsertFact(userId, slug, value);
       }
       return { kind, remembered: { [slug]: value } };
     }

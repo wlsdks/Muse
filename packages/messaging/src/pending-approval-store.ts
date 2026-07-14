@@ -111,8 +111,9 @@ async function writePendingApprovals(file: string, pending: readonly PendingAppr
 // approval — i.e. a refused action lost). Serialising the WHOLE op per file
 // makes the store lossless under concurrency, mirroring the inbox write-queue.
 const mutationQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 function serializePerFile<T>(file: string, op: () => Promise<T>): Promise<T> {
-  const prior = mutationQueues.get(file) ?? Promise.resolve();
+  const prior = mutationQueues.get(file) ?? resolvedPromise();
   const next = prior.then(op, op);
   mutationQueues.set(file, next.then(() => undefined, () => undefined));
   return next;

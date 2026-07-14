@@ -123,7 +123,7 @@ export function createTodayBriefTool(deps: TodayBriefToolDeps): MuseTool {
       const rawHours = args["lookaheadHours"];
       const lookaheadHours = typeof rawHours === "number" && Number.isFinite(rawHours) && rawHours >= 1 ? Math.min(24, Math.trunc(rawHours)) : undefined;
       const now = deps.now ? deps.now() : new Date();
-      const brief = composeTodayBrief(await Promise.resolve(deps.todayInput()), now, lookaheadHours);
+      const brief = composeTodayBrief(await deps.todayInput(), now, lookaheadHours);
       return { overdue: [...brief.overdue], today: [...brief.today] };
     }
   };

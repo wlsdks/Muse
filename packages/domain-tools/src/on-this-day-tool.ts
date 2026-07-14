@@ -140,7 +140,7 @@ export function createOnThisDayTool(deps: OnThisDayToolDeps): MuseTool {
     execute: async (args): Promise<JsonObject> => {
       const raw = args["windowDays"];
       const windowDays = typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? Math.min(7, Math.trunc(raw)) : 0;
-      const notes = await Promise.resolve(deps.datedNotes());
+      const notes = await deps.datedNotes();
       const now = deps.now ? deps.now() : new Date();
       const hits = selectOnThisDay(notes, now, { windowDays });
       return {

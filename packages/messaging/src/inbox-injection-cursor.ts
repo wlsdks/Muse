@@ -140,8 +140,9 @@ async function writePersisted(file: string, byUser: PersistedByUser): Promise<vo
 // Serialising the WHOLE op per file makes the cursor lossless under concurrency,
 // mirroring the pending-approval store.
 const mutationQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 function serializePerFile<T>(file: string, op: () => Promise<T>): Promise<T> {
-  const prior = mutationQueues.get(file) ?? Promise.resolve();
+  const prior = mutationQueues.get(file) ?? resolvedPromise();
   const next = prior.then(op, op);
   mutationQueues.set(file, next.then(() => undefined, () => undefined));
   return next;

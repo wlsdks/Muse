@@ -48,12 +48,13 @@ export async function readReplyCursor(file: string): Promise<ReadonlySet<string>
 // same-process concurrent writers shared the identical tmp path (interleaved
 // write / ENOENT rename). Fix: a per-file mutation queue + a randomUUID tmp.
 const appendQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 
 export async function appendReplyCursor(file: string, newKeys: readonly string[]): Promise<void> {
   if (newKeys.length === 0) {
     return;
   }
-  const prior = appendQueues.get(file) ?? Promise.resolve();
+  const prior = appendQueues.get(file) ?? resolvedPromise();
   const op = async (): Promise<void> => {
     const merged = new Set(await readReplyCursor(file));
     for (const key of newKeys) {

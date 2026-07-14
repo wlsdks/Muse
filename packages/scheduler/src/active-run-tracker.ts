@@ -19,7 +19,7 @@ export class ActiveRunTracker {
   /** Register an in-flight run; it is auto-removed when it settles. Returns the same promise. */
   track<T>(run: Promise<T>): Promise<T> {
     this.active.add(run);
-    void Promise.resolve(run)
+    void run
       .catch(() => undefined)
       .finally(() => {
         this.active.delete(run);

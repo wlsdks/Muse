@@ -319,7 +319,7 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
         // exactly what changed this turn. Only when a subscriber is wired —
         // otherwise skip the extra reads entirely.
         const historyBefore = options.onLearned
-          ? (await Promise.resolve(options.store.findByUserId(userId)))?.factHistory ?? []
+          ? (await options.store.findByUserId(userId))?.factHistory ?? []
           : undefined;
         await persist(options.store, userId, groundedPayload, {
           maxFacts,
@@ -331,7 +331,7 @@ export function createUserMemoryAutoExtractHook(options: UserMemoryAutoExtractOp
         }, provenance);
         if (options.onLearned && historyBefore !== undefined) {
           try {
-            const historyAfter = (await Promise.resolve(options.store.findByUserId(userId)))?.factHistory ?? [];
+            const historyAfter = (await options.store.findByUserId(userId))?.factHistory ?? [];
             const learned = selectNewSupersessions(historyBefore, historyAfter);
             if (learned.length > 0) {
               options.onLearned(learned);
@@ -652,14 +652,14 @@ async function persist(
   // (ADD/UPDATE/NOOP/DELETE) instead of blind-upserting — NOOP skips the
   // redundant write + provenance on a re-confirmation, DELETE drops a key the
   // extractor reported as a no-value/retraction token rather than storing junk.
-  const existing = await Promise.resolve(store.findByUserId(userId)).catch(() => undefined);
+  const existing = await store.findByUserId(userId).catch(() => undefined);
   const forget = store.forget?.bind(store);
   // Forgotten-fact suppression: a key the user explicitly retracted (`forget`) must NOT
   // be resurfaced by the auto-extractor — an inference overriding an explicit user
   // retraction is the auto-vs-user authority inversion (source: user > auto). A later
   // deliberate re-`set` clears the marker (keysWithActiveRetraction). Fail-open.
   const retractedKeys: ReadonlySet<string> = provenance
-    ? keysWithActiveRetraction(await Promise.resolve(provenance.store.query(userId)).catch(() => []))
+    ? keysWithActiveRetraction(await provenance.store.query(userId).catch(() => []))
     : new Set<string>();
   const applyOp = (kind: "fact" | "preference", key: string, value: string, current: string | undefined): void => {
     const op = classifyMemoryOperation(current, value);
@@ -669,7 +669,7 @@ async function persist(
     if (op === "delete") {
       // Scope the retraction to THIS namespace — a fact retraction must not also
       // wipe a same-key preference (and vice versa).
-      if (forget) writes.push(safeWrite(Promise.resolve(forget(userId, key, kind))));
+      if (forget) writes.push(safeWrite(forget(userId, key, kind)));
       return;
     }
     if (retractedKeys.has(normalizeMemoryKey(key))) {

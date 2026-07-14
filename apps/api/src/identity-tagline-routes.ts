@@ -89,7 +89,7 @@ export function registerIdentityTaglineRoutes(
 
     try {
       const userId = query?.userId?.trim() || options.defaultUserId || "me";
-      const memory = await Promise.resolve(options.userMemoryStore?.findByUserId(userId)).catch(() => undefined);
+      const memory = options.userMemoryStore ? await options.userMemoryStore.findByUserId(userId).catch(() => undefined) : undefined;
       const atoms = gatherIdentityFacts(memory);
 
       const state = await readState(stateFile);

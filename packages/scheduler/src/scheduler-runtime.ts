@@ -160,8 +160,8 @@ export class ScheduledJobDispatcher {
 
   private dispatchByType(job: ScheduledJob): Promise<string> {
     return job.jobType === "mcp_tool"
-      ? Promise.resolve(this.mcpInvoker.invoke(job))
-      : Promise.resolve(this.agentExecutor.execute(job));
+      ? this.mcpInvoker.invoke(job)
+      : this.agentExecutor.execute(job);
   }
 }
 

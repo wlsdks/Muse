@@ -29,9 +29,13 @@ export function warmUpModelIfConfigured(
   }
   const provider = options.modelProvider;
   const model = options.defaultModel;
-  void Promise.resolve()
-    .then(() => provider.generate({ maxOutputTokens: 1, messages: [{ content: "ok", role: "user" }], model }))
-    .catch(() => {
-      /* warmup is best-effort — never block or fail server start */
+  void (async (): Promise<void> => {
+    await provider.generate({
+      messages: [{ content: "ok", role: "user" }],
+      maxOutputTokens: 1,
+      model
     });
+  })().catch(() => {
+    /* warmup is best-effort — never block or fail server start */
+  });
 }

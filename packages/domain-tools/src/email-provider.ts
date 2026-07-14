@@ -124,8 +124,10 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
     private readonly retryOptions: RetryOptions = {}
   ) {}
 
-  private resolveAccessToken(): Promise<string> {
-    return typeof this.accessTokenSource === "function" ? this.accessTokenSource() : Promise.resolve(this.accessTokenSource);
+  private async resolveAccessToken(): Promise<string> {
+    return typeof this.accessTokenSource === "function"
+      ? await this.accessTokenSource()
+      : this.accessTokenSource;
   }
 
   async sendEmail(to: string, subject: string, body: string): Promise<string | undefined> {

@@ -41,7 +41,7 @@ export function createContactsFindTool(deps: ContactsFindToolDeps): MuseTool {
       if (name.length === 0) {
         return { found: false, reason: "name is required (e.g. Bob)" };
       }
-      const resolution = resolveContact(await Promise.resolve(deps.contacts()), name);
+      const resolution = resolveContact(await deps.contacts(), name);
       if (resolution.status === "resolved") {
         const c = resolution.contact;
         return {
@@ -198,7 +198,7 @@ export function createUpcomingBirthdaysTool(deps: UpcomingBirthdaysToolDeps): Mu
     execute: async (args): Promise<JsonObject> => {
       const raw = args["withinDays"];
       const withinDays = typeof raw === "number" && Number.isFinite(raw) && raw >= 1 ? Math.min(365, Math.trunc(raw)) : 30;
-      const contacts = await Promise.resolve(deps.contacts());
+      const contacts = await deps.contacts();
       const now = deps.now ? deps.now() : new Date();
       const upcoming = resolveUpcomingBirthdays(contacts, { now, withinDays });
       return {
@@ -238,7 +238,7 @@ export function createContactsRemoveTool(deps: ContactsRemoveToolDeps): MuseTool
       if (name.length === 0) {
         return { removed: false, reason: "name is required" };
       }
-      const resolution = resolveContact(await Promise.resolve(deps.contacts()), name);
+      const resolution = resolveContact(await deps.contacts(), name);
       if (resolution.status === "ambiguous") {
         return { ambiguous: true, candidates: resolution.matches.map((m) => m.name), removed: false };
       }

@@ -80,7 +80,7 @@ export function registerDoctorRoutes(server: FastifyInstance, gate: DoctorRoutes
     const connectedChannels = PROBE_CHANNELS.filter((id) => gate.messaging?.has(id) ?? false);
     const [ollamaReachable, unrepliedCount] = await Promise.all([
       probeOllama(process.env),
-      gate.telegramInboxFile ? countUnreplied(gate.telegramInboxFile) : Promise.resolve(0)
+      gate.telegramInboxFile ? countUnreplied(gate.telegramInboxFile) : 0
     ]);
     return {
       checks: computeDoctorChecks({

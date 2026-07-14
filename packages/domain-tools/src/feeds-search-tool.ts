@@ -56,7 +56,7 @@ export function createFeedsSearchTool(deps: FeedsSearchToolDeps): MuseTool {
         return { count: 0, found: false, hits: [], reason: "query is required (e.g. 'Mars mission')" };
       }
       const needle = query.toLowerCase();
-      const entries = await Promise.resolve(deps.feedEntries());
+      const entries = await deps.feedEntries();
       const hits = entries
         .filter((e) => `${e.title} ${e.summary}`.toLowerCase().includes(needle))
         .slice(0, limit)

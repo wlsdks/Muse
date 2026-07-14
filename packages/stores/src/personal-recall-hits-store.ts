@@ -110,6 +110,7 @@ export async function writeRecallHits(file: string, records: readonly RecallHitR
 // the whole read-modify-write per file (same posture as action-log /
 // pending-approval).
 const recordQueues = new Map<string, Promise<unknown>>();
+const resolvedPromise = async (): Promise<unknown> => undefined;
 
 /**
  * Read → increment-each → write, serialised per file. `entries` may repeat
@@ -124,7 +125,7 @@ export async function recordRecallHits(file: string, entries: readonly RecallHit
     byInputKey.set(key, entry); // de-dupe within a single recall; latest summary wins
   }
   if (byInputKey.size === 0) return;
-  const prior = recordQueues.get(file) ?? Promise.resolve();
+  const prior = recordQueues.get(file) ?? resolvedPromise();
   const op = async (): Promise<void> => {
     const existing = await readRecallHits(file);
     const byKey = new Map(existing.map((record) => [record.key, record]));

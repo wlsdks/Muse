@@ -33,7 +33,7 @@ export function createObjectivesListTool(deps: ObjectivesListToolDeps): MuseTool
       risk: "read"
     },
     execute: async (): Promise<JsonObject> => {
-      const all = await Promise.resolve(deps.objectives());
+      const all = await deps.objectives();
       const live = all.filter((o) => o.status === "active" || o.status === "escalated");
       return {
         count: live.length,

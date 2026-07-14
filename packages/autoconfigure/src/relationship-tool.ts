@@ -89,7 +89,7 @@ export function createOverdueContactsTool(deps: OverdueContactsToolDeps): MuseTo
       const nowMs = (deps.now ? deps.now() : new Date()).getTime();
       const rawLimit = args["limit"];
       const maxResults = typeof rawLimit === "number" && Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.min(50, Math.trunc(rawLimit)) : undefined;
-      const interactions = await Promise.resolve(deps.interactions());
+      const interactions = await deps.interactions();
       const overdue = overdueContacts(interactions, { nowMs, ...(maxResults ? { maxResults } : {}) });
       return {
         count: overdue.length,
