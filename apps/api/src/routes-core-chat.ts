@@ -7,6 +7,7 @@ import { serverBuildId, serverStartedAtIso } from "./build-info.js";
 import { denyChatApproval } from "./chat-approval-deny.js";
 import { executeChatApproval } from "./chat-approval-execute.js";
 import { ChatRateLimiter, clientKeyFromRequest } from "./chat-rate-limiter.js";
+import { readRouteParam } from "./compat-parsers.js";
 import {
   createOpenApiDocument,
   getAuthIdentity,
@@ -80,8 +81,14 @@ export function registerChatRoutes(server: FastifyInstance, options: ServerOptio
   // execute nothing; a successful run is cleared so a replay 404s.
   server.post("/api/chat/approvals/:id/approve", async (request, reply) => {
     if (!enforce(request, reply)) return reply;
-    const id = (request.params as { id?: string }).id ?? "";
+    const id = readRouteParam(request, "id");
     const requestUserId = getAuthIdentity(request)?.userId;
+    if (!id) {
+      return reply.status(400).send({
+        code: "INVALID_APPROVAL_ID",
+        message: "Approval id is required"
+      });
+    }
     const result = await executeChatApproval({
       id,
       pendingFile: resolvePendingApprovalsFile(options.env ?? {}),
