@@ -194,7 +194,7 @@ export class LocalCalendarProvider implements CalendarProvider {
       try {
         decrypted = decryptCalendarEnvelope(parsed, this.env);
       } catch (error) {
-        throw new CalendarProviderError(this.id, "DECRYPT_FAILED", (error as Error).message, error);
+        throw new CalendarProviderError(this.id, "DECRYPT_FAILED", errorMessage(error), error);
       }
 
       try {
@@ -356,4 +356,8 @@ function isParsableDateString(value: unknown): value is string {
 
 function isFileNotFound(error: unknown): boolean {
   return Boolean(error) && typeof error === "object" && (error as { code?: string }).code === "ENOENT";
+}
+
+function errorMessage(value: unknown): string {
+  return value instanceof Error && value.message.trim().length > 0 ? value.message : "calendar operation failed";
 }
