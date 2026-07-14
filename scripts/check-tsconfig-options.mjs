@@ -5,6 +5,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 
 function loadJson(filePath) {
@@ -46,12 +47,12 @@ function isBaseAligned(extendsField) {
   return typeof extendsField === "string" && /tsconfig\.base\.json$/u.test(extendsField);
 }
 
-function isAllowedOverride(value) {
+function findDisallowedCompilerOptions(value) {
   const keys = Object.keys(value);
   return keys.filter((key) => !ALLOWED_OVERRIDES.has(key));
 }
 
-function findInvalid(baseValue, overrideValue) {
+function findBaseConflictKeys(baseValue, overrideValue) {
   return Object.entries(overrideValue).filter(([key, value]) => {
     return key in BASE_OPTIONS && JSON.stringify(value) !== JSON.stringify(baseValue[key]);
   }).map(([key]) => key);
@@ -69,13 +70,13 @@ function main() {
       problems.push(`${configPath}: missing/invalid extends -> tsconfig.base.json`);
     }
 
-    const unexpectedKeys = isAllowedOverride(compilerOptions);
+    const unexpectedKeys = findDisallowedCompilerOptions(compilerOptions);
     if (unexpectedKeys.length > 0) {
       problems.push(`${configPath}: unexpected compilerOptions overrides -> ${unexpectedKeys.join(", ")}`);
       continue;
     }
 
-    const invalidOverrides = findInvalid(BASE_OPTIONS, compilerOptions);
+    const invalidOverrides = findBaseConflictKeys(BASE_OPTIONS, compilerOptions);
     if (invalidOverrides.length > 0) {
       problems.push(`${configPath}: overrides conflict with tsconfig.base values -> ${invalidOverrides.join(", ")}`);
     }
@@ -98,6 +99,8 @@ function main() {
   console.log("✓ tsconfig alignment: all project configs extend base and keep option scope stable");
 }
 
-if (process.argv[1]) {
+export { collectConfigPaths, isBaseAligned, findDisallowedCompilerOptions, findBaseConflictKeys };
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main();
 }
