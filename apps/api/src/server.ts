@@ -203,8 +203,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     }
   });
   server.addContentTypeParser(/^multipart\/form-data/u, { parseAs: "buffer" }, (request, body, done) => {
+    if (!Buffer.isBuffer(body)) {
+      done(new Error("Invalid multipart body type"));
+      return;
+    }
     try {
-      done(null, parseMultipartBody(request.headers["content-type"], body as Buffer));
+      done(null, parseMultipartBody(request.headers["content-type"], body));
     } catch (error) {
       done(error instanceof Error ? error : new Error("Invalid multipart body"));
     }

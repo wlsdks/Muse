@@ -673,8 +673,15 @@ export function createProgram(io: ProgramIO = defaultIO): Command {
       effectiveArgv,
       parseOptions?.from ?? "node"
     );
+    const normalizedArgv = argv === undefined ? undefined : [...argv];
+    const normalizedParseOptions =
+      parseOptions === undefined
+        ? undefined
+        : {
+            from: parseOptions.from
+          };
     try {
-      return await originalParseAsync(argv as string[] | undefined, parseOptions as never);
+      return await originalParseAsync(normalizedArgv, normalizedParseOptions);
     } catch (error) {
       // The default-subcommand guard aborts via this sentinel AFTER writing its
       // own grounded guidance + setting exitCode; swallow it so the top-level
@@ -902,5 +909,4 @@ export function formatUnknownCommand(attempted: string, known: readonly string[]
   }
   return `${lines.join("\n")}\n`;
 }
-
 
