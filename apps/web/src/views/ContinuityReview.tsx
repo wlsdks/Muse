@@ -152,6 +152,11 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
       return queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] });
     }
   });
+  const unlink = useMutation({
+    mutationFn: ({ artifactId, artifactType, threadId }: { readonly artifactId: string; readonly artifactType: "task" | "note"; readonly threadId: string }) =>
+      client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/links/unlink`, { artifactId, artifactType }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
+  });
   const data = review.data;
 
   return (
@@ -220,7 +225,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                     </div>
                     <div className="row-meta" style={{ marginTop: 10 }}>{thread.policy.detail} · {thread.policy.nextStep} · {thread.policy.suppression}</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                      {thread.links.map((link) => <Badge key={`${link.providerId}:${link.artifactType}:${link.artifactId}:${link.role}`} tone="neutral">{link.artifactType}:{link.artifactId}</Badge>)}
+                      {thread.links.map((source) => source.providerId === "local" ? <Button key={`${source.providerId}:${source.artifactType}:${source.artifactId}:${source.role}`} disabled={unlink.isPending} size="sm" variant="ghost" onClick={() => unlink.mutate({ artifactId: source.artifactId, artifactType: source.artifactType as "task" | "note", threadId: thread.id })}>{t("continuity.unlink", { id: `${source.artifactType}:${source.artifactId}` })}</Button> : <Badge key={`${source.providerId}:${source.artifactType}:${source.artifactId}:${source.role}`} tone="neutral">{source.artifactType}:{source.artifactId}</Badge>)}
                     </div>
                     <LinkForm disabled={link.isPending} threadId={thread.id} onLink={(input) => link.mutate({ ...input, threadId: thread.id })} />
                       </>;
@@ -264,6 +269,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
             {undoReset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.undoResetError")}</p> : null}
             {link.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.linkError")}</p> : null}
             {continueThread.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.packError")}</p> : null}
+            {unlink.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.unlinkError")}</p> : null}
           </>
         ) : null}
       </AsyncBlock>

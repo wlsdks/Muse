@@ -1,4 +1,4 @@
-import { ARTIFACT_ROLES, ARTIFACT_TYPES, buildContinuityPack, computeContinuityEvaluation, createLocalArtifactValidator, createLocalExactArtifactResolver, createPersonalThread, linkArtifact, openContinuityDelivery, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS, undoThreadReset } from "@muse/attunement";
+import { ARTIFACT_ROLES, ARTIFACT_TYPES, buildContinuityPack, computeContinuityEvaluation, createLocalArtifactValidator, createLocalExactArtifactResolver, createPersonalThread, linkArtifact, openContinuityDelivery, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS, undoThreadReset, unlinkArtifact } from "@muse/attunement";
 import type { ContinuityOutcome } from "@muse/attunement";
 import type { FastifyInstance } from "fastify";
 
@@ -89,6 +89,14 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
       role: role as "context" | "next-step",
       threadId: request.params.threadId
     }, { validateArtifact: createLocalArtifactValidator({ notesDir: gate.notesDir, tasksFile: gate.tasksFile }) });
+  });
+
+  server.post<{ Params: { readonly threadId: string }; Body: { readonly artifactId?: unknown; readonly artifactType?: unknown } }>("/api/attunement/threads/:threadId/links/unlink", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
+    const { artifactId, artifactType } = request.body ?? {};
+    if (typeof artifactId !== "string" || artifactId.trim().length === 0) return reply.code(400).send({ errorMessage: "artifact id must be a non-empty string" });
+    if (artifactType !== "task" && artifactType !== "note") return reply.code(400).send({ errorMessage: "web unlinking supports local task or note sources only" });
+    return { removed: await unlinkArtifact(gate.attunementFile, { artifactId, artifactType, threadId: request.params.threadId }) };
   });
 
   server.post<{ Params: { readonly threadId: string } }>("/api/attunement/threads/:threadId/continue", async (request, reply) => {
