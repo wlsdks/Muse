@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -59,6 +60,21 @@ describe("oauth-store round-trips", () => {
     await saveTokens(dir, "beta", { access_token: "b", token_type: "Bearer" });
     expect((await loadTokens(dir, "alpha"))?.access_token).toBe("a");
     expect((await loadTokens(dir, "beta"))?.access_token).toBe("b");
+  });
+
+  it("preserves fields another process committed while this mutation waits for the file lock", async () => {
+    await saveTokens(dir, SERVER, TOKENS);
+    const file = oauthRecordPath(dir, SERVER);
+    writeFileSync(`${file}.lock`, "external writer", { flag: "wx" });
+    const localState = saveState(dir, SERVER, "local-state");
+    await sleep(300);
+    writeFileSync(file, JSON.stringify({ oauth: { codeVerifier: "external-verifier", tokens: TOKENS }, version: 1 }));
+    unlinkSync(`${file}.lock`);
+
+    await localState;
+    expect(await loadTokens(dir, SERVER)).toEqual(TOKENS);
+    expect(await loadCodeVerifier(dir, SERVER)).toBe("external-verifier");
+    expect(await loadState(dir, SERVER)).toBe("local-state");
   });
 
   it("writes the record file with 0600 permissions", async () => {

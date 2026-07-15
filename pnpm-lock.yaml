@@ -567,6 +567,9 @@ importers:
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared
+      '@muse/stores':
+        specifier: workspace:*
+        version: link:../stores
       '@muse/tools':
         specifier: workspace:*
         version: link:../tools
@@ -586,9 +589,6 @@ importers:
       '@muse/proactivity':
         specifier: workspace:*
         version: link:../proactivity
-      '@muse/stores':
-        specifier: workspace:*
-        version: link:../stores
 
   packages/mcp-shared:
     dependencies:

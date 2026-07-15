@@ -29,6 +29,7 @@ import {
   encryptCredentialEnvelope,
   isCredentialsFileEncryptedAtRest
 } from "@muse/shared";
+import { atomicWriteFile, withFileLock } from "@muse/stores";
 
 import { quarantineCorruptStore } from "./corrupt-quarantine.js";
 
@@ -169,7 +170,8 @@ export async function clearOAuth(
   env: NodeJS.ProcessEnv = process.env
 ): Promise<void> {
   if (scope === "all") {
-    await fs.rm(oauthRecordPath(dir, serverId), { force: true });
+    const file = oauthRecordPath(dir, serverId);
+    await withFileLock(file, () => fs.rm(file, { force: true }));
     return;
   }
   await mutate(dir, serverId, env, (record) => {
@@ -191,18 +193,18 @@ async function mutate(
   env: NodeJS.ProcessEnv,
   apply: (record: OAuthRecord) => OAuthRecord
 ): Promise<void> {
-  const current = await loadOAuthRecord(dir, serverId, env);
-  await writeRecord(dir, serverId, apply(current), env);
+  const file = oauthRecordPath(dir, serverId);
+  await withFileLock(file, async () => {
+    const current = await loadOAuthRecord(dir, serverId, env);
+    await writeRecord(file, apply(current), env);
+  });
 }
 
 async function writeRecord(
-  dir: string,
-  serverId: string,
+  file: string,
   record: OAuthRecord,
   env: NodeJS.ProcessEnv
 ): Promise<void> {
-  const file = oauthRecordPath(dir, serverId);
-  await fs.mkdir(dir, { recursive: true });
   const payload = `${JSON.stringify({ oauth: record, version: 1 } satisfies PersistedShape, null, 2)}\n`;
   const alreadyEncrypted = await isCredentialsFileEncryptedAtRest(file);
   const shouldEncrypt = credentialEncryptionEnabled(env) || alreadyEncrypted;
@@ -213,10 +215,7 @@ async function writeRecord(
     }
   }
   const content = shouldEncrypt ? `${JSON.stringify(encryptCredentialEnvelope(payload, env))}\n` : payload;
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-  await fs.writeFile(tmp, content, { encoding: "utf8", mode: 0o600 });
-  await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  await atomicWriteFile(file, content);
 }
 
 function isFileNotFound(error: unknown): boolean {
