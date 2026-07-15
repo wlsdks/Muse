@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseCadence } from "./cadence-parser.js";
+import { parseCadence, summarizeCadence } from "./cadence-parser.js";
 
 describe("parseCadence — deterministic KO+EN cadence → cron expression", () => {
   const cases: ReadonlyArray<[string, string]> = [
@@ -57,5 +57,34 @@ describe("parseCadence — deterministic KO+EN cadence → cron expression", () 
     expect((parseCadence("매일 밤 12시") as { cronExpression: string }).cronExpression).toBe("0 0 * * *");
     expect((parseCadence("매일 저녁 12시") as { cronExpression: string }).cronExpression).toBe("0 0 * * *");
     expect((parseCadence("매일 밤 11시") as { cronExpression: string }).cronExpression).toBe("0 23 * * *");
+  });
+});
+
+describe("summarizeCadence — reverse-summarize a resolved cron string for display (round-trips every parseCadence output)", () => {
+  it("round-trips every accepted-form example through parseCadence -> summarizeCadence", () => {
+    const roundTrip: ReadonlyArray<[string, ReturnType<typeof summarizeCadence>]> = [
+      ["매일 09:00", { hour: 9, kind: "daily", minute: 0 }],
+      ["매주 월요일 9시", { hour: 9, kind: "weekly", minute: 0, weekday: 1 }],
+      ["평일 9시", { hour: 9, kind: "weekdays", minute: 0 }],
+      ["매시간", { kind: "hourly" }],
+      ["30분마다", { kind: "interval", minutes: 30 }]
+    ];
+
+    for (const [cadence, expected] of roundTrip) {
+      const parsed = parseCadence(cadence);
+      expect(parsed).not.toBeInstanceOf(Error);
+      const summary = summarizeCadence((parsed as { cronExpression: string }).cronExpression);
+      expect(summary).toEqual(expected);
+    }
+  });
+
+  it("falls back to custom for a hand-written cron none of the accepted forms produce", () => {
+    expect(summarizeCadence("*/5 3 1 * *")).toEqual({ cronExpression: "*/5 3 1 * *", kind: "custom" });
+    expect(summarizeCadence("0 9 * * 6,0")).toEqual({ cronExpression: "0 9 * * 6,0", kind: "custom" });
+  });
+
+  it("falls back to custom for a malformed / wrong-field-count expression", () => {
+    expect(summarizeCadence("0 9 * *")).toEqual({ cronExpression: "0 9 * *", kind: "custom" });
+    expect(summarizeCadence("not a cron")).toEqual({ cronExpression: "not a cron", kind: "custom" });
   });
 });

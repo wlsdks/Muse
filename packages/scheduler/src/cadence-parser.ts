@@ -19,6 +19,65 @@ export interface CadenceParseResult {
   readonly cronExpression: string;
 }
 
+/**
+ * Structured summary of a resolved cron expression, for a caller that wants
+ * to render a localized human label instead of the raw cron string. Only
+ * recognizes the exact shapes `parseCadence` emits — anything else (a
+ * hand-written or legacy cron) is `"custom"`. This reads a cron string that
+ * already exists; it never parses raw user cadence text, so it is not a
+ * second cadence grammar.
+ */
+export type CadenceSummary =
+  | { readonly kind: "hourly" }
+  | { readonly kind: "interval"; readonly minutes: number }
+  | { readonly kind: "daily"; readonly hour: number; readonly minute: number }
+  | { readonly kind: "weekdays"; readonly hour: number; readonly minute: number }
+  | { readonly kind: "weekly"; readonly weekday: number; readonly hour: number; readonly minute: number }
+  | { readonly kind: "custom"; readonly cronExpression: string };
+
+export function summarizeCadence(cronExpression: string): CadenceSummary {
+  const fields = cronExpression.trim().split(/\s+/u);
+  const custom: CadenceSummary = { cronExpression, kind: "custom" };
+
+  if (fields.length !== 5) {
+    return custom;
+  }
+  const [minute, hour, day, month, weekday] = fields as [string, string, string, string, string];
+
+  if (minute === "0" && hour === "*" && day === "*" && month === "*" && weekday === "*") {
+    return { kind: "hourly" };
+  }
+
+  const intervalMatch = /^\*\/(\d{1,2})$/u.exec(minute);
+  if (intervalMatch && hour === "*" && day === "*" && month === "*" && weekday === "*") {
+    return { kind: "interval", minutes: Number(intervalMatch[1]) };
+  }
+
+  const minuteNum = Number(minute);
+  const hourNum = Number(hour);
+  const validTime =
+    /^\d{1,2}$/u.test(minute) &&
+    /^\d{1,2}$/u.test(hour) &&
+    minuteNum >= 0 &&
+    minuteNum <= 59 &&
+    hourNum >= 0 &&
+    hourNum <= 23;
+
+  if (validTime && day === "*" && month === "*") {
+    if (weekday === "*") {
+      return { hour: hourNum, kind: "daily", minute: minuteNum };
+    }
+    if (weekday === "1-5") {
+      return { hour: hourNum, kind: "weekdays", minute: minuteNum };
+    }
+    if (/^[0-6]$/u.test(weekday)) {
+      return { hour: hourNum, kind: "weekly", minute: minuteNum, weekday: Number(weekday) };
+    }
+  }
+
+  return custom;
+}
+
 const KO_WEEKDAYS: Readonly<Record<string, number>> = {
   "금요일": 5,
   "목요일": 4,

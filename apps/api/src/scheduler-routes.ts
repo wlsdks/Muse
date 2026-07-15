@@ -1,4 +1,6 @@
 import {
+  parseCadence,
+  summarizeCadence,
   SchedulerValidationError,
   type DynamicScheduler,
   type ScheduledJob,
@@ -272,6 +274,7 @@ function toScheduledJobResponse(job: ScheduledJob) {
     agentModel: job.agentModel ?? null,
     agentPrompt: job.agentPrompt ?? null,
     agentSystemPrompt: job.agentSystemPrompt ?? null,
+    cadenceSummary: summarizeCadence(job.cronExpression),
     createdAt: job.createdAt.getTime(),
     cronExpression: job.cronExpression,
     description: job.description ?? null,
@@ -340,13 +343,60 @@ function schedulerResultPreview(result: string | undefined, maxLength = 140): st
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+// Non-dev web-form shorthand: `{ prompt, cadence }` instead of the raw
+// `{ name, cronExpression, agentPrompt, jobType: "agent" }` shape. `cadence`
+// is ALWAYS routed through the same `parseCadence` the CLI's
+// `muse scheduler add --every` uses — never a second grammar — and an
+// unrecognized phrase surfaces `parseCadence`'s own accepted-forms message
+// verbatim rather than the generic "Invalid request".
+function resolveCadenceCronExpression(value: Record<string, unknown>): ParseResult<string> | undefined {
+  if (!hasOwn(value, "cadence")) {
+    return undefined;
+  }
+
+  if (typeof value.cadence !== "string" || value.cadence.trim().length === 0) {
+    return invalid("INVALID_SCHEDULED_JOB", "cadence must be a non-empty string");
+  }
+
+  const parsed = parseCadence(value.cadence);
+
+  if (parsed instanceof Error) {
+    return { error: errorResponse(parsed.message), ok: false };
+  }
+
+  return { ok: true, value: parsed.cronExpression };
+}
+
+function deriveJobNameFromPrompt(prompt: string): string {
+  const collapsed = prompt.replaceAll(/\s+/gu, " ").trim();
+  return collapsed.length <= 60 ? collapsed : `${collapsed.slice(0, 59).trimEnd()}…`;
+}
+
 function parseScheduledJobInput(value: unknown, existing?: ScheduledJob): ParseResult<ScheduledJobInput> {
   if (!isRecord(value)) {
     return invalid("INVALID_SCHEDULED_JOB", "Body must be an object");
   }
 
-  const name = readString(value, "name", existing?.name);
-  const cronExpression = readString(value, "cronExpression", existing?.cronExpression);
+  const cadenceCron = resolveCadenceCronExpression(value);
+
+  if (cadenceCron && !cadenceCron.ok) {
+    return cadenceCron;
+  }
+
+  const promptShorthand = readString(value, "prompt");
+  const agentPrompt = readNullableString(value, "agentPrompt", existing?.agentPrompt ?? promptShorthand);
+
+  let name = readString(value, "name", existing?.name);
+  if ((!name || name.trim().length === 0) && cadenceCron !== undefined) {
+    const source = agentPrompt ?? promptShorthand;
+    if (source) {
+      name = deriveJobNameFromPrompt(source);
+    }
+  }
+
+  const cronExpression = cadenceCron?.ok
+    ? cadenceCron.value
+    : readString(value, "cronExpression", existing?.cronExpression);
 
   if (!name || name.trim().length === 0 || !cronExpression || cronExpression.trim().length === 0) {
     return invalid("INVALID_SCHEDULED_JOB", "Body must include name and cronExpression strings");
@@ -375,13 +425,13 @@ function parseScheduledJobInput(value: unknown, existing?: ScheduledJob): ParseR
     value: {
       agentMaxToolCalls: readNullableNumber(value, "agentMaxToolCalls", existing?.agentMaxToolCalls),
       agentModel: readNullableString(value, "agentModel", existing?.agentModel),
-      agentPrompt: readNullableString(value, "agentPrompt", existing?.agentPrompt),
+      agentPrompt,
       agentSystemPrompt: readNullableString(value, "agentSystemPrompt", existing?.agentSystemPrompt),
       cronExpression,
       description: readNullableString(value, "description", existing?.description),
       enabled: readBoolean(value, "enabled", existing?.enabled),
       executionTimeoutMs: readNullableNumber(value, "executionTimeoutMs", existing?.executionTimeoutMs),
-      jobType: parsedType ?? existing?.jobType,
+      jobType: parsedType ?? existing?.jobType ?? (cadenceCron !== undefined ? "agent" : undefined),
       maxRetryCount: readNumber(value, "maxRetryCount", existing?.maxRetryCount),
       mcpServerName: readNullableString(value, "mcpServerName", existing?.mcpServerName),
       name,

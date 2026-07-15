@@ -223,7 +223,8 @@ export {
 
 export { defaultScheduledJobsFile, FileScheduledJobStore } from "./scheduler-file-store.js";
 
-export { parseCadence, CADENCE_ACCEPTED_FORMS } from "./cadence-parser.js";
+export { parseCadence, summarizeCadence, CADENCE_ACCEPTED_FORMS } from "./cadence-parser.js";
+export type { CadenceParseResult, CadenceSummary } from "./cadence-parser.js";
 
 export {
   defaultExecutionTimeoutMs,

@@ -22,6 +22,7 @@ import { MessagingView } from "../views/Messaging.js";
 import { NotesView } from "../views/Notes.js";
 import { PromptLab } from "../views/PromptLab.js";
 import { RemindersView } from "../views/Reminders.js";
+import { SchedulerView } from "../views/Scheduler.js";
 import { SettingsView } from "../views/Settings.js";
 import { TasksView } from "../views/Tasks.js";
 import { TodayView } from "../views/Today.js";
@@ -64,6 +65,7 @@ type ViewId =
   | "self-improvement"
   | "skills"
   | "prompt-lab"
+  | "scheduler"
   | "settings";
 type GroupKey = "group.workspace" | "group.knowledge" | "group.system";
 
@@ -99,6 +101,7 @@ export const NAV: readonly NavEntry[] = [
   { Component: SelfImprovementView, group: "group.system", icon: Icon.brain, id: "self-improvement", key: "w", labelKey: "nav.selfImprovement" },
   { Component: SkillsView, group: "group.system", icon: Icon.tool, id: "skills", key: "j", labelKey: "nav.skills" },
   { Component: PromptLab, group: "group.system", icon: Icon.tool, id: "prompt-lab", key: "f", labelKey: "nav.promptLab" },
+  { Component: SchedulerView, group: "group.system", icon: Icon.clock, id: "scheduler", key: "v", labelKey: "nav.scheduler" },
   { Component: SettingsView, group: "group.system", icon: Icon.settings, id: "settings", key: "s", labelKey: "nav.settings" }
 ];
 

@@ -333,6 +333,37 @@ export interface VetoesResponse {
   readonly total: number;
 }
 
+// Mirrors `@muse/scheduler`'s `CadenceSummary` (server computes it from the
+// job's persisted `cronExpression` via `summarizeCadence` — the web never
+// re-derives it). Duplicated as a plain JSON-shape type rather than an
+// import: `apps/web` intentionally has no `@muse/scheduler` dependency, it
+// only talks to the API server.
+export type CadenceSummary =
+  | { readonly kind: "hourly" }
+  | { readonly kind: "interval"; readonly minutes: number }
+  | { readonly kind: "daily"; readonly hour: number; readonly minute: number }
+  | { readonly kind: "weekdays"; readonly hour: number; readonly minute: number }
+  | { readonly kind: "weekly"; readonly weekday: number; readonly hour: number; readonly minute: number }
+  | { readonly kind: "custom"; readonly cronExpression: string };
+
+export interface SchedulerJobRow {
+  readonly id: string;
+  readonly name: string;
+  readonly agentPrompt: string | null;
+  readonly cronExpression: string;
+  readonly cadenceSummary: CadenceSummary;
+  readonly enabled: boolean;
+  readonly lastRunAt: number | null;
+  readonly lastStatus: string | null;
+  readonly createdAt: number;
+}
+export interface SchedulerJobsResponse {
+  readonly items: readonly SchedulerJobRow[];
+  readonly limit: number;
+  readonly offset: number;
+  readonly total: number;
+}
+
 interface WeaknessView {
   axis: string;
   topic: string;
