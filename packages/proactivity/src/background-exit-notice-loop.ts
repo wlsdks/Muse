@@ -194,7 +194,9 @@ export async function runDueBackgroundExitNotices(
         const messagingRegistry = options.messagingRegistry;
         const providerId = options.providerId;
         const destination = options.destination;
-        const deliver = (): Promise<void> => sendWithRetry(messagingRegistry, providerId, { destination, text }).then(() => undefined);
+        const deliver = async (): Promise<void> => {
+          await sendWithRetry(messagingRegistry, providerId, { destination, text });
+        };
         if (options.interruptionBudget) {
           const budget = options.interruptionBudget;
           const result = await applyInterruptionBudget({

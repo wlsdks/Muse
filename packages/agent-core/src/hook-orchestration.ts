@@ -41,16 +41,23 @@ interface InvokeHooksDeps {
 /** Default per-hook timeout — generous, so only a pathological hang is cut. */
 const DEFAULT_HOOK_TIMEOUT_MS = 30_000;
 
+async function awaitHook(invoke: () => Awaitable<void>): Promise<void> {
+  await invoke();
+}
+
+async function hookTimeoutError(timeoutMs: number, signal: AbortSignal): Promise<never> {
+  await sleepWithTimer(timeoutMs, undefined, { signal, ref: false });
+  throw new Error(`hook exceeded ${timeoutMs.toString()}ms timeout`);
+}
+
 async function invokeWithTimeout(invoke: () => Awaitable<void>, timeoutMs: number): Promise<void> {
-  const work = (async () => { await invoke(); })();
+  const work = awaitHook(invoke);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     await work;
     return;
   }
   const timeoutController = new AbortController();
-  const timeout = sleepWithTimer(timeoutMs, undefined, { signal: timeoutController.signal, ref: false }).then(() => {
-    throw new Error(`hook exceeded ${timeoutMs.toString()}ms timeout`);
-  });
+  const timeout = hookTimeoutError(timeoutMs, timeoutController.signal);
   try {
     // A late rejection of `work` after the timeout wins is still observed by
     // race's attached handler, so it never surfaces as an unhandled rejection.
