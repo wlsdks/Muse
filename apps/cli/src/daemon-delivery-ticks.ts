@@ -16,8 +16,9 @@
  * `packages/autoconfigure/src/runtime-assembly.ts`.
  */
 
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { adjustConfidenceFloor, sdtCriterion, summarizeNoticeResponses, synthesizePatternSuggestion } from "@muse/agent-core";
 import {
@@ -61,11 +62,14 @@ import { formatBirthdayBriefLine, isSchedulerPaused, queryContacts, readEpisodes
 import { backgroundStoreFile } from "./commands-background.js";
 import { checkinsFile } from "./commands-checkins.js";
 import type { FollowupModel } from "./commands-daemon-connections.js";
+import { readDaemonConfig } from "./commands-daemon-config.js";
 import { resolveReflectionsFile, runReflectionPass, shouldRunReflection } from "./commands-reflections.js";
+import { parseDailyBriefTime, shouldFireDailyBrief } from "./daily-brief.js";
 import { maybeAutoPrune } from "./local-state-retention.js";
 import { runSchedulerJobAndWait, type SchedulerJobOutcome } from "./scheduler-job-runner.js";
 import { isScheduledJobDue } from "./scheduler-tick-due.js";
 import { createIndexedProactiveInvestigator } from "./proactive-notes-recall.js";
+import { buildLocalTodayText } from "./today-local-sources.js";
 
 import type { TickRunState } from "./daemon-selflearn-ticks.js";
 
@@ -178,6 +182,73 @@ export function makeRemindersTick(deps: MakeRemindersTickDeps): () => Promise<vo
       }
     }
     stdout("\n");
+  };
+}
+
+export interface MakeDailyBriefTickDeps {
+  readonly env: NodeJS.ProcessEnv;
+  /** The daemon config file `muse setup briefing` writes — read LIVE every tick. */
+  readonly configFile: string;
+  readonly sidecarFile: string;
+  readonly destination: string;
+  readonly provider: string;
+  readonly messagingRegistry: MessagingProviderRegistry;
+  readonly stdout: (message: string) => void;
+  readonly now?: () => Date;
+  /**
+   * Test seam — inject the composer instead of the real on-disk `muse today`
+   * sources. Absent → `buildLocalTodayText`, the SAME deterministic composer
+   * `muse today --local` uses (no model provider anywhere in this path).
+   */
+  readonly composeBrief?: (env: NodeJS.ProcessEnv) => Promise<string>;
+}
+
+/**
+ * `muse setup briefing` — a fixed-time daily brief, distinct from
+ * `makeBriefingTick`'s SITUATIONAL digest above (imminent/lead-minutes
+ * driven). Fires ONCE at the user's chosen local HH:MM, deduped by
+ * calendar day via its own sidecar — restart-safe, same shape as
+ * `makeRecapTick` (daemon-selflearn-ticks.ts) at minute instead of hour
+ * granularity. Quiet hours + the interruption budget are EXEMPT: the user
+ * explicitly asked for this (the reminders/scheduler precedent — see
+ * `makeRemindersTick` / `makeSchedulerTick` above).
+ */
+export function makeDailyBriefTick(deps: MakeDailyBriefTickDeps): () => Promise<void> {
+  const { env: e, configFile, sidecarFile, destination, provider, messagingRegistry, stdout } = deps;
+  const now = deps.now ?? (() => new Date());
+  const compose = deps.composeBrief ?? ((env: NodeJS.ProcessEnv) => buildLocalTodayText(env as Record<string, string | undefined>, 24));
+  return async (): Promise<void> => {
+    const config = readDaemonConfig(configFile).dailyBrief;
+    if (!config?.enabled) {
+      return; // cheap no-op — no compose, no send, no sidecar touch
+    }
+    let parsedTime: { readonly hour: number; readonly minute: number };
+    try {
+      parsedTime = parseDailyBriefTime(config.time);
+    } catch {
+      stdout(`[${new Date().toISOString()}] daily-brief: invalid time '${config.time}' in config — run \`muse setup briefing\` to fix\n`);
+      return;
+    }
+    const nowDate = now();
+    let lastFiredISO: string | undefined;
+    try {
+      lastFiredISO = (JSON.parse(readFileSync(sidecarFile, "utf8")) as { lastFired?: string }).lastFired;
+    } catch { /* no sidecar yet ⇒ never fired */ }
+    if (!shouldFireDailyBrief(nowDate, lastFiredISO, parsedTime.hour, parsedTime.minute)) {
+      return;
+    }
+    try {
+      const text = await compose(e);
+      await messagingRegistry.send(provider, { destination, text });
+      // Mark sent ONLY after a successful send — a failed send is retried
+      // next tick, never marked (see AC3: no partial "sent but not delivered").
+      mkdirSync(dirname(sidecarFile), { recursive: true });
+      writeFileSync(sidecarFile, JSON.stringify({ lastFired: nowDate.toISOString() }), "utf8");
+      stdout(`[${nowDate.toISOString()}] daily-brief: delivered\n`);
+    } catch (cause) {
+      // Fail-soft — a send blip must never break the daemon; next tick retries.
+      stdout(`[${nowDate.toISOString()}] daily-brief: send failed (will retry next tick): ${cause instanceof Error ? cause.message : String(cause)}\n`);
+    }
   };
 }
 

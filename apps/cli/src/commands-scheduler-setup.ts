@@ -634,6 +634,14 @@ export function formatSetupStatusLines(snap: SetupStatusSnapshot): string[] {
   }
   pushNext(snap.remote.nextStep);
 
+  // daily brief (muse setup briefing — fixed-time morning digest)
+  if (snap.dailyBrief.enabled) {
+    push("ok", "daily brief", `enabled, ${snap.dailyBrief.time ?? "08:30"} local`);
+  } else {
+    push("info", "daily brief", "not set up");
+  }
+  pushNext(snap.dailyBrief.nextStep);
+
   // web search
   const ws = snap.webSearch;
   push(

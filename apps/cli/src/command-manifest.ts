@@ -883,6 +883,7 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     "argsTerm": "",
     "hasOptions": false,
     "subcommands": [
+      "briefing",
       "calendar",
       "cloud",
       "data",

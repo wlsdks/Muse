@@ -198,6 +198,7 @@ function baseSnap(): SetupStatusSnapshot {
       credentials: { file: "/c/credentials.json", status: "info" },
       local: { file: "/c/calendar.json", status: "info" }
     },
+    dailyBrief: { enabled: false, nextStep: "muse setup briefing", status: "info" },
     email: { source: "none", status: "info" },
     localOnly: { detail: "off (no cloud credentials configured)", enabled: false, status: "ok" },
     webEgress: { detail: "on", enabled: true, status: "ok" },
@@ -285,6 +286,22 @@ describe("formatSetupStatusLines — email/remote rows (R2-3)", () => {
     const out = formatSetupStatusLines(snap).join("\n");
     expect(out).toContain("remote — not found");
     expect(out).toContain("→ docs/guides/remote-access.md");
+  });
+});
+
+describe("formatSetupStatusLines — daily brief row (R2-3 pattern, muse setup briefing)", () => {
+  it("not set up points at `muse setup briefing`", () => {
+    const snap: SetupStatusSnapshot = { ...baseSnap() };
+    const out = formatSetupStatusLines(snap).join("\n");
+    expect(out).toContain("daily brief — not set up");
+    expect(out).toContain("→ muse setup briefing");
+  });
+
+  it("enabled renders its configured time, no next-step arrow", () => {
+    const snap: SetupStatusSnapshot = { ...baseSnap(), dailyBrief: { enabled: true, status: "ok", time: "07:15" } };
+    const out = formatSetupStatusLines(snap).join("\n");
+    expect(out).toContain("daily brief — enabled, 07:15 local");
+    expect(out).not.toContain("→ muse setup briefing");
   });
 });
 

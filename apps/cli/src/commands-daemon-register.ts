@@ -80,6 +80,7 @@ import {
   makeBackgroundExitNoticeTick,
   makeBriefingTick,
   makeCheckinsTick,
+  makeDailyBriefTick,
   makeFollowupTick,
   makePatternTick,
   makeProactiveTick,
@@ -355,7 +356,9 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const destination = (options.destination ?? e.MUSE_PROACTIVE_DESTINATION ?? fileConfig.destination ?? "@me").trim();
 
       if (options.init) {
-        writeDaemonConfig(configFile, { destination, provider });
+        // Preserve any `dailyBrief` block `muse setup briefing` already wrote —
+        // this write must not silently disable the daily brief.
+        writeDaemonConfig(configFile, { destination, provider, ...(fileConfig.dailyBrief ? { dailyBrief: fileConfig.dailyBrief } : {}) });
         io.stdout(`muse daemon config written to ${configFile}\n  provider=${provider}, destination=${destination}\n`);
         return;
       }
@@ -703,6 +706,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
             : "disabled (set MUSE_HOME_WATCH_CONFIG + HA creds)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : "disabled (set MUSE_BRIEFING_ENABLED)"}\n`);
+        io.stdout(`  daily-brief: ${fileConfig.dailyBrief?.enabled ? `enabled (daily, at ${fileConfig.dailyBrief.time} local)` : "disabled (run `muse setup briefing`)"}\n`);
         io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, false) && followupModel ? "enabled (distill + decay + consolidate)" : "disabled (set MUSE_SELFLEARN_ENABLED + a model)"}\n`);
         io.stdout(`  recap:      ${parseBoolean(e.MUSE_RECAP_ENABLED, false) ? `enabled (evening, after ${(e.MUSE_RECAP_HOUR ?? "21").toString()}:00)` : "disabled (set MUSE_RECAP_ENABLED)"}\n`);
         io.stdout(`  digest:     ${parseBoolean(e.MUSE_DIGEST_ENABLED, true) ? `enabled (daily, at ${(e.MUSE_DIGEST_HOUR ?? "18").toString()}:00 local)` : "disabled (set MUSE_DIGEST_ENABLED=false to keep off)"}\n`);
@@ -768,6 +772,22 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         messagingRegistry,
         provider,
         remindersFile,
+        stdout: io.stdout
+      });
+
+      // `muse setup briefing` — a fixed-time daily brief (config read LIVE
+      // from `configFile` each tick, so a wizard re-run takes effect without
+      // a daemon restart). Sidecar mirrors the recap tick's dedupe file.
+      const dailyBriefSidecar = e.MUSE_DAILY_BRIEF_SIDECAR_FILE?.trim()?.length
+        ? e.MUSE_DAILY_BRIEF_SIDECAR_FILE.trim()
+        : join(homedir(), ".muse", "daily-brief-fired.json");
+      const dailyBriefTick = makeDailyBriefTick({
+        configFile,
+        destination,
+        env: e,
+        messagingRegistry,
+        provider,
+        sidecarFile: dailyBriefSidecar,
         stdout: io.stdout
       });
 
@@ -1068,6 +1088,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await proactiveTick();
         await backgroundExitNoticeTick();
         await remindersTick();
+        await dailyBriefTick();
         await schedulerTick();
         await followupTick();
         await checkinsTick();

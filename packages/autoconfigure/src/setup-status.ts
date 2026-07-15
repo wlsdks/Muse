@@ -320,6 +320,14 @@ export interface SetupStatusSnapshot {
     readonly quietHours?: string;
     readonly nextStep?: string;
   };
+  /** `muse setup briefing`'s fixed-time daily brief (R2-3 status-row pattern). */
+  readonly dailyBrief: {
+    readonly status: "ok" | "info";
+    readonly enabled: boolean;
+    /** Local "HH:MM" when enabled. */
+    readonly time?: string;
+    readonly nextStep?: string;
+  };
   readonly actuators: ActuatorReadinessSnapshot;
   readonly localOnly: LocalOnlyStatusSnapshot;
   readonly webEgress: WebEgressStatusSnapshot;
@@ -590,6 +598,43 @@ export function resolveRemoteSetupStatus(tailscaleFound: boolean): SetupStatusSn
 }
 
 /**
+ * The daemon-config file `muse setup briefing` / `muse daemon --init` write
+ * (apps/cli's `resolveDaemonConfigFile`). autoconfigure can't import from
+ * apps/cli (dependency direction), so this small path-join is duplicated —
+ * same precedent as `readConfigDefaultModel`'s CLI-config path below.
+ */
+function resolveDaemonConfigFilePath(env: Readonly<Record<string, string | undefined>>): string {
+  const explicit = env.MUSE_DAEMON_CONFIG_FILE?.trim();
+  if (explicit && explicit.length > 0) return explicit;
+  const home = env.HOME?.trim() || homedir();
+  return pathJoin(home, ".config", "muse", "daemon.json");
+}
+
+/** Read only the `dailyBrief` block from the daemon config file — tolerant, never throws. */
+async function readDailyBriefConfig(file: string): Promise<{ readonly enabled: boolean; readonly time?: string } | undefined> {
+  try {
+    const raw = await fs.readFile(file, "utf8");
+    const parsed = JSON.parse(raw) as { dailyBrief?: unknown };
+    if (isRecord(parsed.dailyBrief)) {
+      const record = parsed.dailyBrief;
+      const time = typeof record.time === "string" && record.time.trim().length > 0 ? record.time.trim() : undefined;
+      return { enabled: record.enabled === true, ...(time ? { time } : {}) };
+    }
+  } catch {
+    // missing / malformed → not configured
+  }
+  return undefined;
+}
+
+/** Resolve the `dailyBrief` row for `muse setup` / `--json` from the daemon config file. */
+export function resolveDailyBriefSetupStatus(config: { readonly enabled: boolean; readonly time?: string } | undefined): SetupStatusSnapshot["dailyBrief"] {
+  if (config?.enabled) {
+    return { enabled: true, status: "ok", ...(config.time ? { time: config.time } : {}) };
+  }
+  return { enabled: false, nextStep: "muse setup briefing", status: "info" };
+}
+
+/**
  * Read the persisted `defaultModel` from the CLI config store
  * (`~/.config/muse/config.json`) — the value `muse setup local` / the
  * first-run wizard write. Setup status credits it exactly like the CLI
@@ -736,6 +781,7 @@ export async function collectSetupStatusJson(options: {
     ? { nextStep: "Gmail email/inbox is disabled while MUSE_LOCAL_ONLY=true", source: "none" as const, status: "info" as const }
     : resolveEmailSetupStatus(env, hasStoredGmailCredential, hasStoredImapCredential);
   const remoteStatus = resolveRemoteSetupStatus(detectTailscaleBinaryPresent(env));
+  const dailyBriefStatus = resolveDailyBriefSetupStatus(await readDailyBriefConfig(resolveDaemonConfigFilePath(env)));
 
   // User-memory auto-extract (default-on as of the recent flip).
   const autoExtractEnv = env.MUSE_USER_MEMORY_AUTO_EXTRACT?.trim().toLowerCase();
@@ -818,6 +864,7 @@ export async function collectSetupStatusJson(options: {
     },
     email: emailStatus,
     remote: remoteStatus,
+    dailyBrief: dailyBriefStatus,
     mcp: {
       externalServerCount: mcpCount,
       file: mcpFile,
