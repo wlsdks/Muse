@@ -1,12 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { AsyncBlock, Badge, Card, Stat } from "../components/ui.js";
+import { AsyncBlock, Badge, Button, Card, Stat } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 
 import type { ApiClient } from "../api/client.js";
 
 type Outcome = "used" | "adjusted" | "ignored" | "rejected";
 type Kind = "life" | "work";
+const OUTCOMES: readonly Outcome[] = ["used", "adjusted", "ignored", "rejected"];
 
 interface KindEvaluation {
   readonly automationGate: { readonly reasons: readonly string[]; readonly status: "hold" | "manual-only" };
@@ -69,9 +70,15 @@ function KindSummary({ kind, evaluation }: { readonly kind: Kind; readonly evalu
 /** Read-only review of explicit Continuity deliveries; it never resolves note bodies or changes outcomes. */
 export function ContinuityReviewView({ client }: { readonly client: ApiClient }) {
   const { locale, t } = useI18n();
+  const queryClient = useQueryClient();
   const review = useQuery({
     queryFn: () => client.get<ReviewResponse>("/api/attunement/review"),
     queryKey: ["attunement-review", client.baseUrl]
+  });
+  const outcome = useMutation({
+    mutationFn: ({ deliveryId, value }: { readonly deliveryId: string; readonly value: Outcome }) =>
+      client.post(`/api/attunement/deliveries/${encodeURIComponent(deliveryId)}/outcome`, { outcome: value }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
   });
   const data = review.data;
 
@@ -105,8 +112,19 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                   {delivery.evidenceRefs.map((ref) => <Badge key={`${ref.providerId}:${ref.artifactType}:${ref.artifactId}:${ref.role}`} tone="neutral">{ref.artifactType}:{ref.artifactId}</Badge>)}
                 </div>
                 {delivery.runId ? <div className="row-meta mono" style={{ marginTop: 10 }}>run {delivery.runId}</div> : null}
+                {!delivery.outcome ? (
+                  <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+                    <span className="row-meta">{t("continuity.recordOutcome")}</span>
+                    {OUTCOMES.map((value) => (
+                      <Button key={value} disabled={outcome.isPending} size="sm" variant="ghost" onClick={() => outcome.mutate({ deliveryId: delivery.id, value })}>
+                        {value}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
               </Card>
             ))}
+            {outcome.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.outcomeError")}</p> : null}
           </>
         ) : null}
       </AsyncBlock>

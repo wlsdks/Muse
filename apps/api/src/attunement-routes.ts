@@ -1,4 +1,5 @@
-import { computeContinuityEvaluation, readAttunementState } from "@muse/attunement";
+import { computeContinuityEvaluation, OUTCOMES, readAttunementState, recordContinuityOutcome } from "@muse/attunement";
+import type { ContinuityOutcome } from "@muse/attunement";
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
@@ -38,6 +39,16 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
         }),
       evaluation: computeContinuityEvaluation(state)
     };
+  });
+
+  server.post<{ Params: { readonly deliveryId: string }; Body: { readonly outcome?: unknown } }>("/api/attunement/deliveries/:deliveryId/outcome", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
+    const outcome = request.body?.outcome;
+    if (typeof outcome !== "string" || !OUTCOMES.includes(outcome as ContinuityOutcome)) {
+      return reply.code(400).send({ errorMessage: "outcome must be used, adjusted, ignored, or rejected" });
+    }
+    const result = await recordContinuityOutcome(gate.attunementFile, request.params.deliveryId, outcome as ContinuityOutcome);
+    return { applied: result.applied, delivery: result.delivery, policy: result.policy };
   });
 
   server.get<{ Params: { readonly runId: string } }>("/api/attunement/runs/:runId", async (request, reply) => {
