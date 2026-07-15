@@ -1,3 +1,5 @@
+import { withBestEffort } from "@muse/shared";
+
 import type { ModelProvider } from "@muse/model";
 
 export interface ModelWarmupOptions {
@@ -29,13 +31,9 @@ export function warmUpModelIfConfigured(
   }
   const provider = options.modelProvider;
   const model = options.defaultModel;
-  void (async (): Promise<void> => {
-    await provider.generate({
-      messages: [{ content: "ok", role: "user" }],
-      maxOutputTokens: 1,
-      model
-    });
-  })().catch(() => {
-    /* warmup is best-effort — never block or fail server start */
-  });
+  void withBestEffort(provider.generate({
+    messages: [{ content: "ok", role: "user" }],
+    maxOutputTokens: 1,
+    model
+  }), undefined);
 }

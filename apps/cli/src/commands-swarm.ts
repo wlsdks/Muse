@@ -11,7 +11,6 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
-
 import { buildDebateQuestion, buildGroundingReverifyPrompt, councilConsensusScore, debateProgressed, detectConformityFlips, hasCouncilConsensusSemantic, isA2AEnabled, parseGroundingReverifyJson, REVERIFY_RESPONSE_FORMAT, prepareOutbound, produceCouncilReasoning, produceGroundedCouncilReasoning, REVERIFY_SYSTEM_PROMPT, selectDissentingExclusions, synthesizeCouncilAnswer, type CouncilAnswer, type CouncilUtterance, type GroundingReverify } from "@muse/agent-core";
 import { AGENT_CARD_PATH, buildMuseAgentCard, createA2AHandler, loadPeerConfig, requestCouncilReasoning, sendToPeer, type A2APeer } from "@muse/a2a";
 import { createMuseRuntimeAssembly, resolveAuthoredSkillsDir } from "@muse/autoconfigure";
@@ -24,6 +23,7 @@ import { councilCorpusMatches, defaultEmbedModel, isCouncilGroundedMode } from "
 import { embed } from "./embed.js";
 import type { ProgramIO } from "./program.js";
 import { readRequestBody, waitForShutdownSignal } from "./async-promises.js";
+import { withBestEffort } from "./async-promises.js";
 
 function normalizeA2ARequestHeaders(headers: IncomingHttpHeaders): Readonly<Record<string, string | undefined>> {
   const normalized: Record<string, string | undefined> = {};
@@ -297,7 +297,7 @@ export function registerSwarmCommands(program: Command, io: ProgramIO): void {
       }
       let content: string | undefined;
       if (options.file) {
-        content = await readFile(options.file, "utf8").catch(() => undefined);
+        content = await withBestEffort(readFile(options.file, "utf8"), undefined);
         if (content === undefined) {
           io.stderr(`muse swarm share: cannot read --file '${options.file}'.\n`);
           process.exitCode = 1;
