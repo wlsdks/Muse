@@ -81,6 +81,7 @@
     "typecheck": "pnpm run typecheck:ts7-fast && pnpm --filter @muse/web typecheck",
     "typecheck:fast": "node scripts/run-tsc-fast.mjs typecheck",
     "typecheck:ts7-fast": "node scripts/run-tsc-fast.mjs typecheck",
+    "typecheck:ts7-single-thread": "node scripts/run-tsc-fast.mjs typecheck --single-threaded",
     "self-eval": "node scripts/self-eval.mjs",
     "self-eval:test": "node --test scripts/*.test.mjs",
     "status": "node scripts/build-status-dashboard.mjs",

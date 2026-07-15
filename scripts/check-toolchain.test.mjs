@@ -46,6 +46,7 @@ test("root scripts keep TS7-fast build/typecheck paths", () => {
   assert.equal(scripts.typecheck, "pnpm run typecheck:ts7-fast && pnpm --filter @muse/web typecheck");
   assert.equal(scripts.check, "pnpm run check:toolchain && pnpm build && pnpm test");
   assert.equal(scripts["typecheck:fast"], getTscFastCommand("typecheck"));
+  assert.equal(scripts["typecheck:ts7-single-thread"], getTscFastCommand("typecheck", { singleThreaded: true }));
   assert.equal(scripts["build:ts7-single-thread"], getTscFastCommand("build", { singleThreaded: true }));
 });
 
