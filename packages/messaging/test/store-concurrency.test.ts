@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { appendAckCursor, readAckCursor } from "../src/inbox-ack-cursor.js";
+import { advanceInboxInjectionCursor, readInboxInjectionCursor } from "../src/inbox-injection-cursor.js";
 import { appendReplyCursor, readReplyCursor } from "../src/inbox-reply-cursor.js";
 import { appendInbound, readInbox } from "../src/inbox-store.js";
 import { appendThreadTurns, readThread } from "../src/inbound-thread-store.js";
@@ -53,6 +54,20 @@ describe("delivery cursors under concurrency — no duplicate user-facing work",
     expect([...await readAckCursor(ackFile)].sort()).toEqual(["a", "b", "c"]);
     expect([...await readReplyCursor(replyFile)].sort()).toEqual(["r1", "r2", "r3"]);
     expect((await readThread(threadFile, "telegram:me")).map((turn) => turn.content).sort()).toEqual(["first", "second"]);
+  });
+});
+
+describe("inbox injection cursor under concurrency — no repeated prompt context", () => {
+  it("unions equal-timestamp message ids from concurrent advances", async () => {
+    const file = join(dir, "injection.json");
+    const iso = "2026-07-16T00:00:00.000Z";
+
+    await Promise.all([
+      advanceInboxInjectionCursor(file, { telegram: { ids: ["a"], iso } }, "u1"),
+      advanceInboxInjectionCursor(file, { telegram: { ids: ["b"], iso } }, "u1")
+    ]);
+
+    expect((await readInboxInjectionCursor(file, "u1")).telegram).toEqual({ ids: ["a", "b"], iso });
   });
 });
 
