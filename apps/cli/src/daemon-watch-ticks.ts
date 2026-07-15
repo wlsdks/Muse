@@ -160,15 +160,21 @@ export function makeConflictWatchTick(deps: MakeConflictWatchTickDeps): () => Pr
         { now, withinDays }
       );
       if (notices.length === 0) return;
-      let firedKeys: string[] = [];
+      const firedKeys: string[] = [];
+      const firedKeySet = new Set<string>();
       try {
         const parsed = JSON.parse(readFileSync(sidecarFile, "utf8"));
         const keys = isRecord(parsed) ? parsed.keys : undefined;
         if (Array.isArray(keys)) {
-          firedKeys = keys.filter((k): k is string => typeof k === "string");
+          for (const key of keys) {
+            if (typeof key === "string" && key.length > 0) {
+              firedKeys.push(key);
+              firedKeySet.add(key);
+            }
+          }
         }
       } catch { /* no sidecar yet ⇒ nothing fired */ }
-      const fresh = notices.filter((n) => !firedKeys.includes(n.key));
+      const fresh = notices.filter((n) => !firedKeySet.has(n.key));
       if (fresh.length === 0) return;
       const text = `Heads up — upcoming calendar conflict${fresh.length === 1 ? "" : "s"}:\n${fresh.map((n) => `• ${n.line}`).join("\n")}`;
       await messagingRegistry.send(provider, { destination, text });
