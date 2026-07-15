@@ -24,6 +24,8 @@ import { readFileSync } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
 import path from "node:path";
 
+import { withFileLock, withFileMutationQueue } from "./atomic-file-store.js";
+
 /**
  * The minimal I/O seam the store needs. `apps/cli`'s `ProgramIO` (required
  * `stderr`, optional `configDir` / `credentialKey`) satisfies this
@@ -104,6 +106,17 @@ export function credentialPath(io: CredentialStoreIO): string {
   return io.configDir ? path.join(io.configDir, "credentials.json") : defaultCredentialPath();
 }
 
+async function mutateCredentialStore(
+  io: CredentialStoreIO,
+  mutation: (store: CredentialStore) => CredentialStore
+): Promise<void> {
+  const filePath = credentialPath(io);
+  await withFileMutationQueue(filePath, () => withFileLock(filePath, async () => {
+    const current = await readCredentialStore(io, { startFreshIfUnreadable: true });
+    await writeCredentialStore(io, mutation(current));
+  }));
+}
+
 export async function readStoredToken(io: CredentialStoreIO, baseUrl: string): Promise<string | undefined> {
   try {
     return (await readCredentialStore(io)).tokens[baseUrl]?.token;
@@ -124,8 +137,8 @@ export async function readStoredToken(io: CredentialStoreIO, baseUrl: string): P
 }
 
 export async function writeStoredToken(io: CredentialStoreIO, baseUrl: string, token: string): Promise<void> {
-  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
-  await writeCredentialStore(io, {
+  await mutateCredentialStore(io, (store) => ({
+    ...store,
     tokens: {
       ...store.tokens,
       [baseUrl]: {
@@ -133,13 +146,14 @@ export async function writeStoredToken(io: CredentialStoreIO, baseUrl: string, t
         updatedAt: new Date().toISOString()
       }
     }
-  });
+  }));
 }
 
 export async function deleteStoredToken(io: CredentialStoreIO, baseUrl: string): Promise<void> {
-  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
-  const { [baseUrl]: _removed, ...tokens } = store.tokens;
-  await writeCredentialStore(io, { tokens });
+  await mutateCredentialStore(io, (store) => {
+    const { [baseUrl]: _removed, ...tokens } = store.tokens;
+    return { ...store, tokens };
+  });
 }
 
 export async function readGmailCredential(io: CredentialStoreIO): Promise<GmailOAuthCredential | undefined> {
@@ -154,14 +168,14 @@ export async function readGmailCredential(io: CredentialStoreIO): Promise<GmailO
 }
 
 export async function writeGmailCredential(io: CredentialStoreIO, credential: GmailOAuthCredential): Promise<void> {
-  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
-  await writeCredentialStore(io, { ...store, gmail: credential });
+  await mutateCredentialStore(io, (store) => ({ ...store, gmail: credential }));
 }
 
 export async function deleteGmailCredential(io: CredentialStoreIO): Promise<void> {
-  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
-  const { gmail: _removed, ...rest } = store;
-  await writeCredentialStore(io, rest);
+  await mutateCredentialStore(io, (store) => {
+    const { gmail: _removed, ...rest } = store;
+    return rest;
+  });
 }
 
 export async function readEmailImapCredential(io: CredentialStoreIO): Promise<ImapEmailCredential | undefined> {
@@ -174,14 +188,14 @@ export async function readEmailImapCredential(io: CredentialStoreIO): Promise<Im
 }
 
 export async function writeEmailImapCredential(io: CredentialStoreIO, credential: ImapEmailCredential): Promise<void> {
-  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
-  await writeCredentialStore(io, { ...store, emailImap: credential });
+  await mutateCredentialStore(io, (store) => ({ ...store, emailImap: credential }));
 }
 
 export async function deleteEmailImapCredential(io: CredentialStoreIO): Promise<void> {
-  const store = await readCredentialStore(io, { startFreshIfUnreadable: true });
-  const { emailImap: _removed, ...rest } = store;
-  await writeCredentialStore(io, rest);
+  await mutateCredentialStore(io, (store) => {
+    const { emailImap: _removed, ...rest } = store;
+    return rest;
+  });
 }
 
 /**

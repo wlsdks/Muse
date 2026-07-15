@@ -133,6 +133,21 @@ describe("encrypted-credentials — byte-compatible with the pre-move on-disk fo
     expect(await readGmailCredential(io())).toEqual(gmail);
   });
 
+  it("serializes concurrent token, Gmail, and IMAP writes without losing sibling credentials", async () => {
+    const gmail: GmailOAuthCredential = { clientId: "cid", clientSecret: "csecret", refreshToken: "refresh" };
+    const emailImap: ImapEmailCredential = { appPassword: "app-password", email: "user@example.com" };
+
+    await Promise.all([
+      writeStoredToken(io(), "https://api.example.com", "token"),
+      writeGmailCredential(io(), gmail),
+      writeEmailImapCredential(io(), emailImap)
+    ]);
+
+    expect(await readStoredToken(io(), "https://api.example.com")).toBe("token");
+    expect(await readGmailCredential(io())).toEqual(gmail);
+    expect(await readEmailImapCredential(io())).toEqual(emailImap);
+  });
+
   it("stores a non-Gmail IMAP host override (e.g. Naver) unchanged", async () => {
     const emailImap: ImapEmailCredential = { appPassword: "pw", email: "user@naver.com", imapHost: "imap.naver.com", smtpHost: "smtp.naver.com" };
     await writeEmailImapCredential(io(), emailImap);
