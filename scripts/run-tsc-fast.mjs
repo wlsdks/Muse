@@ -34,6 +34,14 @@ export function parseSlowMsThreshold(rawValue = process.env[PROFILE_SLOW_MS_ENV]
   return parsed;
 }
 
+export function formatProfileLine(mode, singleThreaded, elapsedMs) {
+  return `tsc-fast profile: mode=${mode} threadMode=${singleThreaded ? "single-threaded" : "parallel"} elapsedMs=${elapsedMs}`;
+}
+
+export function formatSlowMsAlertLine(elapsedMs, thresholdMs) {
+  return `tsc-fast perf alert: elapsedMs=${elapsedMs} exceeded threshold ${thresholdMs}ms`;
+}
+
 export function parseRunTscFastArgs(cliArgs) {
   const [mode, ...flags] = cliArgs;
   const singleThreaded = flags.includes("--single-threaded");
@@ -87,11 +95,10 @@ function main() {
   const slowMs = parseSlowMsThreshold();
   const showProfiling = isTscFastProfilingEnabled() || slowMs > 0;
   if (showProfiling) {
-    const profileMessage = `tsc-fast profile: mode=${mode} threadMode=${singleThreaded ? "single-threaded" : "parallel"} elapsedMs=${elapsedMs}`;
-    console.log(profileMessage);
+    console.log(formatProfileLine(mode, singleThreaded, elapsedMs));
   }
   if (slowMs > 0 && elapsedMs >= slowMs) {
-    console.error(`tsc-fast perf alert: elapsedMs=${elapsedMs} exceeded threshold ${slowMs}ms`);
+    console.error(formatSlowMsAlertLine(elapsedMs, slowMs));
   }
 
   if (result.error) {
