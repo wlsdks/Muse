@@ -1,4 +1,4 @@
-import { computeContinuityEvaluation, createPersonalThread, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS } from "@muse/attunement";
+import { computeContinuityEvaluation, createPersonalThread, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS, undoThreadReset } from "@muse/attunement";
 import type { ContinuityOutcome } from "@muse/attunement";
 import type { FastifyInstance } from "fastify";
 
@@ -38,6 +38,15 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
           };
         }),
       evaluation: computeContinuityEvaluation(state),
+      resetReceipts: state.resetReceipts
+        .slice()
+        .sort((left, right) => right.resetPolicyVersion - left.resetPolicyVersion)
+        .map((receipt) => ({
+          id: receipt.id,
+          resetPolicyVersion: receipt.resetPolicyVersion,
+          threadId: receipt.threadId,
+          undone: state.undoResetReceipts.some((undo) => undo.resetId === receipt.id)
+        })),
       threads: state.threads
         .slice()
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
@@ -67,6 +76,11 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
   server.post<{ Params: { readonly threadId: string } }>("/api/attunement/threads/:threadId/reset", async (request, reply) => {
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
     return resetThreadPolicy(gate.attunementFile, request.params.threadId);
+  });
+
+  server.post<{ Params: { readonly resetId: string; readonly threadId: string } }>("/api/attunement/threads/:threadId/resets/:resetId/undo", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
+    return undoThreadReset(gate.attunementFile, request.params.threadId, request.params.resetId);
   });
 
   server.post<{ Params: { readonly deliveryId: string }; Body: { readonly outcome?: unknown } }>("/api/attunement/deliveries/:deliveryId/outcome", async (request, reply) => {

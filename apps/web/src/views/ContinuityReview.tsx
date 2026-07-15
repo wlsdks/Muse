@@ -29,6 +29,7 @@ interface ReviewResponse {
     readonly thread: { readonly id: string; readonly kind: Kind; readonly title: string };
   }[];
   readonly evaluation: KindEvaluation & { readonly byKind: Readonly<Record<Kind, KindEvaluation>> };
+  readonly resetReceipts: readonly { readonly id: string; readonly resetPolicyVersion: number; readonly threadId: string; readonly undone: boolean }[];
   readonly threads: readonly {
     readonly id: string;
     readonly kind: Kind;
@@ -104,6 +105,11 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
     mutationFn: (threadId: string) => client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/reset`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
   });
+  const undoReset = useMutation({
+    mutationFn: ({ resetId, threadId }: { readonly resetId: string; readonly threadId: string }) =>
+      client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/resets/${encodeURIComponent(resetId)}/undo`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
+  });
   const data = review.data;
 
   return (
@@ -145,6 +151,9 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
               <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", marginTop: 12 }}>
                 {data.threads.map((thread) => (
                   <Card key={thread.id}>
+                    {(() => {
+                      const latestReset = data.resetReceipts.find((receipt) => receipt.threadId === thread.id && !receipt.undone);
+                      return <>
                     <div style={{ alignItems: "flex-start", display: "flex", gap: 8, justifyContent: "space-between" }}>
                       <div>
                         <div className="row-title">{thread.title}</div>
@@ -155,12 +164,15 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                         <Button disabled={reset.isPending} size="sm" variant="ghost" onClick={() => {
                           if (window.confirm(t("continuity.resetConfirm", { title: thread.title }))) reset.mutate(thread.id);
                         }}>{t("continuity.reset")}</Button>
+                        {latestReset ? <Button disabled={undoReset.isPending} size="sm" variant="ghost" onClick={() => undoReset.mutate({ resetId: latestReset.id, threadId: thread.id })}>{t("continuity.undoReset")}</Button> : null}
                       </div>
                     </div>
                     <div className="row-meta" style={{ marginTop: 10 }}>{thread.policy.detail} · {thread.policy.nextStep} · {thread.policy.suppression}</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
                       {thread.links.map((link) => <Badge key={`${link.providerId}:${link.artifactType}:${link.artifactId}:${link.role}`} tone="neutral">{link.artifactType}:{link.artifactId}</Badge>)}
                     </div>
+                      </>;
+                    })()}
                   </Card>
                 ))}
               </div>
@@ -197,6 +209,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
             {outcome.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.outcomeError")}</p> : null}
             {thread.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.threadError")}</p> : null}
             {reset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.resetError")}</p> : null}
+            {undoReset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.undoResetError")}</p> : null}
           </>
         ) : null}
       </AsyncBlock>
