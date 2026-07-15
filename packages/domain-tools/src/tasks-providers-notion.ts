@@ -43,6 +43,9 @@ import {
   NOTION_LIST_MAX_PAGES,
   extractTitleString,
   isRecordArray,
+  readBooleanField,
+  readRecordField,
+  readStringField,
   isTransientNotionStatus,
   mapNotionStatus
 } from "./notion-shared.js";
@@ -105,8 +108,7 @@ export class NotionTasksProvider implements TasksProvider {
     this.statusDoneValue = options.statusDoneValue ?? NOTION_DEFAULT_STATUS_DONE;
     this.endpoint = options.endpoint ?? NOTION_DEFAULT_ENDPOINT;
     this.notionVersion = options.notionVersion ?? NOTION_DEFAULT_VERSION;
-    const globalFetch = (globalThis as { fetch?: NotionFetch }).fetch;
-    this.fetchImpl = options.fetchImpl ?? (globalFetch as NotionFetch);
+    this.fetchImpl = createNotionFetch(options.fetchImpl);
     if (!this.fetchImpl) {
       throw new TasksValidationError("NO_FETCH", "global fetch unavailable; pass fetchImpl");
     }
@@ -143,8 +145,8 @@ export class NotionTasksProvider implements TasksProvider {
           all.push(task);
         }
       }
-      const hasMore = (body as { has_more?: unknown }).has_more === true;
-      const nextCursor = (body as { next_cursor?: unknown }).next_cursor;
+      const hasMore = readBooleanField(body, "has_more") === true;
+      const nextCursor = readStringField(body, "next_cursor");
       if (!hasMore || typeof nextCursor !== "string" || nextCursor.length === 0) {
         break;
       }
@@ -205,7 +207,7 @@ export class NotionTasksProvider implements TasksProvider {
     }, true);
     const results = isRecordArray(body, "results");
     return results.flatMap((result): readonly TaskSearchHit[] => {
-      const parent = (result as { parent?: { database_id?: string } }).parent;
+      const parent = readRecordField(result, "parent");
       if (parent?.database_id !== this.databaseId) {
         // Notion's /search is workspace-wide; only surface hits that
         // belong to the configured tasks database so unrelated pages
@@ -237,18 +239,18 @@ export class NotionTasksProvider implements TasksProvider {
     if (!raw || typeof raw !== "object") {
       return undefined;
     }
-    const id = (raw as { id?: string }).id;
+    const id = readStringField(raw, "id");
     if (typeof id !== "string" || id.length === 0) {
       return undefined;
     }
-    const properties = (raw as { properties?: Record<string, unknown> }).properties ?? {};
+    const properties = readRecordField(raw, "properties") ?? {};
     const title = extractTitleString(properties[this.titleProperty]) ?? "(untitled)";
     const statusName = extractSelectName(properties[this.statusProperty]);
     const status: "open" | "done" = statusName === this.statusDoneValue ? "done" : "open";
-    const createdRaw = (raw as { created_time?: string }).created_time;
+    const createdRaw = readStringField(raw, "created_time");
     const createdAt = parseDate(createdRaw) ?? new Date();
     const completedAt = status === "done"
-      ? parseDate((raw as { last_edited_time?: string }).last_edited_time)
+      ? parseDate(readStringField(raw, "last_edited_time"))
       : undefined;
     return {
       createdAt,
@@ -324,14 +326,12 @@ export class NotionTasksProvider implements TasksProvider {
 }
 
 function extractSelectName(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") {
+  const selectRecord = readRecordField(value, "select");
+  if (!selectRecord) {
     return undefined;
   }
-  const select = (value as { select?: { name?: unknown } }).select;
-  if (!select || typeof select !== "object") {
-    return undefined;
-  }
-  return typeof select.name === "string" ? select.name : undefined;
+  const name = readStringField(selectRecord, "name");
+  return name;
 }
 
 function parseDate(raw: unknown): Date | undefined {
@@ -348,4 +348,15 @@ async function safeReadText(response: Response): Promise<string> {
   } catch {
     return `<status ${response.status}>`;
   }
+}
+
+function createNotionFetch(fetchImpl?: NotionFetch): NotionFetch | undefined {
+  if (fetchImpl) {
+    return fetchImpl;
+  }
+  const globalFetch = globalThis.fetch;
+  if (typeof globalFetch !== "function") {
+    return undefined;
+  }
+  return (input, init) => globalFetch(input, init);
 }
