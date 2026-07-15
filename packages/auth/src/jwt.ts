@@ -189,7 +189,7 @@ function base64UrlJson(value: unknown): string {
 
 function parseBase64UrlJson(value: string): unknown {
   try {
-    return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
   } catch {
     return undefined;
   }
@@ -205,4 +205,3 @@ function isJwtClaims(value: unknown): value is JwtClaims {
     Number.isFinite(value.exp)
   );
 }
-

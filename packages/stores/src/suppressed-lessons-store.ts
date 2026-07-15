@@ -16,6 +16,8 @@
 
 import { promises as fs } from "node:fs";
 
+import { isRecord } from "@muse/shared";
+
 import { atomicWriteFile, withFileMutationQueue } from "./atomic-file-store.js";
 import { quarantineCorruptStore } from "./store-quarantine.js";
 
@@ -49,16 +51,17 @@ export async function readSuppressedLessons(file: string): Promise<readonly Supp
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { entries?: unknown }).entries)) {
+  const entries = readRecordArrayField(parsed, "entries");
+  if (entries === undefined) {
     await quarantineCorruptStore(file);
     return [];
   }
-  return (parsed as { entries: unknown[] }).entries.flatMap((entry): readonly SuppressedLesson[] =>
+  return entries.flatMap((entry): readonly SuppressedLesson[] =>
     isSuppressedLesson(entry) ? [entry] : []
   );
 }
@@ -105,8 +108,8 @@ export async function incrementSuppressionBlocked(file: string, id: string): Pro
 }
 
 function isSuppressedLesson(value: unknown): value is SuppressedLesson {
-  if (!value || typeof value !== "object") return false;
-  const e = value as Partial<SuppressedLesson>;
+  if (!isRecord(value)) return false;
+  const e = value;
   if (typeof e.id !== "string" || e.id.length === 0) return false;
   if (typeof e.userId !== "string" || e.userId.length === 0) return false;
   if (typeof e.text !== "string" || e.text.trim().length === 0) return false;
@@ -114,4 +117,12 @@ function isSuppressedLesson(value: unknown): value is SuppressedLesson {
   if (typeof e.createdAt !== "string") return false;
   if (e.blockedCount !== undefined && (typeof e.blockedCount !== "number" || !Number.isFinite(e.blockedCount))) return false;
   return true;
+}
+
+function readRecordArrayField(value: unknown, key: string): unknown[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const candidate = value[key];
+  return Array.isArray(candidate) ? candidate : undefined;
 }

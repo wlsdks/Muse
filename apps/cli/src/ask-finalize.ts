@@ -12,7 +12,8 @@
 
 import { answerPromisesAction, assertiveUnsupportedFraction, decideRecallClarification, implicitSuccessReinforceDelta, isUnbackedActionClaim, lexicalOverlap, lexicalTokens, reportSentenceGroundedness, requestsToolAction, stripCitationMarkers, summarizeTokenConfidence, worstUnsupportedSentence } from "@muse/agent-core";
 import { answerIsRefusal, askOutcomeLabel, askWeaknessAxis, buildAskConnections, contestedOutcome, createStageTimer, formatGraphLinksSection, groundingConflictCue, misgroundedOutcome, recordAskWeakness, recordAskWeaknessResolved, relativizeNoteSource, shouldWarmClose, sufficiencyAdvisory, type AskWeaknessAxis } from "@muse/recall";
-import { resolveNotesDir } from "@muse/autoconfigure";
+import { resolveNotesDir, type MuseEnvironment } from "@muse/autoconfigure";
+import { parseBooleanFromEnv } from "@muse/shared";
 
 import { isQuiet } from "./cli-context.js";
 import { crossLingualUnsupportedFraction } from "./ask-cross-lingual.js";
@@ -26,6 +27,10 @@ import type { AskStreamResult, DecompositionTrustSignals } from "./ask-result-ou
 import { buildAskRunLog, writeRunLog, type RetrievalTraceEntry } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
 import type { SourceCheckSignals, IndexChunk } from "@muse/recall";
+
+function environment(): MuseEnvironment {
+  return process.env;
+}
 
 type ScoredChunk = { chunk: IndexChunk; file: string; score: number };
 
@@ -42,7 +47,7 @@ async function recordAskWeaknessLive(query: string, axis: AskWeaknessAxis | null
     const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
     await recordAskWeakness(query, axis, {
       recordWeakness,
-      weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
+      weaknessesFile: resolveWeaknessesFile(environment())
     }, hint);
   } catch {
     // lazy-import / path resolution failure is non-fatal
@@ -55,7 +60,7 @@ async function recordAskWeaknessResolvedLive(query: string): Promise<void> {
     const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
     await recordAskWeaknessResolved(query, {
       recordWeaknessResolved,
-      weaknessesFile: resolveWeaknessesFile(process.env as Record<string, string | undefined>)
+      weaknessesFile: resolveWeaknessesFile(environment())
     });
   } catch {
     // lazy-import / path resolution failure is non-fatal
@@ -124,7 +129,7 @@ export async function finalizeAndRenderAsk(params: {
       // the answer or changes the citation gate. Fail-open (empty vecs → no-op).
       const sufficiencyLine = sufficiencyAdvisory({
         answer: collectedAnswer,
-        evidenceVecs: scored.map((r) => r.chunk.embedding as readonly number[]),
+        evidenceVecs: scored.map((r) => r.chunk.embedding),
         json: Boolean(options.json),
         subQueries: splitClauses,
         subQueryVecs: subqueryEmbeddings
@@ -177,7 +182,7 @@ export async function finalizeAndRenderAsk(params: {
       // `grounded`/`success` to the top level, so error-analysis can grep real
       // labels off cli.local runs instead of an unlabeled corpus.
       askStages.mark("verdictMs");
-      if (process.env.MUSE_TIMINGS === "1" && !options.json) {
+      if (parseBooleanFromEnv(process.env.MUSE_TIMINGS, false) && !options.json) {
         const t = askStages.timings();
         io.stderr(`(timings: ${Object.entries(t).map(([k, v]) => `${k}=${(v / 1000).toFixed(1)}s`).join(" · ")})\n`);
       }
@@ -280,7 +285,7 @@ export async function finalizeAndRenderAsk(params: {
           try {
             const { adjustPlaybookReward } = await import("@muse/stores");
             const { resolvePlaybookFile } = await import("@muse/autoconfigure");
-            await adjustPlaybookReward(resolvePlaybookFile(process.env as Record<string, string | undefined>), appliedStrategyId, reinforceDelta, Date.now());
+            await adjustPlaybookReward(resolvePlaybookFile(environment()), appliedStrategyId, reinforceDelta, Date.now());
           } catch { /* reinforcement is best-effort — a reward write must never break the answer */ }
         }
       }
@@ -291,7 +296,7 @@ export async function finalizeAndRenderAsk(params: {
         try {
           const { askTimeWeaknessNudge, readWeaknesses, renderAskTimeNudge, topicKeyFromMessage } = await import("@muse/stores");
           const { resolveWeaknessesFile } = await import("@muse/autoconfigure");
-          const weaknessEntries = await readWeaknesses(resolveWeaknessesFile(process.env as Record<string, string | undefined>));
+          const weaknessEntries = await readWeaknesses(resolveWeaknessesFile(environment()));
           const nudge = askTimeWeaknessNudge(weaknessEntries, topicKeyFromMessage(query), { nowMs: Date.now() });
           if (nudge) {
             io.stderr(`💡 ${renderAskTimeNudge(nudge, /[가-힣]/u.test(query))}\n`);
@@ -370,7 +375,7 @@ export async function finalizeAndRenderAsk(params: {
           // notes dir or ad-hoc-only grounding just yields no footer.
           try {
             const groundedNoteFiles = [...new Set(scored.map((r) => r.file))];
-            const graph = await loadNoteLinkGraph(resolveNotesDir(process.env as Record<string, string | undefined>));
+            const graph = await loadNoteLinkGraph(resolveNotesDir(environment()));
             const graphSection = formatGraphLinksSection(selectGraphConnections(graph, groundedNoteFiles));
             if (graphSection.length > 0) {
               io.stdout(graphSection);

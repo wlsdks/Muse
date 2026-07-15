@@ -15,6 +15,7 @@
 import { readFile } from "node:fs/promises";
 
 import { atomicWriteFile } from "@muse/stores";
+import { isRecord } from "@muse/shared";
 
 export interface NoteProvenanceEntry {
   /** Note path relative to the notes root (matches recall's `relativizeNoteSource`). */
@@ -26,8 +27,8 @@ export interface NoteProvenanceEntry {
 }
 
 function isEntry(value: unknown): value is NoteProvenanceEntry {
-  if (!value || typeof value !== "object") return false;
-  const e = value as Record<string, unknown>;
+  if (!isRecord(value)) return false;
+  const e = value;
   return typeof e["path"] === "string" && typeof e["sourceUrl"] === "string" && typeof e["ingestedAt"] === "string";
 }
 
@@ -41,14 +42,14 @@ export async function readNoteProvenance(file: string): Promise<readonly NotePro
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { notes?: unknown }).notes)) {
+  if (!isRecord(parsed) || !Array.isArray(parsed.notes)) {
     return [];
   }
-  return (parsed as { notes: unknown[] }).notes.filter(isEntry);
+  return parsed.notes.filter(isEntry);
 }
 
 /**

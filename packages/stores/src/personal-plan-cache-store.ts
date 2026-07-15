@@ -10,6 +10,8 @@
 
 import { promises as fs } from "node:fs";
 
+import { isRecord } from "@muse/shared";
+
 import { atomicWriteFile, withFileMutationQueue } from "./atomic-file-store.js";
 import { quarantineCorruptStore } from "./store-quarantine.js";
 
@@ -40,18 +42,27 @@ export async function readPlanCache(file: string): Promise<readonly PlanCacheEnt
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { entries?: unknown }).entries)) {
+  const entries = readRecordArrayField(parsed, "entries");
+  if (entries === undefined) {
     await quarantineCorruptStore(file);
     return [];
   }
-  return (parsed as { entries: unknown[] }).entries.flatMap((entry): readonly PlanCacheEntry[] =>
+  return entries.flatMap((entry): readonly PlanCacheEntry[] =>
     isPlanCacheEntry(entry) ? [entry] : []
   );
+}
+
+function readRecordArrayField(value: unknown, key: string): unknown[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const candidate = value[key];
+  return Array.isArray(candidate) ? candidate : undefined;
 }
 
 export async function writePlanCache(file: string, entries: readonly PlanCacheEntry[]): Promise<void> {
@@ -77,16 +88,16 @@ export async function queryPlanCache(file: string, userId?: string): Promise<rea
 }
 
 function isPlanCacheStep(value: unknown): value is PlanCacheStep {
-  if (!value || typeof value !== "object") return false;
-  const s = value as Partial<PlanCacheStep>;
+  if (!isRecord(value)) return false;
+  const s = value;
   return typeof s.tool === "string" && s.tool.length > 0
     && typeof s.description === "string"
     && !!s.args && typeof s.args === "object";
 }
 
 function isPlanCacheEntry(value: unknown): value is PlanCacheEntry {
-  if (!value || typeof value !== "object") return false;
-  const e = value as Partial<PlanCacheEntry>;
+  if (!isRecord(value)) return false;
+  const e = value;
   if (typeof e.id !== "string" || e.id.length === 0) return false;
   if (typeof e.userId !== "string" || e.userId.length === 0) return false;
   if (typeof e.prompt !== "string" || e.prompt.trim().length === 0) return false;

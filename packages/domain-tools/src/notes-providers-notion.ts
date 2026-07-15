@@ -44,9 +44,14 @@ import {
   NOTION_DEFAULT_VERSION,
   NOTION_LIST_MAX_PAGES,
   extractTitleString,
+  readArrayField,
+  readBooleanField,
   isRecordArray,
+  readRecordField,
   isTransientNotionStatus,
-  mapNotionStatus
+  mapNotionStatus,
+  readStringField,
+  toRecord
 } from "./notion-shared.js";
 import { sleep } from "@muse/shared";
 
@@ -95,11 +100,11 @@ export class NotionNotesProvider implements NotesProvider {
     this.titleProperty = options.titleProperty ?? NOTION_DEFAULT_TITLE_PROPERTY;
     this.endpoint = options.endpoint ?? NOTION_DEFAULT_ENDPOINT;
     this.notionVersion = options.notionVersion ?? NOTION_DEFAULT_VERSION;
-    const globalFetch = (globalThis as { fetch?: NotionFetch }).fetch;
-    this.fetchImpl = options.fetchImpl ?? (globalFetch as NotionFetch);
-    if (!this.fetchImpl) {
+    const fetchImpl = createNotionFetch(options.fetchImpl);
+    if (!fetchImpl) {
       throw new NotesValidationError("NO_FETCH", "global fetch unavailable; pass fetchImpl");
     }
+    this.fetchImpl = fetchImpl;
     this.retries = Number.isFinite(options.retry?.retries) ? Math.max(0, Math.trunc(options.retry!.retries!)) : 2;
     this.baseDelayMs = Number.isFinite(options.retry?.baseDelayMs) ? Math.max(0, options.retry!.baseDelayMs!) : 250;
     this.sleep = options.retry?.sleep ?? sleep;
@@ -137,8 +142,8 @@ export class NotionNotesProvider implements NotesProvider {
           all.push(entry);
         }
       }
-      const hasMore = (body as { has_more?: unknown }).has_more === true;
-      const nextCursor = (body as { next_cursor?: unknown }).next_cursor;
+      const hasMore = readBooleanField(body, "has_more") === true;
+      const nextCursor = readStringField(body, "next_cursor");
       if (!hasMore || typeof nextCursor !== "string" || nextCursor.length === 0) {
         break;
       }
@@ -231,8 +236,8 @@ export class NotionNotesProvider implements NotesProvider {
         [this.titleProperty]: { title: [{ text: { content: input.title } }] }
       }
     });
-    const newId = (created as { id?: string }).id;
-    if (!newId) {
+    const newId = readStringField(created, "id");
+    if (!newId || newId.length === 0) {
       throw new NotesProviderError(this.id, "NOTION_BAD_SHAPE", "Notion page-create response missing id");
     }
     const after = await this.read(newId);
@@ -285,8 +290,8 @@ export class NotionNotesProvider implements NotesProvider {
       for (const result of results) {
         all.push(result);
       }
-      const hasMore = (body as { has_more?: unknown }).has_more === true;
-      const nextCursor = (body as { next_cursor?: unknown }).next_cursor;
+      const hasMore = readBooleanField(body, "has_more") === true;
+      const nextCursor = readStringField(body, "next_cursor");
       if (!hasMore || typeof nextCursor !== "string" || nextCursor.length === 0) {
         break;
       }
@@ -298,7 +303,7 @@ export class NotionNotesProvider implements NotesProvider {
   private async replaceBlocks(pageId: string, body: string): Promise<void> {
     const blockResults = await this.fetchAllBlockChildren(pageId);
     for (const block of blockResults) {
-      const blockId = (block as { id?: string }).id;
+      const blockId = readStringField(block, "id");
       if (!blockId) {
         continue;
       }
@@ -375,20 +380,21 @@ function parsePageSummary(
   providerId: string,
   titleProperty: string
 ): NotesEntry | undefined {
-  if (!raw || typeof raw !== "object") {
+  const rawRecord = toRecord(raw);
+  if (!rawRecord) {
     return undefined;
   }
-  const id = (raw as { id?: string }).id;
+  const id = readStringField(rawRecord, "id");
   if (typeof id !== "string" || id.length === 0) {
     return undefined;
   }
-  const properties = (raw as { properties?: Record<string, unknown> }).properties ?? {};
+  const properties = readRecordField(rawRecord, "properties") ?? {};
   const titleEntry = properties[titleProperty];
   const title = extractTitleString(titleEntry) ?? "(untitled)";
-  const lastEdited = (raw as { last_edited_time?: string }).last_edited_time;
+  const lastEdited = readStringField(rawRecord, "last_edited_time");
   const updatedAt = typeof lastEdited === "string" ? new Date(lastEdited) : undefined;
-  const parent = (raw as { parent?: { database_id?: string } }).parent;
-  const folder = parent?.database_id;
+  const parent = readRecordField(rawRecord, "parent");
+  const folder = readStringField(parent ?? {}, "database_id");
   return {
     id,
     providerId,
@@ -399,28 +405,32 @@ function parsePageSummary(
 }
 
 function extractParagraphText(block: unknown): string {
-  if (!block || typeof block !== "object") {
+  const blockRecord = toRecord(block);
+  if (!blockRecord) {
     return "";
   }
-  const type = (block as { type?: string }).type;
+  const type = readStringField(blockRecord, "type");
   if (type !== "paragraph") {
     return "";
   }
-  const richText = (block as { paragraph?: { rich_text?: unknown } }).paragraph?.rich_text;
-  if (!Array.isArray(richText)) {
+  const paragraph = readRecordField(blockRecord, "paragraph");
+  const richText = readArrayField(paragraph ?? {}, "rich_text");
+  if (!richText) {
     return "";
   }
   return richText
     .map((entry) => {
-      if (!entry || typeof entry !== "object") {
+      const entryRecord = toRecord(entry);
+      if (!entryRecord) {
         return "";
       }
-      const plain = (entry as { plain_text?: string }).plain_text;
+      const plain = readStringField(entryRecord, "plain_text");
       if (typeof plain === "string") {
         return plain;
       }
-      const inner = (entry as { text?: { content?: string } }).text?.content;
-      return typeof inner === "string" ? inner : "";
+      const innerRecord = readRecordField(entryRecord, "text");
+      const inner = readStringField(innerRecord ?? {}, "content");
+      return inner ?? "";
     })
     .join("");
 }
@@ -441,4 +451,15 @@ async function safeReadText(response: Response): Promise<string> {
   } catch {
     return `<status ${response.status}>`;
   }
+}
+
+function createNotionFetch(fetchImpl?: NotionFetch): NotionFetch | undefined {
+  if (fetchImpl) {
+    return fetchImpl;
+  }
+  const globalFetch = globalThis.fetch;
+  if (typeof globalFetch !== "function") {
+    return undefined;
+  }
+  return (input, init) => globalFetch(input, init);
 }

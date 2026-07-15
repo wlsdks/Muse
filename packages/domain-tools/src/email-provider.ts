@@ -13,7 +13,7 @@
  */
 
 import { fetchWithRetry, parseRetryAfterMs, type RetryOptions } from "@muse/mcp-shared";
-import { sleep } from "@muse/shared";
+import { isRecord, sleep } from "@muse/shared";
 
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 
@@ -57,15 +57,17 @@ export interface EmailReader {
  * falls back to the snippet). Pure — no network.
  */
 export function extractPlainTextBody(payload: unknown): string {
-  if (!payload || typeof payload !== "object") {
+  if (!isRecord(payload)) {
     return "";
   }
-  const p = payload as { mimeType?: unknown; body?: { data?: unknown }; parts?: unknown };
-  if (p.mimeType === "text/plain" && typeof p.body?.data === "string") {
-    return Buffer.from(p.body.data, "base64url").toString("utf8");
+  if (payload.mimeType === "text/plain") {
+    const body = isRecord(payload.body) ? payload.body : {};
+    if (typeof body.data === "string") {
+      return Buffer.from(body.data, "base64url").toString("utf8");
+    }
   }
-  if (Array.isArray(p.parts)) {
-    for (const part of p.parts) {
+  if (Array.isArray(payload.parts)) {
+    for (const part of payload.parts) {
       const text = extractPlainTextBody(part);
       if (text.length > 0) {
         return text;
@@ -96,9 +98,10 @@ function clampLimit(limit: number): number {
 }
 
 function messageIds(list: Record<string, unknown>): string[] {
-  return Array.isArray(list.messages)
-    ? (list.messages as Array<Record<string, unknown>>).flatMap((m) => (typeof m.id === "string" ? [m.id] : []))
-    : [];
+  if (!Array.isArray(list.messages)) {
+    return [];
+  }
+  return list.messages.flatMap((raw) => (isRecord(raw) && typeof raw.id === "string" ? [raw.id] : []));
 }
 
 /**
@@ -145,9 +148,15 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
     // honouring Retry-After. A 5xx or a network reject is AMBIGUOUS (the message
     // may have been accepted) and is NEVER retried. (Mirrors the calendar
     // actuator's safe-write retry; reads use fetchWithRetry below.)
-    const retries = Number.isFinite(this.retryOptions.retries) ? Math.max(0, Math.trunc(this.retryOptions.retries as number)) : 2;
-    const baseDelayMs = Number.isFinite(this.retryOptions.baseDelayMs) ? Math.max(0, this.retryOptions.baseDelayMs as number) : 250;
-    const maxRetryAfterMs = Number.isFinite(this.retryOptions.maxRetryAfterMs) ? Math.max(0, this.retryOptions.maxRetryAfterMs as number) : 30_000;
+    const retries = typeof this.retryOptions.retries === "number" && Number.isFinite(this.retryOptions.retries)
+      ? Math.max(0, Math.trunc(this.retryOptions.retries))
+      : 2;
+    const baseDelayMs = typeof this.retryOptions.baseDelayMs === "number" && Number.isFinite(this.retryOptions.baseDelayMs)
+      ? Math.max(0, this.retryOptions.baseDelayMs)
+      : 250;
+    const maxRetryAfterMs = typeof this.retryOptions.maxRetryAfterMs === "number" && Number.isFinite(this.retryOptions.maxRetryAfterMs)
+      ? Math.max(0, this.retryOptions.maxRetryAfterMs)
+      : 30_000;
     const delay = this.retryOptions.sleep ?? sleep;
     for (let attempt = 0; ; attempt += 1) {
       // Resolved every attempt (not hoisted before the loop): a retried send
@@ -166,8 +175,11 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
         // A successful 2xx with an odd/non-JSON body must NEVER fail the send —
         // return undefined and let the caller record the send without an id.
         try {
-          const parsed = JSON.parse(await response.text()) as Record<string, unknown>;
-          return typeof parsed.id === "string" ? parsed.id : undefined;
+          const parsed = JSON.parse(await response.text());
+          if (isRecord(parsed) && typeof parsed.id === "string") {
+            return parsed.id;
+          }
+          return undefined;
         } catch {
           return undefined;
         }
@@ -203,7 +215,11 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
     // text and turn a malformed body into a clear, classifiable error instead.
     const body = await response.text();
     try {
-      return JSON.parse(body) as Record<string, unknown>;
+      const parsed = JSON.parse(body);
+      if (isRecord(parsed)) {
+        return parsed;
+      }
+      throw new Error("non-object");
     } catch {
       throw new Error(`Gmail API returned a ${response.status.toString()} with a non-JSON body: ${body.slice(0, 200)}`);
     }
@@ -241,7 +257,7 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
         }
         continue;
       }
-      const payload = (msg.payload ?? {}) as { headers?: ReadonlyArray<Record<string, unknown>> };
+      const payload = isRecord(msg.payload) ? msg.payload : {};
       const headers = Array.isArray(payload.headers) ? payload.headers : [];
       const labelIds = Array.isArray(msg.labelIds) ? msg.labelIds : [];
       const dateHeader = header(headers, "Date");
@@ -274,7 +290,7 @@ export class GmailEmailProvider implements EmailProvider, EmailSender, EmailRead
       }
       return undefined;
     }
-    const payload = (msg.payload ?? {}) as { headers?: ReadonlyArray<Record<string, unknown>> };
+    const payload = isRecord(msg.payload) ? msg.payload : {};
     const headers = Array.isArray(payload.headers) ? payload.headers : [];
     const dateHeader = header(headers, "Date");
     const body = extractPlainTextBody(payload) || (typeof msg.snippet === "string" ? msg.snippet : "");

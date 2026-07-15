@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { isRecord } from "@muse/shared";
 import { atomicWriteFile } from "./atomic-file-store.js";
 
 export type DaemonSettings = Readonly<Record<string, boolean>>;
@@ -45,11 +46,22 @@ function readDaemonSettingsFileSync(file: string): DaemonSettingsFile {
     return {};
   }
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") {
+    const parsed = JSON.parse(raw);
+    if (!isRecord(parsed)) {
       return {};
     }
-    return parsed as DaemonSettingsFile;
+    const version = typeof parsed.version === "number" && Number.isFinite(parsed.version) ? parsed.version : undefined;
+    const out: DaemonSettingsFile = {};
+    if (isRecord(parsed.flags)) {
+      out.flags = parsed.flags;
+    }
+    if (parsed.quietHours !== undefined) {
+      out.quietHours = parsed.quietHours;
+    }
+    if (version !== undefined) {
+      out.version = version;
+    }
+    return out;
   } catch {
     return {};
   }
@@ -57,13 +69,17 @@ function readDaemonSettingsFileSync(file: string): DaemonSettingsFile {
 
 export function readDaemonSettingsSync(file: string): DaemonSettings {
   const parsed = readDaemonSettingsFileSync(file);
-  if (!parsed.flags || typeof parsed.flags !== "object") {
-    return {};
+    if (!parsed.flags || typeof parsed.flags !== "object") {
+      return {};
+    }
+    const out: DaemonSettings = {};
+    for (const [key, value] of Object.entries(parsed.flags)) {
+      if (typeof value === "boolean") {
+        out[key] = value;
+      }
+    }
+    return out;
   }
-  return Object.fromEntries(
-    Object.entries(parsed.flags).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean")
-  );
-}
 
 /**
  * Undefined when absent, malformed, or shape-invalid (missing/wrong-typed
@@ -72,11 +88,11 @@ export function readDaemonSettingsSync(file: string): DaemonSettings {
  */
 export function readQuietHoursSettingSync(file: string): PersistedQuietHours | undefined {
   const raw = readDaemonSettingsFileSync(file).quietHours;
-  if (!raw || typeof raw !== "object") {
+  if (!isRecord(raw)) {
     return undefined;
   }
-  const enabled = (raw as { enabled?: unknown }).enabled;
-  const range = (raw as { range?: unknown }).range;
+  const enabled = raw.enabled;
+  const range = raw.range;
   if (typeof enabled !== "boolean" || typeof range !== "string") {
     return undefined;
   }

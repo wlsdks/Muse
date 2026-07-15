@@ -17,11 +17,20 @@ import { readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+
+
 import type { Command } from "commander";
 
 import { decryptExportBuffer, isEncryptedExportBuffer } from "./export-crypto.js";
 import { commandErrorLine } from "./format-cli-error.js";
 import type { ProgramIO } from "./program.js";
+import { withBestEffort } from "./async-promises.js";
+
+const MUSE_PREFIX = ".muse/";
+
+function museEntryRelative(entry: string): string {
+  return entry.startsWith(MUSE_PREFIX) ? entry.slice(MUSE_PREFIX.length) : entry;
+}
 
 interface ImportOptions {
   readonly force?: boolean;
@@ -81,7 +90,7 @@ async function decryptToTempIfNeeded(bundlePath: string, decryptOptIn: boolean):
  * Exported for direct test coverage.
  */
 export function isSafeMuseEntry(entry: string): boolean {
-  if (!entry.startsWith(".muse/") || entry.endsWith("/")) {
+  if (!entry.startsWith(MUSE_PREFIX) || entry.endsWith("/")) {
     return false;
   }
   if (entry.includes("\\")) {
@@ -114,7 +123,7 @@ export async function listMuseImportEntries(
 
   const exitCode = await Promise.race([
     onError.then(([cause]) => {
-      throw cause as Error;
+      throw normalizeChildError(cause);
     }),
     onClose.then(([code]) => {
       if (code === 0 || code === null) {
@@ -143,19 +152,16 @@ export async function findImportCollisions(
   home: string,
   entries: readonly string[]
 ): Promise<readonly string[]> {
-  const collisions: string[] = [];
-  for (const entry of entries) {
+  const checks = entries.map(async (entry) => {
     const abs = join(home, entry);
-    try {
-      const s = await stat(abs);
-      if (s.isFile()) {
-        collisions.push(entry.replace(/^\.muse\//, ""));
-      }
-    } catch {
-      // missing — no collision
+    const statResult = await withBestEffort(stat(abs), undefined);
+    if (!statResult || !statResult.isFile()) {
+      return undefined;
     }
-  }
-  return collisions;
+    return museEntryRelative(entry);
+  });
+  const collisions = await Promise.all(checks);
+  return collisions.filter((entry): entry is string => typeof entry === "string");
 }
 
 /**
@@ -184,7 +190,7 @@ export async function extractMuseBundle(
 
   await Promise.race([
     onError.then(([cause]) => {
-      throw cause as Error;
+      throw normalizeChildError(cause);
     }),
     onClose.then(([code]) => {
       if (code === 0 || code === null) {
@@ -193,6 +199,10 @@ export async function extractMuseBundle(
       throw new Error(`tar -xzf exited with code ${(code ?? -1).toString()}: ${Buffer.concat(errChunks).toString("utf8").trim()}`);
     })
   ]);
+}
+
+function normalizeChildError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(typeof cause === "string" ? cause : "command execution failed");
 }
 
 export function registerImportCommand(program: Command, io: ProgramIO): void {
@@ -235,9 +245,10 @@ export function registerImportCommand(program: Command, io: ProgramIO): void {
 
         if (options.dryRun) {
           io.stdout(`Plan for ${bundlePath} → ${home}:\n`);
+          const collisionSet = new Set(collisions);
           for (const entry of entries) {
-            const rel = entry.replace(/^\.muse\//, "");
-            const willOverwrite = collisions.includes(rel);
+            const rel = museEntryRelative(entry);
+            const willOverwrite = collisionSet.has(rel);
             io.stdout(`  ${willOverwrite ? "OVERWRITE" : "create   "} ~/.muse/${rel}\n`);
           }
           io.stdout(`\n${entries.length.toString()} entry/entries, ${collisions.length.toString()} collision(s).\n`);
@@ -264,7 +275,7 @@ export function registerImportCommand(program: Command, io: ProgramIO): void {
         }
       } finally {
         if (tempPath) {
-          await unlink(tempPath).catch(() => undefined);
+          await withBestEffort(unlink(tempPath), undefined);
         }
       }
     });

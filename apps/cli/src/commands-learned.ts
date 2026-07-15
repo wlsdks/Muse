@@ -21,6 +21,7 @@ import { resolveReflectionsFile } from "./commands-reflections.js";
 import { resolveAuthoredSkillsDir, resolveSkillRewardsFile } from "./commands-skills.js";
 import type { ProgramIO } from "./program.js";
 import { resolveDefaultUserKey } from "./user-id.js";
+import { withBestEffort } from "./async-promises.js";
 
 const TRUST_AT = 1; // reward ≥ this = a strategy/skill Muse has learned to trust
 const MAX_REFLECTIONS = 5;
@@ -295,7 +296,7 @@ export async function idleLearnedNoticeForUser(
   userId: string,
   env: Record<string, string | undefined> = process.env
 ): Promise<string | undefined> {
-  const strategies = await queryPlaybook(resolvePlaybookFile(env), userId).catch(() => []);
+  const strategies = await withBestEffort(queryPlaybook(resolvePlaybookFile(env), userId), []);
   return formatIdleLearnedNotice(strategies.filter((s) => s.probation === true).length);
 }
 
@@ -311,7 +312,7 @@ const MAX_DIGEST_PATTERNS = 3;
 async function detectPatternsForDigest(env: Record<string, string | undefined>): Promise<readonly PatternMatch[]> {
   const [signals, fired] = await Promise.all([
     aggregateActivitySignals(),
-    readPatternsFired(resolvePatternsFiredFile(env)).catch(() => [])
+    withBestEffort(readPatternsFired(resolvePatternsFiredFile(env)), [])
   ]);
   const now = new Date();
   return [...detectTimeOfDayPatterns(now, signals), ...detectWeeklyTaskPatterns(now, signals)]
@@ -327,25 +328,28 @@ export function registerLearnedCommand(program: Command, io: ProgramIO): void {
     .option("--user <id>", "User identity (default $MUSE_USER_ID or $USER)")
     .action(async (options: { readonly user?: string }) => {
       const userId = resolveDefaultUserKey({ override: options.user });
-      const env = process.env as Record<string, string | undefined>;
+      const env = process.env;
       const [strategies, authored, skillRewards, reflections, paused, memoryRecord, vetoes, patterns] = await Promise.all([
-        queryPlaybook(resolvePlaybookFile(env), userId).catch(() => []),
-        new AuthoredSkillStore({ dir: resolveAuthoredSkillsDir() }).listAuthored().catch(() => []),
-        readSkillRewards(resolveSkillRewardsFile()).catch(() => ({} as Record<string, number>)),
-        readReflections(resolveReflectionsFile()).catch(() => []),
-        isLearningPaused(resolveLearningPauseFile(env)).catch(() => false),
-        new FileUserMemoryStore().findByUserId(userId).catch(() => undefined),
-        queryVetoes(resolveVetoesFile(env), { userId }).catch(() => []),
-        detectPatternsForDigest(env).catch(() => [])
+        withBestEffort(queryPlaybook(resolvePlaybookFile(env), userId), []),
+        withBestEffort(new AuthoredSkillStore({ dir: resolveAuthoredSkillsDir() }).listAuthored(), []),
+        withBestEffort(readSkillRewards(resolveSkillRewardsFile()), {} as Record<string, number>),
+        withBestEffort(readReflections(resolveReflectionsFile()), []),
+        withBestEffort(isLearningPaused(resolveLearningPauseFile(env)), false),
+        withBestEffort(new FileUserMemoryStore().findByUserId(userId), undefined),
+        withBestEffort(queryVetoes(resolveVetoesFile(env), { userId }), []),
+        withBestEffort(detectPatternsForDigest(env), [])
       ]);
       const skills = authored.map((s) => ({ name: s.name, reward: rewardOf(skillRewards[s.name]) }));
       // `veto:`/`goal:`-prefixed preferences are a DIFFERENT mechanism (soft
       // "never suggest" / "steer toward", already surfaced by `muse memory
       // show`) — excluded here so they aren't confused with an action-class
       // veto below.
-      const preferences = Object.fromEntries(
-        Object.entries(memoryRecord?.preferences ?? {}).filter(([key]) => !isVetoKey(key) && !isGoalKey(key))
-      );
+      const preferences: Record<string, string> = {};
+      for (const [key, value] of Object.entries(memoryRecord?.preferences ?? {})) {
+        if (!isVetoKey(key) && !isGoalKey(key)) {
+          preferences[key] = value;
+        }
+      }
       io.stdout(`${renderLearnedDigest({
         memory: { facts: memoryRecord?.facts ?? {}, preferences },
         paused,

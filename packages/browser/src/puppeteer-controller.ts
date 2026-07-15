@@ -16,7 +16,7 @@ import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { sleep } from "@muse/shared";
+import { sleep, withBestEffort } from "@muse/shared";
 
 import {
   Browser as InstalledBrowser,
@@ -134,7 +134,7 @@ export class PuppeteerBrowserController implements BrowserController {
       process.env.MUSE_CHROME_PATH ??
       computeSystemExecutablePath({ browser: InstalledBrowser.CHROME, channel: ChromeReleaseChannel.STABLE });
     // A stale port file must not race the fresh launch's probe loop.
-    await rm(join(this.userDataDir, "DevToolsActivePort"), { force: true }).catch(() => { /* best-effort */ });
+    await withBestEffort(rm(join(this.userDataDir, "DevToolsActivePort"), { force: true }), undefined);
     const child = spawn(executable, [
       `--user-data-dir=${this.userDataDir}`,
       "--no-first-run",
@@ -182,7 +182,7 @@ export class PuppeteerBrowserController implements BrowserController {
     page.on("dialog", (dialog) => {
       const plan = planDialogResponse(dialog.type(), dialog.message(), dialog.defaultValue());
       this.lastDialog = plan.record;
-      settleDialog(dialog, plan).catch(() => { /* already handled / page gone */ });
+      void withBestEffort(settleDialog(dialog, plan), undefined);
     });
   }
 
@@ -201,16 +201,17 @@ export class PuppeteerBrowserController implements BrowserController {
     await action();
     // A new tab fires `targetcreated` essentially at click time, so a short
     // window catches it; a normal click (no new tab) isn't taxed beyond it.
-    const newestTarget = await browser
-      .waitForTarget((candidate) => !knownTargets.has(candidate), { timeout: NEW_TAB_WINDOW_MS })
-      .catch(() => null);
-    const newest = newestTarget ? await newestTarget.page().catch(() => null) : null;
+    const newestTarget = await withBestEffort(
+      browser.waitForTarget((candidate) => !knownTargets.has(candidate), { timeout: NEW_TAB_WINDOW_MS }),
+      null
+    );
+    const pageFromTarget = newestTarget ? await withBestEffort(newestTarget.page(), null) : null;
 
-    if (newest && !newest.isClosed()) {
-      this.page = newest;
-      this.registerDialogHandler(newest);
-      await newest.bringToFront().catch(() => { /* best-effort */ });
-      await newest.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* static popup */ });
+    if (pageFromTarget && !pageFromTarget.isClosed()) {
+      this.page = pageFromTarget;
+      this.registerDialogHandler(pageFromTarget);
+      await withBestEffort(pageFromTarget.bringToFront(), undefined);
+      await withBestEffort(pageFromTarget.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     }
   }
 
@@ -248,7 +249,14 @@ export class PuppeteerBrowserController implements BrowserController {
     };
     arm(this.page);
     const onTarget = (target: { page: () => Promise<Page | null> }): void => {
-      target.page().then((page) => arm(page ?? undefined)).catch(() => { /* target gone */ });
+      void (async () => {
+        try {
+          const page = await target.page();
+          arm(page ?? undefined);
+        } catch {
+          /* target gone */
+        }
+      })();
     };
     browser?.on("targetcreated", onTarget);
     try {
@@ -283,21 +291,29 @@ export class PuppeteerBrowserController implements BrowserController {
    * hard-capped so a forever-animating page can't wedge it.
    */
   private async settleDom(page: Page): Promise<void> {
+    type DomSettleWindowState = {
+      readonly [key: string]: {
+        readonly updatedAt: number;
+        observer?: MutationObserver;
+      };
+    };
     await page.evaluate((quietMs: number, marker: string) => {
       const body = document.body;
       if (!body) return;
-      const state = { updatedAt: Date.now() } as { updatedAt: number; observer: MutationObserver };
+      const state: { updatedAt: number; observer?: MutationObserver } = {
+        updatedAt: Date.now()
+      };
       const observer = new MutationObserver(() => {
         state.updatedAt = Date.now();
       });
       observer.observe(body, { attributes: true, childList: true, characterData: true, subtree: true });
       state.observer = observer;
-      (window as unknown as { [key: string]: unknown })[marker] = state;
+      (window as DomSettleWindowState)[marker] = state;
     }, 400, DOM_SETTLE_SIGNAL);
     try {
       await page.waitForFunction(
         (quietMs: number, marker: string) => {
-          const state = (window as unknown as { [key: string]: { updatedAt: number; observer?: MutationObserver } | undefined })[marker];
+          const state = (window as DomSettleWindowState)[marker];
           if (!state?.updatedAt) return true;
           return Date.now() - state.updatedAt >= quietMs;
         },
@@ -312,9 +328,9 @@ export class PuppeteerBrowserController implements BrowserController {
       /* page navigated away mid-wait */
     } finally {
       await page.evaluate((marker: string) => {
-        const state = (window as unknown as { [key: string]: { observer?: MutationObserver } | undefined })[marker];
+        const state = (window as DomSettleWindowState)[marker];
         state?.observer?.disconnect();
-        delete (window as unknown as { [key: string]: unknown })[marker];
+        delete (window as DomSettleWindowState)[marker];
       }, DOM_SETTLE_SIGNAL);
     }
   }
@@ -388,7 +404,7 @@ export class PuppeteerBrowserController implements BrowserController {
         }
       };
       walk(document);
-      const out: Array<{ ref: number; role: string; name: string; url?: string }> = [];
+      const out: SnapshotElement[] = [];
       // Dedup by role+name so a low-spec model sees a compact, distinct list
       // (nav bars repeat the same link many times — noise that wastes context).
       const seen = new Set<string>();
@@ -440,7 +456,7 @@ export class PuppeteerBrowserController implements BrowserController {
         ref += 1;
       }
       return out;
-    }, BROWSER_ELEMENT_CEILING, BROWSER_MAX_NAME)) as SnapshotElement[];
+    }, BROWSER_ELEMENT_CEILING, BROWSER_MAX_NAME));
     this.lastElements = new Map(elements.map((element) => [element.ref, element]));
     // Surface a dialog that fired since the last observation (handled per
     // dialog-policy), then clear it so it's reported exactly once.
@@ -470,7 +486,7 @@ export class PuppeteerBrowserController implements BrowserController {
     const page = await this.ensurePage();
     const selector = `pierce/[data-muse-ref="${ref.toString()}"]`;
     for (const frame of page.frames()) {
-      const handle = await frame.$(selector).catch(() => null);
+      const handle = await withBestEffort(frame.$(selector), null);
       if (handle) {
         await handle.dispose();
         return { frame, selector };
@@ -489,7 +505,7 @@ export class PuppeteerBrowserController implements BrowserController {
     // error page (404/500) surfaces its HTTP status like open/back.
     await this.withNavStatus(() => this.withNewTabFollow(() => frame.locator(selector).setTimeout(this.timeout).click()));
     const page = await this.ensurePage();
-    await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* page may not navigate */ });
+    await withBestEffort(page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     await this.settleDom(page);
     return this.snapshot();
   }
@@ -553,7 +569,7 @@ export class PuppeteerBrowserController implements BrowserController {
       // its status so the model isn't handed the error body as results.
       await this.withNavStatus(() => this.withNewTabFollow(() => page.keyboard.press("Enter")));
       const active = await this.ensurePage();
-      await active.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* may not navigate */ });
+      await withBestEffort(active.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     }
     const current = await this.ensurePage();
     await this.settleDom(current);
@@ -587,7 +603,7 @@ export class PuppeteerBrowserController implements BrowserController {
 
   async back(): Promise<PageSnapshot> {
     const page = await this.ensurePage();
-    const response = await page.goBack({ timeout: this.timeout, waitUntil: "domcontentloaded" }).catch(() => null);
+    const response = await withBestEffort(page.goBack({ timeout: this.timeout, waitUntil: "domcontentloaded" }), null);
     this.lastHttpStatus = response?.status();
     return this.snapshot();
   }
@@ -601,7 +617,7 @@ export class PuppeteerBrowserController implements BrowserController {
       else window.scrollBy({ top: dir === "up" ? -by : by });
     }, direction);
     // Lazy-loaders fire on scroll — let the new content settle before observing.
-    await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* static page */ });
+    await withBestEffort(page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     await this.settleDom(page);
     return this.snapshot();
   }
@@ -655,7 +671,11 @@ export class PuppeteerBrowserController implements BrowserController {
 
   async screenshotBase64(): Promise<string> {
     const page = await this.ensurePage();
-    return page.screenshot({ encoding: "base64", type: "png" }) as Promise<string>;
+    const screenshot = await page.screenshot({ encoding: "base64", type: "png" });
+    if (typeof screenshot !== "string") {
+      throw new Error("puppeteer screenshot failed: expected base64-encoded payload");
+    }
+    return screenshot;
   }
 
   describeElement(ref: number): SnapshotElement | undefined {
@@ -667,15 +687,17 @@ export class PuppeteerBrowserController implements BrowserController {
   }
 
   async disconnect(): Promise<void> {
-    try {
-      await this.browser?.disconnect();
-    } catch { /* best-effort */ }
+    if (this.browser) {
+      await withBestEffort(this.browser.disconnect(), undefined);
+    }
     this.browser = undefined;
     this.page = undefined;
   }
 
   async close(): Promise<void> {
-    await this.browser?.close().catch(() => { /* best-effort */ });
+    if (this.browser) {
+      await withBestEffort(this.browser.close(), undefined);
+    }
     this.browser = undefined;
     this.page = undefined;
   }

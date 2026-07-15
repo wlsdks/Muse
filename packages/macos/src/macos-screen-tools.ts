@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { JsonObject } from "@muse/shared";
+import { withBestEffort } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { runChild, type MacCommandResult } from "./macos-exec.js";
@@ -171,7 +172,7 @@ export function createMacScreenReadTool(deps: MacScreenReadToolDeps): MuseTool {
       } catch (cause) {
         return { described: false, reason: cause instanceof Error ? cause.message : String(cause) };
       } finally {
-        await cleanup(path).catch(() => { /* best-effort */ });
+        await withBestEffort(cleanup(path), undefined);
       }
     }
   };

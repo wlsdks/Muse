@@ -51,6 +51,7 @@ export interface InboxSnapshot {
 
 const DEFAULT_PER_PROVIDER_LIMIT = 20;
 const DEFAULT_TOTAL_LIMIT = 80;
+const EMPTY_CURSOR_IDS = new Set<string>();
 
 export class FileBackedInboxContextProvider {
   private readonly sources: readonly InboxSourceConfig[];
@@ -76,16 +77,27 @@ export class FileBackedInboxContextProvider {
       readonly fresh: readonly InboundMessage[];
     }
     const collected: CollectedSource[] = [];
-    for (const config of this.sources) {
-      try {
-        const cursor = await readInboxInjectionCursor(config.cursorFile, userId);
-        const inbox = await readInbox(config.inboxFile, this.perProviderLimit * 4);
-        const fresh = filterFresh(inbox, cursor, this.perProviderLimit);
-        if (fresh.length > 0) {
-          collected.push({ config, fresh });
+    const configByProviderId = new Map<string, InboxSourceConfig>();
+
+    const reads = await Promise.all(
+      this.sources.map(async (config) => {
+        try {
+          const cursor = await readInboxInjectionCursor(config.cursorFile, userId);
+          const inbox = await readInbox(config.inboxFile, this.perProviderLimit * 4);
+          const fresh = filterFresh(inbox, cursor, this.perProviderLimit);
+          if (fresh.length > 0) {
+            configByProviderId.set(config.providerId, config);
+            return { config, fresh };
+          }
+        } catch {
+          // fail-open per source
         }
-      } catch {
-        // fail-open per source
+        return undefined;
+      })
+    );
+    for (const entry of reads) {
+      if (entry) {
+        collected.push(entry);
       }
     }
     if (collected.length === 0) {
@@ -98,16 +110,23 @@ export class FileBackedInboxContextProvider {
     // totalLimit of 30 should yield ~25 Slack + 5 Discord, not 30
     // Slack and 0 Discord.
     const surfaced: { readonly providerId: string; readonly message: InboundMessage }[] = [];
-    const queues = collected.map((entry) => ({
-      messages: [...entry.fresh],
-      providerId: entry.config.providerId
+    type Queue = {
+      readonly messages: readonly InboundMessage[];
+      readonly providerId: string;
+      cursor: number;
+    };
+    const queues: Queue[] = collected.map((entry) => ({
+      messages: entry.fresh,
+      providerId: entry.config.providerId,
+      cursor: 0
     }));
     while (surfaced.length < this.totalLimit) {
       let progressed = false;
       for (const queue of queues) {
         if (surfaced.length >= this.totalLimit) break;
-        const next = queue.messages.shift();
+        const next = queue.messages[queue.cursor];
         if (!next) continue;
+        queue.cursor += 1;
         surfaced.push({ message: next, providerId: queue.providerId });
         progressed = true;
       }
@@ -123,7 +142,7 @@ export class FileBackedInboxContextProvider {
     // sitting in the unshipped tail.
     const advanceBySource = new Map<string, { cursorFile: string; advance: Record<string, SourceCursor> }>();
     for (const { message, providerId } of surfaced) {
-      const config = collected.find((entry) => entry.config.providerId === providerId)?.config;
+      const config = configByProviderId.get(providerId);
       if (!config) continue;
       const bucket = advanceBySource.get(config.cursorFile) ?? {
         advance: {},
@@ -168,33 +187,43 @@ export function filterFresh(
   cursor: InboxInjectionCursor,
   perProviderLimit: number
 ): readonly InboundMessage[] {
+  type ParsedInboundMessage = InboundMessage & { readonly receivedAtEpoch: number };
+  const cursorMessageIds = new Map<string, ReadonlySet<string>>(
+    Object.entries(cursor).map(([source, sourceCursor]) => [source, new Set(sourceCursor.ids)])
+  );
+  const cursorParsedAt = new Map<string, number>(
+    Object.entries(cursor).map(([source, sourceCursor]) => [source, Date.parse(sourceCursor.iso)])
+  );
+
   // Compare parsed instants, not raw ISO strings. receivedAtIso is
   // provider-supplied and providers differ in precision/offset
   // (".000Z" vs "Z" vs "+09:00"), so a lexicographic compare both
   // mis-orders AND, worse, can decide a genuinely-newer message is
   // NOT past the cursor — silently dropping a real inbound message.
   // Unparseable values keep a deterministic string order.
-  const sorted = [...inbox].sort((a, b) => {
-    const am = Date.parse(a.receivedAtIso);
-    const bm = Date.parse(b.receivedAtIso);
-    if (Number.isFinite(am) && Number.isFinite(bm)) {
-      if (am !== bm) {
-        return am - bm;
+  const sorted = inbox
+    .map((message): ParsedInboundMessage => ({ ...message, receivedAtEpoch: Date.parse(message.receivedAtIso) }))
+    .sort((a, b) => {
+      if (Number.isFinite(a.receivedAtEpoch) && Number.isFinite(b.receivedAtEpoch)) {
+        if (a.receivedAtEpoch !== b.receivedAtEpoch) {
+          return a.receivedAtEpoch - b.receivedAtEpoch;
+        }
+      } else if (a.receivedAtIso !== b.receivedAtIso) {
+        return a.receivedAtIso.localeCompare(b.receivedAtIso);
       }
-    } else if (a.receivedAtIso !== b.receivedAtIso) {
-      return a.receivedAtIso.localeCompare(b.receivedAtIso);
-    }
-    return a.messageId.localeCompare(b.messageId);
-  });
+      return a.messageId.localeCompare(b.messageId);
+    });
   const fresh = sorted.filter((message) => {
-    const last = cursor[message.source];
-    if (!last) {
+    const sourceCursor = cursor[message.source];
+    if (!sourceCursor) {
       return true;
     }
-    const mm = Date.parse(message.receivedAtIso);
-    const lm = Date.parse(last.iso);
-    if (Number.isFinite(mm) && Number.isFinite(lm)) {
-      if (mm > lm) {
+
+    const boundaryIds = cursorMessageIds.get(message.source) ?? EMPTY_CURSOR_IDS;
+
+    const cursorAt = cursorParsedAt.get(message.source) ?? Number.NaN;
+    if (Number.isFinite(message.receivedAtEpoch) && Number.isFinite(cursorAt)) {
+      if (message.receivedAtEpoch > cursorAt) {
         return true;
       }
       // At the boundary instant a message is fresh ONLY if the cursor
@@ -203,17 +232,17 @@ export function filterFresh(
       // eventually delivered, instead of one advancing the cursor past
       // the other (message loss). An EMPTY id set is a legacy/strict
       // boundary: the message at the instant is already-seen (preserving
-      // the original `mm > lm` semantics).
-      if (mm === lm) {
-        return last.ids.length > 0 && !last.ids.includes(message.messageId);
+      // the original receivedAtEpoch comparison semantics).
+      if (message.receivedAtEpoch === cursorAt) {
+        return boundaryIds.size > 0 && !boundaryIds.has(message.messageId);
       }
       return false;
     }
-    if (message.receivedAtIso > last.iso) {
+    if (message.receivedAtIso > sourceCursor.iso) {
       return true;
     }
-    if (message.receivedAtIso === last.iso) {
-      return last.ids.length > 0 && !last.ids.includes(message.messageId);
+    if (message.receivedAtIso === sourceCursor.iso) {
+      return boundaryIds.size > 0 && !boundaryIds.has(message.messageId);
     }
     return false;
   });

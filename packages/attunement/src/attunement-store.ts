@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 
 import { atomicWriteFile, withFileLock, withFileMutationQueue } from "@muse/stores";
+import { isNodeErrorCode, NODE_ERROR_CODES } from "@muse/shared";
 
 import { baselinePolicy, isBaselinePolicy, policyForOutcome } from "./policy-reducer.js";
 import {
@@ -141,10 +142,9 @@ function isReference(value: unknown): value is ArtifactReference {
 
 function isLink(value: unknown): value is ArtifactLink {
   if (!isRecord(value) || !isReference(value)) return false;
-  const record = value as Record<string, unknown>;
-  return isNonEmptyString(record.linkedAt)
-    && record.linkedBy === "user"
-    && isNonEmptyString(record.threadId);
+  return isNonEmptyString(value.linkedAt)
+    && value.linkedBy === "user"
+    && isNonEmptyString(value.threadId);
 }
 
 function isPolicy(value: unknown): value is PersonalThread["policy"] {
@@ -403,11 +403,11 @@ export async function readAttunementState(file: string): Promise<AttunementState
   try {
     raw = await fs.readFile(file, "utf8");
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return EMPTY_STATE;
+    if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) return EMPTY_STATE;
     throw cause;
   }
   try {
-    return parseState(JSON.parse(raw) as unknown);
+    return parseState(JSON.parse(raw));
   } catch (cause) {
     if (cause instanceof AttunementStoreError) throw cause;
     throw new AttunementStoreError("attunement store is not valid JSON; refusing to overwrite it");

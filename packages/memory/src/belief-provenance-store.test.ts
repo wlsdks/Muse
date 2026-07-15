@@ -128,11 +128,14 @@ describe("selectRecentlyLearnedFacts", () => {
 });
 
 describe("formatFirstLearned (honest attribution: how Muse learned it)", () => {
-  const fact = (source: "auto" | "user") => ({
+  const fact = (source: "auto" | "user"): FactProvenance => ({
     key: "home_city",
-    kind: "fact" as const,
+    kind: "fact",
     value: "Busan",
     firstSeen: "2026-06-20T12:00:00Z",
+    lastConfirmed: "2026-06-20T12:00:00Z",
+    confirmCount: 1,
+    distinctValueCount: 1,
     source
   });
 

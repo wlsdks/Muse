@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
+import { isRecord } from "@muse/shared";
+
+import { serializePerFile } from "./file-mutation-queue.js";
+
 /**
  * Persisted set of inbound message keys (`${providerId}:${messageId}`)
  * whose delegation ack has already been DELIVERED, so a restart or a
@@ -20,6 +24,10 @@ interface PersistedShape {
   readonly acked: readonly string[];
 }
 
+function isPersistedAckCursor(value: unknown): value is PersistedShape {
+  return isRecord(value) && value.version === 1 && Array.isArray(value.acked) && value.acked.every((item) => typeof item === "string");
+}
+
 export async function readAckCursor(file: string): Promise<ReadonlySet<string>> {
   let raw: string;
   try {
@@ -28,9 +36,9 @@ export async function readAckCursor(file: string): Promise<ReadonlySet<string>> 
     return new Set();
   }
   try {
-    const parsed = JSON.parse(raw) as { version?: unknown; acked?: unknown };
-    if (parsed && parsed.version === 1 && Array.isArray(parsed.acked)) {
-      return new Set(parsed.acked.filter((k): k is string => typeof k === "string"));
+    const parsed = JSON.parse(raw);
+    if (isPersistedAckCursor(parsed)) {
+      return new Set(parsed.acked);
     }
   } catch {
     // malformed → treat as empty; worst case one duplicate ack, never a lost final answer
@@ -43,13 +51,11 @@ export async function readAckCursor(file: string): Promise<ReadonlySet<string>> 
 // exactly the duplicate this cursor exists to prevent). Per-file mutation
 // queue + randomUUID tmp, mirrored from `appendReplyCursor`.
 const appendQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
 
 export async function appendAckCursor(file: string, newKeys: readonly string[]): Promise<void> {
   if (newKeys.length === 0) {
     return;
   }
-  const prior = appendQueues.get(file) ?? resolvedPromise();
   const op = async (): Promise<void> => {
     const merged = new Set(await readAckCursor(file));
     for (const key of newKeys) {
@@ -63,7 +69,5 @@ export async function appendAckCursor(file: string, newKeys: readonly string[]):
     await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
     await fs.rename(tmp, file);
   };
-  const next = prior.then(op, op);
-  appendQueues.set(file, next.then(() => undefined, () => undefined));
-  return next;
+  return serializePerFile(appendQueues, file, op);
 }

@@ -15,6 +15,7 @@
  */
 
 import type { JsonObject } from "@muse/shared";
+import { isRecord } from "@muse/shared";
 
 import { withFileMutationQueue } from "./atomic-file-store.js";
 import { decryptFileAtRest, encryptFileAtRest, isFileEncryptedAtRest, readMaybeEncrypted, withFileLock, writeMaybeEncrypted } from "./encrypted-file.js";
@@ -92,7 +93,8 @@ export function resolveUpcomingBirthdays(
   options: { readonly now?: Date; readonly withinDays?: number } = {}
 ): UpcomingBirthday[] {
   const now = options.now ?? new Date();
-  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays as number)) : 30;
+  const configuredDays = options.withinDays ?? 30;
+  const withinDays = Number.isFinite(configuredDays) ? Math.max(0, Math.trunc(configuredDays)) : 30;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const pad = (n: number): string => String(n).padStart(2, "0");
   const out: UpcomingBirthday[] = [];
@@ -143,6 +145,17 @@ export type ContactResolution =
   | { readonly status: "ambiguous"; readonly matches: readonly Contact[] }
   | { readonly status: "unknown" };
 
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record: Record<string, unknown> = {};
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (typeof key === "string") {
+      record[key] = nestedValue;
+    }
+  }
+  return record;
+}
+
 export async function readContacts(file: string, env: NodeJS.ProcessEnv = process.env): Promise<readonly Contact[]> {
   // A WRONG key THROWS here (fail-closed) — propagate it; an undecryptable people
   // graph is NOT corrupt and must NEVER be quarantined-to-empty (that would erase
@@ -155,19 +168,28 @@ export async function readContacts(file: string, env: NodeJS.ProcessEnv = proces
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    parsed = JSON.parse(text);
   } catch {
     await quarantineCorruptStore(file);
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { contacts?: unknown }).contacts)) {
+  const contacts = readRecordArrayField(parsed, "contacts");
+  if (contacts === undefined) {
     await quarantineCorruptStore(file);
     return [];
   }
-  return (parsed as { contacts: unknown[] }).contacts.flatMap((entry): readonly Contact[] => {
+  return contacts.flatMap((entry): readonly Contact[] => {
     const contact = coerceContact(entry);
     return contact ? [contact] : [];
   });
+}
+
+function readRecordArrayField(value: unknown, key: string): unknown[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const candidate = value[key];
+  return Array.isArray(candidate) ? candidate : undefined;
 }
 
 export async function writeContacts(file: string, contacts: readonly Contact[], env: NodeJS.ProcessEnv = process.env): Promise<void> {
@@ -406,10 +428,8 @@ function matchesPartial(contact: Contact, q: string): boolean {
  * guaranteeing the returned `Contact` matches its type.
  */
 function coerceContact(value: unknown): Contact | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const c = value as Record<string, unknown>;
+  const c = toRecord(value);
+  if (!c) return undefined;
   if (typeof c.id !== "string" || typeof c.name !== "string") {
     return undefined;
   }
@@ -425,11 +445,13 @@ function coerceContact(value: unknown): Contact | undefined {
   const about = str(c.about);
   // Drop any malformed edge (missing/non-string `to`) rather than crash the read.
   const connections = Array.isArray(c.connections)
-    ? c.connections.flatMap((e): readonly { to: string; as?: string }[] => {
+      ? c.connections.flatMap((e): readonly { to: string; as?: string }[] => {
         if (!e || typeof e !== "object") return [];
-        const to = str((e as Record<string, unknown>).to);
+        const record = toRecord(e);
+        if (!record) return [];
+        const to = str(record.to);
         if (to === undefined) return [];
-        const as = str((e as Record<string, unknown>).as);
+        const as = str(record.as);
         return [{ to, ...(as !== undefined ? { as } : {}) }];
       })
     : undefined;

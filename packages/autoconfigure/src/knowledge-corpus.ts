@@ -1,4 +1,5 @@
-import { finiteOr, truncateUtf16Safe } from "@muse/shared";
+import { parseBooleanFromEnv, finiteOr, truncateUtf16Safe } from "@muse/shared";
+import { isRecord } from "@muse/shared";
 import { annotateNoteChunks, chunkText, classifyRetrievalConfidence, edgeLoadByRelevance, rankKnowledgeChunksWithHop, renderKnowledgeMatches, type KnowledgeChunk, type KnowledgeMatch } from "@muse/agent-core";
 import type { NotesProvider, TasksProvider } from "@muse/domain-tools";
 import type { MuseTool } from "@muse/tools";
@@ -509,8 +510,8 @@ export function createKnowledgeEnricher(options: KnowledgeEnricherOptions): (que
     const matches = await rankKnowledgeChunksWithHop(query, corpus, {
       embed: options.embed,
       hybrid: true,
-      ...(process.env.MUSE_RECALL_BM25 === "true" ? { bm25: true } : {}),
-      ...(process.env.MUSE_RECALL_SECOND_HOP === "true" ? { secondHop: true } : {}),
+      ...(parseBooleanFromEnv(process.env.MUSE_RECALL_BM25, false) ? { bm25: true } : {}),
+      ...(parseBooleanFromEnv(process.env.MUSE_RECALL_SECOND_HOP, false) ? { secondHop: true } : {}),
       topK: 5,
       ...(options.minScore !== undefined ? { minScore: options.minScore } : { minScore: 0.2 })
     });
@@ -593,7 +594,8 @@ export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchTool
       risk: "read"
     },
     execute: async (args) => {
-      const query = typeof (args as { query?: unknown }).query === "string" ? (args as { query: string }).query : "";
+      const argsRecord = isRecord(args) ? args : {};
+      const query = typeof argsRecord.query === "string" ? argsRecord.query : "";
       const corpus = await assembleKnowledgeCorpus({
         ...(options.notesProvider ? { notesProvider: options.notesProvider } : {}),
         ...(options.tasksProvider ? { tasksProvider: options.tasksProvider } : {}),
@@ -617,8 +619,8 @@ export function createNotesKnowledgeSearchTool(options: NotesKnowledgeSearchTool
         diversify: true,
         embed: options.embed,
         hybrid: true,
-        ...(process.env.MUSE_RECALL_BM25 === "true" ? { bm25: true } : {}),
-        ...(process.env.MUSE_RECALL_SECOND_HOP === "true" ? { secondHop: true } : {}),
+        ...(parseBooleanFromEnv(process.env.MUSE_RECALL_BM25, false) ? { bm25: true } : {}),
+        ...(parseBooleanFromEnv(process.env.MUSE_RECALL_SECOND_HOP, false) ? { secondHop: true } : {}),
         ...(options.topK !== undefined ? { topK: options.topK } : {})
       });
       // Record a FACT-recall hit ONLY for a memory-sourced chunk that PASSED

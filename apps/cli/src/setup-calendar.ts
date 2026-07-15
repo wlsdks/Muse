@@ -23,9 +23,11 @@ import { join as pathJoin } from "node:path";
 import { URL, URLSearchParams } from "node:url";
 import { on, once } from "node:events";
 
+import { isRecord } from "@muse/shared";
 import { confirm, isCancel, multiselect, password, text } from "@clack/prompts";
 import { FileCalendarCredentialStore } from "@muse/calendar";
 import { isLocalOnlyEnabled } from "@muse/model";
+import { withBestEffort } from "./async-promises.js";
 
 import { googlePreflightGuidance, preflightGoogleOAuthClient, validateGoogleOAuthClientIdInput } from "./gmail-oauth.js";
 
@@ -175,13 +177,13 @@ async function setupGoogle(store: FileCalendarCredentialStore, io: SetupCalendar
   });
 
   if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text().catch(() => "");
+    const errorText = await withBestEffort(tokenResponse.text(), "");
     io.stderr(`Google OAuth token exchange failed (${tokenResponse.status}): ${errorText}\n`);
     return false;
   }
 
-  const payload = await tokenResponse.json() as { readonly refresh_token?: string };
-  if (!payload.refresh_token) {
+  const payload = await tokenResponse.json();
+  if (!isRecord(payload) || typeof payload.refresh_token !== "string" || payload.refresh_token.length === 0) {
     io.stderr("Google response missing refresh_token. Make sure the OAuth consent screen requests offline access.\n");
     return false;
   }
@@ -348,7 +350,7 @@ async function runOAuthCallbackServer(
         throw new Error("OAuth callback server closed unexpectedly");
       }
 
-      const [request, response] = requestResult.event.value as unknown as readonly [IncomingMessage, ServerResponse];
+      const [request, response] = requestResult.event.value;
 
       if (!request.url) {
         response.statusCode = 400;

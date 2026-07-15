@@ -7,6 +7,7 @@ import type { RuntimeSettings } from "@muse/runtime-settings";
 import type { FastifyInstance } from "fastify";
 
 import { isRecord, parseAgentSpecInput, parseResponseLocales } from "./server-helpers.js";
+import { readQueryString, readRouteParam } from "./compat-parsers.js";
 import type { ServerOptions } from "./server.js";
 
 export function registerAgentSpecRoutes(
@@ -17,7 +18,10 @@ export function registerAgentSpecRoutes(
   server.get("/agent-specs", async () => agentSpecRegistry.list());
 
   server.get("/agent-specs/:name", async (request, reply) => {
-    const { name } = request.params as { readonly name: string };
+    const name = readRouteParam(request, "name");
+    if (!name) {
+      return reply.status(400).send({ code: "INVALID_AGENT_SPEC_NAME", message: "agent spec name is required" });
+    }
     const spec = await agentSpecRegistry.getByName(name);
 
     if (!spec) {
@@ -42,7 +46,10 @@ export function registerAgentSpecRoutes(
   });
 
   server.delete("/agent-specs/:name", async (request) => {
-    const { name } = request.params as { readonly name: string };
+    const name = readRouteParam(request, "name");
+    if (!name) {
+      return { deleted: false, error: "invalid agent spec name" };
+    }
 
     await agentSpecRegistry.deleteByName(name);
     return { deleted: true, name };
@@ -90,7 +97,7 @@ export function registerToolsRoutes(
       });
     }
 
-    const filterRiskRaw = (request.query as { readonly risk?: string } | undefined)?.risk;
+    const filterRiskRaw = readQueryString(request, "risk");
     const filterRisk =
       filterRiskRaw === "read" || filterRiskRaw === "write" || filterRiskRaw === "execute"
         ? filterRiskRaw

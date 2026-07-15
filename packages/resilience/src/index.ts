@@ -307,7 +307,11 @@ export class CircuitBreakerRegistry {
 
   private evictOverflow(): void {
     while (this.breakers.size > this.maxBreakers) {
-      const oldest = this.breakers.keys().next().value as string | undefined;
+      const nextOldest = this.breakers.keys().next();
+      if (nextOldest.done) {
+        return;
+      }
+      const oldest = nextOldest.value;
 
       if (!oldest) {
         return;
@@ -395,10 +399,11 @@ export async function withTimeout<T>(
   try {
     return await Promise.race([
       operation(controller.signal),
-      sleepWithTimer(timeoutMs, undefined, { signal: timeoutController.signal }).then(() => {
+      (async () => {
+        await sleepWithTimer(timeoutMs, undefined, { signal: timeoutController.signal });
         controller.abort();
         throw new TimeoutError(timeoutMs);
-      })
+      })()
     ]);
   } finally {
     timeoutController.abort();

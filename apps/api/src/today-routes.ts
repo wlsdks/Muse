@@ -15,7 +15,7 @@
  *
  * Behavior:
  *   - All three reads run in `Promise.all` with per-promise
- *     `.catch(() => undefined)` so a missing notesDir / unreachable
+ *     fail-open fallback (`undefined`) so a missing notesDir / unreachable
  *     calendar provider doesn't collapse the whole briefing.
  *   - Sections that aren't configured (e.g. tasksFile undefined)
  *     come back as `undefined`. The route still returns 200 so a
@@ -28,11 +28,14 @@
 
 import { promises as fs } from "node:fs";
 import { join, resolve as pathResolve } from "node:path";
+import { withBestEffort } from "@muse/shared";
+
 
 import type { CalendarEvent, CalendarProviderRegistry } from "@muse/calendar";
 import { compareFollowupsByScheduledFor, compareRemindersByDueAt, readFollowups, readReminders, serializeFollowup, serializeReminder, type PersistedFollowup, type PersistedReminder } from "@muse/stores";
 import type { FastifyInstance } from "fastify";
 
+import { isRecord, readQueryString } from "./compat-parsers.js";
 import { requireAuthenticated } from "./server-helpers.js";
 import type { ServerOptions } from "./server.js";
 
@@ -71,8 +74,7 @@ export function registerTodayRoutes(server: FastifyInstance, gate: TodayRoutesGa
       return reply;
     }
 
-    const { lookaheadHours } = (request.query as { lookaheadHours?: string } | undefined) ?? {};
-    const hoursParsed = parseLookaheadHours(lookaheadHours);
+    const hoursParsed = parseLookaheadHours(readQueryString(request, "lookaheadHours"));
     const hours = Number.isFinite(hoursParsed) && hoursParsed >= 1
       ? Math.min(hoursParsed, MAX_LOOKAHEAD_HOURS)
       : DEFAULT_LOOKAHEAD_HOURS;
@@ -80,11 +82,11 @@ export function registerTodayRoutes(server: FastifyInstance, gate: TodayRoutesGa
     const horizon = new Date(now.getTime() + hours * 3_600_000);
 
     const [tasks, events, notes, reminders, followups] = await Promise.all([
-      readOpenTasks(gate.tasksFile).catch(() => undefined),
-      readUpcomingEvents(gate.calendar, now, horizon).catch(() => undefined),
-      readRecentNotes(gate.notesDir).catch(() => undefined),
-      readDueReminders(gate.remindersFile, now, horizon).catch(() => undefined),
-      readDueFollowups(gate.followupsFile, horizon).catch(() => undefined)
+withBestEffort(readOpenTasks(gate.tasksFile), undefined),
+withBestEffort(readUpcomingEvents(gate.calendar, now, horizon), undefined),
+withBestEffort(readRecentNotes(gate.notesDir), undefined),
+withBestEffort(readDueReminders(gate.remindersFile, now, horizon), undefined),
+withBestEffort(readDueFollowups(gate.followupsFile, horizon), undefined)
     ]);
 
     return {
@@ -198,14 +200,14 @@ async function readOpenTasks(tasksFile: string | undefined): Promise<readonly Pe
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { tasks?: unknown }).tasks)) {
+  if (!isRecord(parsed) || !Array.isArray(parsed.tasks)) {
     return [];
   }
-  return ((parsed as { tasks: unknown[] }).tasks as PersistedTaskRow[])
+  return parsed.tasks
     .filter(isOpenPersistedTask)
     .sort((left, right) =>
       (right.createdAt ?? "").localeCompare(left.createdAt ?? "") || right.id.localeCompare(left.id)
@@ -214,12 +216,11 @@ async function readOpenTasks(tasksFile: string | undefined): Promise<readonly Pe
 }
 
 function isOpenPersistedTask(value: unknown): value is PersistedTaskRow {
-  return Boolean(value)
-    && typeof value === "object"
-    && (value as PersistedTaskRow).status === "open"
-    && typeof (value as PersistedTaskRow).id === "string"
-    && typeof (value as PersistedTaskRow).title === "string"
-    && typeof (value as PersistedTaskRow).createdAt === "string";
+  return isRecord(value)
+    && value.status === "open"
+    && typeof value.id === "string"
+    && typeof value.title === "string"
+    && typeof value.createdAt === "string";
 }
 
 async function readUpcomingEvents(

@@ -20,6 +20,7 @@ import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isRecord, withBestEffort } from "@muse/shared";
 
 const MANIFEST_FILE = "manifest.json";
 const CONTENT_FILE = "content";
@@ -118,8 +119,8 @@ function reviveVersion(raw: unknown): number {
 }
 
 function reviveManifest(raw: unknown): CheckpointManifest | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const r = raw as Record<string, unknown>;
+  if (!isRecord(raw)) return undefined;
+  const r = raw;
   if (typeof r.id !== "string" || r.id.length === 0) return undefined;
   if (typeof r.at !== "string") return undefined;
   if (typeof r.action !== "string" || !CHECKPOINT_ACTIONS.has(r.action)) return undefined;
@@ -194,7 +195,7 @@ export class FileCheckpointStore implements CheckpointStore {
     await mkdir(this.dir, { recursive: true });
     const finalDir = join(this.dir, id);
     const tmpDir = join(this.dir, `${TMP_PREFIX}${id}`);
-    await rm(tmpDir, { force: true, recursive: true }).catch(() => undefined);
+    await withBestEffort(rm(tmpDir, { force: true, recursive: true }), undefined);
     await mkdir(tmpDir, { recursive: true });
     try {
       await writeFile(join(tmpDir, MANIFEST_FILE), JSON.stringify(manifest, null, 2), "utf8");
@@ -207,7 +208,7 @@ export class FileCheckpointStore implements CheckpointStore {
       // Directory rename is atomic on POSIX — the checkpoint appears whole or not at all.
       await rename(tmpDir, finalDir);
     } catch (error) {
-      await rm(tmpDir, { force: true, recursive: true }).catch(() => undefined);
+      await withBestEffort(rm(tmpDir, { force: true, recursive: true }), undefined);
       throw error;
     }
     await this.evictOverCap(id);
@@ -292,8 +293,11 @@ export class FileCheckpointStore implements CheckpointStore {
       dirs.map(async (d) => {
         try {
           const raw = await readFile(join(this.dir, d.name, MANIFEST_FILE), "utf8");
-          const parsed = JSON.parse(raw) as { at?: unknown };
-          return { at: typeof parsed.at === "string" ? parsed.at : "", name: d.name };
+          const parsed = JSON.parse(raw);
+          if (!isRecord(parsed) || typeof parsed.at !== "string") {
+            return { at: "", name: d.name };
+          }
+          return { at: parsed.at, name: d.name };
         } catch {
           return { at: "", name: d.name }; // unreadable sorts oldest — evicted first, which is fine
         }
@@ -305,7 +309,7 @@ export class FileCheckpointStore implements CheckpointStore {
     for (const entry of withAt) {
       if (removed >= overflow) break;
       if (entry.name === justWrittenId) continue;
-      await rm(join(this.dir, entry.name), { force: true, recursive: true }).catch(() => undefined);
+      await withBestEffort(rm(join(this.dir, entry.name), { force: true, recursive: true }), undefined);
       removed += 1;
     }
   }

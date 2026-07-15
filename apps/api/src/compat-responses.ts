@@ -32,9 +32,11 @@ export function validationErrorResponse(details: JsonObject): JsonObject {
 }
 
 export function prefixValidationDetails(prefix: string, details: JsonObject): JsonObject {
-  return Object.fromEntries(
-    Object.entries(details).map(([field, message]) => [`${prefix}.${field}`, message])
-  );
+  const next: JsonObject = {};
+  for (const [field, message] of Object.entries(details)) {
+    next[`${prefix}.${field}`] = message;
+  }
+  return next;
 }
 
 export function notFound(reply: FastifyReply, code: string) {

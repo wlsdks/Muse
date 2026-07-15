@@ -38,6 +38,7 @@ import {
 import type { MuseEnvironment } from "./index.js";
 import { OPENAI_COMPAT_PRESETS } from "./openai-compat-presets.js";
 import { readCredentialsSync, stringField } from "./provider-utils.js";
+import { parseBoolean } from "./env-parsers.js";
 
 import {
   resolveAuthoredSkillsDir,
@@ -179,7 +180,7 @@ function createModelEnvironmentOverlay(
 
   // A fresh target avoids Proxy invariant interaction with an arbitrary
   // source Proxy. Every virtual own property is configurable.
-  const target = Object.create(null) as Record<string, never>;
+  const target: Record<string, never> = Object.create(null);
   return new Proxy(target, {
     defineProperty: () => false,
     deleteProperty: () => false,
@@ -226,7 +227,7 @@ function createModelEnvironmentOverlay(
     },
     preventExtensions: () => false,
     set: () => false
-  }) as MuseEnvironment;
+  });
 }
 
 export function mergeModelKeysFromFile(
@@ -374,7 +375,7 @@ export {
  * Returns `undefined` when `MUSE_SKILLS_ENABLED=false`.
  */
 export async function buildSkillRegistry(env: MuseEnvironment): Promise<SkillRegistry | undefined> {
-  if (env.MUSE_SKILLS_ENABLED?.trim().toLowerCase() === "false") {
+  if (!parseBoolean(env.MUSE_SKILLS_ENABLED, true)) {
     return undefined;
   }
   const roots: { path: string; source: "user" | "workspace" | "authored" }[] = [

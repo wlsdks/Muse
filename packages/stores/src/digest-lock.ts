@@ -49,7 +49,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-import { errorMessage } from "@muse/shared";
+import { errorMessage, NODE_ERROR_CODES, hasNodeErrorCodeIn, isNodeErrorCode, withBestEffort } from "@muse/shared";
 
 /** Default staleness window for `withProcessLock` — a lock older than this
  *  (no fresh holder) is treated as crashed and broken. */
@@ -85,7 +85,7 @@ async function probeLock(lockPath: string, staleMs: number): Promise<LockProbe> 
     // ONLY ENOENT means "vanished between EEXIST and stat" — any other stat
     // error says nothing about the holder, so treat it as live (never steal
     // a lock we can't actually confirm is gone).
-    return (cause as NodeJS.ErrnoException).code === "ENOENT" ? "vanished" : "live";
+    return isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT) ? "vanished" : "live";
   }
 }
 
@@ -138,11 +138,10 @@ async function tryAcquireOnce(lockPath: string, nonce: string): Promise<AcquireA
     await handle.writeFile(nonce, "utf8");
     return "acquired";
   } catch (cause) {
-    const code = (cause as NodeJS.ErrnoException).code;
-    if (code === "EEXIST" || code === "EBUSY") {
+    if (hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.EEXIST, NODE_ERROR_CODES.EBUSY)) {
       return "contended";
     }
-    if (code === "EPERM" || code === "EACCES") {
+    if (hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.EPERM, NODE_ERROR_CODES.EACCES)) {
       // win32 can surface a concurrent unlink-vs-open race on the lock file as
       // EPERM/EACCES rather than EEXIST — genuine contention. But on POSIX the
       // SAME codes also fire when the lock's DIRECTORY itself is unwritable
@@ -167,7 +166,7 @@ async function tryAcquireOnce(lockPath: string, nonce: string): Promise<AcquireA
     }
     return { error: cause };
   } finally {
-    await handle?.close().catch(() => undefined);
+    await withBestEffort(handle?.close() ?? Promise.resolve(), undefined);
   }
 }
 
@@ -201,7 +200,7 @@ export async function withProcessLock<T>(
       } finally {
         clearInterval(heartbeat);
         if (await lockHoldsNonce(lockPath, nonce)) {
-          await fs.unlink(lockPath).catch(() => undefined);
+          await withBestEffort(fs.unlink(lockPath), undefined);
         }
       }
     }
@@ -215,7 +214,7 @@ export async function withProcessLock<T>(
       return { kind: "lock-held" };
     }
     if (probe === "stale") {
-      await fs.unlink(lockPath).catch(() => undefined);
+      await withBestEffort(fs.unlink(lockPath), undefined);
     }
     // "vanished" or a just-stolen "stale" lock — loop retries the open,
     // bounded by MAX_ACQUIRE_ATTEMPTS so a flapping lock can't spin forever.

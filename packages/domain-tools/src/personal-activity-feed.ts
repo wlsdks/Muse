@@ -23,11 +23,12 @@
 
 import { promises as fs } from "node:fs";
 
-import { readFollowups, type PersistedFollowup } from "@muse/stores";
-import { readProactiveHistory } from "@muse/stores";
-import { readReminderHistory } from "@muse/stores";
+import { readFollowups, type PersistedFollowup, readProactiveHistory, readReminderHistory } from "@muse/stores";
+import { withBestEffort } from "@muse/shared";
 
-export type ActivityKind = "reminder" | "proactive" | "followup" | "pattern" | "episode";
+export const ACTIVITY_KINDS = ["reminder", "proactive", "followup", "pattern", "episode"] as const;
+
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 export interface ActivityEntry {
   readonly kind: ActivityKind;
@@ -53,22 +54,10 @@ export interface ReadActivityFeedOptions {
   readonly limit?: number;
 }
 
-interface PatternFiredRow {
-  readonly patternId?: unknown;
-  readonly firedAtMs?: unknown;
-  readonly suggestion?: unknown;
-}
-
-interface EpisodeRow {
-  readonly id?: unknown;
-  readonly endedAt?: unknown;
-  readonly summary?: unknown;
-}
-
 async function safeReadJson(path: string): Promise<unknown | undefined> {
   try {
     const raw = await fs.readFile(path, "utf8");
-    return JSON.parse(raw) as unknown;
+    return JSON.parse(raw);
   } catch {
     return undefined;
   }
@@ -76,7 +65,8 @@ async function safeReadJson(path: string): Promise<unknown | undefined> {
 
 async function readReminderActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const rows = await readReminderHistory(file).catch(() => [] as const);
+  const rows = await withBestEffort(readReminderHistory(file), undefined);
+  if (rows === undefined) return [];
   return rows.map((row): ActivityEntry => ({
     destination: row.destination,
     id: row.reminderId,
@@ -90,7 +80,8 @@ async function readReminderActivity(file: string | undefined): Promise<readonly 
 
 async function readProactiveActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const rows = await readProactiveHistory(file).catch(() => [] as const);
+  const rows = await withBestEffort(readProactiveHistory(file), undefined);
+  if (rows === undefined) return [];
   return rows.map((row): ActivityEntry => ({
     destination: row.destination,
     id: row.itemId,
@@ -104,22 +95,23 @@ async function readProactiveActivity(file: string | undefined): Promise<readonly
 
 async function readFollowupActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const rows = await readFollowups(file).catch(() => [] as const);
+  const rows = await withBestEffort(readFollowups(file), undefined);
+  if (rows === undefined) return [];
   return rows
-    .filter((row: PersistedFollowup) => row.status === "fired" && typeof row.firedAt === "string")
+    .filter((row): row is PersistedFollowup & { firedAt: string } => row.status === "fired" && typeof row.firedAt === "string")
     .map((row): ActivityEntry => ({
       id: row.id,
       kind: "followup",
       status: "fired",
       summary: row.summary,
-      whenIso: row.firedAt as string
+      whenIso: row.firedAt
     }));
 }
 
 async function readPatternActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const doc = await safeReadJson(file) as { fired?: readonly PatternFiredRow[] } | undefined;
-  const rows = doc?.fired ?? [];
+  const doc = await safeReadJson(file);
+  const rows = readRowsFromDocument(doc, "fired");
   return rows.flatMap((row): readonly ActivityEntry[] => {
     // Number.isFinite(firedAtMs) isn't enough: a finite but
     // out-of-range ms makes an Invalid Date whose toISOString()
@@ -140,8 +132,8 @@ async function readPatternActivity(file: string | undefined): Promise<readonly A
 
 async function readEpisodeActivity(file: string | undefined): Promise<readonly ActivityEntry[]> {
   if (!file) return [];
-  const doc = await safeReadJson(file) as { episodes?: readonly EpisodeRow[] } | undefined;
-  const rows = doc?.episodes ?? [];
+  const doc = await safeReadJson(file);
+  const rows = readRowsFromDocument(doc, "episodes");
   return rows.flatMap((row): readonly ActivityEntry[] => {
     if (typeof row.id !== "string" || typeof row.endedAt !== "string" || typeof row.summary !== "string") {
       return [];
@@ -155,13 +147,15 @@ async function readEpisodeActivity(file: string | undefined): Promise<readonly A
   });
 }
 
-export const ACTIVITY_KINDS: ReadonlySet<ActivityKind> = new Set([
-  "reminder",
-  "proactive",
-  "followup",
-  "pattern",
-  "episode"
-]);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readRowsFromDocument(document: unknown, key: "fired" | "episodes"): readonly Record<string, unknown>[] {
+  if (!isRecord(document)) return [];
+  const rows = document[key];
+  return Array.isArray(rows) ? rows.filter(isRecord) : [];
+}
 
 export async function readActivityFeed(options: ReadActivityFeedOptions): Promise<readonly ActivityEntry[]> {
   const readers: ReadonlyArray<readonly [ActivityKind, () => Promise<readonly ActivityEntry[]>]> = [

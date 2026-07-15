@@ -27,6 +27,7 @@ import { join as pathJoin } from "node:path";
 import {
   buildCalendarRegistry,
   buildVoiceRegistry,
+  type MuseEnvironment,
   createMuseRuntimeAssembly,
   resolveContactsFile,
   resolveNotesDir,
@@ -37,6 +38,7 @@ import {
 import type { CalendarEvent } from "@muse/calendar";
 import { formatBirthdayBriefLine, readContacts, readProactiveHistory, readReflections, readReminders, resolveUpcomingBirthdays, type PersistedReminder } from "@muse/stores";
 import { readCheckins, selectDueCheckins, type PersistedCheckin } from "@muse/proactivity";
+import { isRecord } from "@muse/shared";
 import { detectCalendarConflicts } from "@muse/domain-tools";
 import { projectRecentlyLearned } from "@muse/memory";
 import { composeSurfacePrompt } from "@muse/prompts";
@@ -67,6 +69,10 @@ interface BriefOptions {
   readonly persona?: string;
   readonly model?: string;
   readonly speak?: boolean;
+}
+
+function environment(): MuseEnvironment {
+  return process.env;
 }
 
 const NAME_FACT_KEYS = new Set(["name", "first_name", "firstname", "full_name", "fullname", "preferred_name", "nickname"]);
@@ -120,11 +126,12 @@ export async function playAudioFile(
   const processResult = waitForChildProcessResult(child, player).finally(() => {
     settled = true;
   });
-  const watchdog = sleep(BRIEF_AUDIO_PLAYER_TIMEOUT_MS).then(() => {
+  const watchdog = (async () => {
+    await sleep(BRIEF_AUDIO_PLAYER_TIMEOUT_MS);
     if (settled) return;
     child.kill("SIGKILL");
     throw new Error(`${player} timed out after ${BRIEF_AUDIO_PLAYER_TIMEOUT_MS.toString()}ms and was killed`);
-  });
+  })();
   await Promise.race([processResult, watchdog]);
 }
 
@@ -153,7 +160,7 @@ export async function playSynthesizedAudio(
 
 async function speakAloud(io: ProgramIO, text: string): Promise<void> {
   if (text.length === 0) return;
-  const registry = buildVoiceRegistry(process.env as Record<string, string | undefined>);
+  const registry = buildVoiceRegistry(environment());
   const tts = registry?.primaryTts();
   if (!tts) {
     io.stderr("(--speak skipped: TTS not configured — set MUSE_VOICE_TTS=piper + MUSE_PIPER_VOICE=<.onnx path>)\n");
@@ -168,14 +175,29 @@ async function speakAloud(io: ProgramIO, text: string): Promise<void> {
 }
 
 async function loadTasks(): Promise<readonly PersistedTask[]> {
-  const file = resolveTasksFile(process.env as Record<string, string | undefined>);
+  const file = resolveTasksFile(environment());
   try {
     const raw = await readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as { tasks?: readonly PersistedTask[] };
-    return parsed.tasks ?? [];
+    const parsed = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return [];
+    }
+    const tasks = parsed.tasks;
+    return Array.isArray(tasks) ? tasks.filter(isPersistedTask) : [];
   } catch {
     return [];
   }
+}
+
+function isPersistedTask(value: unknown): value is PersistedTask {
+  return (
+    isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.title === "string"
+    && typeof value.status === "string"
+    && (value.dueAt === undefined || typeof value.dueAt === "string")
+    && (value.urgent === undefined || typeof value.urgent === "boolean")
+  );
 }
 
 /**
@@ -367,7 +389,8 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         .filter((t) => t.dueAt && new Date(t.dueAt).getTime() >= now.getTime() && new Date(t.dueAt).getTime() <= horizon.getTime())
         .sort((a, b) => new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime());
 
-      const historyFile = resolveProactiveHistoryFile(process.env as Record<string, string | undefined>);
+      const env = environment();
+      const historyFile = resolveProactiveHistoryFile(env);
       const recentHistory = await readProactiveHistory(historyFile, 5);
 
       // Pull every configured calendar provider, merge into one
@@ -375,7 +398,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       // that doesn't mention the 9 AM dentist is a broken JARVIS.
       let upcomingEvents: readonly CalendarEvent[] = [];
       try {
-        const registry = buildCalendarRegistry(process.env as Record<string, string | undefined>);
+        const registry = buildCalendarRegistry(env);
         const collected: CalendarEvent[] = [];
         for (const provider of registry.list()) {
           try {
@@ -400,7 +423,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       let dueReminders: readonly PersistedReminder[] = [];
       let allReminders: readonly PersistedReminder[] = [];
       try {
-        const remindersFile = resolveRemindersFile(process.env as Record<string, string | undefined>);
+        const remindersFile = resolveRemindersFile(env);
         allReminders = await readReminders(remindersFile);
         dueReminders = allReminders
           .filter((r) => r.status === "pending")
@@ -439,7 +462,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       // (no fabricated date — `resolveUpcomingBirthdays` skips a malformed one).
       let birthdayLine: string | undefined;
       try {
-        const contacts = await readContacts(resolveContactsFile(process.env as Record<string, string | undefined>));
+        const contacts = await readContacts(resolveContactsFile(env));
         birthdayLine = formatBirthdayBriefLine(resolveUpcomingBirthdays(contacts, { now, withinDays: 7 }));
       } catch {
         // contacts file missing or unreadable — brief still works
@@ -451,7 +474,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       // Open-Meteo (free, no key — a public weather DATA api, not a cloud LLM, like
       // `muse search`); fail-soft (a lookup blip never breaks the brief). Same
       // helper `muse today` uses, so the two surfaces agree.
-      const weatherLine = await resolveTodayWeatherLine(process.env as Record<string, string | undefined>);
+      const weatherLine = await resolveTodayWeatherLine(env);
 
       const nowIso = now.toISOString();
       const factSheet = [
@@ -536,7 +559,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
       // today's date in earlier years. Rare (only real anniversaries), so it is
       // never noise; silent on a day with no past-year note. Best-effort.
       try {
-        const onThisDay = selectOnThisDay(await collectDatedNotes(resolveNotesDir(process.env as Record<string, string | undefined>)), now);
+        const onThisDay = selectOnThisDay(await collectDatedNotes(resolveNotesDir(env)), now);
         const beat = formatOnThisDayBrief(onThisDay);
         if (beat) io.stdout(beat);
       } catch {

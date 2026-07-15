@@ -1,4 +1,4 @@
-import { assertNoSecretInPersistedFields, type JsonObject, type JsonValue } from "@muse/shared";
+import { assertNoSecretInPersistedFields, type JsonObject } from "@muse/shared";
 
 import { readString } from "@muse/mcp";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -12,6 +12,9 @@ import {
   type NotesSaveInput,
   type NotesSearchHit
 } from "./notes-providers.js";
+
+const EMPTY_NOTES_ENTRIES: readonly NotesEntry[] = [];
+const EMPTY_NOTES_SEARCH_HITS: readonly NotesSearchHit[] = [];
 
 /**
  * `muse.notes-multi` — provider-neutral notes MCP surface backed by
@@ -49,7 +52,7 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
             displayName: info.displayName,
             id: info.id,
             local: info.local
-          })) as JsonValue
+          }))
         }),
         inputSchema: {
           additionalProperties: false,
@@ -74,12 +77,12 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
                     try {
                       return await provider.list(folder);
                     } catch {
-                      return [] as readonly NotesEntry[];
+                      return EMPTY_NOTES_ENTRIES;
                     }
                   })
                 )).flat();
             return {
-              entries: entries.map(serializeEntry) as JsonValue,
+            entries: entries.map(serializeEntry),
               total: entries.length
             };
           } catch (error) {
@@ -110,7 +113,7 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
             if (!note) {
               return { error: `note not found: ${providerId}:${id}`, found: false };
             }
-            return { note: serializeContent(note) as JsonValue };
+            return { note: serializeContent(note) };
           } catch (error) {
             return errorBody(error);
           }
@@ -149,12 +152,12 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
                     try {
                       return await provider.search(query, limit);
                     } catch {
-                      return [] as readonly NotesSearchHit[];
+                      return EMPTY_NOTES_SEARCH_HITS;
                     }
                   })
                 )).flat();
             return {
-              hits: hits.map(serializeHit) as JsonValue,
+              hits: hits.map(serializeHit),
               total: hits.length
             };
           } catch (error) {
@@ -193,10 +196,10 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
           if (id && !providerId) {
             return { error: "providerId is required to update an existing note" };
           }
-          const guard = assertNoSecretInPersistedFields({ title, body });
-          if (!guard.safe) {
-            return { blocked: true, error: guard.notice, kinds: guard.kinds as JsonValue };
-          }
+      const guard = assertNoSecretInPersistedFields({ title, body });
+      if (!guard.safe) {
+        return { blocked: true, error: guard.notice, kinds: [...guard.kinds] };
+      }
           const folder = readString(args, "folder");
           const overwrite = args["overwrite"] === true;
           const input: NotesSaveInput = {
@@ -209,7 +212,7 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
           try {
             const provider = id ? registry.require(providerId as string) : registry.requireOrPrimary(providerId);
             const saved = await provider.save(input);
-            return { note: serializeContent(saved) as JsonValue };
+            return { note: serializeContent(saved) };
           } catch (error) {
             return errorBody(error);
           }
@@ -242,14 +245,14 @@ export function createNotesRegistryMcpServer(options: NotesRegistryMcpServerOpti
           if (body === undefined) {
             return { error: "body is required" };
           }
-          const guard = assertNoSecretInPersistedFields({ body });
-          if (!guard.safe) {
-            return { blocked: true, error: guard.notice, kinds: guard.kinds as JsonValue };
-          }
+      const guard = assertNoSecretInPersistedFields({ body });
+      if (!guard.safe) {
+        return { blocked: true, error: guard.notice, kinds: [...guard.kinds] };
+      }
           const input: NotesAppendInput = { body, id };
           try {
             const updated = await registry.require(providerId).append(input);
-            return { note: serializeContent(updated) as JsonValue };
+            return { note: serializeContent(updated) };
           } catch (error) {
             return errorBody(error);
           }

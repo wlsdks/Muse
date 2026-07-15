@@ -19,7 +19,8 @@
  * persona rendering, CLI surface — those live in steps 2–5.
  */
 
-import type { JsonObject, JsonValue } from "@muse/shared";
+import type { JsonObject } from "@muse/shared";
+import { isRecord } from "@muse/shared";
 
 import { withFileMutationQueue } from "./atomic-file-store.js";
 import {
@@ -101,18 +102,27 @@ export async function readEpisodes(
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    parsed = JSON.parse(text);
   } catch {
     await quarantineCorruptStore(file);
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { episodes?: unknown }).episodes)) {
+  const episodes = readRecordArrayField(parsed, "episodes");
+  if (episodes === undefined) {
     await quarantineCorruptStore(file);
     return [];
   }
-  return (parsed as { episodes: unknown[] }).episodes.flatMap((entry): readonly PersistedEpisode[] =>
+  return episodes.flatMap((entry): readonly PersistedEpisode[] =>
     isPersistedEpisode(entry) ? [entry] : []
   );
+}
+
+function readRecordArrayField(value: unknown, key: string): unknown[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const candidate = value[key];
+  return Array.isArray(candidate) ? candidate : undefined;
 }
 
 export async function writeEpisodes(
@@ -140,7 +150,7 @@ export function serializeEpisode(episode: PersistedEpisode): JsonObject {
     summary: episode.summary,
     userId: episode.userId,
     ...(episode.topics && episode.topics.length > 0
-      ? { topics: episode.topics as JsonValue }
+      ? { topics: [...episode.topics] }
       : {}),
     ...(typeof episode.importance === "number" && Number.isFinite(episode.importance)
       ? { importance: episode.importance }
@@ -258,10 +268,10 @@ export async function vacuumEpisodes(
 }
 
 function isPersistedEpisode(value: unknown): value is PersistedEpisode {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as PersistedEpisode;
+  const candidate = value;
   if (
     typeof candidate.id !== "string" ||
     typeof candidate.userId !== "string" ||

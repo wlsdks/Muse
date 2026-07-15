@@ -10,6 +10,7 @@ import type { JsonObject } from "@muse/shared";
 import type { FastifyRequest } from "fastify";
 
 import { isJsonValue, isRecord } from "./server-input-utils.js";
+import { parseBoolean } from "./env-parsers.js";
 
 export type CompatBody = Record<string, unknown>;
 
@@ -28,7 +29,13 @@ export function toJsonObject(value: unknown): JsonObject {
     return {};
   }
 
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => isJsonValue(item))) as JsonObject;
+  const out: JsonObject = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (isJsonValue(item)) {
+      out[key] = item;
+    }
+  }
+  return out;
 }
 
 export function jsonObjectField(value: unknown): JsonObject {
@@ -63,11 +70,13 @@ export function stringMapField(value: unknown): Record<string, string> {
     return {};
   }
 
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter((entry): entry is [string, string] =>
-        typeof entry[0] === "string" && typeof entry[1] === "string")
-  );
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") {
+      out[key] = entry;
+    }
+  }
+  return out;
 }
 
 export function coerceNumber(value: unknown, fallback: number): number {
@@ -88,16 +97,19 @@ export function coerceBoolean(value: unknown, fallback: boolean): boolean {
     return value;
   }
 
-  if (typeof value === "string") {
-    return value === "true" || value === "1";
-  }
-
-  return fallback;
+  return typeof value === "string" ? parseBoolean(value, fallback) : fallback;
 }
 
 export function readQueryString(request: FastifyRequest, key: string): string | undefined {
-  const value = (request.query as Record<string, unknown>)[key];
+  const query = isRecord(request.query) ? request.query : {};
+  const value = query[key];
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+export function readRouteParam(request: FastifyRequest, key: string): string | undefined {
+  const params = isRecord(request.params) ? request.params : {};
+  const value = params[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 export function readQueryInteger(request: FastifyRequest, key: string, fallback: number): number {
@@ -114,16 +126,13 @@ export function readQueryInteger(request: FastifyRequest, key: string, fallback:
 
 export function readQueryBoolean(request: FastifyRequest, key: string, fallback: boolean): boolean {
   const raw = readQueryString(request, key);
-
-  if (raw === undefined) {
-    return fallback;
-  }
-
-  return raw === "true" || raw === "1";
+  return raw === undefined ? fallback : parseBoolean(raw, fallback);
 }
 
-export function readAuthUserId(request: FastifyRequest): string | undefined {
-  return (request as { auth?: { userId?: string } }).auth?.userId;
+export type AuthAwareRequest = FastifyRequest & { auth?: { userId?: string } };
+
+export function readAuthUserId(request: AuthAwareRequest): string | undefined {
+  return request.auth?.userId;
 }
 
 export function readBodyString(value: unknown, key: string): string | undefined {

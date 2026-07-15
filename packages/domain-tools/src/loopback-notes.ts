@@ -10,7 +10,12 @@ import {
 } from "node:fs/promises";
 import { resolve as nodePathResolve } from "node:path";
 
-import { assertNoSecretInPersistedFields, type JsonObject, type JsonValue } from "@muse/shared";
+import {
+  assertNoSecretInPersistedFields,
+  isNodeErrorCode,
+  type JsonObject,
+  NODE_ERROR_CODES
+} from "@muse/shared";
 
 import { readString } from "@muse/mcp";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -169,7 +174,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           const truncated = collected.length > maxListEntries;
           return {
             dir: safe.relative,
-            entries: collected.slice(0, maxListEntries).map((item) => item.row) as JsonValue,
+            entries: collected.slice(0, maxListEntries).map((item) => item.row),
             truncated
           } satisfies JsonObject;
         },
@@ -267,7 +272,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
                 root
               });
               return {
-                matches: judged.paths.map((p) => ({ path: p })) as JsonValue,
+                matches: judged.paths.map((p) => ({ path: p })),
                 mode: "llm-judge",
                 query,
                 // Count only — non-zero means the model fabricated
@@ -318,7 +323,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               }
             }
           }
-          return { matches: matches as JsonValue, mode: "substring" } satisfies JsonObject;
+          return { matches, mode: "substring" } satisfies JsonObject;
         },
         inputSchema: {
           additionalProperties: false,
@@ -361,7 +366,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           }
           const guard = assertNoSecretInPersistedFields({ content });
           if (!guard.safe) {
-            return { blocked: true, error: guard.notice, kinds: guard.kinds as JsonValue };
+            return { blocked: true, error: guard.notice, kinds: [...guard.kinds] };
           }
           if (Buffer.byteLength(content, "utf8") > maxFileBytes) {
             return { error: `content exceeds maxFileBytes ${maxFileBytes}` };
@@ -383,7 +388,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
             // fails with EEXIST instead of clobbering it.
             await nodeWriteFile(safe.absolute, content, overwrite ? "utf8" : { encoding: "utf8", flag: "wx" });
           } catch (error) {
-            if (!overwrite && (error as NodeJS.ErrnoException).code === "EEXIST") {
+            if (!overwrite && isNodeErrorCode(error, NODE_ERROR_CODES.EEXIST)) {
               return { error: `note already exists at ${safe.relative}; pass overwrite: true to replace` };
             }
             return { error: `cannot write note: ${error instanceof Error ? error.message : String(error)}` };
@@ -405,13 +410,13 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               mirrorNote = `Apple Notes mirror failed: ${error instanceof Error ? error.message : String(error)}`;
             }
           }
-          return {
-            created: !exists,
-            path: safe.relative,
-            sizeBytes: Buffer.byteLength(content, "utf8"),
-            ...(mirrorNote ? { mirrorNote } : {})
-          } satisfies JsonObject;
-        },
+            return {
+              created: !exists,
+              path: safe.relative,
+              sizeBytes: Buffer.byteLength(content, "utf8"),
+              ...(mirrorNote ? { mirrorNote } : {})
+            } satisfies JsonObject;
+          },
         inputSchema: {
           additionalProperties: false,
           properties: {
@@ -445,7 +450,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           }
           const guard = assertNoSecretInPersistedFields({ content });
           if (!guard.safe) {
-            return { blocked: true, error: guard.notice, kinds: guard.kinds as JsonValue };
+            return { blocked: true, error: guard.notice, kinds: [...guard.kinds] };
           }
           const safe = resolveSafe(path);
           if (typeof safe === "string") {
@@ -532,4 +537,3 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
     ]
   };
 }
-

@@ -1,8 +1,11 @@
 import { detectEvidenceContradictions, evidenceIsUntrustedOnly, groundedOnUntrustedOnly, reportCitationPrecision, reportCitationRecall, untrustedOnlySentences, type KnowledgeMatch } from "@muse/agent-core";
 
+
+
 import { expressesNoInformation, isChatAbstention } from "./chat-grounding-verdict.js";
 import { embed } from "./embed.js";
 import { DEFAULT_EMBED_MODEL } from "./embed-model-default.js";
+import { withBestEffort } from "./async-promises.js";
 
 /**
  * Chat parity of the ask path's semantic value-conflict surfacing: when two of
@@ -17,7 +20,7 @@ import { DEFAULT_EMBED_MODEL } from "./embed-model-default.js";
  * conflict cue runs live — the same recall embed model the chat retrieval uses.
  */
 export function defaultChatConflictEmbedder(
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>
+  env: Record<string, string | undefined> = process.env
 ): (text: string) => Promise<readonly number[]> {
   const embedModel = env.MUSE_RECALL_EMBED_MODEL?.trim() || DEFAULT_EMBED_MODEL;
   return (text: string) => embed(text, embedModel);
@@ -28,7 +31,7 @@ export async function semanticConflictCueFromMatches(
   embed: (text: string) => Promise<readonly number[]>
 ): Promise<string | undefined> {
   if (matches.length < 2) return undefined;
-  const pairs = await detectEvidenceContradictions(matches, embed).catch(() => []);
+  const pairs = await withBestEffort(detectEvidenceContradictions(matches, embed), []);
   const pair = pairs[0];
   if (pair === undefined) return undefined;
   const a = matches[pair.aIndex];

@@ -236,7 +236,10 @@ describe("shapeSkills", () => {
     ];
     const rewards: Record<string, number> = { "deep-avoided": -5, "threshold-avoided": -4, borderline: -3 };
     const out = shapeSkills(skills, rewards);
-    const byName = Object.fromEntries(out.entries.map((e) => [e.name, e]));
+    const byName: Record<string, (typeof out.entries)[number]> = {};
+    for (const entry of out.entries) {
+      byName[entry.name] = entry;
+    }
     expect(byName["deep-avoided"]!.avoided).toBe(true);
     expect(byName["threshold-avoided"]!.avoided).toBe(true);
     expect(byName["borderline"]!.avoided).toBe(false);
@@ -279,7 +282,10 @@ describe("shapeReflections", () => {
       reflectionEntry({ id: "two-sources", createdAtMs: 2000, sourceIds: ["ep1", "ep2"] }),
       reflectionEntry({ id: "zero-sources", createdAtMs: 1000, sourceIds: [] })
     ]);
-    const byId = Object.fromEntries(out.entries.map((e) => [e.id, e]));
+    const byId: Record<string, (typeof out.entries)[number]> = {};
+    for (const entry of out.entries) {
+      byId[entry.id] = entry;
+    }
     expect(byId["two-sources"]!.sourceCount).toBe(2);
     expect(byId["zero-sources"]!.sourceCount).toBe(0);
   });

@@ -45,7 +45,7 @@ import {
   rankKnowledgeChunksWithHop,
   renderKnowledgeMatches
 } from "@muse/agent-core";
-import type { JsonObject, JsonValue } from "@muse/shared";
+import { asRecord, type JsonObject, type JsonValue } from "@muse/shared";
 import { canonicalizeLocalOnlyModelBaseUrl, isLocalOnlyEnabled, type ModelProvider } from "@muse/model";
 import type { MuseTool } from "@muse/tools";
 
@@ -195,8 +195,9 @@ function buildKnowledgeSearchTool(deps: McpServeDependencies): MuseTool {
       risk: "read"
     },
     execute: async (args) => {
-      const query = typeof (args as { query?: unknown }).query === "string" ? (args as { query: string }).query : "";
-      const rawLimit = (args as { limit?: unknown }).limit;
+      const argsRecord = asRecord(args);
+      const query = typeof argsRecord.query === "string" ? argsRecord.query : "";
+      const rawLimit = argsRecord.limit;
       const limit = typeof rawLimit === "number" && Number.isFinite(rawLimit)
         ? Math.min(KNOWLEDGE_SEARCH_MAX_LIMIT, Math.max(1, Math.trunc(rawLimit)))
         : KNOWLEDGE_SEARCH_DEFAULT_LIMIT;
@@ -257,7 +258,8 @@ function buildMuseRecallTool(deps: McpServeDependencies): MuseTool {
       risk: "read"
     },
     execute: async (args) => {
-      const question = typeof (args as { question?: unknown }).question === "string" ? (args as { question: string }).question : "";
+      const argsRecord = asRecord(args);
+      const question = typeof argsRecord.question === "string" ? argsRecord.question : "";
       if (!deps.modelProvider || !deps.answerModel) {
         throw new Error("muse_recall requires a configured local model (set MUSE_MODEL, or run `muse setup model`) — refusing to answer without one rather than return an uncited guess.");
       }
@@ -283,7 +285,10 @@ function buildMuseRecallTool(deps: McpServeDependencies): MuseTool {
         result = await runGroundedRecall({
           options: { answerModel, embedModel: deps.embedModel, temperature: deps.answerTemperature },
           query: question,
-          runtime: { embedFn: (text, model) => deps.embedFn(text, model) as Promise<number[]>, generateAnswer },
+          runtime: {
+            embedFn: async (text, model) => [...(await deps.embedFn(text, model))],
+            generateAnswer
+          },
           sources: { notesDir: deps.notesDir, notesIndexFile: deps.notesIndexFile }
         });
       } catch (error) {
@@ -311,9 +316,10 @@ function buildMuseRecallTool(deps: McpServeDependencies): MuseTool {
 
 const USER_MODEL_READ_KINDS = ["facts", "preferences", "all"] as const;
 type UserModelReadKind = (typeof USER_MODEL_READ_KINDS)[number];
+const USER_MODEL_READ_KIND_SET = new Set<string>(USER_MODEL_READ_KINDS);
 
 function isUserModelReadKind(value: unknown): value is UserModelReadKind {
-  return typeof value === "string" && (USER_MODEL_READ_KINDS as readonly string[]).includes(value);
+  return typeof value === "string" && USER_MODEL_READ_KIND_SET.has(value);
 }
 
 function factEntry(key: string, value: string): JsonObject {
@@ -340,7 +346,7 @@ function buildUserModelReadTool(deps: McpServeDependencies): MuseTool {
       risk: "read"
     },
     execute: async (args) => {
-      const rawKind = (args as { kind?: unknown }).kind;
+      const rawKind = asRecord(args).kind;
       if (rawKind !== undefined && !isUserModelReadKind(rawKind)) {
         throw new Error(`user_model_read: 'kind' must be one of ${USER_MODEL_READ_KINDS.join(", ")}, got '${String(rawKind)}'`);
       }
@@ -423,8 +429,9 @@ function buildCalendarReadTool(deps: McpServeDependencies): MuseTool {
       risk: "read"
     },
     execute: async (args) => {
-      const rawFrom = (args as { from?: unknown }).from;
-      const rawTo = (args as { to?: unknown }).to;
+      const argsRecord = asRecord(args);
+      const rawFrom = argsRecord.from;
+      const rawTo = argsRecord.to;
       if (typeof rawFrom !== "string" || rawFrom.trim().length === 0) {
         throw new Error("calendar_read: 'from' must be a non-empty ISO timestamp string.");
       }
@@ -460,9 +467,10 @@ function buildCalendarReadTool(deps: McpServeDependencies): MuseTool {
 
 const TASKS_READ_STATUSES = ["open", "done", "all"] as const;
 type TasksReadStatus = (typeof TASKS_READ_STATUSES)[number];
+const TASKS_READ_STATUS_SET = new Set<string>(TASKS_READ_STATUSES);
 
 function isTasksReadStatus(value: unknown): value is TasksReadStatus {
-  return typeof value === "string" && (TASKS_READ_STATUSES as readonly string[]).includes(value);
+  return typeof value === "string" && TASKS_READ_STATUS_SET.has(value);
 }
 
 function serializeTask(task: Task): JsonObject {
@@ -497,7 +505,7 @@ function buildTasksReadTool(deps: McpServeDependencies): MuseTool {
       risk: "read"
     },
     execute: async (args) => {
-      const rawStatus = (args as { status?: unknown }).status;
+      const rawStatus = asRecord(args).status;
       // Fail-close BEFORE ever calling the source: a garbage filter must never
       // be silently coerced to "open" and quietly return the wrong slice.
       if (rawStatus !== undefined && !isTasksReadStatus(rawStatus)) {
@@ -548,18 +556,17 @@ function buildProposeActionTool(deps: McpServeDependencies): MuseTool {
       risk: "write"
     },
     execute: async (args) => {
-      const rawAction = (args as { action?: unknown }).action;
-      const rawDraft = (args as { draft?: unknown }).draft;
+      const argsRecord = asRecord(args);
+      const rawAction = argsRecord.action;
+      const rawDraft = argsRecord.draft;
       if (typeof rawAction !== "string" || rawAction.trim().length === 0) {
         throw new Error("propose_action: 'action' must be a non-empty string — refusing to park a blank action.");
       }
       if (typeof rawDraft !== "string" || rawDraft.trim().length === 0) {
         throw new Error("propose_action: 'draft' must be a non-empty string — refusing to park an action with no reviewable content.");
       }
-      const rawArguments = (args as { arguments?: unknown }).arguments;
-      const argumentsPayload = rawArguments && typeof rawArguments === "object" && !Array.isArray(rawArguments)
-        ? rawArguments as Record<string, unknown>
-        : {};
+      const rawArguments = asRecord(args).arguments;
+      const argumentsPayload = asRecord(rawArguments) ?? {};
 
       const createdAt = deps.now();
       const entry: PendingApproval = {

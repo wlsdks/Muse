@@ -16,6 +16,8 @@ import { unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { isRecord } from "@muse/shared";
+
 import { atomicWriteFile } from "./atomic-file-store.js";
 
 /** `~/.muse/ollama.lease` by default; override via `MUSE_OLLAMA_LEASE_FILE`. */
@@ -50,7 +52,8 @@ export async function releaseOllamaLease(file: string, pid: number): Promise<voi
 function readLease(file: string): LeaseRecord | undefined {
   try {
     if (!existsSync(file)) return undefined;
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<LeaseRecord>;
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    if (!isRecord(parsed)) return undefined;
     if (typeof parsed.pid !== "number" || typeof parsed.heartbeatMs !== "number") return undefined;
     return { heartbeatMs: parsed.heartbeatMs, pid: parsed.pid };
   } catch {

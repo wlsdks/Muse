@@ -124,7 +124,7 @@ export function parseReflections(
   if (!jsonText) return [];
   let parsed: unknown;
   try {
-    parsed = JSON.parse(jsonText) as unknown;
+    parsed = JSON.parse(jsonText);
   } catch {
     return [];
   }

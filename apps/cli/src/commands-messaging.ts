@@ -12,7 +12,7 @@
  */
 
 import { confirm, isCancel } from "@clack/prompts";
-import { buildMessagingRegistry, resolveActionLogFile } from "@muse/autoconfigure";
+import { buildMessagingRegistry, resolveActionLogFile, type MuseEnvironment } from "@muse/autoconfigure";
 import type {
   InboundMessage,
   MessagingProviderInfo,
@@ -20,10 +20,11 @@ import type {
   OutboundReceipt
 } from "@muse/messaging";
 import { sendMessageWithApproval, type MessageApprovalGate } from "@muse/domain-tools";
-import { stripUntrustedTerminalChars } from "@muse/shared";
+import { asRecord, isRecord, stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
 import { formatProvidersList } from "./human-formatters.js";
+import { confirmBoolean } from "./confirm-boolean.js";
 import type { ProgramIO } from "./program.js";
 
 /**
@@ -35,6 +36,10 @@ export interface MessagingSendDeps {
   readonly approvalGate?: MessageApprovalGate;
   readonly actionLogFile?: string;
   readonly registry?: Pick<MessagingProviderRegistry, "send">;
+}
+
+function environment(): MuseEnvironment {
+  return process.env;
 }
 
 /**
@@ -68,6 +73,58 @@ interface SharedOptions {
   readonly json?: boolean;
 }
 
+function isMessagingProvider(value: unknown): value is MessagingProviderInfo {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.id !== "string" || value.id.length === 0 || typeof value.configured !== "boolean") {
+    return false;
+  }
+  if (value.description !== undefined && typeof value.description !== "string") {
+    return false;
+  }
+  if (value.local !== undefined && typeof value.local !== "boolean") {
+    return false;
+  }
+  if (value.pairedOwner !== undefined && typeof value.pairedOwner !== "string") {
+    return false;
+  }
+  if (value.pairingCode !== undefined && typeof value.pairingCode !== "string") {
+    return false;
+  }
+  return true;
+}
+
+function parseMessagingProviders(raw: unknown): readonly MessagingProviderInfo[] {
+  const payload = asRecord(raw);
+  if (!Array.isArray(payload.providers)) {
+    return [];
+  }
+  return payload.providers.filter(isMessagingProvider);
+}
+
+function isInboundMessage(value: unknown): value is InboundMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.source === "string"
+    && value.source.length > 0
+    && typeof value.receivedAtIso === "string"
+    && value.receivedAtIso.length > 0
+    && typeof value.text === "string"
+    && (value.sender === undefined || typeof value.sender === "string")
+  );
+}
+
+function parseInboundMessages(raw: unknown): readonly InboundMessage[] {
+  const payload = asRecord(raw);
+  if (!Array.isArray(payload.inbound)) {
+    return [];
+  }
+  return payload.inbound.filter(isInboundMessage);
+}
+
 export function registerMessagingCommands(
   program: Command,
   io: ProgramIO,
@@ -84,13 +141,10 @@ export function registerMessagingCommands(
     .action(async (options: SharedOptions, command) => {
       let providers: readonly MessagingProviderInfo[];
       if (options.local) {
-        const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
+        const registry = buildMessagingRegistry(environment());
         providers = registry.describe();
       } else {
-        const payload = await helpers.apiRequest(io, command, "/api/messaging/providers") as {
-          readonly providers?: readonly MessagingProviderInfo[];
-        };
-        providers = payload.providers ?? [];
+        providers = parseMessagingProviders(await helpers.apiRequest(io, command, "/api/messaging/providers"));
       }
       if (options.json) {
         helpers.writeOutput(io, { providers });
@@ -105,15 +159,8 @@ export function registerMessagingCommands(
     .argument("<provider>", "Provider id: telegram | discord | slack | line | matrix")
     .option("--json", "Print the raw provider entry instead of formatted text")
     .action(async (provider: string, options: { readonly json?: boolean }, command) => {
-      const payload = await helpers.apiRequest(io, command, "/api/messaging/setup") as {
-        readonly providers?: readonly {
-          readonly id: string;
-          readonly configured: boolean;
-          readonly pairedOwner?: string;
-          readonly pairingCode?: string;
-        }[];
-      };
-      const entry = payload.providers?.find((candidate) => candidate.id === provider);
+      const providers = parseMessagingProviders(await helpers.apiRequest(io, command, "/api/messaging/setup"));
+      const entry = providers.find((candidate) => candidate.id === provider);
       if (!entry) {
         io.stderr(`unknown messaging provider "${provider}"\n`);
         process.exitCode = 1;
@@ -151,10 +198,11 @@ export function registerMessagingCommands(
       options: { readonly limit?: string; readonly source?: string } & SharedOptions,
       command
     ) => {
+      const env = environment();
       const limitNum = options.limit ? Number(options.limit) : undefined;
       let inbound: readonly InboundMessage[];
       if (options.local) {
-        const registry = buildMessagingRegistry(process.env as Record<string, string | undefined>);
+        const registry = buildMessagingRegistry(env);
         const opts: { limit?: number; source?: string } = {};
         if (limitNum !== undefined && Number.isFinite(limitNum)) {
           opts.limit = limitNum;
@@ -171,10 +219,7 @@ export function registerMessagingCommands(
         if (options.source && options.source.length > 0) {
           params.set("source", options.source);
         }
-        const response = await helpers.apiRequest(io, command, `/api/messaging/inbox?${params.toString()}`) as {
-          readonly inbound?: readonly InboundMessage[];
-        };
-        inbound = response.inbound ?? [];
+        inbound = parseInboundMessages(await helpers.apiRequest(io, command, `/api/messaging/inbox?${params.toString()}`));
       }
       if (options.json) {
         helpers.writeOutput(io, { inbound, providerId: provider, total: inbound.length });
@@ -204,6 +249,7 @@ export function registerMessagingCommands(
       options: SharedOptions & { readonly user?: string },
       command
     ) => {
+      const env = environment();
       const text = textParts.join(" ").trim();
       if (text.length === 0) {
         throw new Error("text is required");
@@ -214,8 +260,8 @@ export function registerMessagingCommands(
       // draft and waits for an explicit terminal confirm. (The API path is gated
       // server-side via the runtime tool-approval gate.)
       if (options.local) {
-        const registry = deps.registry ?? buildMessagingRegistry(process.env as Record<string, string | undefined>);
-        const gate: MessageApprovalGate = deps.approvalGate ?? ((draft) => {
+        const registry = deps.registry ?? buildMessagingRegistry(env);
+        const gate: MessageApprovalGate = deps.approvalGate ?? (async (draft) => {
           // Fail-closed when the confirm prompt can't be delivered: a non-TTY
           // (piped / scripted / CI) has no one to confirm, so refuse rather than
           // hang waiting on stdin or send unconfirmed (outbound-safety.md rule 2).
@@ -223,13 +269,11 @@ export function registerMessagingCommands(
             return { approved: false, reason: "no interactive terminal to confirm the send (run it in a terminal)" };
           }
           io.stdout(`\nSend via ${draft.providerId} → ${draft.destination}:\n\n${draft.text}\n\n`);
-          return confirm({ message: "Send this message?" }).then((answer) =>
-            isCancel(answer) || answer !== true
-              ? { approved: false, reason: "user did not confirm" }
-              : { approved: true });
+          const approved = await confirmBoolean(confirm, isCancel, "Send this message?");
+          return approved ? { approved: true } : { approved: false, reason: "user did not confirm" };
         });
         const outcome = await sendMessageWithApproval({
-          actionLogFile: deps.actionLogFile ?? resolveActionLogFile(process.env as Record<string, string | undefined>),
+          actionLogFile: deps.actionLogFile ?? resolveActionLogFile(env),
           approvalGate: gate,
           destination,
           providerId: provider,

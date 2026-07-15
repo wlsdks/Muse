@@ -27,6 +27,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { LOCAL_FIRST_DEFAULT_MODEL } from "@muse/autoconfigure";
+import { isRecord, parseBooleanFromEnv } from "@muse/shared";
 
 import { CLOUD_PROVIDERS, planCloudSetup } from "./commands-setup-cloud.js";
 import { runDataSetupInFlagMode, type DataSetupFlags, type DataSetupResult } from "./commands-setup-data.js";
@@ -54,6 +55,7 @@ import { MUSE_BIRD_ANSI } from "./muse-mascot.js";
 import { persistModelProviderKey } from "./setup-model.js";
 import { colorAllowed, colorize } from "./tty-color.js";
 import { probeOllamaModels } from "./ollama-probe.js";
+import { withBestEffort } from "./async-promises.js";
 
 /** Any of these in the env means a provider is already wired — skip first-run. */
 export const PROVIDER_KEY_ENV_VARS: readonly string[] = [
@@ -74,11 +76,6 @@ export function providerKeyPresent(env: NodeJS.ProcessEnv): boolean {
   return PROVIDER_KEY_ENV_VARS.some((key) => (env[key] ?? "").trim().length > 0);
 }
 
-function truthy(value: string | undefined): boolean {
-  const v = (value ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
 /**
  * True when the auto-launch must be BYPASSED regardless of setup state:
  * an explicit opt-out, OR any non-interactive / test context. Vitest, CI and
@@ -86,9 +83,9 @@ function truthy(value: string | undefined): boolean {
  */
 export function firstRunSkipRequested(env: NodeJS.ProcessEnv, noSetupFlag = false): boolean {
   if (noSetupFlag) return true;
-  if (truthy(env.MUSE_SKIP_FIRST_RUN)) return true;
-  if (truthy(env.VITEST) || env.VITEST_WORKER_ID !== undefined) return true;
-  if (truthy(env.CI)) return true;
+  if (parseBooleanFromEnv(env.MUSE_SKIP_FIRST_RUN, false)) return true;
+  if (parseBooleanFromEnv(env.VITEST, false) || env.VITEST_WORKER_ID !== undefined) return true;
+  if (parseBooleanFromEnv(env.CI, false)) return true;
   if (env.NODE_ENV === "test") return true;
   return false;
 }
@@ -418,7 +415,7 @@ async function finishWithValue(
     prompts.step?.(FIRST_RUN_STEP_HEADERS.finish);
     skillsScaffolded = await applySmartDefaultsStep(deps);
     const identity: { readonly name?: string } = deps.readIdentity
-      ? await deps.readIdentity().catch(() => ({}))
+      ? await withBestEffort(deps.readIdentity(), {})
       : {};
     const fvCtx: FirstValueContext = {
       ...(identity.name ? { userName: identity.name } : {}),
@@ -522,11 +519,11 @@ export async function runFirstRunSetupInteractive(deps: RunFirstRunInteractiveDe
       confirm: (options) => clack.confirm(options),
       intro: (message) => clack.intro(message),
       isCancel: (value) => clack.isCancel(value),
-      multiselect: (options) => clack.multiselect(options as never) as Promise<never>,
+      multiselect: <T>(options) => clack.multiselect(options),
       note: (message, title) => clack.note(message, title),
       outro: (message) => clack.outro(message),
       password: (options) => clack.password(options),
-      select: (options) => clack.select(options as never) as Promise<never>,
+      select: <T>(options) => clack.select(options),
       step: (header) => process.stdout.write(renderStepDivider(header))
     };
     const stdio = { stderr: (m: string) => process.stderr.write(m), stdout: (m: string) => process.stdout.write(m) };
@@ -578,13 +575,16 @@ async function readKnownUserName(env: NodeJS.ProcessEnv): Promise<{ name?: strin
   try {
     const userId = (env.MUSE_USER_ID ?? env.USER ?? "default").trim() || "default";
     const file = env.MUSE_USER_MEMORY_FILE?.trim() || join(homedir(), ".muse", "user-memory.json");
-    const raw = JSON.parse(await readFile(file, "utf8")) as {
-      users?: Record<string, { facts?: Record<string, string> }>;
-    };
-    const facts = raw.users?.[userId]?.facts ?? {};
+    const raw = JSON.parse(await readFile(file, "utf8"));
+    const users = isRecord(raw) ? raw.users : undefined;
+    const user = isRecord(users) ? users[userId] : undefined;
+    const facts = isRecord(user) ? user.facts : undefined;
+    const factsRecord = isRecord(facts) ? facts : {};
     for (const key of NAME_FACT_KEYS) {
-      const value = (facts[key] ?? "").trim();
-      if (value.length > 0) return { name: value };
+      const value = factsRecord[key];
+      if (typeof value === "string" && value.trim().length > 0) {
+        return { name: value.trim() };
+      }
     }
   } catch {
     // no name available

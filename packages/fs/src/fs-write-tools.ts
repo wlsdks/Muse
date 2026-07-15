@@ -16,7 +16,7 @@ import { constants as fsConstants } from "node:fs";
 import { lstat, mkdir, open, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import type { JsonObject } from "@muse/shared";
+import { hasNodeErrorCodeIn, isRecord, NODE_ERROR_CODES, type JsonObject, withBestEffort } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { checkEditIntegrity } from "./edit-integrity.js";
@@ -104,16 +104,24 @@ function refusal(error: unknown, path: string): JsonObject {
   // A symlink at the target (caught atomically by O_NOFOLLOW at write time) is a
   // refusal, not a generic IO error — it's the fail-close on a dangling-symlink /
   // TOCTOU escape that the path check alone can't see.
-  if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+  if (hasNodeErrorCodeIn(error, NODE_ERROR_CODES.ELOOP)) {
     return { path, reason: `'${path}' is a symlink — refused (a symlink target could escape the sandbox)`, refused: true, written: false };
   }
   // A raw "ENOENT … stat '/abs/path'" dead-ends the small model and leaks the
   // resolved host path. Hand it the recovery route: file_edit/multi_edit only
   // modify an EXISTING file, so a missing target means create-it or wrong-path.
-  if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+  if (hasNodeErrorCodeIn(error, NODE_ERROR_CODES.ENOENT)) {
     return { path, reason: `no file at '${path}' — to create it use file_write; to edit an existing file, check the path or use file_list to find it.`, written: false };
   }
   return { path, reason: error instanceof Error ? error.message : String(error), written: false };
+}
+
+async function getPathStat(safePath: string): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
+  try {
+    return await lstat(safePath);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -193,7 +201,7 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
         return refusal(error, path);
       }
       try {
-        const info = await stat(safe).catch(() => undefined);
+    const info = await withBestEffort(stat(safe), undefined);
         if (info?.isDirectory()) {
           return { path: safe, reason: `'${path}' is a directory`, written: false };
         }
@@ -238,7 +246,7 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
         try {
           originalForSnapshot = await readFileNoFollowBuffer(safe);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          if (!hasNodeErrorCodeIn(error, NODE_ERROR_CODES.ENOENT)) {
             return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
           }
           originalForSnapshot = undefined;
@@ -344,10 +352,10 @@ function editExecutor(
 }
 
 function parseEdit(value: unknown): FsEditSpec | undefined {
-  if (typeof value !== "object" || value === null) {
+  if (!isRecord(value)) {
     return undefined;
   }
-  const record = value as Record<string, unknown>;
+  const record = value;
   if (typeof record["old_string"] !== "string" || typeof record["new_string"] !== "string") {
     return undefined;
   }
@@ -570,14 +578,14 @@ export function createFileMoveTool(options: FsWriteToolsOptions, policyPromise?:
         return { ...refusal(error, fromArg), moved: false };
       }
       try {
-        const src = await lstat(from).catch(() => undefined);
+        const src = await getPathStat(from);
         if (!src) {
           return { from, moved: false, reason: `source '${fromArg}' does not exist` };
         }
         if (src.isDirectory()) {
           return { from, moved: false, reason: `'${fromArg}' is a directory — file_move only moves single files` };
         }
-        const destExists = await lstat(to).then(() => true).catch(() => false);
+        const destExists = await getPathStat(to) !== undefined;
         if (destExists) {
           return { moved: false, reason: `destination '${toArg}' already exists — refusing to overwrite`, to };
         }

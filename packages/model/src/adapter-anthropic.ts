@@ -5,7 +5,8 @@
  * and the `ModelProvider` interface plumbing.
  */
 
-import { truncateErrorBody } from "@muse/shared";
+import { truncateErrorBody, withBestEffort } from "@muse/shared";
+import { readWebSearchPolicy } from "./web-search-policy.js";
 
 import { fetchOrThrowAsProviderError, ModelProviderError, isRetryableHttpStatus, modelCallSignal } from "./provider-base.js";
 import { parseJson } from "./provider-shared.js";
@@ -57,8 +58,7 @@ export class AnthropicProvider implements ModelProvider {
   }
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
-    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
-      ?? { enabled: false, maxUses: 5 };
+    const policy = readWebSearchPolicy(request.metadata?.webSearchPolicy);
 
     const signal = modelCallSignal(request.signal);
     const response = await fetchOrThrowAsProviderError(this.fetchImpl, this.id, this.baseUrl, "Anthropic", `${this.baseUrl}/messages`, {
@@ -69,7 +69,7 @@ export class AnthropicProvider implements ModelProvider {
     }, request.signal);
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      const body = await withBestEffort(response.text(), "");
       throw new ModelProviderError(
         this.id,
         `Anthropic request failed with ${response.status}: ${truncateErrorBody(body) || response.statusText}`,
@@ -77,7 +77,7 @@ export class AnthropicProvider implements ModelProvider {
       );
     }
 
-    const rawBody = await response.text().catch(() => "");
+    const rawBody = await withBestEffort(response.text(), "");
     const payload = parseJson(rawBody);
     if (payload === undefined) {
       // A non-JSON 200 is a transport anomaly (proxy/portal HTML,

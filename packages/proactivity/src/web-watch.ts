@@ -11,6 +11,7 @@
 import { promises as fs } from "node:fs";
 
 import { fetchWithRetry, type RetryOptions } from "@muse/mcp-shared";
+import { isRecord } from "@muse/shared";
 import type { ProactiveNoticeSink } from "./proactive-notice-loop.js";
 
 export interface WatchRule {
@@ -199,7 +200,7 @@ export function createWebWatchRunner(options: {
   };
 }
 
-const RULE_FIELDS = ["appears", "disappears", "extract"] as const;
+const RULE_FIELDS: readonly ("appears" | "disappears" | "extract")[] = ["appears", "disappears", "extract"];
 
 /**
  * Snapshot source for a PUBLIC web page: an HTTP GET (retry-hardened
@@ -215,12 +216,13 @@ export function createHttpSnapshot(
   options: { readonly fetchImpl?: typeof globalThis.fetch; readonly retryOptions?: RetryOptions; readonly headers?: Record<string, string> } = {}
 ): () => Promise<string | undefined> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const existingHeaders = isRecord(options.retryOptions?.init?.headers) ? options.retryOptions.init.headers : undefined;
   const retryOptions: RetryOptions = options.headers
     ? {
         ...(options.retryOptions ?? {}),
         init: {
           ...(options.retryOptions?.init ?? {}),
-          headers: { ...(options.retryOptions?.init?.headers as Record<string, string> | undefined), ...options.headers }
+          headers: { ...existingHeaders, ...options.headers }
         }
       }
     : options.retryOptions ?? {};
@@ -293,11 +295,11 @@ export function createChromeSnapshot(
 }
 
 function parseHeaders(raw: unknown): Record<string, string> | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isRecord(raw)) {
     return undefined;
   }
   const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(raw)) {
     if (typeof value === "string" && key.length > 0) {
       out[key] = value;
     }
@@ -334,21 +336,21 @@ export function webWatchesFromConfig(
   }
   const out: WebWatch[] = [];
   for (const entry of parsed) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    if (!isRecord(entry)) {
       continue;
     }
-    const e = entry as Record<string, unknown>;
+    const ruleEntry = entry;
     // The locator field depends on the source: a file watch points at a local
     // PATH, web/chrome watches at a URL.
-    const source = e.source === "file" ? "file" : e.source === "chrome" ? "chrome" : "http";
-    const locator = source === "file" ? e.path : e.url;
-    if (typeof e.id !== "string" || e.id.length === 0 || typeof locator !== "string" || locator.length === 0) {
+    const source = ruleEntry.source === "file" ? "file" : ruleEntry.source === "chrome" ? "chrome" : "http";
+    const locator = source === "file" ? ruleEntry.path : ruleEntry.url;
+    if (typeof ruleEntry.id !== "string" || ruleEntry.id.length === 0 || typeof locator !== "string" || locator.length === 0) {
       continue;
     }
-    if (typeof e.title !== "string" || typeof e.message !== "string") {
+    if (typeof ruleEntry.title !== "string" || typeof ruleEntry.message !== "string") {
       continue;
     }
-    const rule = parseWatchRule(e.rule);
+    const rule = parseWatchRule(ruleEntry.rule);
     if (rule === undefined) {
       continue;
     }
@@ -358,23 +360,23 @@ export function webWatchesFromConfig(
       // authenticated page the user asked to watch).
       continue;
     }
-    const headers = parseHeaders(e.headers);
+    const headers = parseHeaders(ruleEntry.headers);
     const httpOptions = {
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
       ...(options.retryOptions ? { retryOptions: options.retryOptions } : {}),
       ...(headers ? { headers } : {})
     };
     out.push({
-      id: e.id,
-      message: e.message,
+      id: ruleEntry.id,
+      message: ruleEntry.message,
       rule,
       snapshot:
         source === "file"
           ? createFileSnapshot(locator)
-          : source === "chrome"
+        : source === "chrome"
             ? createChromeSnapshot(options.chromeConnection!, locator)
             : createHttpSnapshot(locator, httpOptions),
-      title: e.title
+      title: ruleEntry.title
     });
   }
   return out;
@@ -389,14 +391,15 @@ export function webWatchesFromConfig(
  * semantics can't drift.
  */
 export function parseWatchRule(raw: unknown): WatchRule | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isRecord(raw)) {
     return undefined;
   }
-  const ruleObj = raw as Record<string, unknown>;
+  const ruleObj = raw;
   const rule: { appears?: string; disappears?: string; extract?: string; onAnyChange?: boolean; caseInsensitive?: boolean; below?: number; above?: number } = {};
   for (const field of RULE_FIELDS) {
-    if (typeof ruleObj[field] === "string" && (ruleObj[field] as string).length > 0) {
-      rule[field] = ruleObj[field] as string;
+    const rawValue = ruleObj[field];
+    if (typeof rawValue === "string" && rawValue.length > 0) {
+      rule[field] = rawValue;
     }
   }
   if (ruleObj.onAnyChange === true) {

@@ -237,6 +237,11 @@ export function clampLimit(raw: string | undefined): number {
  */
 export const RECALL_SOURCE_VALUES = ["all", "notes", "episodes"] as const;
 export type RecallSource = (typeof RECALL_SOURCE_VALUES)[number];
+const RECALL_SOURCE_SET = new Set<string>(RECALL_SOURCE_VALUES);
+
+function isRecallSource(value: string): value is RecallSource {
+  return RECALL_SOURCE_SET.has(value);
+}
 
 export type RecallSourceResolution =
   | { readonly kind: "ok"; readonly source: RecallSource }
@@ -252,8 +257,8 @@ export function resolveSource(raw: string | undefined): RecallSourceResolution {
   if (raw === undefined) return { kind: "ok", source: "all" };
   const trimmed = raw.trim().toLowerCase();
   if (trimmed.length === 0) return { kind: "ok", source: "all" };
-  if ((RECALL_SOURCE_VALUES as readonly string[]).includes(trimmed)) {
-    return { kind: "ok", source: trimmed as RecallSource };
+  if (isRecallSource(trimmed)) {
+    return { kind: "ok", source: trimmed };
   }
   return { kind: "invalid", input: raw };
 }
@@ -291,7 +296,7 @@ export async function searchRecall(opts: {
   readonly adaptive?: boolean;
 }): Promise<readonly RecallHit[]> {
   const { query, source, limit, embedModel } = opts;
-  const env = opts.env ?? (process.env as Record<string, string | undefined>);
+  const env = opts.env ?? (process.env);
   const warn = opts.onWarn ?? ((): void => undefined);
 
   const [notesIndex, episodeIndex] = await Promise.all([
@@ -392,7 +397,7 @@ export function registerRecallCommand(program: Command, io: ProgramIO): void {
 
       let hits: readonly RecallHit[];
       try {
-        hits = await searchRecall({ adaptive: options.adaptive, embedModel, env: process.env as Record<string, string | undefined>, limit, onWarn: io.stderr, query, source });
+        hits = await searchRecall({ adaptive: options.adaptive, embedModel, env: process.env, limit, onWarn: io.stderr, query, source });
       } catch (cause) {
         io.stderr(
           `muse recall: embedding failed — is Ollama running with '${embedModel}' pulled? ` +
@@ -408,7 +413,7 @@ export function registerRecallCommand(program: Command, io: ProgramIO): void {
       try {
         const noteRefs = hits.filter((hit) => hit.source === "notes").map((hit) => hit.ref);
         if (noteRefs.length >= 2) {
-          const trailsFile = resolveTrailsFile(process.env as Record<string, string | undefined>);
+          const trailsFile = resolveTrailsFile(process.env);
           await writeTrails(trailsFile, depositCoRecall(await readTrails(trailsFile), noteRefs, Date.now()));
         }
       } catch {
@@ -437,7 +442,7 @@ export function registerRecallCommand(program: Command, io: ProgramIO): void {
           const { linkedFromResults } = await import("./notes-links.js");
           const { resolveNotesDir } = await import("@muse/autoconfigure");
           const noteRefs = hits.filter((h) => h.source === "notes").map((h) => h.ref);
-          const graph = await loadNoteLinkGraph(resolveNotesDir(process.env as Record<string, string | undefined>));
+          const graph = await loadNoteLinkGraph(resolveNotesDir(process.env));
           const linked = linkedFromResults(noteRefs, graph, limit);
           if (linked.length > 0) {
             io.stdout("🔗 Linked from results (via [[wiki-links]]):\n");

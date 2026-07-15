@@ -31,6 +31,7 @@
  */
 
 import { appendInbound, type TelegramProvider } from "@muse/messaging";
+import { withBestEffort } from "@muse/shared";
 
 export interface TelegramPollOptions {
   readonly provider: TelegramProvider;
@@ -84,9 +85,10 @@ export function startTelegramPollTick(options: TelegramPollOptions): TelegramPol
       for (const message of inbound) {
         await appendInbound(options.inboxFile, message);
         if (options.ackReaction) {
-          void options.provider
-            .reactToMessage(message.source, message.messageId, options.ackReaction)
-            .catch(() => undefined);
+          void withBestEffort(
+            options.provider.reactToMessage(message.source, message.messageId, options.ackReaction),
+            undefined
+          );
         }
       }
       options.logger?.(`telegram-poll: ingested ${inbound.length.toString()} message(s)`);

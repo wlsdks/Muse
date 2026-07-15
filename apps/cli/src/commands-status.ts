@@ -19,7 +19,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { evaluateLocalOnlyPosture, mergeModelKeysFromFile, resolveDefaultModel, type LocalOnlyStatusSnapshot, type MuseEnvironment } from "@muse/autoconfigure";
+import { evaluateLocalOnlyPosture, mergeModelKeysFromFile, resolveDefaultModel, type LocalOnlyStatusSnapshot } from "@muse/autoconfigure";
 import { FileUserMemoryStore, projectRecentlyLearned, readBeliefProvenance, selectRecentlyForgotten, summarizeRecentlyLearned } from "@muse/memory";
 import {
   classifyDaemonLoopHeartbeat,
@@ -34,6 +34,7 @@ import {
 import { readSessionLock } from "@muse/proactivity";
 import { summariseEpisodesRows, summariseFollowupsRows, summariseObjectivesRows, summarisePatternsFiredRows, summariseRemindersRows } from "@muse/domain-tools";
 import { isGoalKey, isVetoKey } from "@muse/recall";
+import { isRecord } from "@muse/shared";
 import type { Command } from "commander";
 
 import { DEFAULT_DAEMON_INTERVAL_MS } from "./commands-daemon-loop.js";
@@ -47,7 +48,7 @@ import {
 import { formatRelativeTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 import { readTrust } from "./commands-trust.js";
-import { sleep, waitForShutdownSignal } from "./async-promises.js";
+import { sleep, waitForShutdownSignal, withBestEffort } from "./async-promises.js";
 
 /**
  * `muse scheduler add` derives its stale threshold the same way — 3x the
@@ -105,7 +106,7 @@ export interface StatusPaths {
 }
 
 export interface StatusRuntime {
-  readonly env: MuseEnvironment;
+  readonly env: NodeJS.ProcessEnv;
   readonly homeDir: string;
   readonly paths: StatusPaths;
   readonly readTrust: (userKey: string) => ReturnType<typeof readTrust>;
@@ -114,7 +115,7 @@ export interface StatusRuntime {
 }
 
 export interface StatusRuntimeOptions {
-  readonly env?: MuseEnvironment;
+  readonly env?: NodeJS.ProcessEnv;
   readonly homeDir?: string;
   readonly paths?: Partial<StatusPaths>;
   readonly readTrust?: StatusRuntime["readTrust"];
@@ -126,9 +127,29 @@ function envValue(runtime: StatusRuntime, key: string): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
-function statusPath(env: MuseEnvironment, homeDir: string, envKey: string, filename: string): string {
+function statusPath(env: NodeJS.ProcessEnv, homeDir: string, envKey: string, filename: string): string {
   const explicit = env[envKey]?.trim();
   return explicit && explicit.length > 0 ? explicit : join(homeDir, ".muse", filename);
+}
+
+function cloneProcessEnv(env: Readonly<Record<string, string | undefined>>): NodeJS.ProcessEnv {
+  return { ...env };
+}
+
+function isNonEmptyEnvValue(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function pickFirstConfiguredEnvKey(
+  source: Readonly<Record<string, string | undefined>>,
+  candidates: readonly string[]
+): string | undefined {
+  for (const key of candidates) {
+    if (isNonEmptyEnvValue(source[key])) {
+      return key;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -137,7 +158,7 @@ function statusPath(env: MuseEnvironment, homeDir: string, envKey: string, filen
  * accidentally inspecting a developer's real personal stores.
  */
 export function resolveStatusRuntime(options: StatusRuntimeOptions = {}): StatusRuntime {
-  const env: MuseEnvironment = options.env ?? process.env;
+  const env: NodeJS.ProcessEnv = options.env ?? process.env;
   const homeDir = options.homeDir?.trim() || env.HOME?.trim() || homedir();
   const defaults: StatusPaths = {
     beliefProvenanceFile: statusPath(env, homeDir, "MUSE_BELIEF_PROVENANCE_FILE", "belief-provenance.json"),
@@ -173,7 +194,7 @@ export function resolveStatusRuntime(options: StatusRuntimeOptions = {}): Status
 async function safeReadJson(path: string): Promise<unknown | undefined> {
   try {
     const raw = await readFile(path, "utf8");
-    return JSON.parse(raw) as unknown;
+    return JSON.parse(raw);
   } catch {
     return undefined;
   }
@@ -214,10 +235,8 @@ function defaultUserId(runtime: StatusRuntime): string {
 export async function readRagStatus(
   path: string
 ): Promise<{ readonly indexed: boolean; readonly embedModel?: string; readonly files?: number }> {
-  const parsed = await safeReadJson(path) as
-    | { model?: unknown; files?: unknown }
-    | undefined;
-  if (!parsed || typeof parsed !== "object") {
+  const parsed = await safeReadJson(path);
+  if (!isRecord(parsed)) {
     return { indexed: false };
   }
   const files = Array.isArray(parsed.files) ? parsed.files.length : 0;
@@ -243,11 +262,21 @@ interface TokenCostTodayShape {
  * crashing. Exported for direct test coverage.
  */
 export async function readTokenCostToday(path: string): Promise<{ readonly available: boolean } & TokenCostTodayShape> {
-  const parsed = await safeReadJson(path) as TokenCostTodayShape | undefined;
-  if (!parsed || typeof parsed !== "object") {
+  const parsed = await safeReadJson(path);
+  if (!isRecord(parsed)) {
     return { available: false };
   }
-  return { available: true, ...parsed };
+  return {
+    available: true,
+    totalUsd: normalizeNumberOrUndefined(parsed.totalUsd),
+    totalTokens: normalizeNumberOrUndefined(parsed.totalTokens),
+    runs: normalizeNumberOrUndefined(parsed.runs),
+    asOfIso: typeof parsed.asOfIso === "string" && parsed.asOfIso.trim().length > 0 ? parsed.asOfIso : undefined
+  };
+}
+
+function normalizeNumberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 /**
@@ -264,9 +293,9 @@ export async function readRecentlyLearnedLine(
   memoryFile: string,
   userId: string,
   nowMs: number = Date.now(),
-  env: MuseEnvironment = process.env
+  env: NodeJS.ProcessEnv = process.env
 ): Promise<string | undefined> {
-  const memory = await new FileUserMemoryStore({ file: memoryFile, env: env as NodeJS.ProcessEnv }).findByUserId(userId);
+  const memory = await new FileUserMemoryStore({ file: memoryFile, env: cloneProcessEnv(env) }).findByUserId(userId);
   return memory
     ? summarizeRecentlyLearned(projectRecentlyLearned(memory, { sinceMs: nowMs - RECENTLY_LEARNED_WINDOW_MS }))
     : undefined;
@@ -333,7 +362,7 @@ export async function readDaemonStatus(
   plistFile: string | undefined,
   nowMs: number = Date.now()
 ): Promise<DaemonStatusSnapshot> {
-  const heartbeat = await readProactiveHeartbeat(heartbeatDir).catch(() => ({}) as ProactiveHeartbeat);
+  const heartbeat = await readProactiveHeartbeat(heartbeatDir).catch(failClosedHeartbeat);
   const verdict = classifyDaemonLoopHeartbeat(heartbeat, { nowMs, staleMs: DAEMON_HEARTBEAT_STALE_MS });
   return {
     detail: verdict.detail,
@@ -345,6 +374,7 @@ export async function readDaemonStatus(
 
 async function collectStatus(userId: string, runtime: StatusRuntime) {
   const { env, paths } = runtime;
+  const storeEnv = cloneProcessEnv(env);
   const userMemoryFile = paths.userMemoryFile;
   const tasksFile = paths.tasksFile;
   const historyFile = paths.proactiveHistoryFile;
@@ -355,7 +385,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   // <user> record (silent divergence when MUSE_PERSONA is set).
   const slot = env.MUSE_PERSONA?.trim() || undefined;
   const effectiveUserKey = slot ? `${userId}@${slot}` : userId;
-  const personaStore = await readPersonaStore(paths.personaFile).catch(() => undefined);
+  const personaStore = await withBestEffort(readPersonaStore(paths.personaFile), undefined);
   const activeTemplateId = personaStore?.activeId ?? "default";
   const activePreamble = personaStore ? resolveActivePersonaPreamble(personaStore) : "";
   const builtinDescription = BUILTIN_PERSONAS.find((p) => p.id === activeTemplateId)?.description;
@@ -363,22 +393,25 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   // Read through the store API (not a raw JSON parse) so status sees exactly
   // what ask/chat/recall see — including the encrypted-at-rest format and the
   // legacy "default"-bucket healing a raw read would miss.
-  const personaMemory = await new FileUserMemoryStore({ file: userMemoryFile, env: env as NodeJS.ProcessEnv })
-    .findByUserId(effectiveUserKey)
-    .catch(() => undefined);
+  const personaMemoryRequest = new FileUserMemoryStore({ file: userMemoryFile, env: storeEnv })
+    .findByUserId(effectiveUserKey);
+  const personaMemory = await withBestEffort(personaMemoryRequest, undefined);
   const persona = personaMemory
     ? { facts: personaMemory.facts, preferences: personaMemory.preferences, updatedAt: personaMemory.updatedAt.toISOString() }
     : undefined;
 
-  const recentlyLearnedLine = await readRecentlyLearnedLine(userMemoryFile, effectiveUserKey, Date.now(), env).catch(() => undefined);
-  const recentlyForgottenLine = await readRecentlyForgottenLine(paths.beliefProvenanceFile).catch(() => undefined);
+  const recentlyLearnedLine = await withBestEffort(
+    readRecentlyLearnedLine(userMemoryFile, effectiveUserKey, Date.now(), env),
+    undefined
+  );
+  const recentlyForgottenLine = await withBestEffort(readRecentlyForgottenLine(paths.beliefProvenanceFile), undefined);
 
-  const trust = await runtime.readTrust(effectiveUserKey).catch(() => ({ blockedTools: [] as string[], trustedTools: [] as string[] }));
+  const trust = await withBestEffort(runtime.readTrust(effectiveUserKey), { blockedTools: [], trustedTools: [] });
   const routineHours = persona?.facts?.routine_active_hours;
   const routineDays = persona?.facts?.routine_active_days;
 
-  const tasksDoc = await safeReadJson(tasksFile) as { tasks?: readonly PersistedTask[] } | undefined;
-  const allTasks = tasksDoc?.tasks ?? [];
+  const tasksDoc = await safeReadJson(tasksFile);
+  const allTasks = readPersistedTasks(tasksDoc);
   const now = Date.now();
   const due24h = allTasks.filter((task) => {
     if (task.status !== "open" || !task.dueAt) return false;
@@ -386,31 +419,33 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
     return Number.isFinite(due) && due >= now && due <= now + 24 * 60 * 60 * 1000;
   });
 
-  const historyDoc = await safeReadJson(historyFile) as { entries?: readonly ProactiveHistoryEntry[] } | undefined;
-  const lastNotice = historyDoc?.entries?.[historyDoc.entries.length - 1];
+  const historyDoc = await safeReadJson(historyFile);
+  const historyRows = readProactiveHistoryEntries(historyDoc);
+  const lastNotice = historyRows[historyRows.length - 1];
 
-  const followups = await readFollowups(paths.followupsFile).catch(() => [] as const);
+  const followups = await withBestEffort(readFollowups(paths.followupsFile), []);
   const followupsByStatus = summariseFollowupsRows(followups, userId);
 
-  const episodesDoc = await safeReadJson(paths.episodesFile) as { episodes?: readonly unknown[] } | undefined;
-  const episodesSummary = summariseEpisodesRows(episodesDoc?.episodes ?? [], userId);
+  const episodesDoc = await safeReadJson(paths.episodesFile);
+  const episodesSummary = summariseEpisodesRows(readUnknownArray(episodesDoc), userId);
 
-  const patternsFiredDoc = await safeReadJson(paths.patternsFiredFile) as { fired?: readonly unknown[] } | undefined;
-  const patternsSummary = summarisePatternsFiredRows(patternsFiredDoc?.fired ?? []);
+  const patternsFiredDoc = await safeReadJson(paths.patternsFiredFile);
+  const firedPatternRows = readUnknownArray(patternsFiredDoc);
+  const patternsSummary = summarisePatternsFiredRows(firedPatternRows);
   // 1-3 "you usually do X around now" hints from the
   // patterns-fired sidecar.
-  const suggestions = suggestPatternHints(patternsFiredDoc?.fired ?? [], new Date());
+  const suggestions = suggestPatternHints(firedPatternRows, new Date());
 
-  const reminders = await readReminders(paths.remindersFile).catch(() => [] as const);
+  const reminders = await withBestEffort(readReminders(paths.remindersFile), []);
   const remindersSummary = summariseRemindersRows(reminders, now);
 
-  const objectives = await readObjectives(paths.objectivesFile).catch(() => [] as const);
+  const objectives = await withBestEffort(readObjectives(paths.objectivesFile), []);
   const objectivesSummary = summariseObjectivesRows(objectives, userId);
 
   // Do-Not-Disturb: the proactive loop skips firing while a session
   // lock is active, so the dashboard must surface it — else a user
   // who locked DND glances here, sees no notices, and is confused.
-  const sessionLockUntil = await readSessionLock(paths.sessionLockFile, new Date()).catch(() => undefined);
+  const sessionLockUntil = await withBestEffort(readSessionLock(paths.sessionLockFile, new Date()), undefined);
 
   const logTail = await readLogTail(logFile, 1);
   const logBytes = await fileSize(logFile);
@@ -418,7 +453,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   const tokenCost = await readTokenCostToday(paths.tokenCostFile);
   const rag = await readRagStatus(paths.notesIndexFile);
 
-  const daemonPlistFile = runtime.platform === "darwin" ? resolveLaunchAgentFile(env as NodeJS.ProcessEnv) : undefined;
+  const daemonPlistFile = runtime.platform === "darwin" ? resolveLaunchAgentFile(env) : undefined;
   const daemon = await readDaemonStatus(paths.daemonHeartbeatDir, daemonPlistFile);
 
   return {
@@ -455,7 +490,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
       // effectiveUserKey is the slot-composed key memory + trust
       // actually use — surfaced so callers don't recompose it.
       ...(slot
-        ? { slot, slotSource: "MUSE_PERSONA" as const, effectiveUserKey }
+        ? { slot, slotSource: "MUSE_PERSONA", effectiveUserKey }
         : {}),
       template: {
         activeId: activeTemplateId,
@@ -573,15 +608,13 @@ export function suggestPatternHints(
 
   const buckets = new Map<string, number[]>();
   for (const raw of fired) {
-    if (!raw || typeof raw !== "object") continue;
-    const entry = raw as { patternId?: unknown; firedAtIso?: unknown };
-    if (typeof entry.patternId !== "string" || typeof entry.firedAtIso !== "string") continue;
-    const t = Date.parse(entry.firedAtIso);
+    if (!isPatternFiredEntry(raw)) continue;
+    const t = Date.parse(raw.firedAtIso);
     if (!Number.isFinite(t)) continue;
     const hour = new Date(t).getUTCHours();
-    const prior = buckets.get(entry.patternId) ?? [];
+    const prior = buckets.get(raw.patternId) ?? [];
     prior.push(hour);
-    buckets.set(entry.patternId, prior);
+    buckets.set(raw.patternId, prior);
   }
 
   const candidates: PatternSuggestion[] = [];
@@ -600,6 +633,52 @@ export function suggestPatternHints(
   return candidates.sort((a, b) => b.firings - a.firings || a.patternId.localeCompare(b.patternId)).slice(0, maxHints);
 }
 
+function isPersistedTask(value: unknown): value is PersistedTask {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.title === "string"
+    && typeof value.status === "string"
+    && (value.dueAt === undefined || typeof value.dueAt === "string")
+    && (value.urgent === undefined || typeof value.urgent === "boolean");
+}
+
+function readPersistedTasks(value: unknown): readonly PersistedTask[] {
+  if (!isRecord(value) || !Array.isArray(value.tasks)) {
+    return [];
+  }
+  return value.tasks.filter(isPersistedTask);
+}
+
+function isProactiveHistoryEntry(value: unknown): value is ProactiveHistoryEntry {
+  return isRecord(value)
+    && (value.firedAtIso === undefined || typeof value.firedAtIso === "string")
+    && (value.status === undefined || typeof value.status === "string")
+    && (value.kind === undefined || typeof value.kind === "string")
+    && (value.providerId === undefined || typeof value.providerId === "string")
+    && (value.text === undefined || typeof value.text === "string");
+}
+
+function readProactiveHistoryEntries(value: unknown): readonly ProactiveHistoryEntry[] {
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
+    return [];
+  }
+  return value.entries.filter(isProactiveHistoryEntry);
+}
+
+interface PatternFiredEntry {
+  readonly patternId: string;
+  readonly firedAtIso: string;
+}
+
+function isPatternFiredEntry(value: unknown): value is PatternFiredEntry {
+  return isRecord(value) && typeof value.patternId === "string" && value.patternId.trim().length > 0 && typeof value.firedAtIso === "string";
+}
+
+function readUnknownArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+
 /**
  * `{ model, modelInferredFrom }` — what model the runtime will
  * actually invoke. Mirrors `resolveDefaultModel` from autoconfigure
@@ -613,7 +692,7 @@ export function suggestPatternHints(
  * matches the `muse doctor` warn-detail format
  * ("inferred from GEMINI_API_KEY").
  */
-function resolveModelInfo(sourceEnv: MuseEnvironment): { model?: string; modelInferredFrom?: string; modelLocalOnlyIgnoredKey?: string } {
+function resolveModelInfo(sourceEnv: NodeJS.ProcessEnv): { model?: string; modelInferredFrom?: string; modelLocalOnlyIgnoredKey?: string } {
   const merged = mergeModelKeysFromFile(sourceEnv);
   const explicit = (merged.MUSE_MODEL?.trim() || merged.MUSE_DEFAULT_MODEL?.trim() || "") || undefined;
   if (explicit) {
@@ -628,13 +707,13 @@ function resolveModelInfo(sourceEnv: MuseEnvironment): { model?: string; modelIn
   // here would falsely contradict the privacy line shown right below (mirrors muse
   // doctor's modelEnvCheck). Derive the posture from the canonical evaluator.
   if (evaluateLocalOnlyPosture(merged).enabled) {
-    const ignoredCloudKey = [
+    const ignoredCloudKey = pickFirstConfiguredEnvKey(merged, [
       "GEMINI_API_KEY",
       "GOOGLE_API_KEY",
       "OPENAI_API_KEY",
       "ANTHROPIC_API_KEY",
       "OPENROUTER_API_KEY"
-    ].find((k) => typeof merged[k] === "string" && (merged[k] as string).trim().length > 0);
+    ]);
     return ignoredCloudKey ? { model: resolved, modelLocalOnlyIgnoredKey: ignoredCloudKey } : { model: resolved };
   }
   const inferredFrom = [
@@ -644,8 +723,12 @@ function resolveModelInfo(sourceEnv: MuseEnvironment): { model?: string; modelIn
     "ANTHROPIC_API_KEY",
     "OPENROUTER_API_KEY",
     "OLLAMA_BASE_URL"
-  ].find((k) => typeof merged[k] === "string" && (merged[k] as string).trim().length > 0);
+  ].find((k): k is string => isNonEmptyEnvValue(merged[k])) ?? undefined;
   return { model: resolved, modelInferredFrom: inferredFrom };
+}
+
+function failClosedHeartbeat(): ProactiveHeartbeat {
+  return {};
 }
 
 /**
@@ -664,7 +747,7 @@ function resolveModelInfo(sourceEnv: MuseEnvironment): { model?: string; modelIn
  * exist on a fresh install (mergeModelKeysFromFile returns the
  * input env unchanged in that case).
  */
-function summariseProviders(sourceEnv: MuseEnvironment) {
+function summariseProviders(sourceEnv: NodeJS.ProcessEnv) {
   const checks: ReadonlyArray<{ id: string; envKey: string }> = [
     { envKey: "GEMINI_API_KEY", id: "gemini" },
     { envKey: "ANTHROPIC_API_KEY", id: "anthropic" },

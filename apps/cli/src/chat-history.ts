@@ -54,9 +54,10 @@ import {
   type ConversationSummary,
   type ConversationTurn
 } from "@muse/stores";
-import { redactSecretsInText, resolveHomeDir } from "@muse/shared";
+import { isNodeErrorCode, NODE_ERROR_CODES, redactSecretsInText, resolveHomeDir } from "@muse/shared";
 
 import { isRecord } from "./credential-store.js";
+import { withBestEffort } from "./async-promises.js";
 
 const HISTORY_TURN_LIMIT = 12;
 // Turn counts above this many turns in the active conversation trigger an
@@ -117,7 +118,7 @@ async function readLegacyLastChatTurns(): Promise<readonly ConversationTurn[] | 
   try {
     raw = await readFile(lastChatHistoryPath(), "utf8");
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
+    if (isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT)) {
       return undefined;
     }
     throw error;
@@ -127,7 +128,7 @@ async function readLegacyLastChatTurns(): Promise<readonly ConversationTurn[] | 
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     try {
-      const parsed = JSON.parse(trimmed) as unknown;
+      const parsed = JSON.parse(trimmed);
       if (!isRecord(parsed)) continue;
       const role = parsed.role;
       if ((role !== "user" && role !== "assistant" && role !== "system") || typeof parsed.content !== "string") {
@@ -158,7 +159,7 @@ async function migrateLegacyLastChatIfPresent(): Promise<string | undefined> {
   }
   const id = newConversationId();
   await conversationStore().appendTurns(id, legacyTurns, { origin: "cli", title: "imported from last-chat" });
-  await rename(lastChatHistoryPath(), `${lastChatHistoryPath()}.migrated`).catch(() => undefined);
+  await withBestEffort(rename(lastChatHistoryPath(), `${lastChatHistoryPath()}.migrated`), undefined);
   return id;
 }
 
@@ -411,10 +412,6 @@ export async function maybeCompactLastChatHistory(
   ];
   await conversationStore().replaceTurns(id, nextTurns);
   return { compacted: true, dropped: older.length, summary: trimmedSummary };
-}
-
-function isNodeError(value: unknown): value is NodeJS.ErrnoException {
-  return isRecord(value) && typeof (value as { code?: unknown }).code === "string";
 }
 
 export function capContentForSummary(value: string, cap: number): string {

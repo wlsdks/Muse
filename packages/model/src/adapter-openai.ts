@@ -14,7 +14,8 @@
  * on the HTTP shape.
  */
 
-import { truncateErrorBody } from "@muse/shared";
+import { truncateErrorBody, withBestEffort } from "@muse/shared";
+import { readWebSearchPolicy } from "./web-search-policy.js";
 
 import { ModelProviderError, OpenAICompatibleProvider, isRetryableHttpStatus, fetchOrThrowAsProviderError, modelCallSignal } from "./provider-base.js";
 import { parseJson } from "./provider-shared.js";
@@ -59,8 +60,7 @@ export class OpenAIProvider extends OpenAICompatibleProvider {
   }
 
   override async generate(request: ModelRequest): Promise<ModelResponse> {
-    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
-      ?? { enabled: false, maxUses: 5 };
+    const policy = readWebSearchPolicy(request.metadata?.webSearchPolicy);
 
     const url = `${this.wire.baseUrl}/responses`;
     const body = JSON.stringify(toOpenAIResponsesRequest(request, this.wire.defaultModel, policy));
@@ -78,7 +78,7 @@ export class OpenAIProvider extends OpenAICompatibleProvider {
     }, request.signal);
 
     if (!response.ok) {
-      const errBody = await response.text().catch(() => "");
+      const errBody = await withBestEffort(response.text(), "");
       throw new ModelProviderError(
         this.id,
         `OpenAI Responses API error: ${response.status}: ${truncateErrorBody(errBody) || response.statusText}`,
@@ -86,7 +86,7 @@ export class OpenAIProvider extends OpenAICompatibleProvider {
       );
     }
 
-    const rawBody = await response.text().catch(() => "");
+      const rawBody = await withBestEffort(response.text(), "");
     const payload = parseJson(rawBody);
     if (payload === undefined) {
       // A non-JSON 200 is a transport anomaly (proxy/portal HTML,
@@ -102,8 +102,7 @@ export class OpenAIProvider extends OpenAICompatibleProvider {
   }
 
   override async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
-    const policy = (request.metadata?.webSearchPolicy as { enabled: boolean; maxUses: number } | undefined)
-      ?? { enabled: false, maxUses: 5 };
+    const policy = readWebSearchPolicy(request.metadata?.webSearchPolicy);
 
     const url = `${this.wire.baseUrl}/responses`;
     const body = JSON.stringify({ ...toOpenAIResponsesRequest(request, this.wire.defaultModel, policy), stream: true });
@@ -121,7 +120,7 @@ export class OpenAIProvider extends OpenAICompatibleProvider {
     }, request.signal);
 
     if (!response.ok) {
-      const errBody = await response.text().catch(() => "");
+      const errBody = await withBestEffort(response.text(), "");
       yield {
         error: new ModelProviderError(
           this.id,

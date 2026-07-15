@@ -19,6 +19,7 @@
 
 import { promises as fs } from "node:fs";
 
+import { isRecord } from "@muse/shared";
 import { atomicWriteFile, withFileMutationQueue } from "./atomic-file-store.js";
 
 export interface FollowupLlmBudgetRecord {
@@ -36,20 +37,19 @@ export async function readFollowupLlmBudget(file: string): Promise<FollowupLlmBu
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return undefined;
   }
-  if (!parsed || typeof parsed !== "object") return undefined;
-  const candidate = parsed as Partial<FollowupLlmBudgetRecord>;
+  if (!isRecord(parsed)) return undefined;
   if (
-    typeof candidate.date !== "string"
-    || typeof candidate.calls !== "number"
-    || !Number.isFinite(candidate.calls)
+    typeof parsed.date !== "string"
+    || typeof parsed.calls !== "number"
+    || !Number.isFinite(parsed.calls)
   ) {
     return undefined;
   }
-  return { calls: candidate.calls, date: candidate.date };
+  return { calls: parsed.calls, date: parsed.date };
 }
 
 export async function writeFollowupLlmBudget(file: string, record: FollowupLlmBudgetRecord): Promise<void> {

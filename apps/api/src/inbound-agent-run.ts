@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { withBestEffort } from "@muse/shared";
+
 
 import {
   casualResponseFor,
@@ -200,7 +202,7 @@ function sameScheduledMinute(a: Date, b: Date): boolean {
  * turn with another's.
  */
 async function readScheduledFollowupsFor(followupsFile: string, userId: string): Promise<readonly PersistedFollowup[]> {
-  const followups = await readFollowups(followupsFile).catch(() => []);
+  const followups = await withBestEffort(readFollowups(followupsFile), []);
   return followups.filter((followup) => followup.userId === userId && followup.status === "scheduled");
 }
 
@@ -262,7 +264,7 @@ async function scheduleUserSideFollowups(
     };
     // Fail-open per promise (parity with the runtime capture hook) — one
     // bad write must not block the rest, or fail the turn.
-    await upsertFollowup(followupsFile, followup).catch(() => undefined);
+    await withBestEffort(upsertFollowup(followupsFile, followup), undefined);
   }
   return firstScheduled;
 }
@@ -413,8 +415,8 @@ export function createInboundAgentRun(options: InboundAgentRunOptions): Threaded
       // shared/group turn, an unavailable store, or a load error all
       // collapse to `[]` here — the fail-open contract this whole branch
       // already runs under (empty snapshot = behaves exactly as before).
-      const personaSnapshot = (await loadChatPersonaSnapshot({ providerId, scope, source, userMemoryStore }).catch(() => null)) ?? [];
-      const chatReply = await composeChatReply({ latestUserText, personaSnapshot, thread: messages }).catch(() => null);
+      const personaSnapshot = await withBestEffort(loadChatPersonaSnapshot({ providerId, scope, source, userMemoryStore }, []));
+      const chatReply = await withBestEffort(composeChatReply({ latestUserText, personaSnapshot, thread: messages }), null);
       if (chatReply !== null) {
         // Run the SAME gate the full agent path applies below
         // (gateChatAnswerGrounding), now against REAL evidence — the persona
@@ -443,10 +445,10 @@ export function createInboundAgentRun(options: InboundAgentRunOptions): Threaded
       // Fail-open: a composer error/timeout/rejection means no ack, never a
       // failed run — `composeAck` itself already fails open, but a caller's
       // implementation is not trusted to.
-      const ack = await composeAck({ latestUserText }).catch(() => null);
+      const ack = await withBestEffort(composeAck({ latestUserText }), null);
       if (ack !== null) {
         // Ack delivery is cosmetic — a failed send must never fail the run.
-        await notify(ack).catch(() => undefined);
+        await withBestEffort(notify(ack), undefined);
       }
     }
     // The channel identity is the user-memory scope for this chat, so the

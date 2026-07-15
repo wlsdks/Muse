@@ -14,9 +14,10 @@
 import { randomUUID } from "node:crypto";
 
 import { openLoops, type OpenLoop } from "@muse/agent-core";
-import { resolveTasksFile } from "@muse/autoconfigure";
+import { resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { compareTasksByDueDate, parseTaskDueAt, readTasks, readTaskStatusFilter, resolveTaskRef, serializeTask, writeTasks, type PersistedTask } from "@muse/stores";
 import type { Command } from "commander";
+import { isRecord } from "@muse/shared";
 
 import { isApiUnreachable, withApiLocalFallback } from "./program-helpers.js";
 import { analyzeTaskFlow, formatTaskFlow } from "./task-flow.js";
@@ -32,6 +33,10 @@ import {
 } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
 
+function environment(): MuseEnvironment {
+  return process.env;
+}
+
 /**
  * CLI-side strict validation for `muse tasks list
  * --status <value>`. The shared `readTaskStatusFilter` is
@@ -42,10 +47,16 @@ import type { ProgramIO } from "./program.js";
  * pretending the filter worked.
  */
 const TASK_STATUS_VALUES = ["open", "done", "all"] as const;
+const TASK_STATUS_SET = new Set<string>(TASK_STATUS_VALUES);
+type TaskStatus = (typeof TASK_STATUS_VALUES)[number];
+
+function isTaskStatus(raw: string): raw is TaskStatus {
+  return TASK_STATUS_SET.has(raw);
+}
 
 function assertTaskStatusInput(raw: string): void {
   const trimmed = raw.trim().toLowerCase();
-  if (TASK_STATUS_VALUES.includes(trimmed as (typeof TASK_STATUS_VALUES)[number])) {
+  if (isTaskStatus(trimmed)) {
     return;
   }
   const suggestion = closestCommandName(trimmed, TASK_STATUS_VALUES);
@@ -69,8 +80,61 @@ interface SharedOptions {
   readonly json?: boolean;
 }
 
+type HumanTaskRow = {
+  readonly id: string;
+  readonly title: string;
+  readonly status?: string;
+  readonly dueAt?: string;
+  readonly completedAt?: string;
+  readonly tags?: readonly string[];
+  readonly urgent?: boolean;
+};
+
+type TaskListPayload = {
+  readonly status: string;
+  readonly tasks: readonly HumanTaskRow[];
+  readonly total: number;
+};
+
 function localTasksFile(): string {
-  return resolveTasksFile(process.env as Record<string, string | undefined>);
+  return resolveTasksFile(environment());
+}
+
+function parseTaskRow(raw: unknown): HumanTaskRow | undefined {
+  if (!isRecord(raw)) return undefined;
+  if (typeof raw.id !== "string" || typeof raw.title !== "string") return undefined;
+  const task: HumanTaskRow = { id: raw.id, title: raw.title };
+  if (typeof raw.status === "string") task.status = raw.status;
+  if (typeof raw.dueAt === "string") task.dueAt = raw.dueAt;
+  if (typeof raw.completedAt === "string") task.completedAt = raw.completedAt;
+  if (typeof raw.urgent === "boolean") task.urgent = raw.urgent;
+  const tags = raw.tags;
+  if (Array.isArray(tags) && tags.every((tag) => typeof tag === "string")) {
+    task.tags = tags;
+  }
+  return task;
+}
+
+function parseTaskPayload(raw: unknown, fallbackStatus: string): TaskListPayload {
+  if (!isRecord(raw)) {
+    return { status: fallbackStatus, tasks: [], total: 0 };
+  }
+  const tasksSource = raw.tasks;
+  const tasks = Array.isArray(tasksSource) ? tasksSource.flatMap((entry) => {
+    const task = parseTaskRow(entry);
+    return task ? [task] : [];
+  }) : [];
+  const status = typeof raw.status === "string" ? raw.status : fallbackStatus;
+  const total = typeof raw.total === "number" ? raw.total : tasks.length;
+  return { status, tasks, total };
+}
+
+function parseRequiredTask(raw: unknown): HumanTaskRow {
+  const task = parseTaskRow(raw);
+  if (!task) {
+    throw new Error("Unexpected task response shape");
+  }
+  return task;
 }
 
 /** Render the open-loops nudge — surface the planless nagging tasks + how to close them. Pure. */
@@ -100,15 +164,29 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .command("providers")
     .description("List configured tasks backends")
     .option("--json", "Print the raw API response instead of the formatted list")
-    .action(async (options: { readonly json?: boolean }, command) => {
-      const result = await helpers.apiRequest(io, command, "/api/tasks/providers");
-      if (options.json) {
-        helpers.writeOutput(io, result);
-        return;
-      }
-      const providers = (result as { providers?: Parameters<typeof formatProvidersList>[1] })?.providers ?? [];
-      io.stdout(formatProvidersList("Tasks providers", providers));
-    });
+  .action(async (options: { readonly json?: boolean }, command) => {
+    const result = await helpers.apiRequest(io, command, "/api/tasks/providers");
+    if (options.json) {
+      helpers.writeOutput(io, result);
+      return;
+    }
+    const rawProviders = isRecord(result) && Array.isArray(result.providers) ? result.providers : [];
+    const providers = rawProviders
+      .map((provider): { readonly id: string; readonly local?: boolean; readonly displayName?: string; readonly description?: string } | undefined => {
+        if (!isRecord(provider) || typeof provider.id !== "string" || provider.id.trim().length === 0) return undefined;
+        if (provider.local !== undefined && typeof provider.local !== "boolean") return undefined;
+        if (provider.displayName !== undefined && typeof provider.displayName !== "string") return undefined;
+        if (provider.description !== undefined && typeof provider.description !== "string") return undefined;
+        return {
+          id: provider.id,
+          ...(provider.local === undefined ? {} : { local: provider.local }),
+          ...(provider.displayName === undefined ? {} : { displayName: provider.displayName }),
+          ...(provider.description === undefined ? {} : { description: provider.description })
+        };
+      })
+      .filter((provider): provider is Parameters<typeof formatProvidersList>[1][number] => provider !== undefined);
+    io.stdout(formatProvidersList("Tasks providers", providers));
+  });
 
   tasks
     .command("flow")
@@ -176,7 +254,6 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       // Throws before dispatch so a typo'd --status doesn't return
       // a silently-wrong "open" list.
       assertTaskStatusInput(options.status);
-      type TaskListPayload = { status: string; tasks: readonly Record<string, unknown>[]; total: number };
       const readLocalTasks = async (): Promise<TaskListPayload> => {
         const file = localTasksFile();
         const status = readTaskStatusFilter(options.status);
@@ -184,7 +261,19 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         const filtered = all
           .filter((task) => status === "all" || task.status === status)
           .sort(compareTasksByDueDate);
-        return { status, tasks: filtered.map(serializeTask), total: filtered.length };
+        return {
+          status,
+          tasks: filtered.map((task) => ({
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            dueAt: task.dueAt,
+            completedAt: task.completedAt,
+            tags: task.tags,
+            urgent: task.urgent
+          })),
+          total: filtered.length
+        };
       };
       let payload: TaskListPayload;
       if (options.local) {
@@ -192,7 +281,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       } else {
         const path = `/api/tasks?status=${encodeURIComponent(options.status)}`;
         try {
-          payload = (await helpers.apiRequest(io, command, path)) as TaskListPayload;
+          payload = parseTaskPayload(await helpers.apiRequest(io, command, path), options.status);
         } catch (cause) {
           if (!isApiUnreachable(cause)) {
             throw cause;
@@ -228,7 +317,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
       }
       io.stdout(formatTaskList({
         status: payload.status,
-        tasks: payload.tasks as unknown as Parameters<typeof formatTaskList>[0]["tasks"],
+        tasks: payload.tasks,
         total: payload.total
       }));
     });
@@ -297,7 +386,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         io.stderr(`muse: heads up — ${formatLocalDateTime(resolvedDueAt)} is in the PAST; this task is already overdue.\n`);
       }
 
-      const addLocal = async (): Promise<Record<string, unknown>> => {
+      const addLocal = async (): Promise<HumanTaskRow> => {
         const file = localTasksFile();
         const persisted: PersistedTask = {
           createdAt: new Date().toISOString(),
@@ -311,9 +400,9 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         };
         const existing = await readTasks(file);
         await writeTasks(file, [...existing, persisted]);
-        return serializeTask(persisted);
+        return parseRequiredTask(serializeTask(persisted));
       };
-      const addApi = async (): Promise<Record<string, unknown>> => {
+      const addApi = async (): Promise<HumanTaskRow> => {
         const body: Record<string, unknown> = { title };
         if (options.notes && options.notes.length > 0) {
           body.notes = options.notes;
@@ -324,14 +413,14 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         if (options.due && options.due.trim().length > 0) {
           body.dueAt = options.due.trim();
         }
-        return (await helpers.apiRequest(io, command, "/api/tasks", body, "POST")) as Record<string, unknown>;
+        return parseRequiredTask(await helpers.apiRequest(io, command, "/api/tasks", body, "POST"));
       };
       const created = await taskLocalFallback(io, Boolean(options.local), addLocal, addApi);
       if (options.json) {
         helpers.writeOutput(io, created);
         return;
       }
-      io.stdout(formatTaskAdded(created as unknown as Parameters<typeof formatTaskAdded>[0]));
+      io.stdout(formatTaskAdded(created));
     });
 
   tasks
@@ -342,7 +431,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
     .option("--json", "Print the raw response instead of a short confirmation")
     .action(async (id: string, options: SharedOptions, command) => {
       let alreadyDone = false;
-      const completeLocal = async (): Promise<Record<string, unknown>> => {
+      const completeLocal = async (): Promise<HumanTaskRow> => {
         const file = localTasksFile();
         const all = await readTasks(file);
         const resolved = resolveLocalTaskId(id, all);
@@ -358,15 +447,15 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         const next = [...all];
         next[index] = persisted;
         await writeTasks(file, next);
-        return serializeTask(persisted);
+        return parseRequiredTask(serializeTask(persisted));
       };
-      const completeApi = async (): Promise<Record<string, unknown>> => (await helpers.apiRequest(
+      const completeApi = async (): Promise<HumanTaskRow> => parseRequiredTask(await helpers.apiRequest(
         io,
         command,
         `/api/tasks/${encodeURIComponent(id)}/complete`,
         {},
         "POST"
-      )) as Record<string, unknown>;
+      ));
       const completed = await taskLocalFallback(io, Boolean(options.local), completeLocal, completeApi);
       if (options.json) {
         helpers.writeOutput(io, completed);
@@ -377,7 +466,7 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         io.stdout(`Task [${String(completed.id).slice(0, 12)}] ${String(completed.title)} was already done${when ? ` (completed ${formatLocalDateTime(when)})` : ""} — no change.\n`);
         return;
       }
-      io.stdout(formatTaskCompleted(completed as unknown as Parameters<typeof formatTaskCompleted>[0]));
+      io.stdout(formatTaskCompleted(completed));
     });
 
   tasks
@@ -475,13 +564,16 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
         await writeTasks(file, next);
         return serializeTask(cleared);
       };
-      const editApi = async (): Promise<Record<string, unknown>> => (await helpers.apiRequest(
-        io,
-        command,
-        `/api/tasks/${encodeURIComponent(id)}`,
-        updates,
-        "PATCH"
-      )) as Record<string, unknown>;
+      const editApi = async (): Promise<Record<string, unknown>> => {
+        const apiResult = await helpers.apiRequest(
+          io,
+          command,
+          `/api/tasks/${encodeURIComponent(id)}`,
+          updates,
+          "PATCH"
+        );
+        return isRecord(apiResult) ? apiResult : {};
+      };
       const updated = await taskLocalFallback(io, Boolean(options.local), editLocal, editApi);
       if (options.json) {
         helpers.writeOutput(io, updated);

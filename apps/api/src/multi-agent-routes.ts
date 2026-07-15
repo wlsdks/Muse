@@ -20,9 +20,10 @@ import {
   type TierModels
 } from "@muse/multi-agent";
 import type { ModelMessage, ModelProvider } from "@muse/model";
-import type { JsonObject } from "@muse/shared";
+import { parseBooleanFromEnv, type JsonObject } from "@muse/shared";
 import type { FastifyInstance } from "fastify";
 import { createAnswerVerifier, createWorkerSummarizer, createWorkerSynthesizer } from "./multi-agent-workers.js";
+import { isRecord, readQueryString, readRouteParam, toBody, toJsonObject } from "./compat-parsers.js";
 
 export interface MultiAgentRouteOptions {
   readonly agentRuntime?: AgentRuntime;
@@ -111,7 +112,7 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     if (!authed(request, reply)) {
       return;
     }
-    const limitRaw = (request.query as { readonly limit?: string } | undefined)?.limit;
+    const limitRaw = readQueryString(request, "limit");
     let limit: number | undefined;
 
     if (limitRaw !== undefined) {
@@ -188,7 +189,10 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     if (!authed(request, reply)) {
       return undefined;
     }
-    const { runId } = request.params as { runId: string };
+    const runId = readRouteParam(request, "runId");
+    if (!runId) {
+      return reply.status(400).send({ code: "INVALID_RUN_ID", message: "runId path parameter is required" } satisfies ApiError);
+    }
     const existing = runRegistry.get(runId);
     if (!existing) {
       return reply.status(404).send({ code: "RUN_NOT_FOUND", message: `no run "${runId}"` } satisfies ApiError);
@@ -213,9 +217,9 @@ export function registerMultiAgentRoutes(server: FastifyInstance, options: Multi
     if (!authed(request, reply)) {
       return undefined;
     }
-    const { runId } = request.params as { readonly runId: string };
+    const runId = readRouteParam(request, "runId");
 
-    if (!runId || runId.length === 0) {
+    if (!runId) {
       return reply.status(400).send({
         code: "INVALID_RUN_ID",
         message: "runId path parameter is required"
@@ -585,29 +589,35 @@ interface OrchestrationSignals {
  * `raw` is typed `unknown`, and an empty/malformed shape yields no field (no noise).
  */
 function readOrchestrationSignals(raw: unknown): OrchestrationSignals {
-  if (typeof raw !== "object" || raw === null) return {};
-  const record = raw as { readonly conflicts?: unknown; readonly verification?: unknown };
+  if (!isRecord(raw)) {
+    return {};
+  }
+  const record = raw;
   const signals: { conflicts?: readonly string[]; verification?: { satisfied: boolean; missing?: string } } = {};
 
-  if (
-    Array.isArray(record.conflicts) &&
-    record.conflicts.length > 0 &&
-    record.conflicts.every((entry) => typeof entry === "string")
-  ) {
-    signals.conflicts = record.conflicts as readonly string[];
+  const conflicts = getOptionalStringList(record.conflicts);
+  if (conflicts.length > 0) {
+    signals.conflicts = conflicts;
   }
 
   if (typeof record.verification === "object" && record.verification !== null) {
-    const verdict = record.verification as { readonly satisfied?: unknown; readonly missing?: unknown };
-    if (typeof verdict.satisfied === "boolean") {
+    if (isRecord(record.verification) && typeof record.verification.satisfied === "boolean") {
       signals.verification = {
-        satisfied: verdict.satisfied,
-        ...(typeof verdict.missing === "string" ? { missing: verdict.missing } : {})
+        satisfied: record.verification.satisfied,
+        ...(typeof record.verification.missing === "string" ? { missing: record.verification.missing } : {})
       };
     }
   }
 
   return signals;
+}
+
+function getOptionalStringList(value: unknown): readonly string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function parseOptionalStringArray(value: unknown): readonly string[] | undefined {
+  return Array.isArray(value) && value.every((entry): entry is string => typeof entry === "string") ? value : undefined;
 }
 
 function sseData(value: string): string {
@@ -659,8 +669,7 @@ export function resolveOrchestrateTierModels(defaultModel: string, env: NodeJS.P
 // single heavy model sequentially instead of thrashing two large
 // models. Default (unset) ⇒ both tiers may run.
 export function resolveTierCapacityProbe(env: NodeJS.ProcessEnv): () => boolean {
-  const single = env.MUSE_TIER_SINGLE_MODEL_HOST?.trim().toLowerCase();
-  const canHoldBoth = !(single === "1" || single === "true" || single === "yes");
+  const canHoldBoth = !parseBooleanFromEnv(env.MUSE_TIER_SINGLE_MODEL_HOST, false);
   return () => canHoldBoth;
 }
 
@@ -693,7 +702,7 @@ export async function buildTieredOrchestration(
   // the fast model first and escalates to heavy only when its answer is
   // low-confidence — accuracy-positive (a weak fast answer is never kept) and
   // off by default, so the plan is unchanged unless MUSE_TIERED_CASCADE is set.
-  const cascade = process.env.MUSE_TIERED_CASCADE === "1" || process.env.MUSE_TIERED_CASCADE?.toLowerCase() === "true";
+  const cascade = parseBooleanFromEnv(process.env.MUSE_TIERED_CASCADE, false);
   return {
     collapsedToHeavy: plan.collapsedToHeavy,
     workers: specs.map((spec) =>
@@ -782,11 +791,11 @@ function prependSystem(messages: readonly ModelMessage[], systemPrompt: string):
 }
 
 function parseOrchestrateBody(value: unknown): ParseResult<OrchestrateBody> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return invalid("INVALID_ORCHESTRATE_REQUEST", "Body must be a JSON object");
   }
 
-  const body = value as Record<string, unknown>;
+  const body = toBody(value);
 
   if (typeof body.message !== "string" || body.message.trim().length === 0) {
     return invalid("INVALID_ORCHESTRATE_REQUEST", "message is required");
@@ -802,15 +811,12 @@ function parseOrchestrateBody(value: unknown): ParseResult<OrchestrateBody> {
 
   let workerIds: readonly string[] | undefined;
 
-  if (Array.isArray(body.workerIds)) {
-    if (!body.workerIds.every((id) => typeof id === "string")) {
-      return invalid("INVALID_ORCHESTRATE_REQUEST", "workerIds must be string[]");
-    }
-
-    workerIds = body.workerIds as readonly string[];
-  } else if (body.workerIds !== undefined) {
+  const parsedWorkerIds = parseOptionalStringArray(body.workerIds);
+  if (body.workerIds !== undefined && parsedWorkerIds === undefined) {
     return invalid("INVALID_ORCHESTRATE_REQUEST", "workerIds must be string[]");
   }
+
+  workerIds = parsedWorkerIds;
 
   let maxWorkers: number | undefined;
 
@@ -896,11 +902,7 @@ interface ConversationEntry {
 }
 
 function toConversationEntry(message: AgentMessage): ConversationEntry {
-  const metadata = message.metadata
-    ? (Object.fromEntries(
-        Object.entries(message.metadata).filter(([, value]) => value !== undefined)
-      ) as JsonObject)
-    : undefined;
+  const metadata = message.metadata ? toJsonObject(message.metadata) : undefined;
 
   return {
     content: message.content,

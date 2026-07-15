@@ -30,6 +30,10 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
+import { isRecord, withBestEffort } from "@muse/shared";
+
+import { serializePerFile } from "./file-mutation-queue.js";
+
 const GLOBAL_USER_KEY = "_global";
 
 /**
@@ -61,13 +65,12 @@ function parseSourceCursor(value: unknown): SourceCursor | undefined {
   if (typeof value === "string") {
     return value.trim().length > 0 ? { ids: [], iso: value } : undefined;
   }
-  if (value && typeof value === "object") {
-    const obj = value as { iso?: unknown; ids?: unknown };
-    if (typeof obj.iso === "string" && obj.iso.trim().length > 0) {
-      const ids = Array.isArray(obj.ids)
-        ? obj.ids.filter((id): id is string => typeof id === "string")
+  if (isRecord(value)) {
+    if (typeof value.iso === "string" && value.iso.trim().length > 0) {
+      const ids = Array.isArray(value.ids)
+        ? value.ids.filter((id): id is string => typeof id === "string")
         : [];
-      return { ids, iso: obj.iso };
+      return { ids, iso: value.iso };
     }
   }
   return undefined;
@@ -82,20 +85,20 @@ async function readPersisted(file: string): Promise<PersistedByUser> {
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return {};
   }
-  if (!parsed || typeof parsed !== "object") {
+  if (!isRecord(parsed)) {
     return {};
   }
-  const versioned = parsed as { version?: unknown; byUser?: unknown; lastInjectedAt?: unknown };
-  if (versioned.version === 2 && versioned.byUser && typeof versioned.byUser === "object") {
+  const versioned = parsed;
+  if (versioned.version === 2 && isRecord(versioned.byUser)) {
     const out: Record<string, Record<string, SourceCursor>> = {};
-    for (const [key, value] of Object.entries(versioned.byUser as Record<string, unknown>)) {
-      if (value && typeof value === "object") {
+    for (const [key, value] of Object.entries(versioned.byUser)) {
+      if (isRecord(value)) {
         const inner: Record<string, SourceCursor> = {};
-        for (const [source, raw] of Object.entries(value as Record<string, unknown>)) {
+        for (const [source, raw] of Object.entries(value)) {
           const cursor = parseSourceCursor(raw);
           if (cursor) {
             inner[source] = cursor;
@@ -107,9 +110,9 @@ async function readPersisted(file: string): Promise<PersistedByUser> {
     return out;
   }
   // v1 migration: fold the flat map into the `_global` user slot.
-  if (versioned.lastInjectedAt && typeof versioned.lastInjectedAt === "object") {
+  if (isRecord(versioned.lastInjectedAt)) {
     const inner: Record<string, SourceCursor> = {};
-    for (const [source, raw] of Object.entries(versioned.lastInjectedAt as Record<string, unknown>)) {
+    for (const [source, raw] of Object.entries(versioned.lastInjectedAt)) {
       const cursor = parseSourceCursor(raw);
       if (cursor) {
         inner[source] = cursor;
@@ -130,7 +133,7 @@ async function writePersisted(file: string, byUser: PersistedByUser): Promise<vo
   await fs.mkdir(dirname(file), { recursive: true });
   await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  await withBestEffort(fs.chmod(file, 0o600), undefined);
 }
 
 // Per-file mutation queue: writeInboxInjectionCursor / advanceInboxInjectionCursor
@@ -140,13 +143,6 @@ async function writePersisted(file: string, byUser: PersistedByUser): Promise<vo
 // Serialising the WHOLE op per file makes the cursor lossless under concurrency,
 // mirroring the pending-approval store.
 const mutationQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
-function serializePerFile<T>(file: string, op: () => Promise<T>): Promise<T> {
-  const prior = mutationQueues.get(file) ?? resolvedPromise();
-  const next = prior.then(op, op);
-  mutationQueues.set(file, next.then(() => undefined, () => undefined));
-  return next;
-}
 
 export async function readInboxInjectionCursor(
   file: string,
@@ -161,7 +157,7 @@ export async function writeInboxInjectionCursor(
   cursor: InboxInjectionCursor,
   userId?: string
 ): Promise<void> {
-  await serializePerFile(file, async () => {
+  await serializePerFile(mutationQueues, file, async () => {
     const existing = await readPersisted(file);
     const sanitized: Record<string, SourceCursor> = {};
     for (const [source, value] of Object.entries(cursor)) {
@@ -188,7 +184,7 @@ export async function advanceInboxInjectionCursor(
   advance: Readonly<Record<string, SourceCursor>>,
   userId?: string
 ): Promise<InboxInjectionCursor> {
-  return serializePerFile(file, async () => {
+  return serializePerFile(mutationQueues, file, async () => {
     const existing = await readPersisted(file);
     const key = userKey(userId);
     const current = existing[key] ?? {};

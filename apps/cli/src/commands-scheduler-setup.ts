@@ -11,6 +11,7 @@
 
 import { collectSetupStatusJson, resolveFollowupsFile, type SetupStatusSnapshot } from "@muse/autoconfigure";
 import { CADENCE_ACCEPTED_FORMS, defaultScheduledJobsFile, FileScheduledJobStore, parseCadence } from "@muse/scheduler";
+import { isRecord } from "@muse/shared";
 import {
   classifyDaemonLoopHeartbeat,
   defaultProactiveHeartbeatDir,
@@ -29,6 +30,7 @@ import { runEmailSetup } from "./setup-email.js";
 import { runMessagingSetup } from "./setup-messaging.js";
 import { runModelSetup, SETUP_MODEL_PROVIDER_SPECS } from "./setup-model.js";
 import type { ProgramIO } from "./program.js";
+import { withBestEffort } from "./async-promises.js";
 
 /**
  * A job saved while the daemon is stale/absent will NOT fire — the file
@@ -271,23 +273,34 @@ export function registerSchedulerCommands(program: Command, io: ProgramIO, helpe
     .description("Show what's scheduled to fire next: scheduler jobs + pending reminders + scheduled followups, soonest first")
     .option("--limit <n>", "How many entries to surface (default 5)")
     .option("--json", "Emit structured JSON instead of the formatted preview")
-    .action(async (options: { readonly limit?: string; readonly json?: boolean }, command) => {
-      const limit = Math.max(1, Math.min(50, Number.parseInt(options.limit ?? "5", 10) || 5));
-      const [jobs, reminders, followups] = await Promise.all([
-        apiRequest(io, command, "/api/scheduler/jobs")
-          .then((value) => Array.isArray((value as { jobs?: unknown[] }).jobs)
-            ? ((value as { jobs: SchedulerJobRow[] }).jobs)
-            : Array.isArray(value) ? (value as SchedulerJobRow[]) : [])
-          .catch(() => [] as SchedulerJobRow[]),
-        apiRequest(io, command, "/api/reminders?status=pending")
-          .then((value) => ((value as { reminders?: PendingReminderRow[] }).reminders) ?? [])
-          .catch(() => [] as PendingReminderRow[]),
+      .action(async (options: { readonly limit?: string; readonly json?: boolean }, command) => {
+        const limit = Math.max(1, Math.min(50, Number.parseInt(options.limit ?? "5", 10) || 5));
+        const [jobs, reminders, followups] = await Promise.all([
+          withBestEffort(
+            apiRequest(io, command, "/api/scheduler/jobs").then((value) => {
+              const rawJobs = isRecord(value) && Array.isArray(value.jobs)
+                ? value.jobs
+                : Array.isArray(value) ? value : [];
+              return rawJobs.filter((entry): entry is SchedulerJobRow => {
+                return isRecord(entry) && typeof entry.nextRunAt === "string";
+              });
+            }),
+            [] as SchedulerJobRow[]
+          ),
+          withBestEffort(
+            apiRequest(io, command, "/api/reminders?status=pending").then((value) => {
+              const rawReminders = isRecord(value) && Array.isArray(value.reminders)
+                ? value.reminders
+                : [];
+              return rawReminders.filter((entry): entry is PendingReminderRow => isRecord(entry) && typeof entry.text === "string");
+            }),
+            [] as PendingReminderRow[]
+          ),
         // Followups are a local-only store (no REST surface) but fire
         // at `scheduledFor` exactly like a reminder, so a "what's next"
         // that omits them hides self-queued promises ("I'll check in
         // 30 min"). Read locally; fail-soft to none.
-        readFollowups(resolveFollowupsFile(process.env as Record<string, string | undefined>))
-          .catch(() => [])
+        withBestEffort(readFollowups(resolveFollowupsFile(process.env)), [])
       ]);
       const merged: PreviewEntry[] = [];
       for (const job of jobs) {

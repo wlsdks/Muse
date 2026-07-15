@@ -12,6 +12,9 @@
 import { Box, Static, Text, useApp, useCursor, useInput, useStdout } from "ink";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { EventEmitter, once } from "node:events";
+import { withBestEffort } from "./async-promises.js";
+
+
 
 import { FRAMES, toAnsi } from "@muse/mascot";
 import { trimConversationMessages, type ConversationTrimOptions, type DroppedContextSummarizer } from "@muse/memory";
@@ -76,6 +79,7 @@ export { runChatInk } from "./chat-ink-run.js";
 const h = React.createElement;
 
 const SLASH_COMMANDS = slashCommandsForPlatform("chat");
+const EMPTY_PROACTIVE_ITEMS = (): readonly ProactiveItem[] => [];
 
 // Third-party-outbound actuators: in chat these reach the fail-closed
 // approval gate, which flags them louder ("Outbound action") and never sends
@@ -381,21 +385,21 @@ export function MuseChatApp(props: {
     const tick = async (): Promise<void> => {
       if (!idleRef.current) return;
       const now = Date.now();
-      const items = check ? await check().catch(() => [] as readonly ProactiveItem[]) : [];
+      const items = check ? await check().catch(EMPTY_PROACTIVE_ITEMS) : [];
       // Background jobs + `/orchestrate` fan-outs that finished since the chat
       // opened are surfaced once each (their own pre-phrased line — ONE entry
       // per orchestration, never one per sub-agent), not via the reminder
       // time-window.
-      const completedJobs = jobsDone ? await jobsDone().catch(() => [] as readonly ProactiveItem[]) : [];
+      const completedJobs = jobsDone ? await jobsDone().catch(EMPTY_PROACTIVE_ITEMS) : [];
       const completedOrchestrations = orchestrationsDone
-        ? await orchestrationsDone().catch(() => [] as readonly ProactiveItem[])
+        ? await orchestrationsDone().catch(EMPTY_PROACTIVE_ITEMS)
         : [];
       const completed = [...completedJobs, ...completedOrchestrations];
       // Due check-ins + fireable pattern suggestions — already-phrased nudges
       // the daemon would push to the channel; surface them in-chat once each,
       // verbatim (not the imminent time-window — a check-in due hours ago and an
       // undated pattern still belong here).
-      const nudges = nudge ? await nudge().catch(() => [] as readonly ProactiveItem[]) : [];
+      const nudges = nudge ? await nudge().catch(EMPTY_PROACTIVE_ITEMS) : [];
       if (!active) return;
       const unseen = pickUnseen(imminentItems(items, now, PROACTIVE_LEAD_MS), seenRef.current);
       const unseenJobs = pickUnseen(completed, seenRef.current);
@@ -733,7 +737,7 @@ export function MuseChatApp(props: {
     const personaBase = props.personaPrompt();
     const agentPrefix = activeAgent ? `${activeAgent.prompt}\n\n` : "";
     const grounding: ChatGrounding = props.groundingFor
-      ? await props.groundingFor(message, historyRef.current).catch(() => ({ block: "", matches: [] }))
+      ? await withBestEffort(props.groundingFor(message, historyRef.current), { block: "", matches: [] })
       : { block: "", matches: [] };
 
     // Privacy-tiered routing: an attachment splices file contents / a photo
@@ -744,7 +748,7 @@ export function MuseChatApp(props: {
     let cloudResult: { readonly text: string; readonly marker: string } | undefined;
     if (cloudEligible) {
       setStreaming("☁️ …"); // the await below can take a couple seconds; a blank box reads as hung
-      cloudResult = await cloudTurn(message, personaBase ?? "", grounding.block).catch(() => undefined);
+      cloudResult = await withBestEffort(cloudTurn(message, personaBase ?? "", grounding.block), undefined);
     }
 
     let accumulated = "";
@@ -804,14 +808,14 @@ export function MuseChatApp(props: {
     // process (episode-laundering defense, EP-1b / MemoryGraft).
     let turnUntrusted = false;
     if (props.finalizeAnswer && !interruptRef.current && !accumulated.startsWith("⚠")) {
-      const finalized = await props.finalizeAnswer({
+      const finalized = await withBestEffort(props.finalizeAnswer({
         answer: accumulated,
         history: historyRef.current,
         matches: grounding.matches,
         question: message,
         toolsUsed: toolsRan,
         toolGroundingSources: toolGrounding
-      }).catch(() => undefined);
+      }), undefined);
       if (finalized) {
         if (finalized.display !== accumulated) {
           accumulated = finalized.display;
@@ -844,9 +848,12 @@ export function MuseChatApp(props: {
     if (!accumulated.startsWith("⚠") && accumulated !== "(interrupted)") lastAnswerRef.current = accumulated;
     props.onCommit(message, persisted, turnUntrusted);
     // Background auto-memory: surface anything Muse learned so the user sees it.
-    void props.autoLearn?.(message, persisted)
-      .then((summary) => { if (summary) setTurns((prev) => [...prev, { role: "system", text: summary }]); })
-      .catch(() => undefined);
+    void withBestEffort(
+      props.autoLearn?.(message, persisted) ?? Promise.resolve(undefined),
+      undefined
+    ).then((summary) => {
+      if (summary) setTurns((prev) => [...prev, { role: "system", text: summary }]);
+    });
   }, [app, props, activeAgent, currentModel, sessionTokens, toolsOn, requestApproval]);
 
   const slashMenu = matchSlashCommands(inputState.value, SLASH_COMMANDS);

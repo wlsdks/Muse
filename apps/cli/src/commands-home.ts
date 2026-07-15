@@ -9,8 +9,10 @@
 import { resolveActionLogFile, resolveHomeAssistantEnvironment, type MuseEnvironment } from "@muse/autoconfigure";
 import { listHomeAssistantStates, performHomeActionWithApproval, readHomeAssistantState, type WebActionApprovalGate } from "@muse/domain-tools";
 import { confirm, isCancel } from "@clack/prompts";
+import { isRecord } from "@muse/shared";
 import type { Command } from "commander";
 
+import { confirmBoolean } from "./confirm-boolean.js";
 import type { ProgramIO } from "./program.js";
 
 interface CallOptions {
@@ -36,7 +38,7 @@ function resolveHomeCommandEnvironment(deps: HomeCommandDeps) {
   // Deliberately use accessors instead of a spread/merge. The resolver reads
   // local-only then URL before token; a blocked remote URL therefore never
   // invokes the source token getter, even when explicit URL/token deps exist.
-  const env = Object.create(null) as MuseEnvironment;
+  const env: MuseEnvironment = Object.create(null);
   Object.defineProperties(env, {
     MUSE_HOMEASSISTANT_TOKEN: {
       configurable: true,
@@ -93,19 +95,21 @@ export function registerHomeCommands(program: Command, io: ProgramIO, deps: Home
       let data: Record<string, unknown> | undefined;
       if (options.data) {
         try {
-          data = JSON.parse(options.data) as Record<string, unknown>;
+          const parsed = JSON.parse(options.data);
+          data = isRecord(parsed) ? parsed : undefined;
+          if (data === undefined) {
+            throw new Error("muse home: --data must be a JSON object");
+          }
         } catch {
           io.stderr("muse home: --data must be valid JSON\n");
           process.exitCode = 1;
           return;
         }
       }
-      const gate: WebActionApprovalGate = deps.approvalGate ?? ((action) => {
+      const gate: WebActionApprovalGate = deps.approvalGate ?? (async (action) => {
         io.stdout(`\n${action.summary}\n${action.request.method ?? "POST"} ${action.request.url}\n${action.request.body ? `${action.request.body}\n` : ""}\n`);
-        return confirm({ message: "Perform this smart-home action?" }).then((answer) =>
-          isCancel(answer) || answer !== true
-            ? { approved: false, reason: "user did not confirm" }
-            : { approved: true });
+        const approved = await confirmBoolean(confirm, isCancel, "Perform this smart-home action?");
+        return approved ? { approved: true } : { approved: false, reason: "user did not confirm" };
       });
 
       const outcome = await performHomeActionWithApproval({

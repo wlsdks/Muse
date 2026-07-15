@@ -78,13 +78,15 @@ export class MacOsActiveWindowSource implements AmbientSignalSource {
 
   constructor(options: MacOsActiveWindowSourceOptions = {}) {
     const osascriptPath = options.osascriptPath ?? "/usr/bin/osascript";
-    const timeoutMs = options.timeoutMs ?? 3_000;
+    const timeoutMs = typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+      ? Math.max(1, Math.trunc(options.timeoutMs))
+      : 3_000;
     this.run = options.run ?? ((script) => defaultOsascriptRun(osascriptPath, script, timeoutMs));
     this.includeClipboard = options.includeClipboard ?? false;
     const pbpastePath = options.pbpastePath ?? "/usr/bin/pbpaste";
     this.readClipboard = options.readClipboard ?? (() => defaultPbpasteRun(pbpastePath, timeoutMs));
-    this.maxClipboardChars = Number.isFinite(options.maxClipboardChars)
-      ? Math.max(1, Math.trunc(options.maxClipboardChars as number))
+    this.maxClipboardChars = typeof options.maxClipboardChars === "number" && Number.isFinite(options.maxClipboardChars)
+      ? Math.max(1, Math.trunc(options.maxClipboardChars))
       : 2_000;
   }
 
@@ -116,13 +118,23 @@ export class MacOsActiveWindowSource implements AmbientSignalSource {
 }
 
 function defaultOsascriptRun(osascriptPath: string, script: string, timeoutMs: number): Promise<string | undefined> {
-  return execFile(osascriptPath, ["-e", script], { timeout: timeoutMs, encoding: "utf8" })
-    .then(({ stdout }) => stdout)
-    .catch(() => undefined);
+  return (async (): Promise<string | undefined> => {
+    try {
+      const { stdout } = await execFile(osascriptPath, ["-e", script], { timeout: timeoutMs, encoding: "utf8" });
+      return stdout;
+    } catch {
+      return undefined;
+    }
+  })();
 }
 
 function defaultPbpasteRun(pbpastePath: string, timeoutMs: number): Promise<string | undefined> {
-  return execFile(pbpastePath, [], { timeout: timeoutMs, encoding: "utf8" })
-    .then(({ stdout }) => stdout)
-    .catch(() => undefined);
+  return (async (): Promise<string | undefined> => {
+    try {
+      const { stdout } = await execFile(pbpastePath, [], { timeout: timeoutMs, encoding: "utf8" });
+      return stdout;
+    } catch {
+      return undefined;
+    }
+  })();
 }

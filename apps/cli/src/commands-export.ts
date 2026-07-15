@@ -17,10 +17,13 @@ import { chmod, mkdir, readdir, readFile, stat, writeFile, unlink } from "node:f
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
+
+
 import type { Command } from "commander";
 
 import { encryptExportBuffer } from "./export-crypto.js";
 import type { ProgramIO } from "./program.js";
+import { withBestEffort } from "./async-promises.js";
 
 interface ExportOptions {
   readonly output?: string;
@@ -256,7 +259,7 @@ export async function buildMuseExport(args: {
 
     await Promise.race([
       onError.then(([cause]) => {
-        throw cause as Error;
+        throw normalizeChildError(cause);
       }),
       onClose.then(([code]) => {
         if (code === 0 || code === null) {
@@ -275,9 +278,9 @@ export async function buildMuseExport(args: {
       await writeFile(args.outputPath, cipher, { mode: 0o600 });
     }
   } finally {
-    await unlink(readmePath).catch(() => undefined);
+    await withBestEffort(unlink(readmePath), undefined);
     if (passphrase) {
-      await unlink(tarPath).catch(() => undefined);
+      await withBestEffort(unlink(tarPath), undefined);
     }
   }
 
@@ -287,6 +290,10 @@ export async function buildMuseExport(args: {
     notesIncluded: sources.notesDir !== undefined,
     encrypted: Boolean(passphrase)
   };
+}
+
+function normalizeChildError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(typeof cause === "string" ? cause : "command execution failed");
 }
 
 /**

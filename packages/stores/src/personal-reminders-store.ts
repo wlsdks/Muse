@@ -15,6 +15,7 @@ import { atomicWriteFile } from "./atomic-file-store.js";
 import { promises as fs } from "node:fs";
 
 import type { JsonObject } from "@muse/shared";
+import { isRecord } from "@muse/shared";
 
 import { formatDueLocal } from "@muse/mcp-shared";
 import { withFileLock } from "./encrypted-file.js";
@@ -70,18 +71,27 @@ export async function readReminders(file: string): Promise<readonly PersistedRem
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { reminders?: unknown }).reminders)) {
+  const reminders = readRecordArrayField(parsed, "reminders");
+  if (reminders === undefined) {
     await quarantineCorruptStore(file);
     return [];
   }
-  return (parsed as { reminders: unknown[] }).reminders.flatMap((entry): readonly PersistedReminder[] =>
+  return reminders.flatMap((entry): readonly PersistedReminder[] =>
     isPersistedReminder(entry) ? [entry] : []
   );
+}
+
+function readRecordArrayField(value: unknown, key: string): unknown[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const candidate = value[key];
+  return Array.isArray(candidate) ? candidate : undefined;
 }
 
 /**
@@ -241,17 +251,17 @@ export function parseReminderVia(raw: unknown): ReminderVia | Error | undefined 
   if (raw === undefined) {
     return undefined;
   }
-  if (!raw || typeof raw !== "object") {
+  if (!isRecord(raw)) {
     return new Error("via must be an object with providerId + destination");
   }
-  const candidate = raw as { providerId?: unknown; destination?: unknown };
-  if (typeof candidate.providerId !== "string"
-    || typeof candidate.destination !== "string"
-    || candidate.providerId.trim().length === 0
-    || candidate.destination.trim().length === 0) {
+  const providerId = raw.providerId;
+  const destination = raw.destination;
+  if (typeof providerId !== "string" || typeof destination !== "string"
+    || providerId.trim().length === 0
+    || destination.trim().length === 0) {
     return new Error("via.providerId and via.destination must be non-empty strings");
   }
-  return { destination: candidate.destination.trim(), providerId: candidate.providerId.trim() };
+  return { destination: destination.trim(), providerId: providerId.trim() };
 }
 
 /**
@@ -393,10 +403,10 @@ export function compareRemindersByDueAt(left: PersistedReminder, right: Persiste
 }
 
 function isPersistedReminder(value: unknown): value is PersistedReminder {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as PersistedReminder;
+  const candidate = value;
   if (typeof candidate.id !== "string"
     || typeof candidate.text !== "string"
     || typeof candidate.createdAt !== "string"
@@ -424,9 +434,10 @@ function isPersistedReminder(value: unknown): value is PersistedReminder {
     return false;
   }
   if (candidate.via !== undefined) {
-    if (!candidate.via || typeof candidate.via !== "object"
-      || typeof candidate.via.providerId !== "string"
-      || typeof candidate.via.destination !== "string") {
+    const via = candidate.via;
+    if (!isRecord(via)
+      || typeof via.providerId !== "string"
+      || typeof via.destination !== "string") {
       return false;
     }
   }

@@ -12,8 +12,11 @@ import { createGateEmbedder, createMuseRuntimeAssembly } from "@muse/autoconfigu
 import { FileUserMemoryStore, selectReconfirmableSlots, type UserModel, type UserModelSlot } from "@muse/memory";
 import type { Command } from "commander";
 
+
+
 import { readLastChatHistory, type LastChatLine } from "./chat-history.js";
 import type { ProgramIO } from "./program.js";
+import { withBestEffort } from "./async-promises.js";
 
 type InferModelProvider = Parameters<typeof inferPreferenceFromCorrection>[1]["modelProvider"];
 
@@ -51,7 +54,7 @@ export async function inferSessionPreferences(
   } = {}
 ): Promise<InferSessionPreferencesResult> {
   const readHistory = options.readHistory ?? readLastChatHistory;
-  const lines = await readHistory().catch(() => []);
+  const lines = await withBestEffort(readHistory(), []);
   const exchanges = detectCorrections(lines);
   if (exchanges.length === 0) return { added: [], status: "no-corrections" };
 
@@ -108,7 +111,12 @@ export async function inferSessionPreferences(
 }
 
 const KINDS = ["preference", "schedule", "veto", "goal"] as const;
+const KINDS_SET = new Set<string>(KINDS);
 type SlotKind = (typeof KINDS)[number];
+
+function isSlotKind(value: string): value is SlotKind {
+  return KINDS_SET.has(value);
+}
 
 function resolveUserId(env: NodeJS.ProcessEnv = process.env): string {
   return env.MUSE_USER_ID?.trim() || env.USER?.trim() || "user";
@@ -161,12 +169,12 @@ export function registerUserCommands(program: Command, io: ProgramIO): void {
     .option("--confidence <n>", "0..1 confidence (default: omitted, i.e. asserted)")
     .option("--json", "Print the stored model")
     .action(async (kind: string, valueParts: readonly string[], options: { readonly id?: string; readonly category?: string; readonly recurrence?: string; readonly scope?: string; readonly confidence?: string; readonly json?: boolean }) => {
-      if (!(KINDS as readonly string[]).includes(kind)) {
+      if (!isSlotKind(kind)) {
         throw new Error(`kind must be one of: ${KINDS.join(" | ")}`);
       }
       const value = valueParts.join(" ").trim();
       if (value.length === 0) throw new Error("value is required");
-      const slot = buildUserModelSlot(kind as SlotKind, value, options, new Date());
+      const slot = buildUserModelSlot(kind, value, options, new Date());
       const store = new FileUserMemoryStore();
       const updated = await store.upsertUserModelSlot(resolveUserId(), slot);
       if (options.json) {

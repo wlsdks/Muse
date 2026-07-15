@@ -20,10 +20,12 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import type { Command } from "commander";
+import { hasNodeErrorCodeIn, isNodeErrorCode, NODE_ERROR_CODES } from "@muse/shared";
 
 import { isRecord, readStoredToken } from "./credential-store.js";
 import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
+import { withBestEffort } from "./async-promises.js";
 
 export interface ApiOptions {
   readonly baseUrl: string;
@@ -113,7 +115,7 @@ export async function readApiOptions(
   command: Command,
   readOptions: ReadApiOptionsOptions = {}
 ): Promise<ApiOptions> {
-  const globalOptions = command.optsWithGlobals() as { readonly apiUrl?: string; readonly token?: string };
+  const globalOptions = command.optsWithGlobals<{ readonly apiUrl?: string; readonly token?: string }>();
   const config = await readConfigStore(io);
   const baseUrl = firstNonEmpty(globalOptions.apiUrl, process.env.MUSE_API_URL, config.apiUrl) ?? "http://127.0.0.1:3030";
   const explicitToken = firstNonEmpty(globalOptions.token, process.env.MUSE_API_TOKEN);
@@ -130,7 +132,7 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
     const raw = await readFile(file, "utf8");
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw) as unknown;
+      parsed = JSON.parse(raw);
     } catch {
       throw new Error(
         `config file is not valid JSON: ${file} — fix or delete it (a fresh one is written on next \`muse setup\`)`
@@ -148,13 +150,13 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
         : {})
     };
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
+    if (isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT)) {
       return {};
     }
 
-    if (isNodeError(error) && (error.code === "EISDIR" || error.code === "EACCES" || error.code === "EPERM")) {
+    if (hasNodeErrorCodeIn(error, NODE_ERROR_CODES.EISDIR, NODE_ERROR_CODES.EACCES, NODE_ERROR_CODES.EPERM)) {
       throw new Error(
-        `config at ${file} is not a readable file (${error.code}) — remove or replace it (a fresh one is written on next \`muse setup\`)`,
+        `config at ${file} is not a readable file — remove or replace it (a fresh one is written on next \`muse setup\`)`,
         { cause: error }
       );
     }
@@ -173,10 +175,10 @@ export async function writeConfigStore(io: ProgramIO, config: MuseCliConfig): Pr
     await writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
     await rename(tmp, filePath);
   } catch (error) {
-    await rm(tmp, { force: true }).catch(() => undefined);
+    await withBestEffort(rm(tmp, { force: true }), undefined);
     throw error;
   }
-  await chmod(filePath, 0o600).catch(() => undefined);
+  await withBestEffort(chmod(filePath, 0o600), undefined);
 }
 
 const SUPPORTED_CONFIG_KEYS = ["apiUrl", "defaultModel"] as const;
@@ -221,8 +223,4 @@ export function unsetConfigValue(
   const wasSet = config[key] !== undefined;
   const { [key]: _removed, ...rest } = config;
   return { config: rest, wasSet };
-}
-
-function isNodeError(value: unknown): value is NodeJS.ErrnoException {
-  return value instanceof Error && "code" in value;
 }

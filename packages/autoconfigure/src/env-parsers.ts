@@ -1,3 +1,9 @@
+import {
+  isRecord,
+  parseBooleanFromEnv,
+  parseBooleanTriStateFromEnv
+} from "@muse/shared";
+
 /**
  * Pure environment-string parsers used across the autoconfigure
  * package. Lifted out of `index.ts` so internal modules
@@ -28,17 +34,8 @@
  * preserves the operator's stated default when the env value is
  * unrecognised, which is safer than the "unknown → false" coercion.
  */
-const TRUTHY_ENV_VALUES: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
-const FALSY_ENV_VALUES: ReadonlySet<string> = new Set(["false", "0", "no", "off"]);
-
 export function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined) {
-    return fallback;
-  }
-  const normalised = value.trim().toLowerCase();
-  if (TRUTHY_ENV_VALUES.has(normalised)) return true;
-  if (FALSY_ENV_VALUES.has(normalised)) return false;
-  return fallback;
+  return parseBooleanFromEnv(value, fallback);
 }
 
 /**
@@ -53,11 +50,7 @@ export function parseBoolean(value: string | undefined, fallback: boolean): bool
  * not just literal "on" / "off".
  */
 export function parseBooleanTriState(value: string | undefined): boolean | undefined {
-  if (value === undefined) return undefined;
-  const normalised = value.trim().toLowerCase();
-  if (TRUTHY_ENV_VALUES.has(normalised)) return true;
-  if (FALSY_ENV_VALUES.has(normalised)) return false;
-  return undefined;
+  return parseBooleanTriStateFromEnv(value);
 }
 
 export function parseInteger(value: string | undefined, fallback: number): number {
@@ -188,11 +181,11 @@ export function parseHeaderMap(value: string | undefined): Record<string, string
   } catch {
     return undefined;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     return undefined;
   }
   const out: Record<string, string> = {};
-  for (const [key, raw] of Object.entries(parsed as Record<string, unknown>)) {
+  for (const [key, raw] of Object.entries(parsed)) {
     if (key.trim().length === 0 || typeof raw !== "string") {
       return undefined;
     }

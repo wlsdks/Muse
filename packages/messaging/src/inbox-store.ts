@@ -16,7 +16,10 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
+import { isRecord, withBestEffort } from "@muse/shared";
+
 import type { InboundMessage } from "./types.js";
+import { serializePerFile } from "./file-mutation-queue.js";
 
 const DEFAULT_CAPACITY = 500;
 const MAX_CAPACITY = 5_000;
@@ -43,14 +46,14 @@ export async function readInbox(file: string, limit?: number): Promise<readonly 
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { inbox?: unknown }).inbox)) {
+  if (!isRecord(parsed) || !Array.isArray(parsed.inbox)) {
     return [];
   }
-  const all = (parsed as { inbox: unknown[] }).inbox.flatMap((entry): readonly InboundMessage[] =>
+  const all = parsed.inbox.flatMap((entry): readonly InboundMessage[] =>
     isInboundMessage(entry) ? [entry] : []
   );
   // The file is stored newest-last so writes can append in O(1)
@@ -70,18 +73,13 @@ export interface AppendInboundOptions {
  * each other's append at rename time.
  */
 const writeQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
 
 export async function appendInbound(
   file: string,
   message: InboundMessage,
   options: AppendInboundOptions = {}
 ): Promise<void> {
-  const prior = writeQueues.get(file) ?? resolvedPromise();
-  const run = (): Promise<void> => doAppendInbound(file, message, options);
-  const next = prior.then(run, run);
-  writeQueues.set(file, next.catch(() => undefined));
-  return next;
+  return serializePerFile(writeQueues, file, () => doAppendInbound(file, message, options));
 }
 
 async function doAppendInbound(
@@ -100,7 +98,7 @@ async function doAppendInbound(
   await fs.mkdir(dirname(file), { recursive: true });
   await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  await withBestEffort(fs.chmod(file, 0o600), undefined);
 }
 
 async function readPersistedRaw(file: string): Promise<readonly InboundMessage[]> {
@@ -111,13 +109,13 @@ async function readPersistedRaw(file: string): Promise<readonly InboundMessage[]
     return [];
   }
   try {
-    const parsed = JSON.parse(raw) as { inbox?: unknown };
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.inbox)) {
+    const parsed = JSON.parse(raw);
+    if (!isRecord(parsed) || !Array.isArray(parsed.inbox)) {
       return [];
     }
-    return (parsed.inbox as unknown[]).flatMap((entry): readonly InboundMessage[] =>
+    return parsed.inbox.flatMap((entry): readonly InboundMessage[] => (
       isInboundMessage(entry) ? [entry] : []
-    );
+    ));
   } catch {
     return [];
   }
@@ -138,13 +136,12 @@ function clampCapacity(raw: number | undefined): number {
 }
 
 function isInboundMessage(value: unknown): value is InboundMessage {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as InboundMessage;
-  return typeof candidate.providerId === "string"
-    && typeof candidate.messageId === "string"
-    && typeof candidate.source === "string"
-    && typeof candidate.receivedAtIso === "string"
-    && typeof candidate.text === "string";
+  return typeof value.providerId === "string"
+    && typeof value.messageId === "string"
+    && typeof value.source === "string"
+    && typeof value.receivedAtIso === "string"
+    && typeof value.text === "string";
 }

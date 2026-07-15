@@ -42,7 +42,11 @@ async function modelsOf(workers: { id: string; run: (i: AgentRunInput) => Promis
     { messages: [{ content: "go", role: "user" }], model: "ollama/qwen3:8b" },
     { mode: "parallel" }
   );
-  return Object.fromEntries(result.results.map((s) => [s.workerId, s.result?.response.model]));
+  const models: Record<string, string | undefined> = {};
+  for (const step of result.results) {
+    models[step.workerId] = step.result?.response.model;
+  }
+  return models;
 }
 
 describe("resolveOrchestrateTierModels", () => {
