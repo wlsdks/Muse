@@ -138,7 +138,7 @@ export function buildRuntimeToolRegistry(deps: RuntimeToolRegistryDeps): Dynamic
     const gmailToken = localOnly ? undefined : env.MUSE_GMAIL_TOKEN?.trim();
     const emailSource = gmailToken ? new GmailEmailProvider(gmailToken) : undefined;
     return [createNotesKnowledgeSearchTool({
-      embed: createCachingEmbedder(createOllamaEmbedder(embedModel)),
+      embed: createCachingEmbedder(createOllamaEmbedder(embedModel, env)),
       notesProvider,
       ...(tasksProvider ? { tasksProvider } : {}),
       ...(calendarRegistry ? { calendarSource: calendarRegistry } : {}),
@@ -194,7 +194,8 @@ export function buildRuntimeToolRegistry(deps: RuntimeToolRegistryDeps): Dynamic
     // embed and the record embeddings so they share one vector space.
     const historyEmbedder = parseBoolean(env.MUSE_HISTORY_SEARCH_HYBRID, false)
       ? createCachingEmbedder(createOllamaEmbedder(
-          env.MUSE_HISTORY_SEARCH_EMBED_MODEL?.trim() || "nomic-embed-text-v2-moe"
+          env.MUSE_HISTORY_SEARCH_EMBED_MODEL?.trim() || "nomic-embed-text-v2-moe",
+          env
         ))
       : undefined;
     return [createHistorySearchTool({
