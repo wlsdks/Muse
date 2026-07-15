@@ -654,6 +654,37 @@ button {
 .card-head .head-action {
   margin-left: auto;
 }
+@media (max-width: 640px) {
+  /* card-head packs title + count + action (search/filter row) on one line —
+     at phone width that action content has nowhere to go but off-screen. */
+  .card-head {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Fixed-width form grids (calendar/reminders "new" cards) ────
+   Both mix 1fr text fields with fixed px date columns; the fixed px
+   never shrinks, so it clips off-screen below the desktop widths it
+   was sized for. Collapse to one column at phone width. */
+.calendar-new-form,
+.reminders-new-form {
+  display: grid;
+  align-items: end;
+  gap: 10px;
+}
+.calendar-new-form {
+  grid-template-columns: 1fr 200px 200px auto;
+}
+.reminders-new-form {
+  grid-template-columns: 1fr 220px auto;
+}
+@media (max-width: 640px) {
+  .calendar-new-form,
+  .reminders-new-form {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
 
 .grid {
   display: grid;
@@ -1764,7 +1795,9 @@ button {
   bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%) translateY(2px);
-  max-width: 280px;
+  /* min() clamp so a trigger near a narrow viewport's edge can't push
+     the bubble past it — 280px was sized for desktop only. */
+  max-width: min(280px, calc(100vw - 32px));
   width: max-content;
   padding: 6px 10px;
   border-radius: var(--r-sm);

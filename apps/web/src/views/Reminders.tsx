@@ -47,7 +47,7 @@ export function RemindersView({ client }: { client: ApiClient }) {
       <h1 className="page-title">{t("reminders.title")}</h1>
 
       <Card title={t("reminders.new")} className="lifted">
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 220px auto", alignItems: "end" }}>
+        <div className="reminders-new-form">
           <div>
             <label className="field-label" htmlFor="rem-what">{t("reminders.what")}</label>
             <input ref={whatRef} id="rem-what" className="input" placeholder={t("reminders.whatPlaceholder")} value={text} onChange={(e) => setText(e.target.value)} />

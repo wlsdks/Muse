@@ -217,12 +217,12 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                       const latestReset = data.resetReceipts.find((receipt) => receipt.threadId === thread.id && !receipt.undone);
                       const hasExternalSource = thread.links.some((source) => source.providerId !== "local");
                       return <>
-                    <div style={{ alignItems: "flex-start", display: "flex", gap: 8, justifyContent: "space-between" }}>
+                    <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between" }}>
                       <div>
                         <div className="row-title">{thread.title}</div>
                         <div className="row-meta">{kindLabel(thread.kind)} · {t("continuity.links", { n: thread.linkCount })}</div>
                       </div>
-                      <div style={{ alignItems: "center", display: "flex", gap: 6 }}>
+                      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6 }}>
                         <Badge tone="neutral">v{thread.policy.version}</Badge>
                         <Button disabled={reset.isPending} size="sm" variant="ghost" onClick={() => {
                           if (window.confirm(t("continuity.resetConfirm", { title: thread.title }))) reset.mutate(thread.id);

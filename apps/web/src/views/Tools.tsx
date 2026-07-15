@@ -48,7 +48,7 @@ export function ToolsView({ client }: { client: ApiClient }) {
           {list.map((t) => (
             <Card key={t.name}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <span className="mono" style={{ color: "var(--ink)", fontSize: 14 }}>
+                <span className="mono" style={{ color: "var(--ink)", fontSize: 14, minWidth: 0, overflowWrap: "anywhere" }}>
                   {t.name}
                 </span>
                 <span style={{ marginLeft: "auto" }}>

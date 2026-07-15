@@ -109,7 +109,7 @@ export function TasksView({ client }: { client: ApiClient }) {
         title={t("tasks.yourTasks")}
         count={list.length}
         action={
-          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
             <input
               className="input"
               type="search"
@@ -117,7 +117,7 @@ export function TasksView({ client }: { client: ApiClient }) {
               placeholder={t("tasks.search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 140 }}
+              style={{ width: 140, minWidth: 0 }}
             />
             {(["open", "done", "all"] as const).map((f) => (
               <Button key={f} variant={filter === f ? "secondary" : "ghost"} size="sm" onClick={() => setFilter(f)}>

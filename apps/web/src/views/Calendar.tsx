@@ -84,7 +84,7 @@ export function CalendarView({ client }: { client: ApiClient }) {
       <h1 className="page-title">{t("calendar.title")}</h1>
 
       <Card title={t("calendar.new")} className="lifted">
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 200px 200px auto", alignItems: "end" }}>
+        <div className="calendar-new-form">
           <div>
             <label className="field-label" htmlFor="cal-title">{t("calendar.eventTitle")}</label>
             <input ref={titleRef} id="cal-title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Standup" />
