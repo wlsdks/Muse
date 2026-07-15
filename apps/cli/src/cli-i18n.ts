@@ -50,7 +50,36 @@ const en = {
   "email.authError.appPasswordUrlHint": "Create an app password here: {url}",
   "email.authError.serverDetail": "(server said: \"{detail}\")",
 
-  "setup.status.language": "{lang} (via {source})"
+  "setup.status.language": "{lang} (via {source})",
+
+  "model.notConfigured": "muse {command} requires a configured model. Run `muse setup local` (or `muse onboard`) to get one, or pass --model.",
+
+  "remind.list.empty": "Reminders ({status}): (none) — add one with `muse remind add \"tomorrow at 6pm\" \"call the dentist\"`",
+  "tasks.list.empty": "Tasks ({status}): (none) — add one with `muse tasks add \"<title>\"`",
+  "providers.list.empty": "{label}: (none configured) — run `muse doctor` to see what's missing",
+  "today.calendar.notConfigured": "\nUpcoming: (calendar not configured — run `muse setup calendar`)\n",
+  "today.notes.notConfigured": "\nRecent notes: (notes dir not configured — save your first one with `muse notes save --local <path> \"<text>\"`)\n",
+
+  "remind.add.usage": "usage: muse remind add <when> <text...>\n  e.g. muse remind add \"tomorrow at 6pm\" call the dentist\n  <when> accepts ISO-8601 or a relative phrase: 'tomorrow at 6pm', 'in 3 hours', 'next Monday'",
+  "scheduler.add.usage": "usage: muse scheduler add \"<prompt>\" --every \"<cadence>\"\n  e.g. muse scheduler add \"오늘 일정 요약해서 보내줘\" --every \"daily 9am\"",
+  "model.use.usage": "usage: muse model use <name>\n  run `muse model list` first to see what's installed.",
+
+  "daemon.status.featuresHeader": "features you can turn on:",
+  "daemon.status.ambient.disabled": "ambient rules watch background context and file continuous notices — set MUSE_AMBIENT_RULES to a rules file to turn it on",
+  "daemon.status.webWatch.disabled": "web-watch checks configured pages for changes and notifies you — set MUSE_WEB_WATCH_CONFIG to turn it on",
+  "daemon.status.homeWatch.disabled": "home-watch checks your Home Assistant devices and notifies you — set MUSE_HOME_WATCH_CONFIG plus your Home Assistant credentials to turn it on",
+  "daemon.status.briefing.disabled": "the morning briefing narrates your day in natural language (used by `muse brief`) — set MUSE_BRIEFING_ENABLED to turn it on",
+  "daemon.status.selfLearn.disabled": "self-learn distills your usage into lasting playbook/skill improvements — set MUSE_SELFLEARN_ENABLED (and configure a model) to turn it on",
+  "daemon.status.recap.disabled": "recap sends an evening summary of what happened today — set MUSE_RECAP_ENABLED to turn it on",
+  "daemon.status.digest.disabled": "digest batches anything Muse held back during the day into one evening message — set MUSE_DIGEST_ENABLED=true to turn it back on",
+  "daemon.status.msgPoll.disabled": "message-poll checks connected messaging channels for new inbound so it becomes recallable — set MUSE_MESSAGING_POLL_ENABLED to turn it on",
+  "daemon.status.conflicts.disabled": "conflict-watch warns you ahead of upcoming double-bookings — set MUSE_CONFLICT_WATCH_ENABLED to turn it on",
+  "daemon.status.browsing.disabled": "browsing-sync pulls your Chrome history into recall so Muse can reference pages you've viewed — set MUSE_BROWSING_AUTO_SYNC to turn it on",
+
+  "quiet.notSet": "quiet hours: not set — set with `muse quiet 22:00-07:00`",
+  "email.notConfigured": "muse {command}: run `muse setup email` or set MUSE_GMAIL_TOKEN.",
+  "listen.notConfigured": "voice providers are not configured. Run `muse setup voice` to check what's missing (or set OPENAI_API_KEY / MUSE_VOICE_OPENAI_API_KEY for the cloud path).",
+  "remote.disable.notInstalled": "tailscale isn't installed — nothing to turn off. Install it from {url} if you meant to set up remote access."
 } as const;
 
 export type CliStringKey = keyof typeof en;
@@ -96,7 +125,36 @@ const ko: CliStrings = {
   "email.authError.appPasswordUrlHint": "여기서 앱 비밀번호를 만드세요: {url}",
   "email.authError.serverDetail": "(서버 응답: \"{detail}\")",
 
-  "setup.status.language": "{lang} ({source} 기준)"
+  "setup.status.language": "{lang} ({source} 기준)",
+
+  "model.notConfigured": "muse {command}은(는) 모델 설정이 필요해요. `muse setup local`(또는 `muse onboard`)로 모델을 준비하거나 --model을 넘기세요.",
+
+  "remind.list.empty": "리마인더 ({status}): (없음) — `muse remind add \"tomorrow at 6pm\" \"call the dentist\"`로 하나 추가하세요",
+  "tasks.list.empty": "할 일 ({status}): (없음) — `muse tasks add \"<제목>\"`로 하나 추가하세요",
+  "providers.list.empty": "{label}: (설정된 것 없음) — 무엇이 빠졌는지 `muse doctor`로 확인하세요",
+  "today.calendar.notConfigured": "\n다가오는 일정: (캘린더가 설정되지 않음 — `muse setup calendar` 실행)\n",
+  "today.notes.notConfigured": "\n최근 노트: (노트 폴더가 설정되지 않음 — `muse notes save --local <경로> \"<내용>\"`로 첫 노트를 저장하세요)\n",
+
+  "remind.add.usage": "사용법: muse remind add <when> <text...>\n  예: muse remind add \"tomorrow at 6pm\" call the dentist\n  <when>은 ISO-8601 또는 상대 표현을 받아요: 'tomorrow at 6pm', 'in 3 hours', 'next Monday'",
+  "scheduler.add.usage": "사용법: muse scheduler add \"<prompt>\" --every \"<cadence>\"\n  예: muse scheduler add \"오늘 일정 요약해서 보내줘\" --every \"daily 9am\"",
+  "model.use.usage": "사용법: muse model use <name>\n  먼저 `muse model list`로 설치된 모델을 확인하세요.",
+
+  "daemon.status.featuresHeader": "켤 수 있는 선택 기능:",
+  "daemon.status.ambient.disabled": "ambient 규칙은 배경 컨텍스트를 지켜보며 지속적인 알림을 남겨요 — MUSE_AMBIENT_RULES에 규칙 파일을 지정하면 켜져요",
+  "daemon.status.webWatch.disabled": "web-watch는 지정한 페이지의 변경을 확인해 알려줘요 — MUSE_WEB_WATCH_CONFIG를 설정하면 켜져요",
+  "daemon.status.homeWatch.disabled": "home-watch는 Home Assistant 기기를 확인해 알려줘요 — MUSE_HOME_WATCH_CONFIG와 Home Assistant 자격증명을 설정하면 켜져요",
+  "daemon.status.briefing.disabled": "아침 브리핑은 하루 일정을 자연어로 요약해요 (`muse brief`에서 사용) — MUSE_BRIEFING_ENABLED를 설정하면 켜져요",
+  "daemon.status.selfLearn.disabled": "self-learn은 사용 패턴을 학습해 플레이북/스킬을 지속적으로 개선해요 — MUSE_SELFLEARN_ENABLED를 설정하고(모델도 필요) 켜세요",
+  "daemon.status.recap.disabled": "recap은 저녁에 오늘 있었던 일을 요약해서 보내요 — MUSE_RECAP_ENABLED를 설정하면 켜져요",
+  "daemon.status.digest.disabled": "digest는 하루 동안 보류된 알림을 저녁 한 번에 모아 보내요 — MUSE_DIGEST_ENABLED=true로 다시 켤 수 있어요",
+  "daemon.status.msgPoll.disabled": "message-poll은 연결된 메시징 채널의 새 수신을 확인해 recall 가능하게 만들어요 — MUSE_MESSAGING_POLL_ENABLED를 설정하면 켜져요",
+  "daemon.status.conflicts.disabled": "conflict-watch는 다가오는 일정 중복을 미리 경고해요 — MUSE_CONFLICT_WATCH_ENABLED를 설정하면 켜져요",
+  "daemon.status.browsing.disabled": "browsing-sync는 Chrome 방문 기록을 recall로 가져와요 — MUSE_BROWSING_AUTO_SYNC를 설정하면 켜져요",
+
+  "quiet.notSet": "무음 시간: 설정 안 됨 — `muse quiet 22:00-07:00`로 설정하세요",
+  "email.notConfigured": "muse {command}: `muse setup email`을 실행하거나 MUSE_GMAIL_TOKEN을 설정하세요.",
+  "listen.notConfigured": "음성 provider가 설정되지 않았어요. `muse setup voice`로 무엇이 빠졌는지 확인하세요 (또는 클라우드 경로용으로 OPENAI_API_KEY / MUSE_VOICE_OPENAI_API_KEY를 설정하세요).",
+  "remote.disable.notInstalled": "tailscale가 설치되어 있지 않아요 — 끌 것이 없어요. 원격 접속을 설정하려던 거라면 {url}에서 설치하세요."
 };
 
 export const CLI_DICTIONARIES: Record<Lang, CliStrings> = { en, ko };

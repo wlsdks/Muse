@@ -275,8 +275,19 @@ describe("formatEvents terminal-injection hardening (sibling — calendar)", () 
   it("leaves a clean event untouched + preserves the empty/unconfigured states", () => {
     expect(formatEvents([{ id: "e", startsAtIso: "2026-05-18T09:30:00.000Z", title: "Standup" }]))
       .toBe("\nUpcoming (1):\n  - 09:30 — Standup\n");
-    expect(formatEvents(undefined)).toBe("\nUpcoming: (calendar not configured)\n");
     expect(formatEvents([])).toBe("\nUpcoming: (no calendar events in window)\n");
+  });
+
+  it("names the `muse setup calendar` on-ramp when the calendar isn't configured (E4b audit)", () => {
+    expect(formatEvents(undefined)).toContain("muse setup calendar");
+  });
+});
+
+describe("formatTodayBrief — notes empty state points at how to add one (E4b audit)", () => {
+  it("names the `muse notes save` on-ramp when the notes dir isn't configured", () => {
+    const out = formatTodayBrief({ generatedAt: "2026-05-18T09:00:00.000Z", lookaheadHours: 24 }, false);
+    expect(out).toContain("notes dir not configured");
+    expect(out).toContain("muse notes save");
   });
 });
 

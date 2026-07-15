@@ -108,6 +108,23 @@ describe("muse remind add — pre-dispatch <when> validation", () => {
   });
 });
 
+describe("muse remind add — missing args gets usage + a when-grammar example, not a bare commander error (E4b audit)", () => {
+  it("bare `muse remind add` (no when, no text) prints usage + example inline", async () => {
+    const r = await runRemind(["add"]);
+    expect(r.error).toBeDefined();
+    expect(r.error).toContain("usage: muse remind add <when> <text...>");
+    expect(r.error).toContain("muse remind add \"tomorrow at 6pm\" call the dentist");
+    expect(r.error).toContain("'tomorrow at 6pm'");
+    expect(r.apiCalls).toHaveLength(0);
+  });
+
+  it("<when> given but <text...> missing also gets the usage guidance", async () => {
+    const r = await runRemind(["add", "tomorrow at 6pm"]);
+    expect(r.error).toBeDefined();
+    expect(r.error).toContain("usage: muse remind add <when> <text...>");
+  });
+});
+
 describe("muse remind — API-unreachable falls back to the local store (local-first reliability)", () => {
   const prevEnv = process.env.MUSE_REMINDERS_FILE;
   afterEach(() => {
@@ -454,5 +471,13 @@ describe("formatReminderList — overdue pending reminders are flagged", () => {
     const out = formatReminderList(mk({ id: "rem_cccccccc", dueAt: "2026-06-06T12:31:00Z", text: "운동", status: "fired" }), NOW);
     expect(out).toContain("(fired)");
     expect(out).not.toContain("overdue");
+  });
+});
+
+describe("formatReminderList — empty state points at how to add one (E4b audit #4)", () => {
+  it("names the `muse remind add` on-ramp instead of a bare '(none)'", () => {
+    const out = formatReminderList({ status: "pending", total: 0, reminders: [] });
+    expect(out).toContain("Reminders (pending): (none)");
+    expect(out).toContain("muse remind add");
   });
 });

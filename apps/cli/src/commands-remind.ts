@@ -25,6 +25,7 @@ import type { MessagingProviderRegistry } from "@muse/messaging";
 import type { Command } from "commander";
 
 import { closestCommandName } from "./closest-command.js";
+import { t } from "./cli-i18n.js";
 import { formatDaemonLivenessNotice, SCHEDULER_ADD_DAEMON_STALE_MS } from "./commands-scheduler-setup.js";
 import { formatLocalDateTime as shortDateTime } from "./human-formatters.js";
 import { isApiUnreachable, withApiLocalFallback } from "./program-helpers.js";
@@ -103,8 +104,8 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
   remind
     .command("add", { isDefault: true })
     .description("Add a reminder. <when> accepts ISO-8601 or relative ('tomorrow at 6pm', 'in 3 hours', 'next Monday')")
-    .argument("<when>", "When to remind (ISO-8601 or relative phrase)")
-    .argument("<text...>", "Reminder text (joined by spaces)")
+    .argument("[when]", "When to remind (ISO-8601 or relative phrase)")
+    .argument("[text...]", "Reminder text (joined by spaces)")
     .option("--local", "Write directly to the local reminders file instead of the API")
     .option("--json", "Print the raw response instead of a short confirmation")
     .option("--repeat <cadence>", "Repeat the reminder: 'daily', 'weekly', 'monthly', or 'yearly' (re-arms each time it fires; a monthly 31st / yearly Feb 29 lands on the last valid day of shorter months/years). Omit for one-time.")
@@ -114,14 +115,14 @@ export function registerRemindCommands(program: Command, io: ProgramIO, helpers:
     )
     .option("--via-destination <id>", "Per-reminder routing override — platform-native chat / channel / user id")
     .action(async (
-      when: string,
-      textParts: readonly string[],
+      when: string | undefined,
+      textParts: readonly string[] | undefined,
       options: SharedOptions & { readonly repeat?: string; readonly viaProvider?: string; readonly viaDestination?: string },
       command
     ) => {
-      const text = textParts.join(" ").trim();
-      if (text.length === 0) {
-        throw new Error("text is required");
+      const text = (textParts ?? []).join(" ").trim();
+      if (when === undefined || text.length === 0) {
+        throw new Error(t("remind.add.usage"));
       }
       const repeat = options.repeat?.trim();
       if (repeat !== undefined && repeat !== "daily" && repeat !== "weekly" && repeat !== "monthly" && repeat !== "yearly") {
@@ -582,7 +583,7 @@ export function formatReminderList(
   nowMs: number = Date.now()
 ): string {
   if (payload.reminders.length === 0) {
-    return `Reminders (${payload.status}): (none)\n`;
+    return `${t("remind.list.empty", { status: payload.status })}\n`;
   }
   const lines = payload.reminders.map((reminder) => {
     const id = String(reminder.id ?? "");

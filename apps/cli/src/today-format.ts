@@ -10,6 +10,7 @@ import { detectCalendarConflicts } from "@muse/domain-tools";
 import { stripUntrustedTerminalChars } from "@muse/shared";
 
 import { isQuiet } from "./cli-context.js";
+import { t } from "./cli-i18n.js";
 import type { RecallHit } from "./commands-recall.js";
 import { formatHeadlines, formatWeatherLine } from "./commands-today-feeds.js";
 import { formatLocalDate, formatLocalDateTime as shortDateTimeBrief } from "./human-formatters.js";
@@ -379,7 +380,7 @@ export function annotateEventTitle(title: string, contacts: readonly Contact[]):
 
 export function formatEvents(events: readonly { readonly id: string; readonly title: string; readonly startsAtIso: string }[] | undefined): string {
   if (!events) {
-    return "\nUpcoming: (calendar not configured)\n";
+    return t("today.calendar.notConfigured");
   }
   if (events.length === 0) {
     return "\nUpcoming: (no calendar events in window)\n";
@@ -490,7 +491,7 @@ export function formatNextEvent(
 
 function formatNotes(notes: readonly string[] | undefined): string {
   if (!notes) {
-    return "\nRecent notes: (notes dir not configured)\n";
+    return t("today.notes.notConfigured");
   }
   if (notes.length === 0) {
     return "\nRecent notes: (none)\n";
