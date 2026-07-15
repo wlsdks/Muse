@@ -195,10 +195,11 @@ export function redactSecretsInText(value: string): string {
 }
 
 function asMessageFromValue(cause: unknown): string | undefined {
-  if (typeof cause === "string") {
-    return cause;
-  }
-
+  // No bare-string passthrough: the documented contract is Error-ish →
+  // its message, anything else → the caller's fallback (a thrown string
+  // still surfaces via errorMessage's String(cause) tail when no
+  // fallback is given). Passing strings through here silently defeated
+  // every caller's curated fallback text.
   if (cause !== null && typeof cause === "object" && "message" in cause) {
     const message = (cause as { message?: unknown }).message;
     return typeof message === "string" ? message : undefined;
