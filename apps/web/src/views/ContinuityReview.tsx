@@ -77,6 +77,30 @@ function KindSummary({ kind, evaluation }: { readonly kind: Kind; readonly evalu
   );
 }
 
+function LinkForm({ disabled, onLink, threadId }: { readonly disabled: boolean; readonly onLink: (input: { artifactId: string; artifactType: "task" | "note"; role: "context" | "next-step" }) => void; readonly threadId: string }) {
+  const { t } = useI18n();
+  const [artifactId, setArtifactId] = useState("");
+  const [artifactType, setArtifactType] = useState<"task" | "note">("task");
+  const [role, setRole] = useState<"context" | "next-step">("context");
+  return <form onSubmit={(event) => {
+    event.preventDefault();
+    if (artifactId.trim()) onLink({ artifactId: artifactId.trim(), artifactType, role });
+  }} style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+    <input className="input" value={artifactId} onChange={(event) => setArtifactId(event.target.value)} placeholder={t("continuity.linkId")} aria-label={t("continuity.linkId")} />
+    <select className="input" value={artifactType} onChange={(event) => {
+      const next = event.target.value as "task" | "note";
+      setArtifactType(next);
+      if (next === "note") setRole("context");
+    }} aria-label={t("continuity.linkType")}>
+      <option value="task">task</option><option value="note">note</option>
+    </select>
+    <select className="input" value={role} onChange={(event) => setRole(event.target.value as "context" | "next-step")} aria-label={t("continuity.linkRole")}>
+      <option value="context">context</option>{artifactType === "task" ? <option value="next-step">next-step</option> : null}
+    </select>
+    <Button disabled={disabled || artifactId.trim().length === 0} size="sm" type="submit">{t("continuity.link")}</Button>
+  </form>;
+}
+
 /** Read-only review of explicit Continuity deliveries; it never resolves note bodies or changes outcomes. */
 export function ContinuityReviewView({ client }: { readonly client: ApiClient }) {
   const { locale, t } = useI18n();
@@ -108,6 +132,11 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
   const undoReset = useMutation({
     mutationFn: ({ resetId, threadId }: { readonly resetId: string; readonly threadId: string }) =>
       client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/resets/${encodeURIComponent(resetId)}/undo`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
+  });
+  const link = useMutation({
+    mutationFn: ({ artifactId, artifactType, role, threadId }: { readonly artifactId: string; readonly artifactType: "task" | "note"; readonly role: "context" | "next-step"; readonly threadId: string }) =>
+      client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/links`, { artifactId, artifactType, role }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
   });
   const data = review.data;
@@ -171,6 +200,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
                       {thread.links.map((link) => <Badge key={`${link.providerId}:${link.artifactType}:${link.artifactId}:${link.role}`} tone="neutral">{link.artifactType}:{link.artifactId}</Badge>)}
                     </div>
+                    <LinkForm disabled={link.isPending} threadId={thread.id} onLink={(input) => link.mutate({ ...input, threadId: thread.id })} />
                       </>;
                     })()}
                   </Card>
@@ -210,6 +240,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
             {thread.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.threadError")}</p> : null}
             {reset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.resetError")}</p> : null}
             {undoReset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.undoResetError")}</p> : null}
+            {link.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.linkError")}</p> : null}
           </>
         ) : null}
       </AsyncBlock>

@@ -9,6 +9,7 @@ import {
   AttunementStoreError,
   buildContinuityPack,
   computeContinuityEvaluation,
+  createLocalArtifactValidator,
   createPersonalThread,
   inspectThread,
   linkArtifact,
@@ -17,6 +18,7 @@ import {
   readAttunementState,
   recordContinuityOutcome,
   resetThreadPolicy,
+  readCanonicalLocalNote,
   undoThreadReset,
   unlinkArtifact,
   type ArtifactLink,
@@ -30,9 +32,7 @@ import {
   type ContinuityDelivery
 } from "@muse/attunement";
 import { resolveAttunementFile, resolveNotesDir, resolveTasksFile } from "@muse/autoconfigure";
-import { readTaskById, readTasks } from "@muse/stores";
-import { promises as fs } from "node:fs";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { readTaskById } from "@muse/stores";
 import type { Command } from "commander";
 
 import {
@@ -78,72 +78,6 @@ function assertChoice(value: string, allowed: readonly string[], name: string): 
   if (!allowed.includes(value)) throw new AttunementStoreError(`${name} must be one of: ${allowed.join(", ")}`);
 }
 
-function assertNoDotDotPath(value: string): void {
-  if (value.split(/[\\/]+/u).some((segment) => segment === "..")) {
-    throw new AttunementStoreError("note id must not contain '..'");
-  }
-}
-
-function containedRelative(root: string, target: string): string | undefined {
-  const candidate = relative(root, target);
-  if (candidate.length === 0 || candidate === ".." || candidate.startsWith(`..${sep}`) || isAbsolute(candidate)) return undefined;
-  return candidate.split(sep).join("/");
-}
-
-interface LocalNote {
-  readonly artifactId: string;
-  readonly summary?: string;
-  readonly title: string;
-  readonly updatedAt: string;
-}
-
-/**
- * Exact local-note reader with realpath containment on every call. A saved
- * relative id is rechecked at display time, so a later symlink swap cannot
- * turn an approved note link into a read outside the vault.
- */
-async function readCanonicalLocalNote(rawId: string): Promise<LocalNote | undefined> {
-  const id = rawId.trim();
-  if (id.length === 0 || isAbsolute(id)) throw new AttunementStoreError("note id must be a relative vault path");
-  assertNoDotDotPath(id);
-  let vaultRoot: string;
-  let target: string;
-  try {
-    vaultRoot = await fs.realpath(notesDir());
-    target = await fs.realpath(resolve(vaultRoot, id));
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw cause;
-  }
-  const artifactId = containedRelative(vaultRoot, target);
-  if (!artifactId) throw new AttunementStoreError("note path escapes the local notes vault");
-  const stat = await fs.stat(target);
-  if (stat.isDirectory()) throw new AttunementStoreError("note id points to a directory");
-  if (stat.size > 1_048_576) throw new AttunementStoreError("note exceeds the 1 MiB local continuity limit");
-  const body = await fs.readFile(target, "utf8");
-  const summary = body
-    .split(/\r?\n/u)
-    .map((line) => line.trim().replace(/^#+\s*/u, ""))
-    .find((line) => line.length > 0);
-  return {
-    artifactId,
-    ...(summary ? { summary: summary.slice(0, 240) } : {}),
-    title: basename(artifactId),
-    updatedAt: stat.mtime.toISOString()
-  };
-}
-
-async function canonicalTaskId(raw: string): Promise<string> {
-  const id = raw.trim();
-  if (id.length === 0) throw new AttunementStoreError("task id must not be empty");
-  const tasks = await readTasks(tasksFile());
-  if (tasks.some((task) => task.id === id)) return id;
-  const matches = tasks.filter((task) => task.id.startsWith(id));
-  if (matches.length === 1) return matches[0]!.id;
-  if (matches.length === 0) throw new AttunementStoreError(`no local task with id or unique prefix '${id}'`);
-  throw new AttunementStoreError(`task id prefix '${id}' is ambiguous; pass the full id`);
-}
-
 /**
  * The store refuses unvalidated links. This adapter is the only place that
  * knows the local task/notes providers and the external MCP resource provider,
@@ -152,18 +86,14 @@ async function canonicalTaskId(raw: string): Promise<string> {
  * server before any link is stored.
  */
 function createArtifactValidator(mcpCaller: McpToolCaller | undefined): ArtifactLinkValidator {
+  const localValidator = createLocalArtifactValidator({ notesDir: notesDir(), tasksFile: tasksFile() });
   return async ({ artifactId, artifactType, providerId }) => {
     if (artifactType === "resource") {
       const server = serverFromProviderId(providerId);
       const resolved = await validateMcpResource(server, artifactId, mcpCaller);
       return { artifactId: resolved.artifactId, artifactType, providerId: resolved.providerId };
     }
-    if (artifactType === "task") {
-      return { artifactId: await canonicalTaskId(artifactId), artifactType, providerId: "local" };
-    }
-    const note = await readCanonicalLocalNote(artifactId);
-    if (!note) throw new AttunementStoreError(`no local note with exact id '${artifactId}'`);
-    return { artifactId: note.artifactId, artifactType, providerId: "local" };
+    return localValidator({ artifactId, artifactType, providerId });
   };
 }
 
@@ -189,7 +119,7 @@ function createResolveExactArtifact(mcpCaller: McpToolCaller | undefined): Exact
         updatedAt: task.completedAt ?? task.createdAt
       };
     }
-    const note = await readCanonicalLocalNote(link.artifactId);
+    const note = await readCanonicalLocalNote(notesDir(), link.artifactId);
     if (!note) return undefined;
     // The stored canonical ID must remain canonical after re-resolution; a note
     // moved or symlinked to another in-vault path is unavailable rather than

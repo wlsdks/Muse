@@ -1,4 +1,4 @@
-import { computeContinuityEvaluation, createPersonalThread, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS, undoThreadReset } from "@muse/attunement";
+import { ARTIFACT_ROLES, ARTIFACT_TYPES, computeContinuityEvaluation, createLocalArtifactValidator, createPersonalThread, linkArtifact, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS, undoThreadReset } from "@muse/attunement";
 import type { ContinuityOutcome } from "@muse/attunement";
 import type { FastifyInstance } from "fastify";
 
@@ -8,6 +8,8 @@ import type { ServerOptions } from "./server.js";
 interface AttunementRoutesGate {
   readonly attunementFile: string;
   readonly authService: ServerOptions["authService"];
+  readonly notesDir: string;
+  readonly tasksFile: string;
 }
 
 /** Read-only evaluation: it never resolves sources or opens a Continuity delivery. */
@@ -71,6 +73,22 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
       return reply.code(400).send({ errorMessage: "thread kind must be explicitly life or work" });
     }
     return createPersonalThread(gate.attunementFile, { kind: kind as (typeof THREAD_KINDS)[number], title });
+  });
+
+  server.post<{ Params: { readonly threadId: string }; Body: { readonly artifactId?: unknown; readonly artifactType?: unknown; readonly role?: unknown } }>("/api/attunement/threads/:threadId/links", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
+    const { artifactId, artifactType, role } = request.body ?? {};
+    if (typeof artifactId !== "string" || artifactId.trim().length === 0) return reply.code(400).send({ errorMessage: "artifact id must be a non-empty string" });
+    if (typeof artifactType !== "string" || !ARTIFACT_TYPES.includes(artifactType as (typeof ARTIFACT_TYPES)[number]) || artifactType === "resource") {
+      return reply.code(400).send({ errorMessage: "web linking supports validated local task or note sources only" });
+    }
+    if (typeof role !== "string" || !ARTIFACT_ROLES.includes(role as (typeof ARTIFACT_ROLES)[number])) return reply.code(400).send({ errorMessage: "link role must be context or next-step" });
+    return linkArtifact(gate.attunementFile, {
+      artifactId,
+      artifactType: artifactType as "task" | "note",
+      role: role as "context" | "next-step",
+      threadId: request.params.threadId
+    }, { validateArtifact: createLocalArtifactValidator({ notesDir: gate.notesDir, tasksFile: gate.tasksFile }) });
   });
 
   server.post<{ Params: { readonly threadId: string } }>("/api/attunement/threads/:threadId/reset", async (request, reply) => {
