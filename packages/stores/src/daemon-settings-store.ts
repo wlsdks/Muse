@@ -57,13 +57,17 @@ function readDaemonSettingsFileSync(file: string): DaemonSettingsFile {
 
 export function readDaemonSettingsSync(file: string): DaemonSettings {
   const parsed = readDaemonSettingsFileSync(file);
-  if (!parsed.flags || typeof parsed.flags !== "object") {
-    return {};
+    if (!parsed.flags || typeof parsed.flags !== "object") {
+      return {};
+    }
+    const out: DaemonSettings = {};
+    for (const [key, value] of Object.entries(parsed.flags)) {
+      if (typeof value === "boolean") {
+        out[key] = value;
+      }
+    }
+    return out;
   }
-  return Object.fromEntries(
-    Object.entries(parsed.flags).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean")
-  );
-}
 
 /**
  * Undefined when absent, malformed, or shape-invalid (missing/wrong-typed

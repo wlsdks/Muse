@@ -152,7 +152,13 @@ export function writeOutput(io: ProgramIO, value: unknown, textField?: string): 
 }
 
 export function dropUndefined(value: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value).filter((entry) => entry[1] !== undefined));
+  const output: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry !== undefined) {
+      output[key] = entry;
+    }
+  }
+  return output;
 }
 
 export function renderActiveContext(snapshot: Record<string, unknown>): string {

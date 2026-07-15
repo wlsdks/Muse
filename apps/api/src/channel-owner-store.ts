@@ -109,7 +109,13 @@ async function readAll(file: string): Promise<Readonly<Record<string, string>>> 
     }
     const owners = toRecord(parsed.owners);
     if (!owners) return {};
-    return Object.fromEntries(Object.entries(owners).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+    const output: Record<string, string> = {};
+    for (const [key, value] of Object.entries(owners)) {
+      if (typeof value === "string") {
+        output[key] = value;
+      }
+    }
+    return output;
   } catch {
     return {};
   }
@@ -240,9 +246,13 @@ async function readAllPairingCodes(file: string): Promise<Readonly<Record<string
     }
     const codes = toRecord(parsed.codes);
     if (!codes) return {};
-    return Object.fromEntries(
-      Object.entries(codes).filter((entry): entry is [string, PairingCodeEntry] => isPairingCodeEntry(entry[1]))
-    );
+    const output: Record<string, PairingCodeEntry> = {};
+    for (const [key, value] of Object.entries(codes)) {
+      if (isPairingCodeEntry(value)) {
+        output[key] = value;
+      }
+    }
+    return output;
   } catch {
     return {};
   }

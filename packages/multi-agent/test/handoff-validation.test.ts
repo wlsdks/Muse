@@ -53,7 +53,10 @@ describe("orchestrator hand-off fail-close (MAST: information withholding)", () 
       { messages: [{ content: "task", role: "user" }], model: "diagnostic" },
       { mode: "sequential" }
     );
-    const statuses = Object.fromEntries(result.results.map((step) => [step.workerId, step.status]));
+    const statuses: Record<string, string> = {};
+    for (const step of result.results) {
+      statuses[step.workerId] = step.status;
+    }
     expect(statuses.empty).toBe("failed");
     expect(statuses.next).toBe("completed");
     const handoffText = seen[0]?.messages.map((message) => message.content).join("\n") ?? "";
@@ -69,7 +72,10 @@ describe("orchestrator hand-off fail-close (MAST: information withholding)", () 
       { messages: [{ content: "task", role: "user" }], model: "diagnostic" },
       { mode: "parallel" }
     );
-    const statuses = Object.fromEntries(result.results.map((step) => [step.workerId, step.status]));
+    const statuses: Record<string, string> = {};
+    for (const step of result.results) {
+      statuses[step.workerId] = step.status;
+    }
     expect(statuses.empty).toBe("failed");
     expect(statuses.solid).toBe("completed");
   });
@@ -171,7 +177,10 @@ describe("orchestrator fan-in seam — a poisoned placeholder part is NOT fed to
       }
     );
     // both workers are COMPLETED steps (the poisoned one is non-blank raw)…
-    const statuses = Object.fromEntries(result.results.map((step) => [step.workerId, step.status]));
+    const statuses: Record<string, string> = {};
+    for (const step of result.results) {
+      statuses[step.workerId] = step.status;
+    }
     expect(statuses.poisoned).toBe("completed");
     expect(statuses.solid).toBe("completed");
     // …but the synthesizer received ONLY the substantive worker's part.
@@ -234,7 +243,10 @@ describe("parseWorkerResult — typed validation at the worker boundary (MAST)",
       { messages: [{ content: "task", role: "user" }], model: "diagnostic" },
       { mode: "sequential" }
     );
-    const statuses = Object.fromEntries(result.results.map((step) => [step.workerId, step.status]));
+    const statuses: Record<string, string> = {};
+    for (const step of result.results) {
+      statuses[step.workerId] = step.status;
+    }
     expect(statuses.garbage).toBe("failed");
     expect(statuses.solid).toBe("completed");
   });

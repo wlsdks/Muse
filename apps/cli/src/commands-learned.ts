@@ -344,9 +344,12 @@ export function registerLearnedCommand(program: Command, io: ProgramIO): void {
       // "never suggest" / "steer toward", already surfaced by `muse memory
       // show`) — excluded here so they aren't confused with an action-class
       // veto below.
-      const preferences = Object.fromEntries(
-        Object.entries(memoryRecord?.preferences ?? {}).filter(([key]) => !isVetoKey(key) && !isGoalKey(key))
-      );
+      const preferences: Record<string, string> = {};
+      for (const [key, value] of Object.entries(memoryRecord?.preferences ?? {})) {
+        if (!isVetoKey(key) && !isGoalKey(key)) {
+          preferences[key] = value;
+        }
+      }
       io.stdout(`${renderLearnedDigest({
         memory: { facts: memoryRecord?.facts ?? {}, preferences },
         paused,

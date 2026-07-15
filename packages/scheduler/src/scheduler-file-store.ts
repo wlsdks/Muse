@@ -24,7 +24,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { isRecord, type JsonObject } from "@muse/shared";
+import { isRecord, type JsonObject, type JsonValue } from "@muse/shared";
 import { atomicWriteFile, quarantineCorruptStore, withFileLock } from "@muse/stores";
 
 import type {
@@ -93,7 +93,28 @@ function optionalNumber(value: unknown): number | undefined {
 }
 
 function toJsonObject(value: unknown): JsonObject {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
+  const source = isRecord(value) ? value : undefined;
+  if (source === undefined) {
+    return {};
+  }
+  const out: JsonObject = {};
+  for (const [key, raw] of Object.entries(source)) {
+    const sanitized = toJsonValue(raw);
+    if (sanitized !== undefined) {
+      out[key] = sanitized;
+    }
+  }
+  return out;
+}
+
+function toJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toJsonValue(item)).filter((item): item is JsonValue => item !== undefined);
+  }
+  return isRecord(value) ? toJsonObject(value) : undefined;
 }
 
 /**

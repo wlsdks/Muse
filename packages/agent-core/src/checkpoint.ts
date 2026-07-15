@@ -46,10 +46,13 @@ function checkpointMetadata(metadata: JsonObject | undefined): JsonObject | unde
   if (!metadata) {
     return undefined;
   }
-  const durableEntries = Object.entries(metadata).filter(([key]) =>
-    !NON_DURABLE_AUTHORITY_METADATA_KEYS.has(key.replace(/[-_]/gu, "").toLowerCase())
-  );
-  return durableEntries.length > 0 ? Object.fromEntries(durableEntries) as JsonObject : undefined;
+  const durable: JsonObject = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!NON_DURABLE_AUTHORITY_METADATA_KEYS.has(key.replace(/[-_]/gu, "").toLowerCase())) {
+      durable[key] = value;
+    }
+  }
+  return isRecord(durable) && Object.keys(durable).length > 0 ? durable : undefined;
 }
 
 export function createAgentCheckpointState(input: {

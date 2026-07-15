@@ -18,7 +18,13 @@ import { formatCurrentContextLine } from "@muse/recall";
 /** Keep only the named keys from a fact map (preserving values). */
 export function filterFactsToKeys(facts: Readonly<Record<string, string>>, keys: readonly string[]): Record<string, string> {
   const allow = new Set(keys);
-  return Object.fromEntries(Object.entries(facts).filter(([key]) => allow.has(key)));
+  const filtered: Record<string, string> = {};
+  for (const [key, value] of Object.entries(facts)) {
+    if (allow.has(key)) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
 }
 
 /**
