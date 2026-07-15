@@ -82,7 +82,7 @@ function KindSummary({ kind, evaluation }: { readonly kind: Kind; readonly evalu
   );
 }
 
-function LinkForm({ disabled, onLink, threadId }: { readonly disabled: boolean; readonly onLink: (input: { artifactId: string; artifactType: "task" | "note"; role: "context" | "next-step" }) => void; readonly threadId: string }) {
+function LinkForm({ disabled, onLink }: { readonly disabled: boolean; readonly onLink: (input: { artifactId: string; artifactType: "task" | "note"; role: "context" | "next-step" }) => void }) {
   const { t } = useI18n();
   const [artifactId, setArtifactId] = useState("");
   const [artifactType, setArtifactType] = useState<"task" | "note">("task");
@@ -238,7 +238,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
                       {thread.links.map((source) => source.providerId === "local" ? <Button key={`${source.providerId}:${source.artifactType}:${source.artifactId}:${source.role}`} disabled={unlink.isPending} size="sm" variant="ghost" onClick={() => unlink.mutate({ artifactId: source.artifactId, artifactType: source.artifactType as "task" | "note", threadId: thread.id })}>{t("continuity.unlink", { id: `${source.artifactType}:${source.artifactId}` })}</Button> : <Badge key={`${source.providerId}:${source.artifactType}:${source.artifactId}:${source.role}`} tone="neutral">{source.artifactType}:{source.artifactId}</Badge>)}
                     </div>
-                    <LinkForm disabled={link.isPending} threadId={thread.id} onLink={(input) => link.mutate({ ...input, threadId: thread.id })} />
+                    <LinkForm disabled={link.isPending} onLink={(input) => link.mutate({ ...input, threadId: thread.id })} />
                     {hasExternalSource ? <div className="row-meta" style={{ marginTop: 8 }}>{t("continuity.externalCliOnly")}</div> : null}
                       </>;
                     })()}

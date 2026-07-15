@@ -30,7 +30,7 @@ import { platform } from "node:os";
 
 import type { Command } from "commander";
 
-import { isRecord, runCommandWithTimeout } from "@muse/shared";
+import { runCommandWithTimeout } from "@muse/shared";
 
 import { readApiOptions } from "./program-config.js";
 import type { ProgramIO } from "./program.js";

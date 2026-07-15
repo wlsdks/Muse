@@ -31,7 +31,6 @@ import {
   type ExactArtifactResolver,
   type PersonalThread,
   type PersonalThreadKind,
-  type ContinuityDelivery
 } from "@muse/attunement";
 import { resolveAttunementFile, resolveNotesDir, resolveTasksFile } from "@muse/autoconfigure";
 import { readTaskById } from "@muse/stores";
@@ -246,80 +245,6 @@ export interface ContinuityStats extends ContinuityKindStats {
  * usefulness before more automation). Reads only persisted deliveries; empty
  * state yields zeros, not a crash.
  */
-function computeContinuityKindStats(deliveries: readonly ContinuityDelivery[]): ContinuityKindStats {
-  const outcomes: Record<ContinuityOutcome, number> = { adjusted: 0, ignored: 0, rejected: 0, used: 0 };
-  let withOutcome = 0;
-  for (const delivery of deliveries) {
-    if (delivery.outcome) {
-      outcomes[delivery.outcome.outcome] += 1;
-      withOutcome += 1;
-    }
-  }
-  const firstDeliveries = [...deliveries]
-    .sort((left, right) => left.openedAt.localeCompare(right.openedAt))
-    .slice(0, KILL_CRITERION_FIRST_PACKS);
-  const used = firstDeliveries.filter((delivery) => delivery.outcome?.outcome === "used").length;
-  const rejected = firstDeliveries.filter((delivery) => delivery.outcome?.outcome === "rejected").length;
-  const feedbackDeliveries = deliveries
-    .filter((delivery) => delivery.outcome)
-    .sort((left, right) => left.outcome!.recordedAt.localeCompare(right.outcome!.recordedAt));
-  const feedbackCohort = (cohort: readonly ContinuityDelivery[]): ContinuityFeedbackCohort => ({
-    rejected: cohort.filter((delivery) => delivery.outcome?.outcome === "rejected").length,
-    used: cohort.filter((delivery) => delivery.outcome?.outcome === "used").length
-  });
-  const firstFiveFeedback = feedbackCohort(feedbackDeliveries.slice(0, IMPROVEMENT_COHORT_SIZE));
-  const nextFiveFeedback = feedbackCohort(feedbackDeliveries.slice(IMPROVEMENT_COHORT_SIZE, IMPROVEMENT_COHORT_SIZE * 2));
-  const improvementGate: ContinuityImprovementGate = feedbackDeliveries.length < IMPROVEMENT_COHORT_SIZE * 2
-    ? {
-        firstFiveFeedback,
-        nextFiveFeedback,
-        reason: `need ${String(IMPROVEMENT_COHORT_SIZE * 2 - feedbackDeliveries.length)} more explicit feedback entries before comparing the first and next ${String(IMPROVEMENT_COHORT_SIZE)}`,
-        status: "awaiting-feedback"
-      }
-    : nextFiveFeedback.used >= firstFiveFeedback.used && nextFiveFeedback.rejected <= firstFiveFeedback.rejected
-      ? {
-          firstFiveFeedback,
-          nextFiveFeedback,
-          reason: nextFiveFeedback.used === firstFiveFeedback.used && nextFiveFeedback.rejected === firstFiveFeedback.rejected
-            ? "the next five feedback outcomes are unchanged from the first five"
-            : "the next five feedback outcomes improved without a higher rejection count",
-          status: nextFiveFeedback.used === firstFiveFeedback.used && nextFiveFeedback.rejected === firstFiveFeedback.rejected ? "unchanged" : "improving"
-        }
-      : nextFiveFeedback.used <= firstFiveFeedback.used && nextFiveFeedback.rejected >= firstFiveFeedback.rejected
-        ? {
-            firstFiveFeedback,
-            nextFiveFeedback,
-            reason: "the next five feedback outcomes have lower use or higher rejection; fix pack usefulness before automation",
-            status: "regressing"
-          }
-        : {
-            firstFiveFeedback,
-            nextFiveFeedback,
-            reason: "the next five feedback outcomes trade higher use for higher rejection, or the reverse; inspect the packs before automation",
-            status: "mixed"
-          };
-  const reasons: string[] = [];
-  if (firstDeliveries.length < KILL_CRITERION_FIRST_PACKS) {
-    reasons.push(`need ${String(KILL_CRITERION_FIRST_PACKS - firstDeliveries.length)} more eligible deliveries before evaluating automation`);
-  } else {
-    if (used * 100 < 20 * firstDeliveries.length) reasons.push("used rate is below the 20% kill criterion");
-    if (rejected * 100 > 30 * firstDeliveries.length) reasons.push("rejection rate exceeds the 30% kill criterion");
-  }
-  return {
-    totalDeliveries: deliveries.length,
-    withOutcome,
-    outcomes,
-    firstPacks: { considered: firstDeliveries.length, rejected, used },
-    improvementGate,
-    automationGate: reasons.length > 0
-      ? { reasons, status: "hold" }
-      : {
-          reasons: ["outcome threshold passed; proactive delivery remains disabled pending the separate Slice B consent and timing gate"],
-          status: "manual-only"
-        }
-  };
-}
-
 export function computeContinuityStats(state: AttunementState): ContinuityStats {
   return computeContinuityEvaluation(state);
 }
@@ -652,4 +577,3 @@ Examples:
       });
     });
 }
-

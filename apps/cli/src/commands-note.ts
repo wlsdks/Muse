@@ -114,10 +114,6 @@ function isNotesIndex(value: unknown): value is NotesIndexShape {
   );
 }
 
-function parseNotesIndex(raw: unknown): NotesIndexShape | undefined {
-  return isNotesIndex(raw) ? raw : undefined;
-}
-
 /** Rank the fresh capture against the on-disk notes + episode indices. */
 async function findConnections(captureText: string, embedModel: string): Promise<readonly RecallHit[]> {
   let notesIndex: NotesIndexShape | undefined;

@@ -285,12 +285,11 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     let toolFallbackIndex = 0;
 
     const handleLine = function* (line: string): Generator<ModelEvent> {
-      let parsed: OllamaNativeChatResponse;
       const parsedValue = parseJson(line);
       if (!isRecord(parsedValue)) {
         return;
       }
-      parsed = parsedValue;
+      const parsed = parsedValue as OllamaNativeChatResponse;
       // Once Ollama has sent 200 + headers, a mid-generation failure
       // (OOM, context overflow, model eviction under load) arrives as
       // an `{"error": "..."}` NDJSON line, not an HTTP status. Without
