@@ -7,6 +7,7 @@ import { useI18n } from "../i18n/index.js";
 import { normalizeApiBaseUrl } from "../lib/apiUrl.js";
 
 import type { ApiClient } from "../api/client.js";
+import type { Translate } from "../i18n/index.js";
 import type { StringKey } from "../i18n/strings.js";
 import type { ContactsResponse, DaemonFlagsResponse, ModelsResponse } from "../api/types.js";
 import { summarizeFlags } from "./settings-flags.js";
@@ -151,6 +152,8 @@ export function SettingsView({
 
       <DaemonsSection client={client} />
 
+      <QuietHoursStatus quietHours={readQuietHours(setup.data)} t={t} />
+
       <div style={{ marginTop: 16 }}>
         <ContactsSection client={client} />
       </div>
@@ -194,6 +197,40 @@ export function SettingsView({
         {t("settings.credit")}
       </p>
     </div>
+  );
+}
+
+/**
+ * `MUSE_REMINDER_QUIET_HOURS` is the shared fallback base every quiet-hours
+ * env var (proactive/ambient/web-watch/home-watch/…) falls back to when its
+ * own more specific var isn't set — `/api/setup/status`'s `reminder.quietHours`
+ * field is exactly that raw value (see `@muse/autoconfigure/setup-status.ts`).
+ * No feature-specific override is read here — those are genuinely
+ * independent env vars this status line can't represent without risking a
+ * misleading blended value.
+ */
+function readQuietHours(setup: SetupStatus | undefined): string | undefined {
+  const value = setup?.reminder?.["quietHours"];
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Quiet hours has NO persisted settings-store seam the daemons read — it's
+ * resolved once from env at server boot (server.ts `const env = process.env`),
+ * unlike the daemon on/off flags above which DO have a live PATCH seam. So
+ * this is read-only by design, not an unfinished editor.
+ */
+export function QuietHoursStatus({ quietHours, t }: { quietHours: string | undefined; t: Translate }) {
+  return (
+    <Section title={t("settings.quietHours")} explain={t("settings.sec.quietHours")}>
+      <div className="row" style={{ borderBottom: "none" }}>
+        <div className="row-main">
+          <div className="row-title mono">
+            {quietHours ? t("settings.quietHoursValue", { window: quietHours }) : t("settings.quietHoursNotSet")}
+          </div>
+        </div>
+      </div>
+    </Section>
   );
 }
 

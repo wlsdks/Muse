@@ -248,6 +248,10 @@ const en = {
   "settings.daemonsSummary": "{enabled} of {total} enabled",
   "settings.on": "on",
   "settings.off": "off",
+  "settings.quietHours": "Quiet hours",
+  "settings.sec.quietHours": "Read-only — set via an env var, not editable here yet. During this window, reminders are delayed (not dropped) and ambient/web-watch/home-watch nudges are suppressed, unless a feature has its own override.",
+  "settings.quietHoursValue": "{window} (env MUSE_REMINDER_QUIET_HOURS)",
+  "settings.quietHoursNotSet": "not set (env MUSE_REMINDER_QUIET_HOURS)",
   "settings.credit": "Design system derived from Linear via VoltAgent/awesome-design-md (MIT). See apps/web/design/DESIGN.md.",
 
   "chat.askAnything": "Ask Muse anything",
@@ -737,6 +741,10 @@ const ko: Strings = {
   "settings.daemonsSummary": "{total}개 중 {enabled}개 켜짐",
   "settings.on": "켜짐",
   "settings.off": "꺼짐",
+  "settings.quietHours": "방해 금지 시간",
+  "settings.sec.quietHours": "읽기 전용 — 환경변수로 설정하며 아직 여기서 편집할 수 없어요. 이 시간대엔 리마인더는 미뤄지고(사라지지 않음) 능동 알림·웹 감시·홈 감시 알림은 억제돼요, 단 각 기능이 자체 설정을 갖고 있지 않을 때만요.",
+  "settings.quietHoursValue": "{window} (환경변수 MUSE_REMINDER_QUIET_HOURS)",
+  "settings.quietHoursNotSet": "미설정 (환경변수 MUSE_REMINDER_QUIET_HOURS)",
   "settings.credit": "디자인 시스템은 VoltAgent/awesome-design-md(MIT)의 Linear에서 가져왔습니다. apps/web/design/DESIGN.md 참고.",
 
   "chat.askAnything": "무엇이든 Muse에게 물어보세요",
