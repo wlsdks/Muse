@@ -22,6 +22,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { MuseDatabase } from "@muse/db";
+import { withFileLock, withFileMutationQueue } from "@muse/shared";
 import type { Insertable, Kysely } from "kysely";
 import type {
   KyselyTaskMemoryStoreOptions,
@@ -295,7 +296,6 @@ async function writeTaskStates(file: string, tasks: readonly TaskState[]): Promi
  * `FileConversationSummaryStore`.
  */
 export class FileTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaintenance {
-  private static readonly writeQueues = new Map<string, Promise<unknown>>();
   private readonly file: string;
   private readonly options: { readonly maxTasks?: number; readonly retentionMs?: number };
   constructor(options: { readonly file?: string; readonly maxTasks?: number; readonly retentionMs?: number } = {}) {
@@ -348,17 +348,7 @@ export class FileTaskMemoryStore implements TaskMemoryStore, TaskMemoryMaintenan
   }
 
   private async serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
-    const prior = FileTaskMemoryStore.writeQueues.get(this.file) ?? Promise.resolve();
-    const next = prior.catch(() => undefined).then(operation);
-    FileTaskMemoryStore.writeQueues.set(this.file, next);
-
-    try {
-      return await next;
-    } finally {
-      if (FileTaskMemoryStore.writeQueues.get(this.file) === next) {
-        FileTaskMemoryStore.writeQueues.delete(this.file);
-      }
-    }
+    return withFileMutationQueue(this.file, () => withFileLock(this.file, operation));
   }
 }
 

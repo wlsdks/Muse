@@ -20,6 +20,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { ConversationSummaryTable, MuseDatabase } from "@muse/db";
+import { withFileLock, withFileMutationQueue } from "@muse/shared";
 import type { Insertable, Kysely, Selectable } from "kysely";
 import type {
   ConversationSummary,
@@ -145,7 +146,6 @@ export function defaultConversationSummaryFile(): string {
 }
 
 export class FileConversationSummaryStore implements ConversationSummaryStore {
-  private static readonly writeQueues = new Map<string, Promise<unknown>>();
   private readonly file: string;
   private readonly now: () => Date;
   constructor(options: { readonly file?: string; readonly now?: () => Date } = {}) {
@@ -229,17 +229,7 @@ export class FileConversationSummaryStore implements ConversationSummaryStore {
   }
 
   private async serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
-    const prior = FileConversationSummaryStore.writeQueues.get(this.file) ?? Promise.resolve();
-    const next = prior.catch(() => undefined).then(operation);
-    FileConversationSummaryStore.writeQueues.set(this.file, next);
-
-    try {
-      return await next;
-    } finally {
-      if (FileConversationSummaryStore.writeQueues.get(this.file) === next) {
-        FileConversationSummaryStore.writeQueues.delete(this.file);
-      }
-    }
+    return withFileMutationQueue(this.file, () => withFileLock(this.file, operation));
   }
 }
 

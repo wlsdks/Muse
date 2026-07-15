@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { withFileLock } from "@muse/shared";
 
 import {
   InMemoryConversationSummaryStore,
@@ -173,6 +174,28 @@ describe("FileConversationSummaryStore — cross-session persistence (the CLI de
 
     const stored = await new FileConversationSummaryStore({ file }).listAll({ limit: 100 });
     expect(stored.map((entry) => entry.sessionId).sort()).toEqual([...sessionIds].sort());
+  });
+
+  it("waits for an external process lock before mutating the summary file", async () => {
+    const file = freshFile();
+    const acquired = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const heldLock = withFileLock(file, async () => {
+      acquired.resolve();
+      await release.promise;
+    });
+    await acquired.promise;
+
+    let settled = false;
+    const pendingSave = new FileConversationSummaryStore({ file }).save(summary("locked-summary")).then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(settled).toBe(false);
+
+    release.resolve();
+    await Promise.all([heldLock, pendingSave]);
+    expect(await new FileConversationSummaryStore({ file }).get("locked-summary")).toBeDefined();
   });
 
   afterAll(async () => {

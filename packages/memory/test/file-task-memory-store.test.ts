@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
+import { withFileLock } from "@muse/shared";
 
 import type { TaskState } from "../src/index.js";
 import { FileTaskMemoryStore, InMemoryTaskMemoryStore, KyselyTaskMemoryStore } from "../src/memory-task-store.js";
@@ -94,5 +95,30 @@ describe("FileTaskMemoryStore — cross-session task persistence (CLI default-st
     const reader = new FileTaskMemoryStore({ file });
     await expect(reader.findById(first.taskId)).resolves.toMatchObject({ goal: first.goal });
     await expect(reader.findById(second.taskId)).resolves.toMatchObject({ goal: second.goal });
+  });
+
+  it("waits for an external process lock before mutating task memory", async () => {
+    const file = freshFile();
+    const acquired = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const heldLock = withFileLock(file, async () => {
+      acquired.resolve();
+      await release.promise;
+    });
+    await acquired.promise;
+
+    let settled = false;
+    const pendingSave = new FileTaskMemoryStore({ file }).save({
+      taskId: "locked-task", sessionId: "locked-session", goal: "wait for the lock", status: "active",
+      plan: [], createdAt: new Date(), updatedAt: new Date()
+    }).then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(settled).toBe(false);
+
+    release.resolve();
+    await Promise.all([heldLock, pendingSave]);
+    await expect(new FileTaskMemoryStore({ file }).findById("locked-task")).resolves.toBeDefined();
   });
 });

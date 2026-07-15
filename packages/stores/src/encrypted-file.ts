@@ -19,9 +19,9 @@ import { dirname } from "node:path";
 
 import { decryptMemoryEnvelope, encryptMemoryEnvelope, isEncryptedMemoryEnvelope } from "@muse/memory";
 
-import { atomicWriteFile, withFileLock } from "./atomic-file-store.js";
+import { atomicWriteFile, computeLockRetryDelay, withFileLock } from "./atomic-file-store.js";
 
-export { withFileLock };
+export { computeLockRetryDelay, withFileLock };
 
 /** Read the file as PLAINTEXT text + whether it was encrypted on disk. read NEVER writes. */
 export async function readMaybeEncrypted(
