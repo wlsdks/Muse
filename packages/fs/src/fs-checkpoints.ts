@@ -20,6 +20,7 @@ import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isRecord } from "@muse/shared";
 
 const MANIFEST_FILE = "manifest.json";
 const CONTENT_FILE = "content";
@@ -101,8 +102,8 @@ function newCheckpointId(): string {
 const CHECKPOINT_ACTIONS: ReadonlySet<string> = new Set(["write", "edit", "multi_edit", "delete", "move"]);
 
 function reviveManifest(raw: unknown): CheckpointManifest | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const r = raw as Record<string, unknown>;
+  if (!isRecord(raw)) return undefined;
+  const r = raw;
   if (typeof r.id !== "string" || r.id.length === 0) return undefined;
   if (typeof r.at !== "string") return undefined;
   if (typeof r.action !== "string" || !CHECKPOINT_ACTIONS.has(r.action)) return undefined;
