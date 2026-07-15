@@ -6,6 +6,7 @@ import {
   isTscFastProfilingEnabled,
   parseSlowMsThreshold,
   parseRunTscFastArgs,
+  resolveTscBinary,
   formatProfileLine,
   formatSlowMsAlertLine,
 } from "./run-tsc-fast.mjs";
@@ -47,6 +48,21 @@ test("isTscFastProfilingEnabled parses environment values", () => {
   assert.equal(isTscFastProfilingEnabled("YES"), true);
   assert.equal(isTscFastProfilingEnabled(" off "), false);
   assert.equal(isTscFastProfilingEnabled("on"), true);
+});
+
+test("resolveTscBinary honors TS7_TSC_BINARY override", () => {
+  const previous = process.env.TS7_TSC_BINARY;
+  const expected = "/tmp/fake-tsc";
+  process.env.TS7_TSC_BINARY = expected;
+  try {
+    assert.equal(resolveTscBinary(), expected);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TS7_TSC_BINARY;
+    } else {
+      process.env.TS7_TSC_BINARY = previous;
+    }
+  }
 });
 
 test("parseSlowMsThreshold enforces positive integer thresholds", () => {
