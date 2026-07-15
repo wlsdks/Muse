@@ -38,7 +38,7 @@ export {
   type EncryptedCredentialEnvelope
 } from "./credential-encryption.js";
 
-export { sleep } from "./sleep.js";
+export { sleep, withTimeout, withTimeoutFallback } from "./sleep.js";
 export { isNodeError, isNodeErrorCode, hasNodeErrorCodeIn, NODE_ERROR_CODES, type NodeErrorCode } from "./node-error.js";
 export {
   runCommandWithTimeout,

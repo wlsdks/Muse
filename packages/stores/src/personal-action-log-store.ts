@@ -31,6 +31,7 @@ import { isRecord, type JsonObject, hasRegisteredSecrets, redactSecrets } from "
 
 import { decryptFileAtRest, encryptFileAtRest, isFileEncryptedAtRest, readMaybeEncrypted, withFileLock, writeMaybeEncrypted } from "./encrypted-file.js";
 import { quarantineCorruptStore } from "./store-quarantine.js";
+import { withFileMutationQueue } from "./atomic-file-store.js";
 
 /**
  * `noted` is an ADVISORY record: the action was neither performed-by-consent
@@ -227,12 +228,6 @@ async function writeActionLog(file: string, entries: readonly ActionLogEntry[], 
  * A duplicate `id` is still appended — the log records attempts,
  * it does not deduplicate them.
  */
-// Per-file queue: the audit log is the accountability trail, so a concurrent
-// append (multi-channel actions / daemons) must NOT lose an entry to a
-// last-writer-wins read-modify-write. Serialise the whole append per file.
-const appendQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
-
 /** Mask any registered secret value in the entry's free-text fields. No-op when nothing is registered. */
 function redactActionLogEntry(entry: ActionLogEntry): ActionLogEntry {
   if (!hasRegisteredSecrets()) {
@@ -253,7 +248,6 @@ export async function appendActionLog(file: string, entry: ActionLogEntry, env: 
   // never holds a credential in clear. Done here (the single append seam) so a
   // value seen once is masked in every action-log write.
   const redacted = redactActionLogEntry(entry);
-  const prior = appendQueues.get(file) ?? resolvedPromise();
   const op = async (): Promise<void> => {
     const existing = await readActionLog(file, env);
     // Seal the new entry to the chain tip — its prevHash binds it to all prior
@@ -263,9 +257,7 @@ export async function appendActionLog(file: string, entry: ActionLogEntry, env: 
     const chained: ActionLogEntry = { ...redacted, prevHash: chainTipHash(existing) };
     await writeActionLog(file, [...existing, chained], env);
   };
-  const next = prior.then(op, op);
-  appendQueues.set(file, next.then(() => undefined, () => undefined));
-  return next;
+  return withFileMutationQueue(file, op);
 }
 
 /**

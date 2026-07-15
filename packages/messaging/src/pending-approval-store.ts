@@ -21,6 +21,8 @@ import { dirname } from "node:path";
 
 import { isRecord } from "@muse/shared";
 
+import { serializePerFile } from "./file-mutation-queue.js";
+
 export interface PendingApproval {
   readonly id: string;
   /** Tool the agent attempted (e.g. "email_send"). */
@@ -113,13 +115,6 @@ async function writePendingApprovals(file: string, pending: readonly PendingAppr
 // approval — i.e. a refused action lost). Serialising the WHOLE op per file
 // makes the store lossless under concurrency, mirroring the inbox write-queue.
 const mutationQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
-function serializePerFile<T>(file: string, op: () => Promise<T>): Promise<T> {
-  const prior = mutationQueues.get(file) ?? resolvedPromise();
-  const next = prior.then(op, op);
-  mutationQueues.set(file, next.then(() => undefined, () => undefined));
-  return next;
-}
 
 /**
  * Append a pending approval, capped to the most recent

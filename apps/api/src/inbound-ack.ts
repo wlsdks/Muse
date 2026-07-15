@@ -78,7 +78,7 @@ export interface ComposeAckDeps {
  */
 export function createComposeAck(
   deps: ComposeAckDeps
-): (input: { readonly latestUserText: string }) => Promise<string | null> {
+  ): (input: { readonly latestUserText: string }) => Promise<string | null> {
   const timeoutMs = deps.timeoutMs ?? DEFAULT_ACK_TIMEOUT_MS;
   return async ({ latestUserText }) => {
     if (latestUserText.trim().length === 0) {
@@ -86,10 +86,13 @@ export function createComposeAck(
     }
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const timeoutController = new AbortController();
-    const timeout = sleepWithTimer(timeoutMs, null, {
-      ref: false,
-      signal: timeoutController.signal
-    }).then(() => null);
+    const timeout = (async () => {
+      await sleepWithTimer(timeoutMs, null, {
+        ref: false,
+        signal: timeoutController.signal
+      });
+      return null;
+    })();
     const signal = timeoutSignal;
     try {
       const response = await Promise.race([

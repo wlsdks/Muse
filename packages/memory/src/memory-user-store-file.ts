@@ -394,7 +394,7 @@ export class FileUserMemoryStore implements UserMemoryStore {
 
   private async serializeWrite<T>(fn: () => Promise<T>): Promise<T> {
     const prior = FileUserMemoryStore.writeQueues.get(this.file) ?? resolvedPromise();
-    const next = prior.then(fn, fn);
+    const next = prior.catch(() => undefined).then(fn);
     FileUserMemoryStore.writeQueues.set(this.file, next.catch(() => undefined));
     return next;
   }
