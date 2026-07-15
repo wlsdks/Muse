@@ -100,6 +100,10 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
       return queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] });
     }
   });
+  const reset = useMutation({
+    mutationFn: (threadId: string) => client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/reset`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
+  });
   const data = review.data;
 
   return (
@@ -146,7 +150,12 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                         <div className="row-title">{thread.title}</div>
                         <div className="row-meta">{kindLabel(thread.kind)} · {t("continuity.links", { n: thread.linkCount })}</div>
                       </div>
-                      <Badge tone="neutral">v{thread.policy.version}</Badge>
+                      <div style={{ alignItems: "center", display: "flex", gap: 6 }}>
+                        <Badge tone="neutral">v{thread.policy.version}</Badge>
+                        <Button disabled={reset.isPending} size="sm" variant="ghost" onClick={() => {
+                          if (window.confirm(t("continuity.resetConfirm", { title: thread.title }))) reset.mutate(thread.id);
+                        }}>{t("continuity.reset")}</Button>
+                      </div>
                     </div>
                     <div className="row-meta" style={{ marginTop: 10 }}>{thread.policy.detail} · {thread.policy.nextStep} · {thread.policy.suppression}</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
@@ -187,6 +196,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
             ))}
             {outcome.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.outcomeError")}</p> : null}
             {thread.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.threadError")}</p> : null}
+            {reset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.resetError")}</p> : null}
           </>
         ) : null}
       </AsyncBlock>

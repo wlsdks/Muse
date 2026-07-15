@@ -1,4 +1,4 @@
-import { computeContinuityEvaluation, createPersonalThread, OUTCOMES, readAttunementState, recordContinuityOutcome, THREAD_KINDS } from "@muse/attunement";
+import { computeContinuityEvaluation, createPersonalThread, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS } from "@muse/attunement";
 import type { ContinuityOutcome } from "@muse/attunement";
 import type { FastifyInstance } from "fastify";
 
@@ -62,6 +62,11 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
       return reply.code(400).send({ errorMessage: "thread kind must be explicitly life or work" });
     }
     return createPersonalThread(gate.attunementFile, { kind: kind as (typeof THREAD_KINDS)[number], title });
+  });
+
+  server.post<{ Params: { readonly threadId: string } }>("/api/attunement/threads/:threadId/reset", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
+    return resetThreadPolicy(gate.attunementFile, request.params.threadId);
   });
 
   server.post<{ Params: { readonly deliveryId: string }; Body: { readonly outcome?: unknown } }>("/api/attunement/deliveries/:deliveryId/outcome", async (request, reply) => {
