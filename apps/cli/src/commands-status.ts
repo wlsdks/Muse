@@ -136,6 +136,22 @@ function cloneProcessEnv(env: Readonly<Record<string, string | undefined>>): Nod
   return { ...env };
 }
 
+function isNonEmptyEnvValue(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function pickFirstConfiguredEnvKey(
+  source: Readonly<Record<string, string | undefined>>,
+  candidates: readonly string[]
+): string | undefined {
+  for (const key of candidates) {
+    if (isNonEmptyEnvValue(source[key])) {
+      return key;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Resolve all status paths once. The command never falls back to global HOME
  * after this point, which keeps injected/local-only runtime snapshots from
@@ -346,7 +362,7 @@ export async function readDaemonStatus(
   plistFile: string | undefined,
   nowMs: number = Date.now()
 ): Promise<DaemonStatusSnapshot> {
-  const heartbeat = await readProactiveHeartbeat(heartbeatDir).catch(() => ({}) as ProactiveHeartbeat);
+  const heartbeat = await readProactiveHeartbeat(heartbeatDir).catch(failClosedHeartbeat);
   const verdict = classifyDaemonLoopHeartbeat(heartbeat, { nowMs, staleMs: DAEMON_HEARTBEAT_STALE_MS });
   return {
     detail: verdict.detail,
@@ -434,7 +450,7 @@ async function collectStatus(userId: string, runtime: StatusRuntime) {
   const tokenCost = await readTokenCostToday(paths.tokenCostFile);
   const rag = await readRagStatus(paths.notesIndexFile);
 
-  const daemonPlistFile = runtime.platform === "darwin" ? resolveLaunchAgentFile(env as NodeJS.ProcessEnv) : undefined;
+  const daemonPlistFile = runtime.platform === "darwin" ? resolveLaunchAgentFile(env) : undefined;
   const daemon = await readDaemonStatus(paths.daemonHeartbeatDir, daemonPlistFile);
 
   return {
@@ -688,13 +704,13 @@ function resolveModelInfo(sourceEnv: NodeJS.ProcessEnv): { model?: string; model
   // here would falsely contradict the privacy line shown right below (mirrors muse
   // doctor's modelEnvCheck). Derive the posture from the canonical evaluator.
   if (evaluateLocalOnlyPosture(merged).enabled) {
-    const ignoredCloudKey = [
+    const ignoredCloudKey = pickFirstConfiguredEnvKey(merged, [
       "GEMINI_API_KEY",
       "GOOGLE_API_KEY",
       "OPENAI_API_KEY",
       "ANTHROPIC_API_KEY",
       "OPENROUTER_API_KEY"
-    ].find((k) => typeof merged[k] === "string" && (merged[k] as string).trim().length > 0);
+    ]);
     return ignoredCloudKey ? { model: resolved, modelLocalOnlyIgnoredKey: ignoredCloudKey } : { model: resolved };
   }
   const inferredFrom = [
@@ -704,8 +720,12 @@ function resolveModelInfo(sourceEnv: NodeJS.ProcessEnv): { model?: string; model
     "ANTHROPIC_API_KEY",
     "OPENROUTER_API_KEY",
     "OLLAMA_BASE_URL"
-  ].find((k) => typeof merged[k] === "string" && (merged[k] as string).trim().length > 0);
+  ].find((k): k is string => isNonEmptyEnvValue(merged[k])) ?? undefined;
   return { model: resolved, modelInferredFrom: inferredFrom };
+}
+
+function failClosedHeartbeat(): ProactiveHeartbeat {
+  return {};
 }
 
 /**

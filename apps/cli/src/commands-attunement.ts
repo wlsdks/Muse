@@ -26,6 +26,7 @@ import {
   type ExactArtifactResolver,
   type PersonalThread
 } from "@muse/attunement";
+import { isNodeErrorCode, NODE_ERROR_CODES } from "@muse/shared";
 import { resolveAttunementFile, resolveNotesDir, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { readTaskById, readTasks } from "@muse/stores";
 import { promises as fs } from "node:fs";
@@ -109,7 +110,7 @@ async function readCanonicalLocalNote(rawId: string): Promise<LocalNote | undefi
     vaultRoot = await fs.realpath(notesDir());
     target = await fs.realpath(resolve(vaultRoot, id));
   } catch (cause) {
-    if (isNodeError(cause) && cause.code === "ENOENT") return undefined;
+    if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) return undefined;
     throw cause;
   }
   const artifactId = containedRelative(vaultRoot, target);
@@ -128,10 +129,6 @@ async function readCanonicalLocalNote(rawId: string): Promise<LocalNote | undefi
     title: basename(artifactId),
     updatedAt: stat.mtime.toISOString()
   };
-}
-
-function isNodeError(value: unknown): value is NodeJS.ErrnoException {
-  return value instanceof Error && typeof Reflect.get(value, "code") === "string";
 }
 
 async function canonicalTaskId(raw: string): Promise<string> {

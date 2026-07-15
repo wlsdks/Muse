@@ -82,7 +82,7 @@ export async function readQuarantine(file: string): Promise<readonly SwarmQuaran
   if (!parsedRecord || !Array.isArray(parsedRecord.quarantine)) {
     return [];
   }
-  return (parsedRecord.quarantine as unknown[]).flatMap((e): readonly SwarmQuarantineEntry[] =>
+  return parsedRecord.quarantine.flatMap((e): readonly SwarmQuarantineEntry[] =>
     isEntry(e) ? [e] : []
   );
 }

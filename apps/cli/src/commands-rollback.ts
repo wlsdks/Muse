@@ -21,6 +21,7 @@ import { dirname } from "node:path";
 
 import type { Command } from "commander";
 import { defaultCheckpointsDir, FileCheckpointStore, type CheckpointManifest } from "@muse/fs";
+import { isNodeErrorCode, NODE_ERROR_CODES } from "@muse/shared";
 
 import { formatRelativeTime } from "./human-formatters.js";
 import type { ProgramIO } from "./program.js";
@@ -80,7 +81,7 @@ async function readCurrentContent(path: string): Promise<Buffer | undefined> {
   try {
     return await readFile(path);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if (isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT)) return undefined;
     throw error;
   }
 }

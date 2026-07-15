@@ -84,7 +84,7 @@ export class MacOsActiveWindowSource implements AmbientSignalSource {
     const pbpastePath = options.pbpastePath ?? "/usr/bin/pbpaste";
     this.readClipboard = options.readClipboard ?? (() => defaultPbpasteRun(pbpastePath, timeoutMs));
     this.maxClipboardChars = Number.isFinite(options.maxClipboardChars)
-      ? Math.max(1, Math.trunc(options.maxClipboardChars as number))
+      ? Math.max(1, Math.trunc(options.maxClipboardChars))
       : 2_000;
   }
 

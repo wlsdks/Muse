@@ -20,7 +20,7 @@ import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { isRecord, sleep } from "@muse/shared";
+import { hasNodeErrorCodeIn, isRecord, NODE_ERROR_CODES, sleep } from "@muse/shared";
 
 import { decryptMemoryEnvelope, encryptMemoryEnvelope, isEncryptedMemoryEnvelope } from "./memory-encryption.js";
 import {
@@ -440,7 +440,7 @@ export class FileUserMemoryStore implements UserMemoryStore {
     try {
       return await readFile(this.file, "utf8");
     } catch (cause) {
-      if (isErrnoException(cause) && cause.code === "ENOENT") {
+      if (hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.ENOENT)) {
         return undefined;
       }
       throw cause;
@@ -561,7 +561,7 @@ export class FileUserMemoryStore implements UserMemoryStore {
       try {
         handle = await open(lockPath, "wx");
       } catch (cause) {
-        if (!isErrnoException(cause) || cause.code !== "EEXIST") {
+        if (!hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.EEXIST)) {
           throw cause;
         }
         if (await lockIsStale(lockPath)) {
@@ -581,14 +581,6 @@ export class FileUserMemoryStore implements UserMemoryStore {
       await unlink(lockPath).catch(() => undefined);
     }
   }
-}
-
-function isErrnoException(value: unknown): value is NodeJS.ErrnoException {
-  return (
-    value instanceof Error
-    && "code" in value
-    && typeof value.code === "string"
-  );
 }
 
 const LOCK_STALE_MS = 30_000;

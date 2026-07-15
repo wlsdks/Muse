@@ -1,9 +1,8 @@
 import { isCalibratedEmbedder, resolveRecallConfidentAt } from "@muse/agent-core";
 import { evaluateLocalOnlyPosture, evaluateWebEgressStatus, LOCAL_FIRST_DEFAULT_MODEL, parseBoolean, resolveDefaultModel, resolveVisionModel } from "@muse/autoconfigure";
-import { resolvePlatformCapabilities } from "@muse/shared";
+import { isNodeErrorCode, isRecord, NODE_ERROR_CODES, resolvePlatformCapabilities } from "@muse/shared";
 import { DEFAULT_BLUETOOTH_OFF_SHORTCUT, DEFAULT_BLUETOOTH_ON_SHORTCUT, DEFAULT_BRIGHTNESS_SHORTCUT, DEFAULT_FOCUS_OFF_SHORTCUT, DEFAULT_FOCUS_ON_SHORTCUT } from "@muse/macos";
 import type { DevFixableWeakness } from "@muse/stores";
-import { isRecord } from "@muse/shared";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -553,15 +552,11 @@ export async function readNotesIndexEmbedModel(path: string): Promise<string | u
     const raw = await fs.readFile(path, "utf8");
     return parseNotesIndexEmbedModel(raw);
   } catch (cause) {
-    if (isNodeError(cause) && cause.code === "ENOENT") return undefined;
+    if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) return undefined;
     // Unreadable index (permissions?) — flag the probe instead of
     // silently dropping.
     return parseNotesIndexEmbedModel("");
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && typeof Reflect.get(error, "code") === "string";
 }
 
 /**

@@ -8,7 +8,7 @@ import {
   encryptCalendarEnvelope,
   isEncryptedCalendarEnvelope
 } from "./calendar-encryption.js";
-import { isRecord } from "@muse/shared";
+import { isNodeErrorCode, isRecord, NODE_ERROR_CODES } from "@muse/shared";
 import { quarantineCorruptStore } from "./corrupt-quarantine.js";
 import { CalendarProviderError, CalendarValidationError } from "./errors.js";
 import { expandRecurringEvent } from "./ics-parse.js";
@@ -367,7 +367,7 @@ function isParsableDateString(value: unknown): value is string {
 }
 
 function isFileNotFound(error: unknown): boolean {
-  return isRecord(error) && error.code === "ENOENT";
+  return isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT);
 }
 
 function errorMessage(value: unknown): string {

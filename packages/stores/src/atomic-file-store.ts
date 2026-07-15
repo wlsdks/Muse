@@ -29,7 +29,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-import { sleep } from "@muse/shared";
+import { hasNodeErrorCodeIn, NODE_ERROR_CODES, sleep } from "@muse/shared";
 
 export interface AtomicWriteOptions {
   /** fsync the tmp file before rename (durable against a crash mid-rename). Default true. */
@@ -65,8 +65,7 @@ export async function atomicWriteFile(file: string, contents: string, options: A
         await fs.rename(tmp, file);
         break;
       } catch (cause) {
-        const code = (cause as NodeJS.ErrnoException).code;
-        if (process.platform !== "win32" || attempt >= 20 || (code !== "EPERM" && code !== "EACCES")) {
+        if (process.platform !== "win32" || attempt >= 20 || !hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.EPERM, NODE_ERROR_CODES.EACCES)) {
           throw cause;
         }
         await sleep(5 + attempt * 5);
@@ -102,6 +101,7 @@ export async function atomicWriteFile(file: string, contents: string, options: A
     throw error;
   }
 }
+
 
 const mutationQueues = new Map<string, Promise<unknown>>();
 const resolvedPromise = async (): Promise<unknown> => undefined;

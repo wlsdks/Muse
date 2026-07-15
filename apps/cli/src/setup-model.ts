@@ -19,7 +19,8 @@ import {
   credentialEncryptionEnabled,
   decodeMaybeEncryptedCredentialsJson,
   encryptCredentialEnvelope,
-  isCredentialsFileEncryptedAtRest
+  isCredentialsFileEncryptedAtRest,
+  isRecord
 } from "@muse/shared";
 
 interface SetupModelIO {
@@ -281,9 +282,8 @@ async function readPersisted(file: string, env: NodeJS.ProcessEnv = process.env)
     return { providers: {}, version: 1 };
   }
   parsed = decodeMaybeEncryptedCredentialsJson(parsed, env); // THROWS fail-closed on a wrong key
-  const shape = parsed as Partial<PersistedShape>;
-  if (shape && typeof shape === "object" && shape.providers && typeof shape.providers === "object") {
-    return { providers: { ...shape.providers }, version: 1 };
+  if (isRecord(parsed) && parsed.providers && isRecord(parsed.providers)) {
+    return { providers: { ...parsed.providers }, version: 1 };
   }
   return { providers: {}, version: 1 };
 }
@@ -313,4 +313,3 @@ async function writePersisted(file: string, value: PersistedShape, env: NodeJS.P
   await fs.rename(tmp, file);
   await fs.chmod(file, 0o600).catch(() => undefined);
 }
-

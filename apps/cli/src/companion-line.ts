@@ -53,7 +53,7 @@ import {
   sourceKey,
   type PersistedTask
 } from "@muse/stores";
-import { sleep } from "@muse/shared";
+import { isRecord, sleep } from "@muse/shared";
 import { isQuietHour, parseQuietHours, readCheckins, selectDueCheckins } from "@muse/proactivity";
 import type { Command } from "commander";
 
@@ -391,12 +391,16 @@ function trustFile(env: NodeJS.ProcessEnv): string {
 
 async function readCompanionState(file: string): Promise<CompanionState> {
   try {
-    const parsed = JSON.parse(await fs.readFile(file, "utf8")) as Partial<CompanionState>;
-    const recent = Array.isArray(parsed.recent) ? parsed.recent.filter((r): r is string => typeof r === "string") : [];
-    const modes = Array.isArray(parsed.recentModes)
+    const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+    const recent = isRecord(parsed) && Array.isArray(parsed.recent)
+      ? parsed.recent.filter((r): r is string => typeof r === "string")
+      : [];
+    const modes = isRecord(parsed) && Array.isArray(parsed.recentModes)
       ? parsed.recentModes.filter((m): m is CompanionMode => typeof m === "string")
       : [];
-    const rotation = Number.isFinite(parsed.rotation) ? Math.trunc(parsed.rotation as number) : 0;
+    const rotation = isRecord(parsed) && Number.isFinite(parsed.rotation) && typeof parsed.rotation === "number"
+      ? Math.trunc(parsed.rotation)
+      : 0;
     return { recent, recentModes: modes, rotation };
   } catch {
     return { recent: [], recentModes: [], rotation: 0 };

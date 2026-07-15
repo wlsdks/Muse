@@ -23,7 +23,7 @@ import {
   resolveOAuthStoreDir
 } from "@muse/autoconfigure";
 import { runMcpOAuthLogin } from "@muse/mcp";
-import { asRecord, isErrnoException, isRecord } from "@muse/shared";
+import { asRecord, isNodeErrorCode, isRecord, NODE_ERROR_CODES } from "@muse/shared";
 
 import { closestCommandName } from "./closest-command.js";
 import { firstNonEmpty } from "./program-helpers.js";
@@ -569,7 +569,7 @@ function readMcpConfigFile(path: string): McpConfigShape | undefined {
   try {
     raw = nodeReadFileSync(path, "utf8");
   } catch (cause) {
-    if (isErrnoException(cause) && cause.code === "ENOENT") {
+    if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) {
       return undefined;
     }
     throw cause;

@@ -28,6 +28,8 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { isRecord } from "@muse/shared";
+
 import { atomicWriteFile } from "./atomic-file-store.js";
 
 /**
@@ -110,7 +112,10 @@ async function readMark(path: string): Promise<ProactiveHeartbeatMark | undefine
     return undefined;
   }
   try {
-    const parsed = JSON.parse(raw) as Partial<ProactiveHeartbeatMark>;
+    const parsed = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return undefined;
+    }
     if (typeof parsed.at === "string" && typeof parsed.pid === "number") {
       return { at: parsed.at, pid: parsed.pid };
     }

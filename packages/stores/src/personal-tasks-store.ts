@@ -210,7 +210,7 @@ export function selectTasksDueWithin(
   options: { readonly now?: Date; readonly withinDays?: number } = {}
 ): DueTask[] {
   const now = options.now ?? new Date();
-  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays as number)) : 1;
+  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays)) : 1;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const due: DueTask[] = [];
   for (const task of tasks) {
@@ -355,10 +355,10 @@ export function compareTasksByDueDate(left: PersistedTask, right: PersistedTask)
 }
 
 function isPersistedTask(value: unknown): value is PersistedTask {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as PersistedTask;
+  const candidate = value;
   if (typeof candidate.id !== "string"
     || typeof candidate.title !== "string"
     || typeof candidate.createdAt !== "string"

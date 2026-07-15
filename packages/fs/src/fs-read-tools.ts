@@ -13,7 +13,7 @@ import { glob, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
-import { isRecord } from "@muse/shared";
+import { isNodeErrorCode, isRecord, NODE_ERROR_CODES } from "@muse/shared";
 import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
@@ -120,7 +120,7 @@ function asPositiveInt(value: unknown): number | undefined {
 }
 
 function isNotFoundError(error: unknown): boolean {
-  return isRecord(error) && error.code === "ENOENT";
+  return isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT);
 }
 
 function refusalResult(error: unknown, path: string): JsonObject {

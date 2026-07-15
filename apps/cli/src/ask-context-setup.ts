@@ -11,7 +11,7 @@ import { readFile } from "node:fs/promises";
 import { classifyCorpusOverview } from "@muse/agent-core";
 import { resolveNotesDir, resolveNotesIndexFile } from "@muse/autoconfigure";
 import { corpusOnboardingHint, formatCorpusOverview, queryHasAdHocGrounding, type FileEntry } from "@muse/recall";
-import { isRecord } from "@muse/shared";
+import { isNodeErrorCode, isRecord, NODE_ERROR_CODES } from "@muse/shared";
 
 import type { AskOptions } from "./ask-command-options.js";
 import { listNoteFiles, notesCorpusFileCount } from "./ask-corpus-helpers.js";
@@ -125,7 +125,7 @@ export async function prepareAskContext(
       throw new Error("notes index is malformed");
     }
   } catch (cause) {
-    if (isNodeError(cause) && cause.code === "ENOENT") {
+    if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) {
       io.stderr("No notes index at ~/.muse/notes-index.json. Run `muse notes reindex` first.\n");
       return { kind: "error" };
     }
@@ -194,10 +194,6 @@ export async function prepareAskContext(
   }
 
   return { kind: "ready", userKey, topK, embedModel, notesDir, index, noteFileCount };
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && typeof Reflect.get(error, "code") === "string";
 }
 
 function parseNotesIndex(raw: string): NotesIndex | undefined {

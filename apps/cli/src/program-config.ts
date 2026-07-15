@@ -20,6 +20,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import type { Command } from "commander";
+import { hasNodeErrorCodeIn, isNodeErrorCode, NODE_ERROR_CODES } from "@muse/shared";
 
 import { isRecord, readStoredToken } from "./credential-store.js";
 import { closestCommandName } from "./closest-command.js";
@@ -148,13 +149,13 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
         : {})
     };
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
+    if (isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT)) {
       return {};
     }
 
-    if (isNodeError(error) && (error.code === "EISDIR" || error.code === "EACCES" || error.code === "EPERM")) {
+    if (hasNodeErrorCodeIn(error, NODE_ERROR_CODES.EISDIR, NODE_ERROR_CODES.EACCES, NODE_ERROR_CODES.EPERM)) {
       throw new Error(
-        `config at ${file} is not a readable file (${error.code}) — remove or replace it (a fresh one is written on next \`muse setup\`)`,
+        `config at ${file} is not a readable file — remove or replace it (a fresh one is written on next \`muse setup\`)`,
         { cause: error }
       );
     }
@@ -221,8 +222,4 @@ export function unsetConfigValue(
   const wasSet = config[key] !== undefined;
   const { [key]: _removed, ...rest } = config;
   return { config: rest, wasSet };
-}
-
-function isNodeError(value: unknown): value is NodeJS.ErrnoException {
-  return value instanceof Error && "code" in value;
 }

@@ -25,7 +25,7 @@ import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 
 import type { Command } from "commander";
-import { isRecord } from "@muse/shared";
+import { isNodeErrorCode, isRecord, NODE_ERROR_CODES } from "@muse/shared";
 
 import { parseBoundedInt } from "./parse-bounded-int.js";
 import { activityPath } from "./commands-routine.js";
@@ -253,7 +253,7 @@ export function registerMaintenanceCommand(program: Command, io: ProgramIO): voi
     try {
       raw = await readFile(file, "utf8");
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
+      if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) {
         io.stdout(options.json ? `${JSON.stringify({ dropped: 0, file, kept: 0 }, null, 2)}\n` : `${missingLine}\n`);
         return;
       }

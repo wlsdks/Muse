@@ -93,7 +93,7 @@ export function resolveUpcomingBirthdays(
   options: { readonly now?: Date; readonly withinDays?: number } = {}
 ): UpcomingBirthday[] {
   const now = options.now ?? new Date();
-  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays as number)) : 30;
+  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays)) : 30;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const pad = (n: number): string => String(n).padStart(2, "0");
   const out: UpcomingBirthday[] = [];

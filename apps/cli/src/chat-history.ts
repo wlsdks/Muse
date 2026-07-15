@@ -54,7 +54,7 @@ import {
   type ConversationSummary,
   type ConversationTurn
 } from "@muse/stores";
-import { redactSecretsInText, resolveHomeDir } from "@muse/shared";
+import { isNodeErrorCode, NODE_ERROR_CODES, redactSecretsInText, resolveHomeDir } from "@muse/shared";
 
 import { isRecord } from "./credential-store.js";
 
@@ -117,7 +117,7 @@ async function readLegacyLastChatTurns(): Promise<readonly ConversationTurn[] | 
   try {
     raw = await readFile(lastChatHistoryPath(), "utf8");
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
+    if (isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT)) {
       return undefined;
     }
     throw error;
@@ -411,10 +411,6 @@ export async function maybeCompactLastChatHistory(
   ];
   await conversationStore().replaceTurns(id, nextTurns);
   return { compacted: true, dropped: older.length, summary: trimmedSummary };
-}
-
-function isNodeError(value: unknown): value is NodeJS.ErrnoException {
-  return isRecord(value) && typeof value.code === "string";
 }
 
 export function capContentForSummary(value: string, cap: number): string {

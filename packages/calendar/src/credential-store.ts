@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
 import type { JsonObject } from "@muse/shared";
-import { isRecord } from "@muse/shared";
+import { isNodeErrorCode, isRecord, NODE_ERROR_CODES } from "@muse/shared";
 
 import { quarantineCorruptStore } from "./corrupt-quarantine.js";
 
@@ -117,7 +117,7 @@ function emptyProviderMap(): Record<string, ProviderCredentials> {
 }
 
 function isFileNotFound(error: unknown): boolean {
-  return isRecord(error) && error.code === "ENOENT";
+  return isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT);
 }
 
 function parseProviderCredentials(value: unknown): ProviderCredentials | undefined {

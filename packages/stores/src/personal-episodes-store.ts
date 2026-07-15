@@ -268,10 +268,10 @@ export async function vacuumEpisodes(
 }
 
 function isPersistedEpisode(value: unknown): value is PersistedEpisode {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as PersistedEpisode;
+  const candidate = value;
   if (
     typeof candidate.id !== "string" ||
     typeof candidate.userId !== "string" ||

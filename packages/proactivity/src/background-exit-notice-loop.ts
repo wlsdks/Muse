@@ -27,8 +27,7 @@
 import { promises as fs } from "node:fs";
 
 import type { MessagingProviderRegistry } from "@muse/messaging";
-import { sendWithRetry } from "@muse/mcp-shared";
-import { redactSecretsInText } from "@muse/shared";
+import { isRecord, redactSecretsInText } from "@muse/shared";
 import { avoidedSourceKeys, readBackgroundProcesses, readTrustLedger, type BackgroundProcessRecord } from "@muse/stores";
 
 import { applyInterruptionBudget, resolveInterruptionBudgetCaps, type InterruptionBudgetWiring } from "./interruption-gate.js";
@@ -53,8 +52,8 @@ export async function readBackgroundExitNotified(file: string): Promise<Readonly
     return new Set();
   }
   try {
-    const parsed = JSON.parse(raw) as Partial<BackgroundExitNotifiedSidecar>;
-    if (Array.isArray(parsed.notifiedIds)) {
+    const parsed = JSON.parse(raw);
+    if (isRecord(parsed) && Array.isArray(parsed.notifiedIds)) {
       return new Set(parsed.notifiedIds.filter((id): id is string => typeof id === "string"));
     }
   } catch {

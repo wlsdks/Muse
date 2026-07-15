@@ -111,7 +111,7 @@ export async function readTrustLedger(file: string): Promise<readonly TrustLedge
   if (!parsedRecord || !Array.isArray(parsedRecord.surfaced)) {
     return [];
   }
-  return (parsedRecord.surfaced as unknown[]).flatMap((entry): readonly TrustLedgerEntry[] =>
+  return parsedRecord.surfaced.flatMap((entry): readonly TrustLedgerEntry[] =>
     isTrustLedgerEntry(entry) ? [entry] : []
   );
 }

@@ -141,8 +141,8 @@ export function isPatternOnCooldown(
 }
 
 function isPatternFiredRecord(value: unknown): value is PatternFiredRecord {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<PatternFiredRecord>;
+  if (!isRecord(value)) return false;
+  const candidate = value;
   return typeof candidate.patternId === "string"
     && typeof candidate.firedAtMs === "number"
     && Number.isFinite(candidate.firedAtMs);

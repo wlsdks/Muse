@@ -89,10 +89,16 @@ export function registerWeekCommand(program: Command, io: ProgramIO): void {
       const weekEnd = new Date(now.getTime() + 7 * DAY_MS);
       const events = await readLocalEvents(resolveLocalCalendarFile(env), now, weekEnd).catch(() => []);
       const allTasks = await readTasks(resolveTasksFile(env)).catch(() => []);
-      const tasks = allTasks
-        .filter((task) => task.status === "open" && typeof task.dueAt === "string"
-          && Date.parse(task.dueAt) >= now.getTime() && Date.parse(task.dueAt) < weekEnd.getTime())
-        .map((task) => ({ dueAt: task.dueAt as string, title: task.title }));
+      const tasks = allTasks.flatMap((task) => {
+        if (task.status !== "open" || typeof task.dueAt !== "string") {
+          return [];
+        }
+        const due = Date.parse(task.dueAt);
+        if (!Number.isFinite(due) || due < now.getTime() || due >= weekEnd.getTime()) {
+          return [];
+        }
+        return [{ dueAt: task.dueAt, title: task.title }];
+      });
       const birthdays = await readUpcomingBirthdays(resolveContactsFile(env), now).catch(() => []);
       const forecasts = await resolveWeekForecasts(env).catch(() => []);
       const week = groupWeekAgenda({ birthdays, events, forecasts, tasks }, now);

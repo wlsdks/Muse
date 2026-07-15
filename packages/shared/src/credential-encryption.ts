@@ -47,13 +47,16 @@ export function credentialEncryptionSecret(env: NodeJS.ProcessEnv = process.env)
 }
 
 export function isEncryptedCredentialEnvelope(value: unknown): value is EncryptedCredentialEnvelope {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const e = value as Partial<EncryptedCredentialEnvelope>;
-  return e.version === 1 && e.algorithm === "aes-256-gcm"
-    && typeof e.data === "string" && typeof e.iv === "string"
-    && typeof e.salt === "string" && typeof e.tag === "string";
+  return value.version === 1 && value.algorithm === "aes-256-gcm"
+    && typeof value.data === "string" && typeof value.iv === "string"
+    && typeof value.salt === "string" && typeof value.tag === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 export function encryptCredentialEnvelope(

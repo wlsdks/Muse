@@ -72,7 +72,7 @@ export async function readInterruptionLedger(file: string): Promise<readonly Int
   if (!parsedRecord || !Array.isArray(parsedRecord.deliveries)) {
     return [];
   }
-  return (parsedRecord.deliveries as unknown[]).flatMap((entry): readonly InterruptionDeliveryEntry[] =>
+  return parsedRecord.deliveries.flatMap((entry): readonly InterruptionDeliveryEntry[] =>
     isInterruptionDeliveryEntry(entry) ? [entry] : []
   );
 }

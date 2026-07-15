@@ -54,8 +54,22 @@ function findDisallowedCompilerOptions(value) {
 
 function findBaseConflictKeys(baseValue, overrideValue) {
   return Object.entries(overrideValue).filter(([key, value]) => {
+    if (key === "types") {
+      return false;
+    }
     return key in BASE_OPTIONS && JSON.stringify(value) !== JSON.stringify(baseValue[key]);
   }).map(([key]) => key);
+}
+
+function hasMissingBaseTypes(baseValue, overrideValue) {
+  if (!Array.isArray(baseValue)) {
+    return false;
+  }
+  if (overrideValue === undefined) {
+    return [];
+  }
+  const overrideSet = new Set(Array.isArray(overrideValue) ? overrideValue : []);
+  return baseValue.filter((entry) => !overrideSet.has(entry));
 }
 
 function main() {
@@ -79,6 +93,11 @@ function main() {
     const invalidOverrides = findBaseConflictKeys(BASE_OPTIONS, compilerOptions);
     if (invalidOverrides.length > 0) {
       problems.push(`${configPath}: overrides conflict with tsconfig.base values -> ${invalidOverrides.join(", ")}`);
+    }
+
+    const missingTypes = hasMissingBaseTypes(BASE_OPTIONS.types, compilerOptions.types);
+    if (missingTypes.length > 0) {
+      problems.push(`${configPath}: types override dropped base entries -> ${missingTypes.join(", ")}`);
     }
 
     for (const key of ["target", "module", "moduleResolution", "skipLibCheck", "skipDefaultLibCheck"]) {

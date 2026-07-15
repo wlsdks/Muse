@@ -74,7 +74,7 @@ export async function readDigestQueue(file: string): Promise<readonly DigestQueu
   if (!parsedRecord || !Array.isArray(parsedRecord.queued)) {
     return [];
   }
-  return (parsedRecord.queued as unknown[]).flatMap((item): readonly DigestQueueItem[] =>
+  return parsedRecord.queued.flatMap((item): readonly DigestQueueItem[] =>
     isDigestQueueItem(item) ? [item] : []
   );
 }

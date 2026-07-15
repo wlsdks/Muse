@@ -273,10 +273,10 @@ export async function snoozeFollowup(
 }
 
 function isPersistedFollowup(value: unknown): value is PersistedFollowup {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as PersistedFollowup;
+  const candidate = value;
   if (
     typeof candidate.id !== "string" ||
     typeof candidate.userId !== "string" ||

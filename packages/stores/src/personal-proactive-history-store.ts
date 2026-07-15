@@ -199,10 +199,10 @@ function clampCapacity(raw: number | undefined): number {
 }
 
 function isHistoryEntry(value: unknown): value is ProactiveHistoryEntry {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as ProactiveHistoryEntry;
+  const candidate = value;
   return (candidate.kind === "calendar" || candidate.kind === "task")
     && typeof candidate.itemId === "string"
     && typeof candidate.startIso === "string"

@@ -316,10 +316,10 @@ export function serializeActionLogEntry(entry: ActionLogEntry): JsonObject {
 }
 
 function isActionLogEntry(value: unknown): value is ActionLogEntry {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const e = value as ActionLogEntry;
+  const e = value;
   if (
     typeof e.id !== "string" ||
     typeof e.userId !== "string" ||
