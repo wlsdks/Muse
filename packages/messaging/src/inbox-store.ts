@@ -14,9 +14,9 @@
  */
 
 import { promises as fs } from "node:fs";
-import { dirname } from "node:path";
 
 import type { InboundMessage } from "./types.js";
+import { atomicWritePrivateFile, withMessagingFileMutation } from "./messaging-file-store.js";
 
 const DEFAULT_CAPACITY = 500;
 const MAX_CAPACITY = 5_000;
@@ -69,19 +69,12 @@ export interface AppendInboundOptions {
  * invocations don't both read the same inbox snapshot and clobber
  * each other's append at rename time.
  */
-const writeQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
-
 export async function appendInbound(
   file: string,
   message: InboundMessage,
   options: AppendInboundOptions = {}
 ): Promise<void> {
-  const prior = writeQueues.get(file) ?? resolvedPromise();
-  const run = (): Promise<void> => doAppendInbound(file, message, options);
-  const next = prior.then(run, run);
-  writeQueues.set(file, next.catch(() => undefined));
-  return next;
+  return withMessagingFileMutation(file, () => doAppendInbound(file, message, options));
 }
 
 async function doAppendInbound(
@@ -96,11 +89,7 @@ async function doAppendInbound(
   const next = [...existing, message];
   const trimmed = next.length > capacity ? next.slice(next.length - capacity) : next;
   const payload: PersistedShape = { inbox: trimmed, version: 1 };
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-  await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  await atomicWritePrivateFile(file, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
 async function readPersistedRaw(file: string): Promise<readonly InboundMessage[]> {
