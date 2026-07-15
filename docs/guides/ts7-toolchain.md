@@ -16,6 +16,7 @@ Muse now uses a **two-package TypeScript setup**:
 - `build` target runs: `pnpm run build:ts7-fast`
 - `typecheck` target runs: `pnpm run typecheck:ts7-fast` then `@muse/web` typecheck
 - Both `build:ts7-fast` and `typecheck:ts7-fast` are thin wrappers around `scripts/run-tsc-fast.mjs`.
+- `build:ts7-single-thread` and `typecheck:ts7-single-thread` keep the same contract and force `--single-threaded`.
 - Shared policy is declared in `scripts/tsc-fast-flags.mjs`.
 
 ## Runner contract

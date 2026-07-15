@@ -37,6 +37,7 @@ const EXPECTED_ROOT_SCRIPTS = {
   "build:ts7-single-thread": getTscFastCommand("build", { singleThreaded: true }),
   "typecheck:fast": getTscFastCommand("typecheck"),
   "typecheck:ts7-fast": getTscFastCommand("typecheck"),
+  "typecheck:ts7-single-thread": getTscFastCommand("typecheck", { singleThreaded: true }),
   check: "pnpm run check:toolchain && pnpm build && pnpm test",
 };
 
