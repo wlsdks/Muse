@@ -200,6 +200,7 @@ export function createWebWatchRunner(options: {
 }
 
 const RULE_FIELDS = ["appears", "disappears", "extract"] as const;
+const MAX_WATCH_RULE_TEXT_LENGTH = 1_000;
 
 /**
  * Snapshot source for a PUBLIC web page: an HTTP GET (retry-hardened
@@ -395,7 +396,7 @@ export function parseWatchRule(raw: unknown): WatchRule | undefined {
   const ruleObj = raw as Record<string, unknown>;
   const rule: { appears?: string; disappears?: string; extract?: string; onAnyChange?: boolean; caseInsensitive?: boolean; below?: number; above?: number } = {};
   for (const field of RULE_FIELDS) {
-    if (typeof ruleObj[field] === "string" && (ruleObj[field] as string).length > 0) {
+    if (typeof ruleObj[field] === "string" && (ruleObj[field] as string).length > 0 && (ruleObj[field] as string).length <= MAX_WATCH_RULE_TEXT_LENGTH) {
       rule[field] = ruleObj[field] as string;
     }
   }
