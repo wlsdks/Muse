@@ -100,7 +100,7 @@ function main() {
       problems.push(`${configPath}: types override dropped base entries -> ${missingTypes.join(", ")}`);
     }
 
-    for (const key of ["target", "module", "moduleResolution", "skipLibCheck", "skipDefaultLibCheck"]) {
+    for (const key of ["target", "module", "moduleDetection", "moduleResolution", "skipLibCheck", "skipDefaultLibCheck"]) {
       if (compilerOptions[key] !== undefined && BASE_OPTIONS[key] !== undefined && compilerOptions[key] !== BASE_OPTIONS[key]) {
         problems.push(`${configPath}: ${key} overrides base with ${String(compilerOptions[key])} (expected ${String(BASE_OPTIONS[key])})`);
       }

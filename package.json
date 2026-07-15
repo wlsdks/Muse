@@ -21,7 +21,7 @@
   "scripts": {
     "build": "pnpm run build:ts7-fast",
     "build:ts7-fast": "tsc -b --incremental --checkers 4 --builders 4 --pretty false && pnpm --filter @muse/web build",
-    "build:ts7-single-thread": "tsc -b --singleThreaded",
+    "build:ts7-single-thread": "tsc -b --singleThreaded --pretty false",
     "check": "pnpm build && pnpm test",
     "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/ --cache-strategy content",
     "lint:comments": "node scripts/check-comment-markers.mjs",
