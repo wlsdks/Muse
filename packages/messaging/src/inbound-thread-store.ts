@@ -3,6 +3,8 @@ import { dirname } from "node:path";
 
 import { isRecord } from "@muse/shared";
 
+import { serializePerFile } from "./file-mutation-queue.js";
+
 /**
  * DEPRECATED (S3b) production backend — the API server now wires Telegram/
  * Matrix through `FileConversationStore` (`apps/api/src/threaded-conversation-
@@ -98,7 +100,6 @@ export async function readAllThreads(file: string): Promise<Readonly<Record<stri
 }
 
 const writeQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
 
 export async function appendThreadTurns(
   file: string,
@@ -108,13 +109,7 @@ export async function appendThreadTurns(
   if (turns.length === 0) {
     return;
   }
-  const prior = writeQueues.get(file) ?? resolvedPromise();
-  const next = prior.then(
-    () => doAppendThreadTurns(file, key, turns),
-    () => doAppendThreadTurns(file, key, turns)
-  );
-  writeQueues.set(file, next.catch(() => undefined));
-  return next;
+  return serializePerFile(writeQueues, file, () => doAppendThreadTurns(file, key, turns));
 }
 
 async function doAppendThreadTurns(

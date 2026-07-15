@@ -20,6 +20,8 @@ import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import { isRecord } from "@muse/shared";
 
+import { withFileMutationQueue } from "./atomic-file-store.js";
+
 export interface RecallHitRecord {
   /** Stable key of the recalled memory — an episode `sessionId`. */
   readonly key: string;
@@ -111,8 +113,6 @@ export async function writeRecallHits(file: string, records: readonly RecallHitR
 // increment — exactly the lost-write seen under parallel test load. Serialise
 // the whole read-modify-write per file (same posture as action-log /
 // pending-approval).
-const recordQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
 
 /**
  * Read → increment-each → write, serialised per file. `entries` may repeat
@@ -127,7 +127,6 @@ export async function recordRecallHits(file: string, entries: readonly RecallHit
     byInputKey.set(key, entry); // de-dupe within a single recall; latest summary wins
   }
   if (byInputKey.size === 0) return;
-  const prior = recordQueues.get(file) ?? resolvedPromise();
   const op = async (): Promise<void> => {
     const existing = await readRecallHits(file);
     const byKey = new Map(existing.map((record) => [record.key, record]));
@@ -150,9 +149,7 @@ export async function recordRecallHits(file: string, entries: readonly RecallHit
     }
     await writeRecallHits(file, [...byKey.values()]);
   };
-  const next = prior.then(op, op);
-  recordQueues.set(file, next.then(() => undefined, () => undefined));
-  return next;
+  return withFileMutationQueue(file, op);
 }
 
 // --- Ebbinghaus fade sidecar (arXiv:2305.10250, MemoryBank) ---

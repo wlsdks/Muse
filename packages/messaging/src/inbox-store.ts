@@ -19,6 +19,7 @@ import { dirname } from "node:path";
 import { isRecord } from "@muse/shared";
 
 import type { InboundMessage } from "./types.js";
+import { serializePerFile } from "./file-mutation-queue.js";
 
 const DEFAULT_CAPACITY = 500;
 const MAX_CAPACITY = 5_000;
@@ -72,18 +73,13 @@ export interface AppendInboundOptions {
  * each other's append at rename time.
  */
 const writeQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
 
 export async function appendInbound(
   file: string,
   message: InboundMessage,
   options: AppendInboundOptions = {}
 ): Promise<void> {
-  const prior = writeQueues.get(file) ?? resolvedPromise();
-  const run = (): Promise<void> => doAppendInbound(file, message, options);
-  const next = prior.then(run, run);
-  writeQueues.set(file, next.catch(() => undefined));
-  return next;
+  return serializePerFile(writeQueues, file, () => doAppendInbound(file, message, options));
 }
 
 async function doAppendInbound(

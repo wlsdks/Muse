@@ -114,7 +114,7 @@ const resolvedPromise = async (): Promise<unknown> => undefined;
  */
 export async function withFileMutationQueue<T>(file: string, op: () => Promise<T>): Promise<T> {
   const prior = mutationQueues.get(file) ?? resolvedPromise();
-  const next = prior.then(op, op);
-  mutationQueues.set(file, next.then(() => undefined, () => undefined));
+  const next = prior.catch(() => undefined).then(op);
+  mutationQueues.set(file, next.then(() => undefined).catch(() => undefined));
   return next;
 }
