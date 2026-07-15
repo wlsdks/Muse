@@ -72,9 +72,13 @@ function isProposedAction(value: unknown): value is ProposedAction {
     && typeof c.summary === "string"
     && typeof c.reason === "string"
     && typeof c.providerId === "string"
+    && c.providerId.trim().length > 0
     && typeof c.destination === "string"
+    && c.destination.trim().length > 0
     && typeof c.text === "string"
-    && (c.status === "pending" || c.status === "executed" || c.status === "declined");
+    && (c.status === "pending" || c.status === "executed" || c.status === "declined")
+    && (c.expiresAt === undefined || (typeof c.expiresAt === "string" && Number.isFinite(Date.parse(c.expiresAt))))
+    && (c.resolvedAt === undefined || (typeof c.resolvedAt === "string" && Number.isFinite(Date.parse(c.resolvedAt))));
 }
 
 export async function readProposedActions(file: string): Promise<ProposedAction[]> {
