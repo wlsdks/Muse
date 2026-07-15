@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isTscFastProfilingEnabled, parseSlowMsThreshold, parseRunTscFastArgs } from "./run-tsc-fast.mjs";
+import {
+  isTscFastProfilingEnabled,
+  parseSlowMsThreshold,
+  parseRunTscFastArgs,
+  formatProfileLine,
+  formatSlowMsAlertLine,
+} from "./run-tsc-fast.mjs";
 
 test("parseRunTscFastArgs accepts build and typecheck", () => {
   const parsedBuild = parseRunTscFastArgs(["build"]);
@@ -51,4 +57,19 @@ test("parseSlowMsThreshold enforces positive integer thresholds", () => {
   assert.equal(parseSlowMsThreshold("4500"), 4500);
   assert.equal(parseSlowMsThreshold("  7000ms"), 0);
   assert.equal(parseSlowMsThreshold("  7001 "), 7001);
+});
+
+test("formatProfileLine keeps thread semantics human-readable", () => {
+  assert.equal(
+    formatProfileLine("build", false, 1200),
+    "tsc-fast profile: mode=build threadMode=parallel elapsedMs=1200"
+  );
+  assert.equal(
+    formatProfileLine("typecheck", true, 350),
+    "tsc-fast profile: mode=typecheck threadMode=single-threaded elapsedMs=350"
+  );
+});
+
+test("formatSlowMsAlertLine includes measured and expected thresholds", () => {
+  assert.equal(formatSlowMsAlertLine(15234, 15000), "tsc-fast perf alert: elapsedMs=15234 exceeded threshold 15000ms");
 });
