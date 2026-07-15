@@ -46,6 +46,21 @@ export function hasConcurrentProjectGraphFlags(command) {
   return /--checkers\s+\d+/u.test(command) && /--builders\s+\d+/u.test(command);
 }
 
+export function parseProjectGraphFlags(command) {
+  const checkers = /--checkers\s+(\d+)/u.exec(command)?.[1];
+  const builders = /--builders\s+(\d+)/u.exec(command)?.[1];
+  return {
+    checkers: checkers === undefined ? undefined : Number(checkers),
+    builders: builders === undefined ? undefined : Number(builders)
+  };
+}
+
+function hasMatchingProjectGraphConcurrency(a, b) {
+  const left = parseProjectGraphFlags(a);
+  const right = parseProjectGraphFlags(b);
+  return left.checkers === right.checkers && left.builders === right.builders && left.checkers > 0 && left.builders > 0;
+}
+
 export function hasNoEmitFlag(command) {
   return /--noEmit\b/u.test(command);
 }
@@ -83,6 +98,9 @@ function main() {
   }
   if (!hasNoEmitFlag(scripts["typecheck:ts7-fast"] ?? "")) {
     problems.push("typecheck:ts7-fast must include --noEmit");
+  }
+  if (!hasMatchingProjectGraphConcurrency(scripts["build:ts7-fast"] ?? "", scripts["typecheck:ts7-fast"] ?? "")) {
+    problems.push("build:ts7-fast and typecheck:ts7-fast must use identical --checkers/--builders values");
   }
 
   if (problems.length > 0) {
