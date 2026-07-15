@@ -193,11 +193,11 @@ export function filterFresh(
   // NOT past the cursor — silently dropping a real inbound message.
   // Unparseable values keep a deterministic string order.
   const sorted = [...inbox].sort((a, b) => {
-    const am = Date.parse(a.receivedAtIso);
-    const bm = Date.parse(b.receivedAtIso);
-    if (Number.isFinite(am) && Number.isFinite(bm)) {
-      if (am !== bm) {
-        return am - bm;
+    const aAt = Date.parse(a.receivedAtIso);
+    const bAt = Date.parse(b.receivedAtIso);
+    if (Number.isFinite(aAt) && Number.isFinite(bAt)) {
+      if (aAt !== bAt) {
+        return aAt - bAt;
       }
     } else if (a.receivedAtIso !== b.receivedAtIso) {
       return a.receivedAtIso.localeCompare(b.receivedAtIso);
@@ -209,10 +209,10 @@ export function filterFresh(
     if (!last) {
       return true;
     }
-    const mm = Date.parse(message.receivedAtIso);
-    const lm = Date.parse(last.iso);
-    if (Number.isFinite(mm) && Number.isFinite(lm)) {
-      if (mm > lm) {
+    const messageAt = Date.parse(message.receivedAtIso);
+    const cursorAt = Date.parse(last.iso);
+    if (Number.isFinite(messageAt) && Number.isFinite(cursorAt)) {
+      if (messageAt > cursorAt) {
         return true;
       }
       // At the boundary instant a message is fresh ONLY if the cursor
@@ -222,7 +222,7 @@ export function filterFresh(
       // the other (message loss). An EMPTY id set is a legacy/strict
       // boundary: the message at the instant is already-seen (preserving
       // the original `mm > lm` semantics).
-      if (mm === lm) {
+      if (messageAt === cursorAt) {
         return last.ids.length > 0 && !last.ids.includes(message.messageId);
       }
       return false;
