@@ -82,7 +82,7 @@ async function readPersisted(file: string): Promise<PersistedByUser> {
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return {};
   }

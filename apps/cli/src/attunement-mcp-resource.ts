@@ -44,7 +44,7 @@ const GITHUB_RESOURCE_PATTERN = /^(?<owner>[^/\s]+)\/(?<repo>[^/\s]+)\/(?<kind>i
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value === "string") {
     try {
-      return asRecord(JSON.parse(value) as unknown);
+      return asRecord(JSON.parse(value));
     } catch {
       return undefined;
     }

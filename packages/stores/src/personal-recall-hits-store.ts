@@ -74,14 +74,18 @@ export async function readRecallHits(file: string): Promise<readonly RecallHitRe
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { hits?: unknown }).hits)) {
+  if (!parsed || typeof parsed !== "object") {
     return [];
   }
-  return (parsed as { hits: unknown[] }).hits.flatMap((entry): readonly RecallHitRecord[] =>
+  const hits = Object.entries(parsed).find(([key]) => key === "hits")?.[1];
+  if (!Array.isArray(hits)) {
+    return [];
+  }
+  return hits.flatMap((entry): readonly RecallHitRecord[] =>
     isRecallHitRecord(entry) ? [normalizeRecord(entry)] : []
   );
 }
@@ -180,7 +184,7 @@ export async function readFadedMemoryKeys(file: string): Promise<ReadonlySet<str
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return new Set();
   }
@@ -196,9 +200,9 @@ function normalizeRecord(record: RecallHitRecord): RecallHitRecord {
 }
 
 function normalizeRecentAccessMs(record: RecallHitRecord): RecallHitRecord {
-  const raw = (record as { recentAccessMs?: unknown }).recentAccessMs;
+  const raw = record.recentAccessMs;
   if (!Array.isArray(raw)) return record;
-  const cleaned = (raw as unknown[]).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  const cleaned = raw.filter((v): v is number => Number.isFinite(v));
   if (cleaned.length === 0) {
     const { recentAccessMs: _omit, ...out } = record;
     return out;
@@ -207,9 +211,9 @@ function normalizeRecentAccessMs(record: RecallHitRecord): RecallHitRecord {
 }
 
 function normalizeQueryHashes(record: RecallHitRecord): RecallHitRecord {
-  const raw = (record as { queryHashes?: unknown }).queryHashes;
+  const raw = record.queryHashes;
   if (!Array.isArray(raw)) return record;
-  const cleaned = (raw as unknown[]).filter((v): v is string => typeof v === "string" && v.length > 0);
+  const cleaned = raw.filter((v) => typeof v === "string" && v.length > 0);
   if (cleaned.length === 0) {
     const { queryHashes: _omit, ...out } = record;
     return out;

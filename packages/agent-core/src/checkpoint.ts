@@ -109,7 +109,7 @@ export function decodeCheckpointMessages(encoded: readonly string[]): readonly M
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as unknown;
+      parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
     } catch {
       // `Buffer.from(_, "base64")` is lenient and silently ignores non-
       // base64 chars, so a corrupt payload yields garbled bytes that

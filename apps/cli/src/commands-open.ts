@@ -50,7 +50,7 @@ function envOr(key: string, fallbackName: string): string {
 async function safeReadJson(path: string): Promise<unknown | undefined> {
   try {
     const raw = await fs.readFile(path, "utf8");
-    return JSON.parse(raw) as unknown;
+    return JSON.parse(raw);
   } catch {
     return undefined;
   }

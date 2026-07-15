@@ -295,10 +295,20 @@ export function cachedResponseFromModelResponse(response: ModelResponse, toolsUs
   return {
     cachedAt: Date.now(),
     content: response.output,
-    metadata: response.usage ? { usage: response.usage as JsonValue } : {},
+    metadata: response.usage ? { usage: normalizeModelUsage(response.usage) } : {},
     model: response.model,
     toolsUsed: [...toolsUsed]
   };
+}
+
+function normalizeModelUsage(usage: NonNullable<ModelResponse["usage"]>): JsonObject {
+  const out: JsonObject = {};
+  for (const [name, value] of Object.entries(usage)) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      out[name] = value;
+    }
+  }
+  return out;
 }
 
 export function cacheableModelRequest(request: ModelRequest): AgentCacheCommand {

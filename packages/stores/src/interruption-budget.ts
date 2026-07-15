@@ -55,7 +55,7 @@ export async function readInterruptionLedger(file: string): Promise<readonly Int
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }

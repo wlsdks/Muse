@@ -24,7 +24,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { isRecord, type JsonObject, type JsonValue } from "@muse/shared";
+import { isRecord, type JsonObject } from "@muse/shared";
 import { atomicWriteFile, quarantineCorruptStore, withFileLock } from "@muse/stores";
 
 import type {
@@ -147,7 +147,7 @@ function reviveScheduledJob(raw: unknown): ScheduledJob | undefined {
     retryOnFailure: typeof raw.retryOnFailure === "boolean" ? raw.retryOnFailure : false,
     tags: Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === "string") : [],
     timezone: raw.timezone,
-    toolArguments: toJsonObject(raw.toolArguments as JsonValue),
+    toolArguments: toJsonObject(raw.toolArguments),
     toolName: optionalString(raw.toolName),
     updatedAt,
     webhookUrl: optionalString(raw.webhookUrl)

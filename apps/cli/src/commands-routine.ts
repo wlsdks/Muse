@@ -58,7 +58,7 @@ async function readActivity(file: string): Promise<readonly ActivityRow[]> {
   for (const line of raw.split("\n")) {
     if (line.trim().length === 0) continue;
     try {
-      const parsed = JSON.parse(line) as unknown;
+      const parsed = JSON.parse(line);
       if (typeof parsed === "object" && parsed && "tsIso" in parsed && "userId" in parsed) {
         const row = parsed as ActivityRow;
         if (typeof row.tsIso === "string" && typeof row.userId === "string") {

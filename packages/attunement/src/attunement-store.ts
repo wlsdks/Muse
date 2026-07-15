@@ -407,7 +407,7 @@ export async function readAttunementState(file: string): Promise<AttunementState
     throw cause;
   }
   try {
-    return parseState(JSON.parse(raw) as unknown);
+    return parseState(JSON.parse(raw));
   } catch (cause) {
     if (cause instanceof AttunementStoreError) throw cause;
     throw new AttunementStoreError("attunement store is not valid JSON; refusing to overwrite it");

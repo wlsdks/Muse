@@ -73,10 +73,44 @@ function coerceStructured(value: JsonValue, declared: string): JsonValue | undef
   } catch {
     return undefined;
   }
+  const repaired = toJsonValue(parsed);
+  if (repaired === undefined) return undefined;
   if (declared === "array") {
-    return Array.isArray(parsed) ? (parsed as JsonValue) : undefined;
+    return Array.isArray(repaired) ? repaired : undefined;
   }
-  return isRecord(parsed) ? (parsed as JsonValue) : undefined;
+  return isRecord(repaired) ? repaired : undefined;
+}
+
+function toJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const next: JsonValue[] = [];
+    for (const item of value) {
+      const repaired = toJsonValue(item);
+      if (repaired === undefined) {
+        return undefined;
+      }
+      next.push(repaired);
+    }
+    return next;
+  }
+
+  if (isRecord(value)) {
+    const next: JsonObject = {};
+    for (const [key, nested] of Object.entries(value)) {
+      const repaired = toJsonValue(nested);
+      if (repaired === undefined) {
+        return undefined;
+      }
+      next[key] = repaired;
+    }
+    return next;
+  }
+
+  return undefined;
 }
 
 function coerceScalar(value: JsonValue, declared: string): JsonValue | undefined {

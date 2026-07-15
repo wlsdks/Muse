@@ -161,7 +161,7 @@ async function readRaw(file: string): Promise<readonly ProactiveHistoryEntry[]> 
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return [];

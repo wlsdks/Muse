@@ -74,7 +74,7 @@ export async function readPendingApprovals(file: string): Promise<readonly Pendi
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorrupt(file);
     return [];

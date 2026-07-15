@@ -198,7 +198,7 @@ async function readOpenTasks(tasksFile: string | undefined): Promise<readonly Pe
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }

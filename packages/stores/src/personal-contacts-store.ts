@@ -155,7 +155,7 @@ export async function readContacts(file: string, env: NodeJS.ProcessEnv = proces
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    parsed = JSON.parse(text);
   } catch {
     await quarantineCorruptStore(file);
     return [];

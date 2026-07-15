@@ -187,7 +187,7 @@ function jsonArray(value: unknown): JsonValue[] {
   }
   if (typeof value === "string" && value.trim().length > 0) {
     try {
-      return jsonArray(JSON.parse(value) as unknown);
+      return jsonArray(JSON.parse(value));
     } catch {
       return [];
     }
@@ -201,7 +201,7 @@ function jsonObject(value: unknown): JsonObject {
   }
   if (typeof value === "string" && value.trim().length > 0) {
     try {
-      return jsonObject(JSON.parse(value) as unknown);
+      return jsonObject(JSON.parse(value));
     } catch {
       return {};
     }

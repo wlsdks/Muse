@@ -533,7 +533,7 @@ export async function runLocalDoctor(runtimeOptions: DoctorLocalRuntimeOptions =
   try {
     const raw = await fs.readFile(mcp_path, "utf8");
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const parsed = JSON.parse(raw);
       checks.push({ name: "mcp.json", ...classifyMcpServersField(parsed) });
     } catch {
       checks.push({ detail: `${mcp_path} exists but is not valid JSON`, name: "mcp.json", status: "fail" });

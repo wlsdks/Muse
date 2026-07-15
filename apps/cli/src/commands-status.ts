@@ -177,7 +177,7 @@ export function resolveStatusRuntime(options: StatusRuntimeOptions = {}): Status
 async function safeReadJson(path: string): Promise<unknown | undefined> {
   try {
     const raw = await readFile(path, "utf8");
-    return JSON.parse(raw) as unknown;
+    return JSON.parse(raw);
   } catch {
     return undefined;
   }

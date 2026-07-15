@@ -236,7 +236,7 @@ function extractMessage(error: unknown): string {
       const raw = meta.raw;
       if (typeof raw === "string") {
         try {
-          const parsed = JSON.parse(raw) as unknown;
+          const parsed = JSON.parse(raw);
           parts.push(directMessage(isRecord(parsed) ? parsed.error : undefined) || directMessage(parsed) || raw);
         } catch {
           parts.push(raw);

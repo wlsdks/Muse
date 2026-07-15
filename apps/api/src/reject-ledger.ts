@@ -47,11 +47,35 @@ export function fingerprintCluster(cluster: readonly ClusterMember[]): string {
 
 async function readLedger(file: string): Promise<RejectLedger> {
   try {
-    const parsed = JSON.parse(await readFile(file, "utf8")) as unknown;
-    return parsed && typeof parsed === "object" ? (parsed as RejectLedger) : {};
+    const parsed = JSON.parse(await readFile(file, "utf8"));
+    if (!isRejectLedger(parsed)) {
+      return {};
+    }
+    return parsed;
   } catch {
     return {}; // missing or corrupt → empty (fail-soft)
   }
+}
+
+function isRejectLedger(value: unknown): value is RejectLedger {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  for (const rawEntry of Object.values(value)) {
+    if (rawEntry === null || typeof rawEntry !== "object" || Array.isArray(rawEntry)) {
+      return false;
+    }
+    const entry = rawEntry as { readonly rejectCount: unknown; readonly lastRejectedAt: unknown };
+    if (typeof entry.rejectCount !== "number" || !Number.isFinite(entry.rejectCount)) {
+      return false;
+    }
+    if (typeof entry.lastRejectedAt !== "string") {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function writeLedger(file: string, ledger: RejectLedger): Promise<void> {

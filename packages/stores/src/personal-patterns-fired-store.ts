@@ -42,7 +42,7 @@ export async function readPatternsFired(file: string): Promise<readonly PatternF
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
