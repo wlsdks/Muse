@@ -64,6 +64,7 @@ export interface AuthoredSkillStoreOptions {
 
 export const DEFAULT_MAX_AUTHORED_SKILLS = 30;
 const PATCH_SIMILARITY_THRESHOLD = 0.6;
+const EMPTY_FILE_LIST: readonly string[] = [];
 
 async function writeFileAtomic(filePath: string, text: string): Promise<void> {
   await fs.mkdir(dirname(filePath), { recursive: true });
@@ -365,7 +366,10 @@ export class AuthoredSkillStore {
 
   /** Archived skill folder names (under `.archive/`) — what `restore` can revive. */
   async listArchived(): Promise<readonly string[]> {
-    return withBestEffort(fs.readdir(join(this.dir, ".archive")), [] as string[]);
+    return withBestEffort<string[], readonly string[]>(
+      fs.readdir(join(this.dir, ".archive")),
+      EMPTY_FILE_LIST
+    );
   }
 
   /**
@@ -393,15 +397,20 @@ export class AuthoredSkillStore {
 
   /** Pre-mutation snapshots, newest last — what `rollback()` can restore. */
   async listSnapshots(): Promise<readonly SkillSnapshot[]> {
-    const files = await withBestEffort(fs.readdir(this.snapshotsDir()), [] as string[]);
+    const files = await withBestEffort<string[], readonly string[]>(
+      fs.readdir(this.snapshotsDir()),
+      EMPTY_FILE_LIST
+    );
     const out: SkillSnapshot[] = [];
     for (const file of files.filter((f) => f.endsWith(".json")).sort()) {
-    const raw = await withBestEffort(fs.readFile(join(this.snapshotsDir(), file), "utf8"), undefined);
+      const raw = await withBestEffort<string, string | undefined>(
+        fs.readFile(join(this.snapshotsDir(), file), "utf8"),
+        undefined
+      );
       if (raw === undefined) continue;
-      try {
-        out.push(JSON.parse(raw) as SkillSnapshot);
-      } catch {
-        // corrupt/partial snapshot file — skip, don't fail the whole list
+      const parsed = AuthoredSkillStore.parseSnapshot(raw);
+      if (parsed) {
+        out.push(parsed);
       }
     }
     return out;
@@ -471,7 +480,10 @@ export class AuthoredSkillStore {
   }
 
   private async pruneSnapshots(): Promise<void> {
-    const files = (await withBestEffort(fs.readdir(this.snapshotsDir()), [] as string[]))
+    const files = (await withBestEffort<string[], readonly string[]>(
+      fs.readdir(this.snapshotsDir()),
+      EMPTY_FILE_LIST
+    ))
       .filter((f) => f.endsWith(".json"))
       .sort();
     const excess = files.length - this.snapshotRingSize;
@@ -524,7 +536,51 @@ export class AuthoredSkillStore {
 
   private hasUsage(skill: Skill): boolean {
     const muse = isRecord(skill.frontmatter.metadata?.["muse"]) ? skill.frontmatter.metadata?.["muse"] : {};
-    return typeof muse["lastUsedAt"] === "string" && (muse["lastUsedAt"] as string).length > 0;
+    return typeof muse["lastUsedAt"] === "string" && muse.lastUsedAt.length > 0;
+  }
+
+  private static parseSnapshot(raw: string): SkillSnapshot | undefined {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+
+    if (!isRecord(parsed)) {
+      return undefined;
+    }
+    if (typeof parsed.id !== "string" || parsed.id.length === 0) {
+      return undefined;
+    }
+    if (typeof parsed.createdAt !== "string" || parsed.createdAt.length === 0) {
+      return undefined;
+    }
+    if (!Array.isArray(parsed.entries)) {
+      return undefined;
+    }
+
+    const entries: SkillSnapshotEntry[] = [];
+    for (const entry of parsed.entries) {
+      if (!isRecord(entry) || typeof entry.name !== "string" || entry.name.trim() === "") {
+        return undefined;
+      }
+      if (typeof entry.slug !== "string" || entry.slug.trim() === "") return undefined;
+      if (typeof entry.contentHash !== "string" || entry.contentHash.length === 0) return undefined;
+      if (typeof entry.content !== "string") return undefined;
+      entries.push({
+        content: entry.content,
+        contentHash: entry.contentHash,
+        name: entry.name,
+        slug: entry.slug
+      });
+    }
+
+    return {
+      createdAt: parsed.createdAt,
+      entries,
+      id: parsed.id
+    };
   }
 
   private async archiveSkill(skill: Skill): Promise<boolean> {
