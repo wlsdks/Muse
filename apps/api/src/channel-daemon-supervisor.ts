@@ -51,24 +51,35 @@ export function createChannelDaemonSupervisor(): ChannelDaemonSupervisor {
     return fresh;
   };
 
+  const safelyStop = (handle: StoppableHandle | undefined): void => {
+    try {
+      handle?.stop();
+    } catch {
+      // A failed cleanup must not leave the replacement or stopped state
+      // reporting the old daemon as live. The caller records operational
+      // errors separately through noteError.
+    }
+  };
+
   return {
     adopt(name, handle) {
       const entry = state(name);
-      entry.handle?.stop();
+      const previous = entry.handle;
       entry.handle = handle;
+      safelyStop(previous);
     },
     isRunning(name) {
       return daemons.get(name)?.handle !== undefined;
     },
     noteError(name, message) {
       const entry = state(name);
-      entry.lastError = message;
+      entry.lastError = redactSecretsInText(message).slice(0, 2_000);
       entry.lastErrorAtIso = new Date().toISOString();
     },
     noteIngest(name, count) {
       const entry = state(name);
       entry.lastIngestAtIso = new Date().toISOString();
-      entry.lastIngestCount = count;
+      entry.lastIngestCount = Number.isSafeInteger(count) && count >= 0 ? count : 0;
     },
     status() {
       return Object.fromEntries(
@@ -86,16 +97,19 @@ export function createChannelDaemonSupervisor(): ChannelDaemonSupervisor {
     },
     stop(name) {
       const entry = daemons.get(name);
-      entry?.handle?.stop();
       if (entry) {
+        const handle = entry.handle;
         entry.handle = undefined;
+        safelyStop(handle);
       }
     },
     stopAll() {
       for (const entry of daemons.values()) {
-        entry.handle?.stop();
+        const handle = entry.handle;
         entry.handle = undefined;
+        safelyStop(handle);
       }
     }
   };
 }
+import { redactSecretsInText } from "@muse/shared";

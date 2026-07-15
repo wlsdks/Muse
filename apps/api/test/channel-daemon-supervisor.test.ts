@@ -28,6 +28,16 @@ describe("createChannelDaemonSupervisor", () => {
     expect(supervisor.isRunning("telegram-poll")).toBe(true);
   });
 
+  it("adopts the replacement and clears stopped state even when an old handle throws during cleanup", () => {
+    const supervisor = createChannelDaemonSupervisor();
+    supervisor.adopt("telegram-poll", { stop: () => { throw new Error("already broken"); } });
+    supervisor.adopt("telegram-poll", { stop: () => undefined });
+    expect(supervisor.isRunning("telegram-poll")).toBe(true);
+
+    supervisor.stop("telegram-poll");
+    expect(supervisor.isRunning("telegram-poll")).toBe(false);
+  });
+
   it("status() snapshots every known daemon with running state and notes", () => {
     const supervisor = createChannelDaemonSupervisor();
     supervisor.adopt("telegram-poll", { stop: () => undefined });
@@ -38,6 +48,14 @@ describe("createChannelDaemonSupervisor", () => {
     expect(status["telegram-poll"]).toMatchObject({ running: true });
     expect(typeof status["telegram-poll"]?.lastIngestAtIso).toBe("string");
     expect(status["matrix-sync"]).toMatchObject({ lastError: "sync failed", running: false });
+  });
+
+  it("normalizes malformed ingest counts before exposing them in the status DTO", () => {
+    const supervisor = createChannelDaemonSupervisor();
+    supervisor.noteIngest("telegram-poll", Number.NaN);
+    expect(supervisor.status()["telegram-poll"]?.lastIngestCount).toBe(0);
+    supervisor.noteIngest("telegram-poll", 3.5);
+    expect(supervisor.status()["telegram-poll"]?.lastIngestCount).toBe(0);
   });
 
   it("stopAll halts everything (server onClose seam)", () => {
