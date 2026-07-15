@@ -206,8 +206,8 @@ interface SerializedTaskState {
   readonly decisions: readonly SerializedTaskDecision[];
   readonly blockers: readonly SerializedTaskBlocker[];
   readonly metadata: Readonly<Record<string, string>>;
-  readonly createdAt: string;
-  readonly updatedAt: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
 }
 
 interface SerializedTaskPlanItem {
@@ -768,10 +768,11 @@ function parseTaskBlocker(value: unknown): SerializedTaskBlocker | undefined {
   }
 
   const owner = toOptionalString(value.owner);
+  const createdAt = toOptionalString(value.createdAt);
   return {
     description,
     ...(owner ? { owner } : {}),
-    ...(toOptionalString(value.createdAt) ? { createdAt: value.createdAt } : {})
+    ...(createdAt ? { createdAt } : {})
   };
 }
 
@@ -794,10 +795,12 @@ function parseTaskDecision(value: unknown): SerializedTaskDecision | undefined {
     return undefined;
   }
 
+  const reason = toOptionalString(value.reason);
+  const decidedAt = toOptionalString(value.decidedAt);
   return {
     summary,
-    ...(toOptionalString(value.reason) ? { reason: value.reason } : {}),
-    ...(toOptionalString(value.decidedAt) ? { decidedAt: value.decidedAt } : {})
+    ...(reason ? { reason } : {}),
+    ...(decidedAt ? { decidedAt } : {})
   };
 }
 
@@ -820,10 +823,11 @@ function parseTaskPlanItem(value: unknown): SerializedTaskPlanItem | undefined {
     return undefined;
   }
 
+  const updatedAt = toOptionalString(value.updatedAt);
   return {
     step,
     ...(parseTaskPlanStatus(value.status) ? { status: value.status } : {}),
-    ...(toOptionalString(value.updatedAt) ? { updatedAt: value.updatedAt } : {})
+    ...(updatedAt ? { updatedAt } : {})
   };
 }
 
