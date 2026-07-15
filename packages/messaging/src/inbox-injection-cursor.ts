@@ -157,7 +157,7 @@ export async function writeInboxInjectionCursor(
   cursor: InboxInjectionCursor,
   userId?: string
 ): Promise<void> {
-  await serializePerFile(file, async () => {
+  await serializePerFile(mutationQueues, file, async () => {
     const existing = await readPersisted(file);
     const sanitized: Record<string, SourceCursor> = {};
     for (const [source, value] of Object.entries(cursor)) {
@@ -184,7 +184,7 @@ export async function advanceInboxInjectionCursor(
   advance: Readonly<Record<string, SourceCursor>>,
   userId?: string
 ): Promise<InboxInjectionCursor> {
-  return serializePerFile(file, async () => {
+  return serializePerFile(mutationQueues, file, async () => {
     const existing = await readPersisted(file);
     const key = userKey(userId);
     const current = existing[key] ?? {};

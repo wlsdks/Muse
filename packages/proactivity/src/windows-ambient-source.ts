@@ -75,11 +75,13 @@ export class WindowsActiveWindowSource implements AmbientSignalSource {
   private readonly maxClipboardChars: number;
 
   constructor(options: WindowsActiveWindowSourceOptions = {}) {
-    const timeoutMs = options.timeoutMs ?? 5_000;
+    const timeoutMs = typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+      ? Math.max(1, Math.trunc(options.timeoutMs))
+      : 5_000;
     this.run = options.run ?? ((script) => defaultPowerShellRun(script, timeoutMs));
     this.includeClipboard = options.includeClipboard ?? false;
     this.readClipboard = options.readClipboard ?? (() => defaultPowerShellRun("Get-Clipboard", timeoutMs));
-    this.maxClipboardChars = Number.isFinite(options.maxClipboardChars)
+    this.maxClipboardChars = typeof options.maxClipboardChars === "number" && Number.isFinite(options.maxClipboardChars)
       ? Math.max(1, Math.trunc(options.maxClipboardChars))
       : 2_000;
   }

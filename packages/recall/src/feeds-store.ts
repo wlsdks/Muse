@@ -94,7 +94,7 @@ export async function readFeedsStore(file: string): Promise<FeedsStore> {
     await backupVersionMismatchedStore(file, parsed.version);
     return { version: FEEDS_STORE_SCHEMA_VERSION, feeds: [] };
   }
-  const feeds = (parsed.feeds ?? [])
+  const feeds = (Array.isArray(parsed.feeds) ? parsed.feeds : [])
     .flatMap((f) => {
       const feed = normalizeFeedRecord(f);
       return feed ? [feed] : [];

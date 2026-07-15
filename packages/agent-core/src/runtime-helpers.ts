@@ -3,7 +3,7 @@ import { composeUserModelSnapshot as composeUserModelSnapshotFn } from "@muse/me
 import { ModelProviderError, type ModelMessage, type ModelResponse, type ModelToolCall } from "@muse/model";
 import type { SpanHandle } from "@muse/observability";
 import type { AgentRunMode } from "@muse/runtime-state";
-import { isRecord, type JsonObject } from "@muse/shared";
+import { type JsonObject } from "@muse/shared";
 import { ModelRoutingError } from "./errors.js";
 import { neutralizeInjectionSpans } from "./injection.js";
 import { isRecord } from "./internals.js";

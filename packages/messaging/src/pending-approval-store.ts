@@ -122,7 +122,7 @@ const mutationQueues = new Map<string, Promise<unknown>>();
  * the file without bound. Serialised per file (lossless under concurrency).
  */
 export async function recordPendingApproval(file: string, entry: PendingApproval): Promise<void> {
-  await serializePerFile(file, async () => {
+  await serializePerFile(mutationQueues, file, async () => {
     const existing = await readPendingApprovals(file);
     const combined = [...existing, entry];
     const capped = combined.length > PENDING_APPROVAL_MAX_ENTRIES
@@ -164,7 +164,7 @@ export async function listPendingApprovals(
  * expired entries while rewriting, keeping the file lean.
  */
 export async function clearPendingApproval(file: string, id: string, now: () => Date = () => new Date()): Promise<boolean> {
-  return serializePerFile(file, async () => {
+  return serializePerFile(mutationQueues, file, async () => {
     const existing = await readPendingApprovals(file);
     const cutoff = now().getTime();
     const kept = existing.filter((entry) => entry.id !== id && Date.parse(entry.expiresAt) > cutoff);

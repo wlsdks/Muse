@@ -26,8 +26,6 @@
  * `packages/calendar/src/google-provider.ts`, `packages/a2a/src/transport.ts`).
  */
 
-import type { JsonObject } from "@muse/shared";
-
 import { isRecord, type JsonObject } from "@muse/shared";
 
 import type { McpServerAuditTarget } from "./server-audit.js";
