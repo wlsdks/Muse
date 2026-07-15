@@ -25,6 +25,13 @@ import type { ProgramIO } from "./program.js";
 import { readRequestBody, waitForShutdownSignal } from "./async-promises.js";
 import { withBestEffort } from "./async-promises.js";
 
+const COUNCIL_TRUTHY_VALUES = ["true", "1", "yes", "on"] as const;
+const COUNCIL_TRUTHY_SET = new Set<string>(COUNCIL_TRUTHY_VALUES);
+
+function isCouncilTruthy(raw: string): raw is (typeof COUNCIL_TRUTHY_VALUES)[number] {
+  return COUNCIL_TRUTHY_SET.has(raw);
+}
+
 function normalizeA2ARequestHeaders(headers: IncomingHttpHeaders): Readonly<Record<string, string | undefined>> {
   const normalized: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(headers)) {
@@ -222,7 +229,7 @@ export function registerSwarmCommands(program: Command, io: ProgramIO): void {
       const config = await loadPeerConfig(peersFile());
       const pendingCount = listPending(await readQuarantine(quarantineFile())).length;
       io.stdout(`${renderSwarmStatus({
-        councilEnabled: ["true", "1", "yes", "on"].includes((env.MUSE_A2A_COUNCIL ?? "").trim().toLowerCase()),
+        councilEnabled: isCouncilTruthy((env.MUSE_A2A_COUNCIL ?? "").trim().toLowerCase()),
         councilGrounded: isCouncilGroundedMode(env),
         enabled: isA2AEnabled(env),
         pendingCount,
@@ -357,7 +364,7 @@ export function registerSwarmCommands(program: Command, io: ProgramIO): void {
       // notes can't ground — an ignorant peer stays silent instead of injecting a
       // confident-but-ungrounded opinion (only the abstain/speak decision crosses
       // the wire; the corpus never does).
-      const councilOn = ["true", "1", "yes", "on"].includes((env.MUSE_A2A_COUNCIL ?? "").trim().toLowerCase());
+      const councilOn = isCouncilTruthy((env.MUSE_A2A_COUNCIL ?? "").trim().toLowerCase());
       let councilReason: ((question: string) => Promise<string>) | undefined;
       if (councilOn) {
         const assembly = createMuseRuntimeAssembly();

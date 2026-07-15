@@ -9,7 +9,13 @@ import type { Command } from "commander";
 import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
 
-const SETTING_TYPES: readonly string[] = ["string", "number", "boolean", "json"];
+const SETTING_TYPES = ["string", "number", "boolean", "json"] as const;
+type SettingType = (typeof SETTING_TYPES)[number];
+const SETTING_TYPES_SET = new Set<string>(SETTING_TYPES);
+
+function isSettingType(raw: string): raw is SettingType {
+  return SETTING_TYPES_SET.has(raw);
+}
 
 export interface SettingsCommandHelpers {
   readonly apiRequest: (
@@ -75,10 +81,10 @@ export function registerSettingsCommands(program: Command, io: ProgramIO, helper
       options: { readonly type?: string; readonly category?: string },
       command: Command
     ) => {
-      let type: string;
+      let type: SettingType;
       if (options.type !== undefined) {
         const normalized = options.type.trim().toLowerCase();
-        if (!SETTING_TYPES.includes(normalized)) {
+        if (!isSettingType(normalized)) {
           const suggestion = closestCommandName(normalized, SETTING_TYPES);
           const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
           throw new Error(`--type must be one of string | number | boolean | json (got '${options.type}')${hint}`);

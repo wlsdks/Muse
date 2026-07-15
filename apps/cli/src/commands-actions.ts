@@ -19,6 +19,12 @@ function environment(): MuseEnvironment {
 }
 
 const RESULT_FILTERS = ["performed", "refused", "failed", "noted", "all"] as const;
+type ResultFilter = (typeof RESULT_FILTERS)[number];
+const RESULT_FILTER_SET = new Set<string>(RESULT_FILTERS);
+
+function isResultFilter(raw: string): raw is ResultFilter {
+  return RESULT_FILTER_SET.has(raw);
+}
 
 function actionLogFile(): string {
   return resolveActionLogFile(environment());
@@ -26,7 +32,7 @@ function actionLogFile(): string {
 
 function assertResult(raw: string): void {
   const v = raw.trim().toLowerCase();
-  if (RESULT_FILTERS.includes(v as (typeof RESULT_FILTERS)[number])) {
+  if (isResultFilter(v)) {
     return;
   }
   const hint = closestCommandName(v, RESULT_FILTERS);
