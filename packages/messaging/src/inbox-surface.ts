@@ -186,33 +186,37 @@ export function filterFresh(
   cursor: InboxInjectionCursor,
   perProviderLimit: number
 ): readonly InboundMessage[] {
+  type ParsedInboundMessage = InboundMessage & { readonly receivedAtEpoch: number };
+  const cursorParsedAt = new Map<string, number>(
+    Object.entries(cursor).map(([source, sourceCursor]) => [source, Date.parse(sourceCursor.iso)])
+  );
+
   // Compare parsed instants, not raw ISO strings. receivedAtIso is
   // provider-supplied and providers differ in precision/offset
   // (".000Z" vs "Z" vs "+09:00"), so a lexicographic compare both
   // mis-orders AND, worse, can decide a genuinely-newer message is
   // NOT past the cursor — silently dropping a real inbound message.
   // Unparseable values keep a deterministic string order.
-  const sorted = [...inbox].sort((a, b) => {
-    const aAt = Date.parse(a.receivedAtIso);
-    const bAt = Date.parse(b.receivedAtIso);
-    if (Number.isFinite(aAt) && Number.isFinite(bAt)) {
-      if (aAt !== bAt) {
-        return aAt - bAt;
+  const sorted = inbox
+    .map((message): ParsedInboundMessage => ({ ...message, receivedAtEpoch: Date.parse(message.receivedAtIso) }))
+    .sort((a, b) => {
+      if (Number.isFinite(a.receivedAtEpoch) && Number.isFinite(b.receivedAtEpoch)) {
+        if (a.receivedAtEpoch !== b.receivedAtEpoch) {
+          return a.receivedAtEpoch - b.receivedAtEpoch;
+        }
+      } else if (a.receivedAtIso !== b.receivedAtIso) {
+        return a.receivedAtIso.localeCompare(b.receivedAtIso);
       }
-    } else if (a.receivedAtIso !== b.receivedAtIso) {
-      return a.receivedAtIso.localeCompare(b.receivedAtIso);
-    }
-    return a.messageId.localeCompare(b.messageId);
-  });
+      return a.messageId.localeCompare(b.messageId);
+    });
   const fresh = sorted.filter((message) => {
     const last = cursor[message.source];
     if (!last) {
       return true;
     }
-    const messageAt = Date.parse(message.receivedAtIso);
-    const cursorAt = Date.parse(last.iso);
-    if (Number.isFinite(messageAt) && Number.isFinite(cursorAt)) {
-      if (messageAt > cursorAt) {
+    const cursorAt = cursorParsedAt.get(message.source) ?? Number.NaN;
+    if (Number.isFinite(message.receivedAtEpoch) && Number.isFinite(cursorAt)) {
+      if (message.receivedAtEpoch > cursorAt) {
         return true;
       }
       // At the boundary instant a message is fresh ONLY if the cursor
@@ -221,8 +225,8 @@ export function filterFresh(
       // eventually delivered, instead of one advancing the cursor past
       // the other (message loss). An EMPTY id set is a legacy/strict
       // boundary: the message at the instant is already-seen (preserving
-      // the original `mm > lm` semantics).
-      if (messageAt === cursorAt) {
+      // the original receivedAtEpoch comparison semantics).
+      if (message.receivedAtEpoch === cursorAt) {
         return last.ids.length > 0 && !last.ids.includes(message.messageId);
       }
       return false;
