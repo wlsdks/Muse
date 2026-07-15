@@ -210,7 +210,8 @@ export function selectTasksDueWithin(
   options: { readonly now?: Date; readonly withinDays?: number } = {}
 ): DueTask[] {
   const now = options.now ?? new Date();
-  const withinDays = Number.isFinite(options.withinDays) ? Math.max(0, Math.trunc(options.withinDays)) : 1;
+  const configuredDays = options.withinDays ?? 1;
+  const withinDays = Number.isFinite(configuredDays) ? Math.max(0, Math.trunc(configuredDays)) : 1;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const due: DueTask[] = [];
   for (const task of tasks) {

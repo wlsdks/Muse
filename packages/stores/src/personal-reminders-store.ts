@@ -434,9 +434,10 @@ function isPersistedReminder(value: unknown): value is PersistedReminder {
     return false;
   }
   if (candidate.via !== undefined) {
-    if (!candidate.via || typeof candidate.via !== "object"
-      || typeof candidate.via.providerId !== "string"
-      || typeof candidate.via.destination !== "string") {
+    const via = candidate.via;
+    if (!isRecord(via)
+      || typeof via.providerId !== "string"
+      || typeof via.destination !== "string") {
       return false;
     }
   }

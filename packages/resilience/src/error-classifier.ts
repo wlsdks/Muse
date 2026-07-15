@@ -175,10 +175,11 @@ function readHeader(error: unknown, name: string): string | null {
       if (typeof value === "string") return value;
     }
 
-    if (!isRecord(headers)) continue;
-    for (const key of [name, name.toLowerCase()]) {
-      const value = headers[key];
-      if (typeof value === "string" || typeof value === "number") return String(value);
+    if (isRecord(headers)) {
+      for (const key of [name, name.toLowerCase()]) {
+        const value = (headers as Record<string, unknown>)[key];
+        if (typeof value === "string" || typeof value === "number") return String(value);
+      }
     }
   }
   return null;

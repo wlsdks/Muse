@@ -37,21 +37,22 @@ describe("playbook poisoning — untrusted content must not become a standing ru
     let seen = "";
     await expect(
       distillStrategyFromCorrection(
-      {
-        correction: "더 짧게, 불릿으로 해줘",
-        priorAnswer: `요약: ... ${POISON}`,
-        priorAnswerUntrusted: true,
-        request: "이 페이지 요약해줘"
-      },
-      {
-        model: "test",
-        modelProvider: ({
-          generate: async (request: { messages: readonly { content: string }[] }) => {
-            seen = request.messages.map((m) => m.content).join("\n");
-            return { output: "Use bullet points when summarising." } as never;
+        {
+          correction: "더 짧게, 불릿으로 해줘",
+          priorAnswer: `요약: ... ${POISON}`,
+          priorAnswerUntrusted: true,
+          request: "이 페이지 요약해줘"
+        },
+        {
+          model: "test",
+          modelProvider: {
+            generate: async (request: { readonly messages: readonly { readonly content: string }[] }) => {
+              seen = request.messages.map((entry) => entry.content).join("\n");
+              return { output: "Use bullet points when summarising." };
+            }
           }
-        }) as never
-      }
+        } as never
+      )
     ).resolves.toBeTypeOf("string");
 
     expect(seen).not.toContain("OPENAI_API_KEY");
@@ -66,16 +67,21 @@ describe("playbook poisoning — untrusted content must not become a standing ru
     let seen = "";
     await expect(
       distillStrategyFromCorrection(
-      { correction: "더 짧게 요약해줘", priorAnswer: "월세는 90만원입니다.", request: "월세 얼마야?" },
-      {
-        model: "test",
-        modelProvider: ({
-          generate: async (request: { messages: readonly { content: string }[] }) => {
-            seen = request.messages.map((m) => m.content).join("\n");
-            return { output: "Be concise." } as never;
+        {
+          correction: "더 짧게 요약해줘",
+          priorAnswer: "월세는 90만원입니다.",
+          request: "월세 얼마야?"
+        },
+        {
+          model: "test",
+          modelProvider: {
+            generate: async (request: { readonly messages: readonly { readonly content: string }[] }) => {
+              seen = request.messages.map((entry) => entry.content).join("\n");
+              return { output: "Be concise." };
+            }
           }
-        }) as never
-      }
+        } as never
+      )
     ).resolves.toBeTypeOf("string");
     expect(seen).toContain("90만원");
     expect(seen).not.toContain("withheld");

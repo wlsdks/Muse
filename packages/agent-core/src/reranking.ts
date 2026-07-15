@@ -50,7 +50,8 @@ export async function rerankTopK<T extends { readonly score: number; readonly te
   reranker: RerankProvider,
   topK = 10
 ): Promise<readonly T[]> {
-  const head = matches.slice(0, Math.max(0, Math.trunc(topK)));
+  const headCount = Number.isFinite(topK) && topK > 0 ? Math.trunc(topK) : 10;
+  const head = matches.slice(0, Math.max(0, headCount));
   if (head.length <= 1) return matches;
   let scores: readonly number[];
   try {
@@ -58,6 +59,8 @@ export async function rerankTopK<T extends { readonly score: number; readonly te
   } catch {
     return matches;
   }
-  const reordered = applyReranking(head, scores).map(({ rerankScore: _drop, ...rest }) => rest);
+  const reordered: readonly T[] = applyReranking(head, scores).map(
+    ({ rerankScore: _drop, ...rest }) => rest as T
+  );
   return [...reordered, ...matches.slice(head.length)];
 }

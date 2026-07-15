@@ -40,12 +40,14 @@ export async function parsePdfBuffer(buffer: Buffer): Promise<PdfParsed> {
   }
   const parser = new parserCtor({ data: buffer });
   const result = await parser.getText();
-  const parsed = isRecord(result) ? result : {};
-  const text = typeof parsed.text === "string" ? parsed.text : "";
-  const totalPages = typeof parsed.total === "number" ? parsed.total : undefined;
+  if (!isRecord(result)) {
+    return { pageCount: 0, text: "" };
+  }
+  const text = typeof result.text === "string" ? result.text : "";
+  const totalPages = typeof result.total === "number" ? result.total : undefined;
   const pageCount = typeof totalPages === "number"
     ? totalPages
-    : Array.isArray(parsed.pages) ? parsed.pages.length : 0;
+    : Array.isArray(result.pages) ? result.pages.length : 0;
   return { text, pageCount };
 }
 

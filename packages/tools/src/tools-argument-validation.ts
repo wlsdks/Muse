@@ -99,7 +99,7 @@ function toJsonValue(value: unknown): JsonValue | undefined {
   }
 
   if (isRecord(value)) {
-    const next: JsonObject = {};
+    const next: Record<string, JsonValue> = {};
     for (const [key, nested] of Object.entries(value)) {
       const repaired = toJsonValue(nested);
       if (repaired === undefined) {

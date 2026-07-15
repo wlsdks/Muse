@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-import type { JsonObject } from "@muse/shared";
+import type { JsonObject, JsonValue } from "@muse/shared";
 import { isNodeErrorCode, isRecord, NODE_ERROR_CODES, withBestEffort } from "@muse/shared";
 
 import { quarantineCorruptStore } from "./corrupt-quarantine.js";
@@ -121,5 +121,18 @@ function isFileNotFound(error: unknown): boolean {
 }
 
 function parseProviderCredentials(value: unknown): ProviderCredentials | undefined {
-  return isRecord(value) ? value : undefined;
+  if (!isRecord(value) || !Object.values(value).every(isJsonValue)) {
+    return undefined;
+  }
+  return value as ProviderCredentials;
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return Array.isArray(value) && value.every(isJsonValue);
+  }
+  return isRecord(value) && Object.values(value).every(isJsonValue);
 }

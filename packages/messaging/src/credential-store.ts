@@ -1,7 +1,19 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-import { backupPlaintextCredentialsFile, credentialEncryptionEnabled, decodeMaybeEncryptedCredentialsJson, encryptCredentialEnvelope, isCredentialsFileEncryptedAtRest, isNodeErrorCode, isRecord, NODE_ERROR_CODES, type JsonObject, withBestEffort } from "@muse/shared";
+import {
+  backupPlaintextCredentialsFile,
+  credentialEncryptionEnabled,
+  decodeMaybeEncryptedCredentialsJson,
+  encryptCredentialEnvelope,
+  isCredentialsFileEncryptedAtRest,
+  isNodeErrorCode,
+  isRecord,
+  NODE_ERROR_CODES,
+  type JsonObject,
+  type JsonValue,
+  withBestEffort
+} from "@muse/shared";
 
 export type MessagingCredentials = JsonObject;
 
@@ -91,7 +103,7 @@ export class FileMessagingCredentialStore implements MessagingCredentialStore {
     const providersRecord = parsed.providers;
     const providers = emptyProviderMap();
     for (const [id, value] of Object.entries(providersRecord)) {
-      if (isRecord(value)) {
+      if (isMessagingCredentials(value)) {
         providers[id] = value;
       }
     }
@@ -133,4 +145,21 @@ function isFileNotFound(error: unknown): boolean {
 // check false-hits. Mirrors FileCalendarCredentialStore.
 function emptyProviderMap(): Record<string, MessagingCredentials> {
   return Object.create(null);
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return Array.isArray(value) && value.every(isJsonValue);
+  }
+  if (isRecord(value)) {
+    return Object.values(value).every(isJsonValue);
+  }
+  return false;
+}
+
+function isMessagingCredentials(value: unknown): value is MessagingCredentials {
+  return isRecord(value) && Object.values(value).every(isJsonValue);
 }

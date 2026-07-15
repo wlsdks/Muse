@@ -302,7 +302,7 @@ export function cachedResponseFromModelResponse(response: ModelResponse, toolsUs
 }
 
 function normalizeModelUsage(usage: NonNullable<ModelResponse["usage"]>): JsonObject {
-  const out: JsonObject = {};
+  const out: Record<string, JsonValue> = {};
   for (const [name, value] of Object.entries(usage)) {
     if (typeof value === "number" && Number.isFinite(value)) {
       out[name] = value;

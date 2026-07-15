@@ -47,10 +47,6 @@ function isEvent(value: unknown): value is LearnCorrectionEvent {
     && typeof e.priorAnswer === "string" && typeof e.correction === "string"
     && typeof e.enqueuedAtMs === "number";
 }
-  return !!e && typeof e.id === "string" && typeof e.userId === "string"
-    && typeof e.priorAnswer === "string" && typeof e.correction === "string"
-    && typeof e.enqueuedAtMs === "number";
-}
 
 /**
  * Append ONE correction event (one real signal = one job). Creates the dir if

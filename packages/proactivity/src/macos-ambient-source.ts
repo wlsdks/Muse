@@ -78,12 +78,14 @@ export class MacOsActiveWindowSource implements AmbientSignalSource {
 
   constructor(options: MacOsActiveWindowSourceOptions = {}) {
     const osascriptPath = options.osascriptPath ?? "/usr/bin/osascript";
-    const timeoutMs = options.timeoutMs ?? 3_000;
+    const timeoutMs = typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+      ? Math.max(1, Math.trunc(options.timeoutMs))
+      : 3_000;
     this.run = options.run ?? ((script) => defaultOsascriptRun(osascriptPath, script, timeoutMs));
     this.includeClipboard = options.includeClipboard ?? false;
     const pbpastePath = options.pbpastePath ?? "/usr/bin/pbpaste";
     this.readClipboard = options.readClipboard ?? (() => defaultPbpasteRun(pbpastePath, timeoutMs));
-    this.maxClipboardChars = Number.isFinite(options.maxClipboardChars)
+    this.maxClipboardChars = typeof options.maxClipboardChars === "number" && Number.isFinite(options.maxClipboardChars)
       ? Math.max(1, Math.trunc(options.maxClipboardChars))
       : 2_000;
   }

@@ -136,16 +136,18 @@ export async function readBrowsingStore(file: string): Promise<BrowsingStore> {
     const base: BrowsingVisit = { id: v.id, url: v.url, title: v.title, visitedAt: v.visitedAt };
     // Tolerate BOTH shapes: a valid embedding is preserved; a v1 entry without one
     // (or with a malformed one) keeps every other field and stays lexically matchable.
-    const hasValidEmbedding = Array.isArray(v.embedding)
-      && v.embedding.length > 0
-      && v.embedding.every((n) => typeof n === "number" && Number.isFinite(n));
-    visits.push(hasValidEmbedding ? { ...base, embedding: v.embedding } : base);
+    const embedding = isReadonlyNumberArray(v.embedding) ? v.embedding : undefined;
+    visits.push(embedding ? { ...base, embedding } : base);
   }
   const cursor =
     typeof candidate.lastVisitTimeCursor === "number" && Number.isFinite(candidate.lastVisitTimeCursor)
       ? candidate.lastVisitTimeCursor
       : 0;
   return { version: BROWSING_STORE_SCHEMA_VERSION, visits, lastVisitTimeCursor: cursor };
+}
+
+function isReadonlyNumberArray(value: unknown): value is readonly number[] {
+  return Array.isArray(value) && value.length > 0 && value.every((n) => typeof n === "number" && Number.isFinite(n));
 }
 
 export async function writeBrowsingStore(file: string, store: BrowsingStore): Promise<void> {

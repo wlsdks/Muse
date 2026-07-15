@@ -40,7 +40,7 @@ import {
 } from "./objective-evidence.js";
 
 const EVIDENCE_STORES: readonly EvidenceStore[] = ["actionLog", "calendar", "notes", "reminders", "tasks"];
-const EVIDENCE_STORE_SET = new Set(EVIDENCE_STORES);
+const EVIDENCE_STORE_SET: ReadonlySet<string> = new Set(EVIDENCE_STORES);
 
 const PROPOSAL_SYSTEM_PROMPT =
   `You decide HOW to check whether a standing objective is currently `
@@ -239,8 +239,8 @@ function isRawProposalShape(value: unknown): value is RawProposalShape {
   return true;
 }
 
-function isEvidenceStore(value: unknown): value is EvidenceStore {
-  return typeof value === "string" && EVIDENCE_STORE_SET.has(value);
+function isEvidenceStore(value: string): value is EvidenceStore {
+  return EVIDENCE_STORE_SET.has(value);
 }
 
 export function parseObjectiveProposal(raw: string): ObjectiveProposal {
@@ -267,6 +267,7 @@ export function parseObjectiveProposal(raw: string): ObjectiveProposal {
       continue;
     }
     if (
+      typeof parsed.store === "string" &&
       isEvidenceStore(parsed.store)
       && Array.isArray(parsed.keywords)
       && parsed.keywords.every((k): k is string => typeof k === "string")

@@ -32,6 +32,8 @@ export interface CalendarProviderRegistryOptions {
   readonly onProviderError?: (providerId: string, message: string) => void;
 }
 
+const EMPTY_CALENDAR_EVENTS: readonly CalendarEvent[] = [];
+
 /**
  * Holds the set of active calendar providers and routes per-provider
  * operations. The registry is a small fan-out: every "list events"
@@ -118,8 +120,6 @@ export class CalendarProviderRegistry {
     const events = buckets.flat().sort(compareCalendarEvents);
     return { events, failedProviders };
   }
-
-const EMPTY_CALENDAR_EVENTS: readonly CalendarEvent[] = [];
 
   createEvent(providerId: string | undefined, input: CalendarEventInput): Promise<CalendarEvent> {
     return this.requireOrPrimary(providerId).createEvent(input);
