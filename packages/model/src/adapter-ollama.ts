@@ -15,8 +15,7 @@
  * expects — only the capabilities get rewritten to `localModelCapabilities`.
  */
 
-import { truncateErrorBody } from "@muse/shared";
-import { isRecord, type JsonObject } from "@muse/shared";
+import { isRecord, truncateErrorBody, withBestEffort, type JsonObject } from "@muse/shared";
 
 import { isWellFormedBase64 } from "./base64-image.js";
 import {
@@ -184,7 +183,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     if (!resp.ok) {
       throw await this.buildNativeError(request, resp, "/api/chat");
     }
-    const rawBody = await resp.text().catch(() => "");
+    const rawBody = await withBestEffort(resp.text(), "");
     const parsed = parseJson(rawBody);
     if (parsed === undefined) {
       // A non-JSON 200 is a transport anomaly (proxy/portal HTML,
@@ -447,7 +446,7 @@ export class OllamaProvider extends OpenAICompatibleProvider {
     resp: { status: number; statusText: string; text(): Promise<string> },
     label: string
   ): Promise<ModelProviderError> {
-    const bodyText = (await resp.text().catch(() => "")) || resp.statusText;
+    const bodyText = (await withBestEffort(resp.text(), "")) || resp.statusText;
     // Name the model in EVERY failure — when several local models are
     // installed, "which model failed?" is the first debugging question, and
     // a bare status+body doesn't answer it. Mirrors the embed-model hints.
@@ -606,7 +605,7 @@ export async function probeOllamaContextWindow(
     if (!resp.ok) {
       return undefined;
     }
-    const raw = await resp.text().catch(() => "");
+    const raw = await withBestEffort(resp.text(), "");
     const parsed = parseJson(raw);
     if (!isRecord(parsed)) {
       return undefined;
