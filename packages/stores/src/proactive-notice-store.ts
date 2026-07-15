@@ -119,8 +119,8 @@ export async function writeProactiveFired(file: string, entries: readonly Proact
 }
 
 function isProactiveFiredEntry(value: unknown): value is ProactiveFiredEntry {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<ProactiveFiredEntry>;
+  if (!isRecord(value)) return false;
+  const candidate = value;
   return (candidate.kind === "calendar" || candidate.kind === "task")
     && typeof candidate.id === "string"
     && typeof candidate.startIso === "string"

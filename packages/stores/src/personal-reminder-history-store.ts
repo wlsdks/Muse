@@ -123,10 +123,10 @@ function clampCapacity(raw: number | undefined): number {
 }
 
 function isHistoryEntry(value: unknown): value is ReminderHistoryEntry {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as ReminderHistoryEntry;
+  const candidate = value;
   return typeof candidate.reminderId === "string"
     && typeof candidate.text === "string"
     && typeof candidate.providerId === "string"

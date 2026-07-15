@@ -403,10 +403,10 @@ export function compareRemindersByDueAt(left: PersistedReminder, right: Persiste
 }
 
 function isPersistedReminder(value: unknown): value is PersistedReminder {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as PersistedReminder;
+  const candidate = value;
   if (typeof candidate.id !== "string"
     || typeof candidate.text !== "string"
     || typeof candidate.createdAt !== "string"

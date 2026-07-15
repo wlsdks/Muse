@@ -7,7 +7,9 @@ import {
   decodeMaybeEncryptedCredentialsJson,
   encryptCredentialEnvelope,
   isCredentialsFileEncryptedAtRest,
+  isNodeErrorCode,
   isRecord,
+  NODE_ERROR_CODES,
   type JsonObject
 } from "@muse/shared";
 
@@ -132,10 +134,7 @@ export class FileMessagingCredentialStore implements MessagingCredentialStore {
 }
 
 function isFileNotFound(error: unknown): boolean {
-  if (!isRecord(error)) {
-    return false;
-  }
-  return error.code === "ENOENT";
+  return isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT);
 }
 
 // Null-prototype so a providerId like `toString` / `__proto__` /

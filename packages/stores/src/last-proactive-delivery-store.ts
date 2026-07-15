@@ -70,7 +70,7 @@ export async function readLastProactiveDeliveries(file: string): Promise<readonl
   if (!parsedRecord || !Array.isArray(parsedRecord.deliveries)) {
     return [];
   }
-  return (parsedRecord.deliveries as unknown[]).flatMap((entry): readonly LastProactiveDeliveryEntry[] =>
+  return parsedRecord.deliveries.flatMap((entry): readonly LastProactiveDeliveryEntry[] =>
     isLastProactiveDeliveryEntry(entry) ? [entry] : []
   );
 }

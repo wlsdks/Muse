@@ -10,7 +10,12 @@ import {
 } from "node:fs/promises";
 import { resolve as nodePathResolve } from "node:path";
 
-import { assertNoSecretInPersistedFields, type JsonObject } from "@muse/shared";
+import {
+  assertNoSecretInPersistedFields,
+  isNodeErrorCode,
+  type JsonObject,
+  NODE_ERROR_CODES
+} from "@muse/shared";
 
 import { readString } from "@muse/mcp";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -383,7 +388,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
             // fails with EEXIST instead of clobbering it.
             await nodeWriteFile(safe.absolute, content, overwrite ? "utf8" : { encoding: "utf8", flag: "wx" });
           } catch (error) {
-            if (!overwrite && (error as NodeJS.ErrnoException).code === "EEXIST") {
+            if (!overwrite && isNodeErrorCode(error, NODE_ERROR_CODES.EEXIST)) {
               return { error: `note already exists at ${safe.relative}; pass overwrite: true to replace` };
             }
             return { error: `cannot write note: ${error instanceof Error ? error.message : String(error)}` };
@@ -405,13 +410,13 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               mirrorNote = `Apple Notes mirror failed: ${error instanceof Error ? error.message : String(error)}`;
             }
           }
-          return {
-            created: !exists,
-            path: safe.relative,
-            sizeBytes: Buffer.byteLength(content, "utf8"),
-            ...(mirrorNote ? { mirrorNote } : {})
-          } satisfies JsonObject;
-        },
+            return {
+              created: !exists,
+              path: safe.relative,
+              sizeBytes: Buffer.byteLength(content, "utf8"),
+              ...(mirrorNote ? { mirrorNote } : {})
+            } satisfies JsonObject;
+          },
         inputSchema: {
           additionalProperties: false,
           properties: {

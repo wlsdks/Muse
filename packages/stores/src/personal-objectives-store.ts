@@ -139,10 +139,10 @@ export function serializeObjective(objective: StandingObjective): JsonObject {
 }
 
 function isStandingObjective(value: unknown): value is StandingObjective {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as StandingObjective;
+  const candidate = value;
   if (
     typeof candidate.id !== "string" ||
     typeof candidate.userId !== "string" ||

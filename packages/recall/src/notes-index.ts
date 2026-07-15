@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { basename as pathBasename, join as pathJoin, resolve as pathResolve, sep as pathSep } from "node:path";
 
 import { annotateNoteChunks } from "@muse/agent-core";
-import { isRecord } from "@muse/shared";
+import { isNodeErrorCode, NODE_ERROR_CODES, isRecord } from "@muse/shared";
 
 import { parsePdfBuffer } from "./document-reader.js";
 import { embed } from "./embed.js";
@@ -191,7 +191,7 @@ export async function loadIndex(path: string): Promise<NotesIndex | undefined> {
   try {
     raw = await readFile(path, "utf8");
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) return undefined;
     throw cause;
   }
   let parsed: unknown;

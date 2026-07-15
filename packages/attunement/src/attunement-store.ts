@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 
 import { atomicWriteFile, withFileLock, withFileMutationQueue } from "@muse/stores";
+import { isNodeErrorCode, NODE_ERROR_CODES } from "@muse/shared";
 
 import { baselinePolicy, isBaselinePolicy, policyForOutcome } from "./policy-reducer.js";
 import {
@@ -402,7 +403,7 @@ export async function readAttunementState(file: string): Promise<AttunementState
   try {
     raw = await fs.readFile(file, "utf8");
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return EMPTY_STATE;
+    if (isNodeErrorCode(cause, NODE_ERROR_CODES.ENOENT)) return EMPTY_STATE;
     throw cause;
   }
   try {

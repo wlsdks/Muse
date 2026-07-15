@@ -200,7 +200,7 @@ export function createWebWatchRunner(options: {
   };
 }
 
-const RULE_FIELDS = ["appears", "disappears", "extract"] as const;
+const RULE_FIELDS: readonly ("appears" | "disappears" | "extract")[] = ["appears", "disappears", "extract"];
 
 /**
  * Snapshot source for a PUBLIC web page: an HTTP GET (retry-hardened
@@ -339,17 +339,18 @@ export function webWatchesFromConfig(
     if (!isRecord(entry)) {
       continue;
     }
+    const ruleEntry = entry;
     // The locator field depends on the source: a file watch points at a local
     // PATH, web/chrome watches at a URL.
-    const source = e.source === "file" ? "file" : e.source === "chrome" ? "chrome" : "http";
-    const locator = source === "file" ? e.path : e.url;
-    if (typeof e.id !== "string" || e.id.length === 0 || typeof locator !== "string" || locator.length === 0) {
+    const source = ruleEntry.source === "file" ? "file" : ruleEntry.source === "chrome" ? "chrome" : "http";
+    const locator = source === "file" ? ruleEntry.path : ruleEntry.url;
+    if (typeof ruleEntry.id !== "string" || ruleEntry.id.length === 0 || typeof locator !== "string" || locator.length === 0) {
       continue;
     }
-    if (typeof e.title !== "string" || typeof e.message !== "string") {
+    if (typeof ruleEntry.title !== "string" || typeof ruleEntry.message !== "string") {
       continue;
     }
-    const rule = parseWatchRule(e.rule);
+    const rule = parseWatchRule(ruleEntry.rule);
     if (rule === undefined) {
       continue;
     }
@@ -359,23 +360,23 @@ export function webWatchesFromConfig(
       // authenticated page the user asked to watch).
       continue;
     }
-    const headers = parseHeaders(e.headers);
+    const headers = parseHeaders(ruleEntry.headers);
     const httpOptions = {
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
       ...(options.retryOptions ? { retryOptions: options.retryOptions } : {}),
       ...(headers ? { headers } : {})
     };
     out.push({
-      id: e.id,
-      message: e.message,
+      id: ruleEntry.id,
+      message: ruleEntry.message,
       rule,
       snapshot:
         source === "file"
           ? createFileSnapshot(locator)
-          : source === "chrome"
+        : source === "chrome"
             ? createChromeSnapshot(options.chromeConnection!, locator)
             : createHttpSnapshot(locator, httpOptions),
-      title: e.title
+      title: ruleEntry.title
     });
   }
   return out;
@@ -396,8 +397,9 @@ export function parseWatchRule(raw: unknown): WatchRule | undefined {
   const ruleObj = raw;
   const rule: { appears?: string; disappears?: string; extract?: string; onAnyChange?: boolean; caseInsensitive?: boolean; below?: number; above?: number } = {};
   for (const field of RULE_FIELDS) {
-    if (typeof ruleObj[field] === "string" && (ruleObj[field] as string).length > 0) {
-      rule[field] = ruleObj[field] as string;
+    const rawValue = ruleObj[field];
+    if (typeof rawValue === "string" && rawValue.length > 0) {
+      rule[field] = rawValue;
     }
   }
   if (ruleObj.onAnyChange === true) {

@@ -108,8 +108,8 @@ export async function incrementSuppressionBlocked(file: string, id: string): Pro
 }
 
 function isSuppressedLesson(value: unknown): value is SuppressedLesson {
-  if (!value || typeof value !== "object") return false;
-  const e = value as Partial<SuppressedLesson>;
+  if (!isRecord(value)) return false;
+  const e = value;
   if (typeof e.id !== "string" || e.id.length === 0) return false;
   if (typeof e.userId !== "string" || e.userId.length === 0) return false;
   if (typeof e.text !== "string" || e.text.trim().length === 0) return false;

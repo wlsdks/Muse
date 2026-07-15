@@ -198,7 +198,7 @@ export function mergeJourneyEvents(input: MergeJourneyEventsInput): readonly Jou
     return true;
   });
   filtered.sort(compareEvents);
-  const limit = Number.isFinite(input.limit) && (input.limit ?? 0) > 0 ? Math.trunc(input.limit as number) : DEFAULT_JOURNEY_LIMIT;
+  const limit = Number.isFinite(input.limit) && (input.limit ?? 0) > 0 ? Math.trunc(input.limit) : DEFAULT_JOURNEY_LIMIT;
   return filtered.slice(0, limit);
 }
 

@@ -28,7 +28,9 @@ import {
   decodeMaybeEncryptedCredentialsJson,
   encryptCredentialEnvelope,
   isCredentialsFileEncryptedAtRest,
-  isRecord
+  isNodeErrorCode,
+  isRecord,
+  NODE_ERROR_CODES
 } from "@muse/shared";
 
 import { quarantineCorruptStore } from "./corrupt-quarantine.js";
@@ -223,8 +225,5 @@ async function writeRecord(
 }
 
 function isFileNotFound(error: unknown): boolean {
-  if (!isRecord(error)) {
-    return false;
-  }
-  return error.code === "ENOENT";
+  return isNodeErrorCode(error, NODE_ERROR_CODES.ENOENT);
 }

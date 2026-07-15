@@ -315,8 +315,8 @@ export async function decayStalePlaybookRewards(
 }
 
 function isPlaybookEntry(value: unknown): value is PlaybookEntry {
-  if (!value || typeof value !== "object") return false;
-  const e = value as Partial<PlaybookEntry>;
+  if (!isRecord(value)) return false;
+  const e = value;
   if (typeof e.id !== "string" || e.id.length === 0) return false;
   if (typeof e.userId !== "string" || e.userId.length === 0) return false;
   if (typeof e.text !== "string" || e.text.trim().length === 0) return false;

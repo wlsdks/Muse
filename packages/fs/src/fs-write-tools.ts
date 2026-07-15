@@ -16,7 +16,7 @@ import { constants as fsConstants } from "node:fs";
 import { lstat, mkdir, open, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { isRecord, type JsonObject } from "@muse/shared";
+import { hasNodeErrorCodeIn, isRecord, NODE_ERROR_CODES, type JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { checkEditIntegrity } from "./edit-integrity.js";
@@ -97,10 +97,6 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && typeof Reflect.get(error, "code") === "string";
-}
-
 function refusal(error: unknown, path: string): JsonObject {
   if (isPathSafetyError(error)) {
     return { path, reason: error.message, refused: true, written: false };
@@ -108,13 +104,13 @@ function refusal(error: unknown, path: string): JsonObject {
   // A symlink at the target (caught atomically by O_NOFOLLOW at write time) is a
   // refusal, not a generic IO error — it's the fail-close on a dangling-symlink /
   // TOCTOU escape that the path check alone can't see.
-  if (isNodeError(error) && error.code === "ELOOP") {
+  if (hasNodeErrorCodeIn(error, NODE_ERROR_CODES.ELOOP)) {
     return { path, reason: `'${path}' is a symlink — refused (a symlink target could escape the sandbox)`, refused: true, written: false };
   }
   // A raw "ENOENT … stat '/abs/path'" dead-ends the small model and leaks the
   // resolved host path. Hand it the recovery route: file_edit/multi_edit only
   // modify an EXISTING file, so a missing target means create-it or wrong-path.
-  if (isNodeError(error) && error.code === "ENOENT") {
+  if (hasNodeErrorCodeIn(error, NODE_ERROR_CODES.ENOENT)) {
     return { path, reason: `no file at '${path}' — to create it use file_write; to edit an existing file, check the path or use file_list to find it.`, written: false };
   }
   return { path, reason: error instanceof Error ? error.message : String(error), written: false };
@@ -242,7 +238,7 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
         try {
           originalForSnapshot = await readFileNoFollowBuffer(safe);
         } catch (error) {
-          if (!isNodeError(error) || error.code !== "ENOENT") {
+          if (!hasNodeErrorCodeIn(error, NODE_ERROR_CODES.ENOENT)) {
             return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
           }
           originalForSnapshot = undefined;

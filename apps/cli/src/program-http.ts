@@ -14,7 +14,7 @@
 
 import type { Command } from "commander";
 
-import { stripUntrustedTerminalChars, truncateErrorBody } from "@muse/shared";
+import { hasNodeErrorCodeIn, NODE_ERROR_CODES, stripUntrustedTerminalChars, truncateErrorBody } from "@muse/shared";
 
 import { isRecord } from "./credential-store.js";
 import { formatCitations } from "./human-formatters.js";
@@ -137,15 +137,14 @@ function extractApiErrorEnvelope(
  */
 function friendlyFetchError(baseUrl: string, error: unknown): Error {
   const cause = isRecord(error) && isRecord(error.cause) ? error.cause : undefined;
-  const code = cause && typeof cause.code === "string" ? cause.code : undefined;
-  if (code === "ECONNREFUSED") {
+  if (hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.ECONNREFUSED)) {
     return new Error(
       `Muse API server is not running (tried ${baseUrl}) — this command needs it. ` +
       `Start it with \`pnpm --filter @muse/api dev\`, point at a running one with --api-url, ` +
       `or check \`--help\` for this command in case it has a --local (no-server) mode.`
     );
   }
-  if (code === "ENOTFOUND") {
+  if (hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.ENOTFOUND)) {
     return new Error(`Muse API host unresolved (${baseUrl}). Check --api-url.`);
   }
   const message = error instanceof Error ? error.message : String(error);

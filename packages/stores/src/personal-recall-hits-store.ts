@@ -232,9 +232,8 @@ function normalizeQueryHashes(record: RecallHitRecord): RecallHitRecord {
 }
 
 function isRecallHitRecord(value: unknown): value is RecallHitRecord {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<RecallHitRecord>;
-  return typeof candidate.key === "string"
-    && typeof candidate.hits === "number" && Number.isFinite(candidate.hits)
-    && typeof candidate.lastHitMs === "number" && Number.isFinite(candidate.lastHitMs);
+  if (!isRecord(value)) return false;
+  return typeof value.key === "string"
+    && typeof value.hits === "number" && Number.isFinite(value.hits)
+    && typeof value.lastHitMs === "number" && Number.isFinite(value.lastHitMs);
 }

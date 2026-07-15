@@ -26,6 +26,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { Command } from "commander";
+import { hasNodeErrorCodeIn, NODE_ERROR_CODES } from "@muse/shared";
+import { isRecord } from "@muse/shared";
 
 import { closestCommandName } from "./closest-command.js";
 import { firstNonEmpty, resolvePersona } from "./program-helpers.js";
@@ -53,12 +55,12 @@ function emptyFile(): TrustFile {
 async function readTrustFile(path: string): Promise<TrustFile> {
   try {
     const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as TrustFile;
-    if (parsed && parsed.version === 1 && parsed.users) {
+    const parsed = JSON.parse(raw);
+    if (isTrustFile(parsed)) {
       return parsed;
     }
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+    if (!hasNodeErrorCodeIn(cause, NODE_ERROR_CODES.ENOENT)) throw cause;
   }
   return emptyFile();
 }
@@ -89,6 +91,26 @@ async function mutate(
   const next = { ...file, users: { ...file.users, [key]: patch(entryFor(file, key)) } };
   await writeTrustFile(path, next);
   return next.users[key]!;
+}
+
+function isTrustFile(value: unknown): value is TrustFile {
+  if (!isRecord(value) || value.version !== 1) {
+    return false;
+  }
+  if (!isRecord(value.users)) return false;
+  return Object.values(value.users).every(isTrustEntry);
+}
+
+function isTrustEntry(value: unknown): value is { readonly trustedTools: string[]; readonly blockedTools: string[] } {
+  if (!isRecord(value)) return false;
+  return (
+    isStringArray(value.trustedTools)
+    && isStringArray(value.blockedTools)
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function uniqInsert(list: readonly string[], value: string): string[] {

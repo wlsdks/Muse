@@ -88,16 +88,16 @@ export async function queryPlanCache(file: string, userId?: string): Promise<rea
 }
 
 function isPlanCacheStep(value: unknown): value is PlanCacheStep {
-  if (!value || typeof value !== "object") return false;
-  const s = value as Partial<PlanCacheStep>;
+  if (!isRecord(value)) return false;
+  const s = value;
   return typeof s.tool === "string" && s.tool.length > 0
     && typeof s.description === "string"
     && !!s.args && typeof s.args === "object";
 }
 
 function isPlanCacheEntry(value: unknown): value is PlanCacheEntry {
-  if (!value || typeof value !== "object") return false;
-  const e = value as Partial<PlanCacheEntry>;
+  if (!isRecord(value)) return false;
+  const e = value;
   if (typeof e.id !== "string" || e.id.length === 0) return false;
   if (typeof e.userId !== "string" || e.userId.length === 0) return false;
   if (typeof e.prompt !== "string" || e.prompt.trim().length === 0) return false;

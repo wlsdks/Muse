@@ -19,6 +19,7 @@ import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
 import { avoidedSourceKeys, readTrustLedger, withFileMutationQueue, withProcessLock } from "@muse/stores";
+import { isRecord } from "@muse/shared";
 import { applyInterruptionBudget, resolveInterruptionBudgetCaps, type InterruptionBudgetWiring } from "./interruption-gate.js";
 import { isQuietHour, type QuietHourRange } from "./quiet-hours.js";
 
@@ -42,6 +43,14 @@ export interface PersistedCheckin {
 
 const HANGUL = /[가-힣]/u;
 const EN_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function coercePositiveInteger(value: number | undefined, fallback: number, min = 0): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+  const truncated = Math.trunc(value);
+  return Math.max(min, truncated);
+}
 
 /**
  * Absolute local-calendar date `createdAt` names — KO "M/D" (e.g. "7/5"), EN
@@ -132,8 +141,8 @@ export function scheduleCheckins(
   commitments: readonly string[],
   options: ScheduleCheckinsOptions
 ): readonly PersistedCheckin[] {
-  const slotHour = Number.isFinite(options.slotHour) ? Math.max(0, Math.min(23, Math.trunc(options.slotHour as number))) : 10;
-  const maxPerDay = Number.isFinite(options.maxPerDay) ? Math.max(1, Math.trunc(options.maxPerDay as number)) : 3;
+  const slotHour = Math.min(23, coercePositiveInteger(options.slotHour, 10, 0));
+  const maxPerDay = coercePositiveInteger(options.maxPerDay, 3, 1);
   const existing = options.existing ?? [];
   const now = options.now;
   const createdAt = now.toISOString();
@@ -282,16 +291,22 @@ export async function readCheckins(file: string): Promise<readonly PersistedChec
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (e): e is PersistedCheckin =>
-        Boolean(e) && typeof e === "object"
-        && typeof (e as PersistedCheckin).id === "string"
-        && typeof (e as PersistedCheckin).question === "string"
-        && typeof (e as PersistedCheckin).dueAtIso === "string"
-    );
+    return parsed.filter(isPersistedCheckin);
   } catch {
     return [];
   }
+}
+
+function isPersistedCheckin(value: unknown): value is PersistedCheckin {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return typeof value.id === "string"
+    && typeof value.userId === "string"
+    && typeof value.commitment === "string"
+    && typeof value.question === "string"
+    && typeof value.dueAtIso === "string"
+    && (value.status === "scheduled" || value.status === "fired" || value.status === "cancelled");
 }
 
 export async function writeCheckins(file: string, checkins: readonly PersistedCheckin[]): Promise<void> {
@@ -394,7 +409,7 @@ async function runDueCheckinsUnderLock(options: RunDueCheckinsOptions): Promise<
   if (options.quietHours && isQuietHour(at.getHours(), options.quietHours)) {
     return { delivered: 0, due: 0, errors: [], fired: [] };
   }
-  const max = Number.isFinite(options.maxPerTick) ? Math.max(1, Math.trunc(options.maxPerTick as number)) : 5;
+  const max = coercePositiveInteger(options.maxPerTick, 5, 1);
   const all = await readCheckins(options.file);
   const due = selectDueCheckins(all, at.getTime(), max);
   if (due.length === 0) {
@@ -445,7 +460,7 @@ async function runDueCheckinsUnderLock(options: RunDueCheckinsOptions): Promise<
       // Marked fired either way: a suppressed check-in must not re-ask the
       // same question next tick just because the budget held it back.
       firedIds.add(checkin.id);
-      fired.push({ ...checkin, firedAt: at.toISOString(), status: "fired" });
+      fired.push(markAsFired(checkin, at));
       if (!digested) {
         delivered += 1;
       }
@@ -460,9 +475,13 @@ async function runDueCheckinsUnderLock(options: RunDueCheckinsOptions): Promise<
     // and RESURRECT a cancelled nudge. Patch-by-id preserves every concurrent change.
     await withFileMutationQueue(options.file, async () => {
       const fresh = await readCheckins(options.file);
-      const next = fresh.map((c) => (firedIds.has(c.id) ? { ...c, firedAt: at.toISOString(), status: "fired" as const } : c));
+      const next = fresh.map((c) => (firedIds.has(c.id) ? markAsFired(c, at) : c));
       await writeCheckins(options.file, next);
     });
   }
   return { delivered, due: due.length, errors, fired };
+}
+
+function markAsFired(checkin: PersistedCheckin, at: Date): PersistedCheckin {
+  return { ...checkin, firedAt: at.toISOString(), status: "fired" };
 }

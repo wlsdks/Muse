@@ -16,6 +16,7 @@
 
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import { homedir, hostname, userInfo } from "node:os";
+import { isRecord } from "@muse/shared";
 
 export interface EncryptedCalendarEnvelope {
   readonly version: 1;
@@ -46,10 +47,10 @@ export function isEncryptedCalendarEnvelope(value: unknown): value is EncryptedC
   if (!value || typeof value !== "object") {
     return false;
   }
-  const e = value as Partial<EncryptedCalendarEnvelope>;
-  return e.version === 1 && e.algorithm === "aes-256-gcm"
-    && typeof e.data === "string" && typeof e.iv === "string"
-    && typeof e.salt === "string" && typeof e.tag === "string";
+  if (!isRecord(value)) return false;
+  return value.version === 1 && value.algorithm === "aes-256-gcm"
+    && typeof value.data === "string" && typeof value.iv === "string"
+    && typeof value.salt === "string" && typeof value.tag === "string";
 }
 
 export function encryptCalendarEnvelope(plaintext: string, env: NodeJS.ProcessEnv = process.env): EncryptedCalendarEnvelope {
