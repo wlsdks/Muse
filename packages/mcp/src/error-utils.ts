@@ -1,3 +1,5 @@
+import { errorMessage } from "@muse/shared";
+
 export function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }

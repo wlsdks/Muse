@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@muse/shared";
+import { errorMessage, type JsonObject, type JsonValue } from "@muse/shared";
 import { hasNestedUnboundedQuantifier } from "@muse/tools";
 
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -43,7 +43,7 @@ export function createRegexMcpServer(): LoopbackMcpServer {
     try {
       return new RegExp(pattern, safeFlags);
     } catch (error) {
-      return { error: `invalid pattern: ${error instanceof Error ? error.message : String(error)}` };
+      return { error: `invalid pattern: ${errorMessage(error)}` };
     }
   }
 

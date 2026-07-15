@@ -70,7 +70,7 @@ export function createMacAppOpenTool(deps: MacAppOpenToolDeps = {}): MuseTool {
       try {
         result = await runner(argv);
       } catch (cause) {
-        return { opened: false, reason: `open spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { opened: false, reason: `open spawn failed: ${errorMessage(cause)}` };
       }
       if (result.timedOut) {
         return { opened: false, reason: `open timed out after ${OPEN_TIMEOUT_MS.toString()}ms` };

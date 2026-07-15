@@ -83,7 +83,7 @@ export function createMacShortcutRunTool(deps: MacShortcutRunToolDeps = {}): Mus
       try {
         result = await runner(argv, input);
       } catch (cause) {
-        return { ran: false, reason: `shortcuts spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { ran: false, reason: `shortcuts spawn failed: ${errorMessage(cause)}` };
       }
       if (result.timedOut) {
         return { ran: false, reason: `shortcuts run timed out after ${SHORTCUTS_TIMEOUT_MS.toString()}ms` };

@@ -177,7 +177,7 @@ export async function performConsentedAction(
     const aborted = cause instanceof DOMException && cause.name === "TimeoutError";
     const reason = aborted
       ? `consented action timed out after ${timeoutMs.toString()}ms`
-      : `consented action fetch failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+      : `consented action fetch failed: ${errorMessage(cause)}`;
     await log("failed", reason);
     return { performed: false, reason };
   }

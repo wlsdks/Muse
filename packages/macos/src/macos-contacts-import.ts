@@ -186,7 +186,7 @@ export function parseAppleContactsPayload(stdout: string): AppleContact[] {
   return out;
 }
 
-const errMessage = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
+const errMessage = (cause: unknown): string => (errorMessage(cause));
 
 /**
  * Read the whole Apple Contacts address book via one osascript pass. Fail-soft:

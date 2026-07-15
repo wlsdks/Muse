@@ -1,4 +1,4 @@
-import type { JsonObject } from "@muse/shared";
+import { errorMessage, type JsonObject } from "@muse/shared";
 
 import type { MuseTool } from "./index.js";
 
@@ -115,7 +115,7 @@ export function createUnitConvertTool(): MuseTool {
         const result = convertUnit(value, from, to);
         return { from, to, value: result };
       } catch (error) {
-        return { error: error instanceof Error ? error.message : "conversion failed" };
+        return { error: errorMessage(error, "conversion failed") };
       }
     }
   };

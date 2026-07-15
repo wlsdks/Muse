@@ -23,6 +23,7 @@ import {
 import { runNotesLlmJudge } from "./loopback-notes-judge.js";
 import { sliceWithoutLoneSurrogate } from "./notes-providers-local.js";
 import type { ProactiveModelProviderLike } from "@muse/proactivity";
+import { errorMessage } from "@muse/shared";
 
 /**
  * `muse.notes` loopback MCP server.
@@ -131,7 +132,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           try {
             dirents = await nodeReaddir(safe.absolute, { withFileTypes: true });
           } catch (error) {
-            return { error: `cannot list directory: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `cannot list directory: ${errorMessage(error)}` };
           }
           const collected: Array<{ row: JsonObject; mtimeMs: number }> = [];
           for (const entry of dirents) {
@@ -201,7 +202,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           try {
             stat = await nodeStat(safe.absolute);
           } catch (error) {
-            return { error: `cannot read note: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `cannot read note: ${errorMessage(error)}` };
           }
           if (stat.isDirectory()) {
             return { error: "path is a directory, not a file" };
@@ -213,7 +214,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           try {
             content = await nodeReadFile(safe.absolute, "utf8");
           } catch (error) {
-            return { error: `cannot read note: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `cannot read note: ${errorMessage(error)}` };
           }
           return { content, path: safe.relative, sizeBytes: stat.size } satisfies JsonObject;
         },
@@ -275,7 +276,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
                 ...(judged.hallucinatedDropped > 0 ? { hallucinatedDropped: judged.hallucinatedDropped } : {})
               } satisfies JsonObject;
             } catch (cause) {
-              return { error: `llm-judge failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+              return { error: `llm-judge failed: ${errorMessage(cause)}` };
             }
           }
 
@@ -386,7 +387,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
             if (!overwrite && (error as NodeJS.ErrnoException).code === "EEXIST") {
               return { error: `note already exists at ${safe.relative}; pass overwrite: true to replace` };
             }
-            return { error: `cannot write note: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `cannot write note: ${errorMessage(error)}` };
           }
           // Best-effort Apple-Notes mirror. Create-only: fires ONLY when this
           // write brought a NEW note file into being (`!exists`), never on an
@@ -402,7 +403,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
                 mirrorNote = outcome.warning;
               }
             } catch (error) {
-              mirrorNote = `Apple Notes mirror failed: ${error instanceof Error ? error.message : String(error)}`;
+              mirrorNote = `Apple Notes mirror failed: ${errorMessage(error)}`;
             }
           }
           return {
@@ -470,7 +471,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
             await nodeMkdir(parent, { recursive: true });
             await nodeAppendFile(safe.absolute, content, "utf8");
           } catch (error) {
-            return { error: `cannot append to note: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `cannot append to note: ${errorMessage(error)}` };
           }
           return { path: safe.relative, sizeBytes: currentBytes + appendBytes } satisfies JsonObject;
         },
@@ -512,7 +513,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           try {
             await nodeUnlink(safe.absolute);
           } catch (error) {
-            return { error: `cannot delete note: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `cannot delete note: ${errorMessage(error)}` };
           }
           return { deleted: true, path: safe.relative } satisfies JsonObject;
         },
@@ -532,4 +533,3 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
     ]
   };
 }
-

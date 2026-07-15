@@ -52,7 +52,7 @@ export function createMacClipboardSetTool(deps: MacClipboardSetToolDeps = {}): M
       try {
         result = await runner(text);
       } catch (cause) {
-        return { reason: `pbcopy spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+        return { reason: `pbcopy spawn failed: ${errorMessage(cause)}`, set: false };
       }
       if (result.timedOut || result.exitCode !== 0) {
         return { reason: `pbcopy failed: ${result.stderr.trim().slice(0, 200) || "timed out"}`, set: false };
@@ -133,7 +133,7 @@ export function createMacSpotlightSearchTool(deps: MacSpotlightSearchToolDeps = 
       try {
         result = await runner(argv);
       } catch (cause) {
-        return { error: `mdfind spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { error: `mdfind spawn failed: ${errorMessage(cause)}` };
       }
       if (result.timedOut) {
         return { error: `mdfind timed out after ${SPOTLIGHT_TIMEOUT_MS.toString()}ms` };
@@ -201,7 +201,7 @@ export function createMacSayTool(deps: MacSayToolDeps = {}): MuseTool {
       try {
         result = await runner(argv);
       } catch (cause) {
-        return { reason: `say spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, spoke: false };
+        return { reason: `say spawn failed: ${errorMessage(cause)}`, spoke: false };
       }
       if (result.timedOut) {
         return { reason: `say timed out after ${SAY_TIMEOUT_MS.toString()}ms`, spoke: false };

@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * Manual public-http redirect state machine. It owns redirect policy but not
  * retries: `fetchWithRetry` owns every physical request and invokes this
@@ -55,7 +56,7 @@ class PublicRedirectGuardFailure extends Error {
 }
 
 function messageForInitialInvalidUrl(error: unknown): string {
-  return `invalid URL: ${error instanceof Error ? error.message : String(error)}`;
+  return `invalid URL: ${errorMessage(error)}`;
 }
 
 function invalidRequest(message: string): PublicHttpRedirectFailure {
@@ -155,7 +156,7 @@ export async function fetchPublicHttpWithRedirects(
   try {
     initialHeaders = mergedHeaders(baseInit?.headers, retryInit?.headers);
   } catch (error) {
-    return invalidRequest(`public redirect request headers are invalid: ${error instanceof Error ? error.message : String(error)}`);
+    return invalidRequest(`public redirect request headers are invalid: ${errorMessage(error)}`);
   }
   const initialInit = pickSafeGetInit(baseInit, retryInit, initialHeaders);
   const redirectedInit = redirectedGetInit(initialInit, redirectHeaders(initialHeaders));

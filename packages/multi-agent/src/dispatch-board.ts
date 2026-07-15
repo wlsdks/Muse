@@ -10,6 +10,7 @@
  */
 
 import { lastFailureReason, latestOutput, nextReadyTask, recordTaskRun, transitionTask, type AgentTask, type TaskRun } from "./task-board.js";
+import { errorMessage } from "@muse/shared";
 
 export interface TaskExecutionResult {
   readonly status: "completed" | "failed";
@@ -69,7 +70,7 @@ export async function dispatchNextTask(
       ...(dependencyOutputs !== undefined ? { dependencyOutputs } : {})
     });
   } catch (cause) {
-    result = { reason: cause instanceof Error ? cause.message : String(cause), status: "failed" };
+    result = { reason: errorMessage(cause), status: "failed" };
   }
 
   if (result.status === "completed" && result.needsReview) {

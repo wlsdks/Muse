@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * SSRF guard for reading user-named public web URLs (`muse.web.read`).
  *
@@ -226,7 +227,7 @@ export function assertPublicHttpUrlSync(rawUrl: string): UrlGuardResult {
   try {
     url = new URL(rawUrl);
   } catch (error) {
-    return { ok: false, error: `invalid URL: ${error instanceof Error ? error.message : String(error)}` };
+    return { ok: false, error: `invalid URL: ${errorMessage(error)}` };
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return { ok: false, error: `unsupported protocol '${url.protocol}' — only http(s) is allowed` };
@@ -292,7 +293,7 @@ export async function assertPublicHttpUrl(rawUrl: string, options: { readonly lo
       return { ok: false, error: `host resolves to a non-public web address (${nonPublicHit.address}); refusing to read ${url.hostname}` };
     }
   } catch (error) {
-    return { ok: false, error: `host did not resolve: ${url.hostname} (${error instanceof Error ? error.message : String(error)})` };
+    return { ok: false, error: `host did not resolve: ${url.hostname} (${errorMessage(error)})` };
   }
   return { ok: true, url };
 }

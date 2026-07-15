@@ -278,7 +278,7 @@ function createRegexExtractTool(): MuseTool {
       try {
         regex = new RegExp(pattern, flags);
       } catch (error) {
-        return { error: `invalid pattern: ${error instanceof Error ? error.message : String(error)}` };
+        return { error: `invalid pattern: ${errorMessage(error)}` };
       }
       const matches: string[] = [];
       for (const match of text.matchAll(regex)) {

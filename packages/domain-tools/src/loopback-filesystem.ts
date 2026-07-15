@@ -1,5 +1,4 @@
-import {
-  lstat as nodeLstat,
+import { lstat as nodeLstat,
   readFile as nodeReadFile,
   readdir as nodeReaddir,
   realpath as nodeRealpath,
@@ -9,6 +8,7 @@ import { resolve as nodePathResolve, sep as nodePathSep } from "node:path";
 import type { Buffer } from "node:buffer";
 
 import type { JsonObject, JsonValue } from "@muse/shared";
+import { errorMessage } from "@muse/shared";
 
 import { readString } from "@muse/mcp";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -160,7 +160,7 @@ export function createFilesystemMcpServer(options: FilesystemMcpServerOptions): 
               truncated
             } satisfies JsonObject;
           } catch (error) {
-            return { error: `read failed: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `read failed: ${errorMessage(error)}` };
           }
         },
         inputSchema: {
@@ -190,7 +190,7 @@ export function createFilesystemMcpServer(options: FilesystemMcpServerOptions): 
               truncated
             } satisfies JsonObject;
           } catch (error) {
-            return { error: `list failed: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `list failed: ${errorMessage(error)}` };
           }
         },
         inputSchema: {
@@ -221,7 +221,7 @@ export function createFilesystemMcpServer(options: FilesystemMcpServerOptions): 
               size: stats.size
             } satisfies JsonObject;
           } catch (error) {
-            return { error: `stat failed: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `stat failed: ${errorMessage(error)}` };
           }
         },
         inputSchema: {

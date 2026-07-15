@@ -1,4 +1,4 @@
-import { extractPdfTextWithPdfjs } from "@muse/fs";
+import { errorMessage, extractPdfTextWithPdfjs } from "@muse/fs";
 import type { JsonObject } from "@muse/shared";
 
 import type { RetryOptions } from "@muse/mcp-shared";
@@ -144,7 +144,7 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
             response = fetched.response;
             finalUrl = fetched.finalUrl;
           } catch (error) {
-            return { error: `fetch failed: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `fetch failed: ${errorMessage(error)}` };
           }
           if (!response.ok) {
             return { error: `fetch failed: HTTP ${response.status}`, status: response.status };
@@ -164,7 +164,7 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
                 url: finalUrl
               } satisfies JsonObject;
             } catch (error) {
-              return { error: `could not extract PDF text: ${error instanceof Error ? error.message : String(error)}` };
+              return { error: `could not extract PDF text: ${errorMessage(error)}` };
             }
           }
           // An image URL ("what's in this chart.png?") is described by the local

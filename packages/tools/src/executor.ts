@@ -1,4 +1,5 @@
 import { ToolOutputSanitizer } from "@muse/policy";
+import { errorMessage } from "@muse/shared";
 import { isCancellationLikeError } from "@muse/resilience";
 
 import type {
@@ -77,7 +78,7 @@ export class ToolExecutor {
       if (isCancellationLikeError(error)) {
         throw error;
       }
-      const message = error instanceof Error ? error.message : "unknown tool failure";
+      const message = errorMessage(error, "unknown tool failure");
       return this.failed(request, `Error: ${message}`);
     }
   }

@@ -15,7 +15,7 @@
  * movement. This primitive must not be used for those.
  */
 
-import { redactSecretsInText, sleep } from "@muse/shared";
+import { errorMessage, redactSecretsInText, sleep } from "@muse/shared";
 
 import { appendActionLog } from "@muse/stores";
 import { parseRetryAfterMs } from "@muse/mcp-shared";
@@ -112,7 +112,7 @@ export async function performWebActionWithApproval(
   try {
     decision = await options.approvalGate({ request: options.request, summary: options.summary });
   } catch (cause) {
-    decision = { approved: false, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+    decision = { approved: false, reason: `approval gate error: ${errorMessage(cause)}` };
   }
   if (!decision.approved) {
     await log("refused", decision.reason ?? "not approved");
@@ -149,7 +149,7 @@ export async function performWebActionWithApproval(
       // A timeout / network reject is AMBIGUOUS (the action may have applied) —
       // never retried, even for an idempotent actuator.
       const aborted = timeoutSignal?.aborted === true;
-      const detail = aborted ? `timed out after ${timeoutMs.toString()}ms` : (cause instanceof Error ? cause.message : String(cause));
+      const detail = aborted ? `timed out after ${timeoutMs.toString()}ms` : (errorMessage(cause));
       await log("failed", detail);
       return { detail, performed: false, reason: aborted ? "timed-out" : "failed" };
     }

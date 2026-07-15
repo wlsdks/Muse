@@ -59,7 +59,7 @@ export function createWinAppReadTool(deps: WindowsToolDeps = {}): MuseTool {
         }
         return parseReadOutput(source as WinReadSource, result.stdout);
       } catch (cause) {
-        return { ok: false, reason: `powershell spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, source };
+        return { ok: false, reason: `powershell spawn failed: ${errorMessage(cause)}`, source };
       }
     }
   };

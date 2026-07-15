@@ -222,7 +222,7 @@ export async function recordTokenUsageEvent(args: RecordTokenUsageEventArgs): Pr
   } catch (error) {
     args.tracer
       .startSpan("muse.token_usage.record_failed", {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
         "run.id": args.runId
       })
       .end();

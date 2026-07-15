@@ -9,6 +9,7 @@
 import { estimateCostUsd } from "@muse/cache";
 import { isCancellationLikeError } from "@muse/resilience";
 import type { ModelMessage } from "@muse/model";
+import { errorMessage } from "@muse/shared";
 import type { AgentRunHistoryStore, CheckpointStore } from "@muse/runtime-state";
 import { createAgentCheckpointState } from "./checkpoint.js";
 import { joinUserMessages } from "./internals.js";
@@ -179,7 +180,7 @@ export async function recordRunFailure(args: LifecycleRunFailureArgs): Promise<v
   try {
     await args.historyStore.updateRun({
       completedAt: new Date(),
-      error: args.error instanceof Error ? args.error.message : "unknown error",
+      error: errorMessage(args.error, "unknown error"),
       runId: args.context.runId,
       status: isCancellationLikeError(args.error) ? "cancelled" : "failed"
     });

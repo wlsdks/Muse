@@ -193,7 +193,7 @@ export function createSkillRunTool(registry: SkillRegistryView, options: SkillRu
           timedOut: result.timedOut
         };
       } catch (cause) {
-        return { error: cause instanceof Error ? cause.message : String(cause) };
+        return { error: errorMessage(cause) };
       }
     }
   };

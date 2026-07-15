@@ -2,6 +2,7 @@ import { VoiceProviderError } from "./errors.js";
 import { resolveTtsPersona } from "./persona.js";
 import { truncateForTts } from "./tts-truncate.js";
 import type {
+import { errorMessage } from "@muse/shared";
   SpeechToTextProvider,
   TextToSpeechProvider,
   TtsPersona,
@@ -114,7 +115,7 @@ export class VoiceProviderRegistry {
       try {
         return await provider.synthesize({ ...request, text: truncateForTts(request.text) });
       } catch (error) {
-        failures.push(`${id}: ${error instanceof Error ? error.message : String(error)}`);
+        failures.push(`${id}: ${errorMessage(error)}`);
       }
     }
     throw new VoiceProviderError(

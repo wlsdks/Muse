@@ -72,7 +72,7 @@ export function parseExternalMcpConfig(raw: string, source = "<inline>"): readon
     parsed = JSON.parse(raw);
   } catch (cause) {
     throw new ConfigurationError(
-      `Invalid JSON in MCP config (${source}): ${cause instanceof Error ? cause.message : String(cause)}`
+      `Invalid JSON in MCP config (${source}): ${errorMessage(cause)}`
     );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -242,7 +242,7 @@ export function diagnoseExternalMcpConfig(
     parsed = JSON.parse(raw);
   } catch (cause) {
     throw new ConfigurationError(
-      `Invalid JSON in MCP config (${source}): ${cause instanceof Error ? cause.message : String(cause)}`
+      `Invalid JSON in MCP config (${source}): ${errorMessage(cause)}`
     );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -280,7 +280,7 @@ export function diagnoseExternalMcpConfig(
       }
     } catch (cause) {
       out.push({
-        findings: [cause instanceof Error ? cause.message : String(cause)],
+        findings: [errorMessage(cause)],
         name: trimmedName,
         status: "error"
       });
@@ -358,7 +358,7 @@ function tryReadFile(path: string): string | undefined {
       return undefined;
     }
     throw new ConfigurationError(
-      `Failed to read MCP config at ${path}: ${cause instanceof Error ? cause.message : String(cause)}`
+      `Failed to read MCP config at ${path}: ${errorMessage(cause)}`
     );
   }
 }

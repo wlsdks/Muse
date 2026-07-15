@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve as pathResolve } from "node:path";
 
 import type { JsonObject } from "@muse/shared";
+import { errorMessage } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { fetchPublicHttpWithRedirects } from "./public-http-redirect.js";
@@ -152,14 +153,14 @@ export function createWebDownloadTool(deps: WebDownloadToolDeps): MuseTool {
           bytes = Buffer.concat(chunks);
         }
       } catch (cause) {
-        return { reason: `download failed: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
+        return { reason: `download failed: ${errorMessage(cause)}`, saved: false };
       }
       const name = safeDownloadName(typeof args["filename"] === "string" ? args["filename"] : undefined, finalUrl);
       let saved: { name: string; path: string };
       try {
         saved = await writeNonClobbering(downloadDir, name, bytes);
       } catch (cause) {
-        return { reason: `could not write to Downloads: ${cause instanceof Error ? cause.message : String(cause)}`, saved: false };
+        return { reason: `could not write to Downloads: ${errorMessage(cause)}`, saved: false };
       }
       return { bytes: bytes.byteLength, name: saved.name, path: saved.path, saved: true };
     }

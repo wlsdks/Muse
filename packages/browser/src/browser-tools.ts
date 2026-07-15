@@ -57,7 +57,7 @@ async function resolveGateDecision(gate: BrowserApprovalGate, draft: BrowserActi
     const decision = await gate(draft);
     return decision.approved ? { approved: true } : { approved: false, reason: decision.reason ?? "not approved" };
   } catch (cause) {
-    return { approved: false, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+    return { approved: false, reason: `approval gate error: ${errorMessage(cause)}` };
   }
 }
 
@@ -115,7 +115,7 @@ export function statusFields(snapshot: PageSnapshot): JsonObject {
 }
 
 function errorResult(cause: unknown): JsonObject {
-  return { error: cause instanceof Error ? cause.message : String(cause) };
+  return { error: errorMessage(cause) };
 }
 
 /**
@@ -933,7 +933,7 @@ export function createBrowserUploadTool(deps: BrowserUploadToolDeps): MuseTool {
       try {
         verdict = await deps.validatePath(path);
       } catch (cause) {
-        return { uploaded: false, reason: `path validation error: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { uploaded: false, reason: `path validation error: ${errorMessage(cause)}` };
       }
       if (!verdict.allowed) {
         return { reason: verdict.reason, uploaded: false };

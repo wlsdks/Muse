@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * Read/send email over plain IMAP + SMTP with an app password — the
  * "no Google Cloud project" path (`muse setup email`'s recommended
@@ -213,7 +214,7 @@ function classifyImapError(cause: unknown, email: string, appPassword: string): 
       serverDetail
     );
   }
-  const detail = cause instanceof Error ? cause.message : String(cause);
+  const detail = errorMessage(cause);
   return new ImapSmtpNetworkError(redact(`IMAP connection failed: ${detail}`, appPassword));
 }
 
@@ -227,7 +228,7 @@ function classifySmtpError(cause: unknown, email: string, appPassword: string): 
       serverDetail
     );
   }
-  const detail = cause instanceof Error ? cause.message : String(cause);
+  const detail = errorMessage(cause);
   return new ImapSmtpNetworkError(redact(`SMTP send failed: ${detail}`, appPassword));
 }
 

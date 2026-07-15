@@ -181,7 +181,7 @@ export async function invokeRustRunner(
     };
   } catch (cause) {
     return {
-      error: cause instanceof Error ? cause.message : String(cause),
+      error: errorMessage(cause),
       ok: false,
       status: null,
       stderr: "",

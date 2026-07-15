@@ -15,6 +15,7 @@
  */
 
 import { promises as fs } from "node:fs";
+import { errorMessage } from "@muse/shared";
 
 type VersionBackupLogger = {
   warn: (message: string) => void;
@@ -44,7 +45,7 @@ export async function backupVersionMismatchedStore(
     );
   } catch (cause) {
     logger.warn(
-      `[recall] ${file}: schema version mismatch (found ${String(foundVersion)}) — backup to ${backupPath} failed (${cause instanceof Error ? cause.message : String(cause)}); continuing with an empty store, ORIGINAL CONTENT MAY BE LOST on the next write`
+      `[recall] ${file}: schema version mismatch (found ${String(foundVersion)}) — backup to ${backupPath} failed (${errorMessage(cause)}); continuing with an empty store, ORIGINAL CONTENT MAY BE LOST on the next write`
     );
   }
 }

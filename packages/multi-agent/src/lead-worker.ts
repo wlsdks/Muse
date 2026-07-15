@@ -1,4 +1,5 @@
 import { comparableScript, detectPairwiseContradictions, detectRedundantPairs, lexicalTokens, neutralizeInjectionSpans } from "@muse/agent-core";
+import { errorMessage } from "@muse/shared";
 
 import { decomposeRequestWithKind, shouldDecompose, type Subtask } from "./decompose-trigger.js";
 
@@ -310,7 +311,7 @@ async function runOne(subtask: Subtask, deps: LeadWorkerDeps, priorContext?: rea
   try {
     produced = await deps.execute(subtask, priorContext);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error), status: "failed", subtask };
+    return { error: errorMessage(error), status: "failed", subtask };
   }
 
   // Blank output is fail-close, never a silent success: a worker that returned

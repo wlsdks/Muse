@@ -113,7 +113,7 @@ function refusal(error: unknown, path: string): JsonObject {
   if ((error as NodeJS.ErrnoException).code === "ENOENT") {
     return { path, reason: `no file at '${path}' — to create it use file_write; to edit an existing file, check the path or use file_list to find it.`, written: false };
   }
-  return { path, reason: error instanceof Error ? error.message : String(error), written: false };
+  return { path, reason: errorMessage(error), written: false };
 }
 
 /**
@@ -224,7 +224,7 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
         try {
           decision = await options.approvalGate(draft);
         } catch (cause) {
-          return { path: safe, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}`, written: false };
+          return { path: safe, reason: `approval gate error: ${errorMessage(cause)}`, written: false };
         }
         if (!decision.approved) {
           return { path: safe, reason: decision.reason ?? "not confirmed", written: false };
@@ -239,14 +239,14 @@ export function createFileWriteTool(options: FsWriteToolsOptions, policyPromise?
           originalForSnapshot = await readFileNoFollowBuffer(safe);
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
+            return { path: safe, reason: `checkpoint snapshot failed — write refused: ${errorMessage(error)}`, written: false };
           }
           originalForSnapshot = undefined;
         }
         try {
           await resolveCheckpointStore(options).record({ action: "write", originalContent: originalForSnapshot, path: safe, summary: draft.summary });
         } catch (error) {
-          return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
+          return { path: safe, reason: `checkpoint snapshot failed — write refused: ${errorMessage(error)}`, written: false };
         }
         await mkdir(dirname(safe), { recursive: true });
         await writeFileNoFollow(safe, content);
@@ -319,7 +319,7 @@ function editExecutor(
     try {
       decision = await options.approvalGate(draft);
     } catch (cause) {
-      return { path: safe, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}`, written: false };
+      return { path: safe, reason: `approval gate error: ${errorMessage(cause)}`, written: false };
     }
     if (!decision.approved) {
       return { path: safe, reason: decision.reason ?? "not confirmed", written: false };
@@ -332,7 +332,7 @@ function editExecutor(
     try {
       await resolveCheckpointStore(options).record({ action, originalContent: originalBuffer, path: safe, summary: draft.summary });
     } catch (error) {
-      return { path: safe, reason: `checkpoint snapshot failed — write refused: ${error instanceof Error ? error.message : String(error)}`, written: false };
+      return { path: safe, reason: `checkpoint snapshot failed — write refused: ${errorMessage(error)}`, written: false };
     }
     try {
       await writeFileNoFollow(safe, outcome.content);
@@ -498,7 +498,7 @@ export function createFileDeleteTool(options: FsWriteToolsOptions, policyPromise
         try {
           decision = await options.approvalGate(draft);
         } catch (cause) {
-          return { deleted: false, path: safe, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+          return { deleted: false, path: safe, reason: `approval gate error: ${errorMessage(cause)}` };
         }
         if (!decision.approved) {
           return { deleted: false, path: safe, reason: decision.reason ?? "not confirmed" };
@@ -513,18 +513,18 @@ export function createFileDeleteTool(options: FsWriteToolsOptions, policyPromise
           try {
             originalForSnapshot = await readFileNoFollowBuffer(safe);
           } catch (error) {
-            return { deleted: false, path: safe, reason: `checkpoint snapshot failed — delete refused: ${error instanceof Error ? error.message : String(error)}` };
+            return { deleted: false, path: safe, reason: `checkpoint snapshot failed — delete refused: ${errorMessage(error)}` };
           }
         }
         try {
           await resolveCheckpointStore(options).record({ action: "delete", originalContent: originalForSnapshot, path: safe, summary: draft.summary });
         } catch (error) {
-          return { deleted: false, path: safe, reason: `checkpoint snapshot failed — delete refused: ${error instanceof Error ? error.message : String(error)}` };
+          return { deleted: false, path: safe, reason: `checkpoint snapshot failed — delete refused: ${errorMessage(error)}` };
         }
         await unlink(safe);
         return { deleted: true, path: safe };
       } catch (error) {
-        return { deleted: false, path: safe, reason: error instanceof Error ? error.message : String(error) };
+        return { deleted: false, path: safe, reason: errorMessage(error) };
       }
     }
   };
@@ -586,7 +586,7 @@ export function createFileMoveTool(options: FsWriteToolsOptions, policyPromise?:
         try {
           decision = await options.approvalGate(draft);
         } catch (cause) {
-          return { moved: false, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+          return { moved: false, reason: `approval gate error: ${errorMessage(cause)}` };
         }
         if (!decision.approved) {
           return { moved: false, reason: decision.reason ?? "not confirmed" };
@@ -597,13 +597,13 @@ export function createFileMoveTool(options: FsWriteToolsOptions, policyPromise?:
         try {
           await resolveCheckpointStore(options).record({ action: "move", fromPath: from, originalContent: undefined, path: to, summary: draft.summary });
         } catch (error) {
-          return { moved: false, reason: `checkpoint snapshot failed — move refused: ${error instanceof Error ? error.message : String(error)}` };
+          return { moved: false, reason: `checkpoint snapshot failed — move refused: ${errorMessage(error)}` };
         }
         await mkdir(dirname(to), { recursive: true });
         await rename(from, to);
         return { from, moved: true, to };
       } catch (error) {
-        return { from, moved: false, reason: error instanceof Error ? error.message : String(error) };
+        return { from, moved: false, reason: errorMessage(error) };
       }
     }
   };

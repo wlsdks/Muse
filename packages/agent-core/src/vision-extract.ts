@@ -115,7 +115,7 @@ export async function extractStructuredFromImage(
     });
     raw = response.output ?? "";
   } catch (cause) {
-    return { error: `vision extraction failed: ${cause instanceof Error ? cause.message : String(cause)}`, ok: false, raw };
+    return { error: `vision extraction failed: ${errorMessage(cause)}`, ok: false, raw };
   }
   let parsed: unknown;
   try {
@@ -181,7 +181,7 @@ export async function describeImage(
     });
     text = (response.output ?? "").trim();
   } catch (cause) {
-    return { error: `vision description failed: ${cause instanceof Error ? cause.message : String(cause)}`, ok: false };
+    return { error: `vision description failed: ${errorMessage(cause)}`, ok: false };
   }
   if (text.length === 0) {
     return { error: "the vision model returned no description", ok: false };

@@ -3,6 +3,7 @@
 
 import type { CalendarEvent, CalendarProviderRegistry } from "@muse/calendar";
 import { readTasks, type PersistedTask, type ProactiveFiredKind } from "@muse/stores";
+import { errorMessage } from "@muse/shared";
 
 import { minutesUntil } from "./quiet-hours.js";
 
@@ -77,7 +78,7 @@ export async function collectImminentCalendar(
       });
     }
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = errorMessage(cause);
     errors.push(`calendar.listEvents failed: ${message}`);
   }
   return { errors, items };
@@ -109,7 +110,7 @@ export async function collectImminentTasks(
       });
     }
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = errorMessage(cause);
     errors.push(`tasks.readTasks failed: ${message}`);
   }
   return { errors, items };

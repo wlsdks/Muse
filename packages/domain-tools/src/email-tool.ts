@@ -11,7 +11,7 @@
  * the (caller-supplied) approval gate is the confirmation point.
  */
 
-import type { JsonObject } from "@muse/shared";
+import { errorMessage, type JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { extractEmailAddress, type EmailProvider, type EmailReader, type EmailSearcher, type EmailSender } from "./email-provider.js";
@@ -237,7 +237,7 @@ export function createEmailReadTool(deps: EmailReadToolDeps): MuseTool {
       try {
         messages = await deps.provider.listRecent(limit);
       } catch (cause) {
-        return { error: cause instanceof Error ? cause.message : String(cause), messages: [] };
+        return { error: errorMessage(cause), messages: [] };
       }
       const filtered = unreadOnly ? messages.filter((m) => m.unread) : messages;
       return {
@@ -290,7 +290,7 @@ export function createEmailSearchTool(deps: EmailSearchToolDeps): MuseTool {
       try {
         messages = await deps.searcher.search(query, limit);
       } catch (cause) {
-        return { count: 0, error: cause instanceof Error ? cause.message : String(cause), messages: [] };
+        return { count: 0, error: errorMessage(cause), messages: [] };
       }
       return {
         count: messages.length,
@@ -341,7 +341,7 @@ export function createEmailReadMessageTool(deps: EmailReadMessageToolDeps): Muse
         // A permanent auth failure (expired/missing token) propagates from
         // getMessage — surface it so the agent reports "re-auth" rather than
         // a misleading "no message with that id".
-        return { found: false, id, reason: cause instanceof Error ? cause.message : String(cause) };
+        return { found: false, id, reason: errorMessage(cause) };
       }
       if (message === undefined) {
         return { found: false, id, reason: "no message with that id (or the inbox was unreachable)" };

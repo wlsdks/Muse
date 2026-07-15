@@ -1,3 +1,5 @@
+import { errorMessage } from "@muse/shared";
+
 export type StructuredOutputFormat = "json" | "yaml";
 
 export interface StructuredOutputNormalizationResult {
@@ -31,7 +33,7 @@ function normalizeJsonOutput(content: string): StructuredOutputNormalizationResu
         normalized: true
       };
     } catch (error) {
-      lastError = error instanceof Error ? error.message : "Invalid JSON";
+      lastError = errorMessage(error, "Invalid JSON");
     }
   }
   return {

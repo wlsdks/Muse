@@ -37,6 +37,7 @@
  */
 
 import {
+import { errorMessage } from "@muse/shared";
   appendDigestItem,
   appendInterruptionDelivery,
   appendLastProactiveDelivery,
@@ -169,5 +170,5 @@ async function recordLastDelivery(
 }
 
 function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+  return errorMessage(cause);
 }

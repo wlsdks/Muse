@@ -116,7 +116,7 @@ export async function readStoredToken(io: CredentialStoreIO, baseUrl: string): P
     // tokens behind a corrupted file.
     io.stderr?.(
       `(warning: credentials store unreadable: ${
-        error instanceof Error ? error.message : String(error)
+        errorMessage(error)
       }; treating as no credentials. Re-login with \`muse auth login\` to write a fresh store.)\n`
     );
     return undefined;

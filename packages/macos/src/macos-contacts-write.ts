@@ -112,7 +112,7 @@ export function createMacContactsWriteTool(deps: MacContactsWriteToolDeps): Muse
       try {
         decision = await deps.approvalGate(draft);
       } catch (cause) {
-        decision = { approved: false, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+        decision = { approved: false, reason: `approval gate error: ${errorMessage(cause)}` };
       }
       // The load-bearing gate: NO osascript below this line unless approved.
       if (!decision.approved) {
@@ -138,7 +138,7 @@ export function createMacContactsWriteTool(deps: MacContactsWriteToolDeps): Muse
       try {
         result = await runner(script);
       } catch (cause) {
-        const detail = cause instanceof Error ? cause.message : String(cause);
+        const detail = errorMessage(cause);
         await log("failed", "user-approved contact creation", detail);
         return { detail, reason: "write-failed", written: false };
       }

@@ -61,16 +61,30 @@ function appendChunk(target: StreamAccumulator, chunk: unknown): void {
 }
 
 function asError(cause: unknown): Error {
-  return cause instanceof Error ? cause : new Error(String(cause));
+  const message = typeof cause === "string" ? cause : typeof cause === "object" && cause !== null && "message" in cause && typeof (cause as { message?: unknown }).message === "string" ? (cause as { message: string }).message : String(cause);
+  return new Error(message);
 }
 
 function abortError(reason: unknown): Error {
-  return reason instanceof Error
-    ? reason
-    : new DOMException(
-      typeof reason === "string" ? reason : "command execution was aborted",
-      "AbortError"
-    );
+  return new DOMException(
+    typeof reason === "string" ? reason : asMessageFromValue(reason, "command execution was aborted"),
+    "AbortError"
+  );
+}
+
+function asMessageFromValue(cause: unknown, fallback: string): string {
+  if (typeof cause === "string") {
+    return cause;
+  }
+
+  if (cause !== null && typeof cause === "object" && "message" in cause) {
+    const message = (cause as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+
+  return fallback;
 }
 
 export async function runCommandWithTimeout(options: RunCommandOptions): Promise<RunCommandResult> {

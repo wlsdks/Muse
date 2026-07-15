@@ -44,7 +44,7 @@ export function createLoopbackMcpConnection(server: LoopbackMcpServer): McpConne
         const result = await tool.execute(args);
         return result;
       } catch (error) {
-        return `Error: MCP tool '${toolName}' on '${server.name}' threw — ${error instanceof Error ? error.message : String(error)}`;
+        return `Error: MCP tool '${toolName}' on '${server.name}' threw — ${errorMessage(error)}`;
       }
     },
     close: async () => {

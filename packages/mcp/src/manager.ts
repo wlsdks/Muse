@@ -21,6 +21,7 @@
 import { createHash } from "node:crypto";
 import { accessSync, constants as fsConstants, readFileSync, statSync } from "node:fs";
 import { delimiter, join as joinPath } from "node:path";
+import { errorMessage } from "@muse/shared";
 
 import type { MuseTool } from "@muse/tools";
 
@@ -728,7 +729,7 @@ export function verifyServerFingerprint(server: McpServer): { matched: boolean; 
     hash.update(readFileSync(resolvedCommand));
     if (entrypoint) hash.update(readFileSync(entrypoint));
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = errorMessage(cause);
     return { matched: false, reason: `fingerprint check could not read binary: ${message}` };
   }
   const actual = hash.digest("hex");

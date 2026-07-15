@@ -17,6 +17,7 @@
 
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
+import { errorMessage } from "@muse/shared";
 
 import { avoidedSourceKeys, readTrustLedger, withFileMutationQueue, withProcessLock } from "@muse/stores";
 import { applyInterruptionBudget, resolveInterruptionBudgetCaps, type InterruptionBudgetWiring } from "./interruption-gate.js";
@@ -450,7 +451,7 @@ async function runDueCheckinsUnderLock(options: RunDueCheckinsOptions): Promise<
         delivered += 1;
       }
     } catch (cause) {
-      errors.push(`${checkin.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      errors.push(`${checkin.id}: ${errorMessage(cause)}`);
     }
   }
   if (firedIds.size > 0) {

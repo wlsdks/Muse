@@ -14,6 +14,7 @@ import { diversifyAskChunks, secondHopAugmentChunks, shouldSecondHop, type FileE
 import { demoteStale } from "./conflict.js";
 import { filterNotesByScope, relativizeNoteSource } from "./present.js";
 import { existsSync } from "node:fs";
+import { errorMessage } from "@muse/shared";
 
 import { filterLiveNoteIndexFiles } from "./live-files.js";
 import { cosine } from "./notes-index.js";
@@ -173,7 +174,7 @@ export async function retrieveAndRankNotes(params: {
     }
   } catch (cause) {
     notesUnavailable = true;
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    const detail = errorMessage(cause);
     onStderr(
       `(notes search unavailable — embedding via '${embedModel}' failed: ${detail}. ` +
       `Answering without notes context. To restore RAG grounding: ` +

@@ -15,7 +15,7 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 
-import { runCommandWithTimeout } from "@muse/shared";
+import { errorMessage, runCommandWithTimeout } from "@muse/shared";
 
 import { MessagingProviderError, MessagingValidationError } from "./errors.js";
 import type {
@@ -123,7 +123,7 @@ export class LinuxLibnotifyProvider implements MessagingProvider {
       throw new MessagingProviderError(
         this.id,
         "UPSTREAM_FAILED",
-        cause instanceof Error ? `notify-send spawn failed: ${cause.message}` : "notify-send spawn failed"
+        `notify-send spawn failed: ${errorMessage(cause, "notify-send spawn failed")}`
       );
     });
     if (result.exitCode !== 0) {

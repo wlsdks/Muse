@@ -1,4 +1,5 @@
 import {
+import { errorMessage } from "@muse/shared";
   DiscordProvider,
   SlackProvider,
   TelegramProvider,
@@ -84,7 +85,7 @@ export function createMessagingPollDispatchers(
           const got = await pollNow("telegram");
           ingestedByProvider["telegram"] = got.ingested;
         } catch (cause) {
-          errors.push({ message: cause instanceof Error ? cause.message : String(cause), providerId: "telegram" });
+          errors.push({ message: errorMessage(cause), providerId: "telegram" });
         }
       } else if (provider instanceof DiscordProvider) {
         let total = 0;
@@ -94,7 +95,7 @@ export function createMessagingPollDispatchers(
             total += got.ingested;
           } catch (cause) {
             errors.push({
-              message: `channel ${channel}: ${cause instanceof Error ? cause.message : String(cause)}`,
+              message: `channel ${channel}: ${errorMessage(cause)}`,
               providerId: "discord"
             });
           }
@@ -108,7 +109,7 @@ export function createMessagingPollDispatchers(
             total += got.ingested;
           } catch (cause) {
             errors.push({
-              message: `channel ${channel}: ${cause instanceof Error ? cause.message : String(cause)}`,
+              message: `channel ${channel}: ${errorMessage(cause)}`,
               providerId: "slack"
             });
           }

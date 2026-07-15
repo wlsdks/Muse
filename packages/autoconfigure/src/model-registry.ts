@@ -82,7 +82,7 @@ export async function fetchInstalledOllamaModels(
       }));
     return { models, ok: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error), ok: false };
+    return { error: errorMessage(error), ok: false };
   }
 }
 

@@ -504,7 +504,7 @@ async function runDueProactiveNoticesUnderLock(
     try {
       await writeProactiveFired(options.sidecarFile, nextFired);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorMessage(cause);
       errors.push(`sidecar write failed: ${message}`);
     }
   }
@@ -537,7 +537,7 @@ async function deliverImminentItem(
 
   let rawNoticeText = phaseDActive
     ? await synthesizeNoticeText(item, options).catch((cause) => {
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = errorMessage(cause);
         errors.push(`${item.kind}:${item.id} synthesis: ${message}`);
         return item.text;
       })
@@ -597,7 +597,7 @@ async function deliverImminentItem(
       try {
         await appendSurfaced(options.trustLedgerFile, { id: item.id, kind: item.kind, surfacedAtMs, title: item.title });
       } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = errorMessage(cause);
         errors.push(`trust ledger write failed: ${message}`);
       }
     }
@@ -628,7 +628,7 @@ async function deliverImminentItem(
     }
     return { delivered };
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = errorMessage(cause);
     errors.push(`${item.kind}:${item.id}: ${message}`);
     if (options.historyFile) {
       await appendProactiveHistory(options.historyFile, {

@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { join as pathJoin } from "node:path";
 
 import type { JsonObject, JsonValue } from "@muse/shared";
+import { errorMessage } from "@muse/shared";
 
 import type { LoopbackMcpServer, LoopbackMcpToolDefinition } from "@muse/mcp";
 import { readFollowups } from "@muse/stores";
@@ -297,7 +298,7 @@ export function createStatusMcpServer(options: StatusMcpServerOptions = {}): Loo
           total: files.length
         };
       } catch (cause) {
-        return { dir, error: cause instanceof Error ? cause.message : String(cause) };
+        return { dir, error: errorMessage(cause) };
       }
     },
     inputSchema: { additionalProperties: false, properties: {}, type: "object" },

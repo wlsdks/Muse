@@ -126,7 +126,7 @@ function refusalResult(error: unknown, path: string): JsonObject {
   if (isPathSafetyError(error)) {
     return { error: error.message, path, refused: true };
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return { error: message, path };
 }
 

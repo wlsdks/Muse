@@ -52,7 +52,7 @@ export function createWinAppOpenTool(deps: WindowsToolDeps = {}): MuseTool {
         }
         return { opened: true, target, ...(app.length > 0 ? { app } : {}) };
       } catch (cause) {
-        return { opened: false, reason: `powershell spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { opened: false, reason: `powershell spawn failed: ${errorMessage(cause)}` };
       }
     }
   };

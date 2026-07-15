@@ -79,7 +79,7 @@ export function createMuseToolsMcpServer(options: MuseToolsMcpServerOptions): Se
       // A thrown error (a failed model call, a store read failure, …) MUST
       // reach the client as a structured tool error — never crash the server
       // process and never silently degrade into an uncited/empty "success".
-      return errorResult(`'${tool.definition.name}' failed: ${error instanceof Error ? error.message : String(error)}`);
+      return errorResult(`'${tool.definition.name}' failed: ${errorMessage(error)}`);
     }
   });
 

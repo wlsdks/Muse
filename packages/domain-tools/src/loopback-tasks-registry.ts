@@ -13,7 +13,7 @@
  * overhead.
  */
 
-import { assertNoSecretInPersistedFields, type JsonObject, type JsonValue } from "@muse/shared";
+import { errorMessage, assertNoSecretInPersistedFields, type JsonObject, type JsonValue } from "@muse/shared";
 
 import { readString, readStringArray } from "@muse/mcp";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -254,5 +254,5 @@ function errorBody(error: unknown): JsonObject {
   if (error instanceof TasksProviderError || error instanceof TasksValidationError) {
     return { code: error.code, error: error.message };
   }
-  return { error: error instanceof Error ? error.message : String(error) };
+  return { error: errorMessage(error) };
 }

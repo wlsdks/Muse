@@ -401,7 +401,7 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
           try {
             ports = await shell(NETWORKSETUP_PATH, ["-listallhardwareports"]);
           } catch (cause) {
-            return { error: `wifi_status read spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+            return { error: `wifi_status read spawn failed: ${errorMessage(cause)}` };
           }
           if (ports.timedOut || ports.exitCode !== 0) {
             return { error: `wifi_status read failed: ${ports.stderr.trim().slice(0, 200) || "timed out"}` };
@@ -414,7 +414,7 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
           try {
             status = await shell(NETWORKSETUP_PATH, ["-getairportnetwork", device]);
           } catch (cause) {
-            return { error: `wifi_status read spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+            return { error: `wifi_status read spawn failed: ${errorMessage(cause)}` };
           }
           if (status.timedOut || status.exitCode !== 0) {
             return { error: `wifi_status read failed: ${status.stderr.trim().slice(0, 200) || "timed out"}` };
@@ -426,7 +426,7 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
           try {
             ports = await shell(NETWORKSETUP_PATH, ["-listallhardwareports"]);
           } catch (cause) {
-            return { error: `ip_address read spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+            return { error: `ip_address read spawn failed: ${errorMessage(cause)}` };
           }
           if (ports.timedOut || ports.exitCode !== 0) {
             return { error: `ip_address read failed: ${ports.stderr.trim().slice(0, 200) || "timed out"}` };
@@ -439,7 +439,7 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
           try {
             ipResult = await shell(IPCONFIG_PATH, ["getifaddr", device]);
           } catch (cause) {
-            return { error: `ip_address read spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+            return { error: `ip_address read spawn failed: ${errorMessage(cause)}` };
           }
           return { app: "ip_address", ip: parseIpAddressOutput(ipResult.stdout) };
         }
@@ -448,7 +448,7 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
         try {
           shellResult = await shell(bin, argv);
         } catch (cause) {
-          return { error: `${app} read spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+          return { error: `${app} read spawn failed: ${errorMessage(cause)}` };
         }
         if (shellResult.timedOut || shellResult.exitCode !== 0) {
           return { error: `${app} read failed: ${shellResult.stderr.trim().slice(0, 200) || "timed out"}` };
@@ -463,7 +463,7 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
       try {
         result = await runner(buildReadScript(app as MacReadApp, query));
       } catch (cause) {
-        return { error: `osascript spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { error: `osascript spawn failed: ${errorMessage(cause)}` };
       }
       if (result.timedOut) {
         return { error: `osascript timed out after ${OSASCRIPT_TIMEOUT_MS.toString()}ms (an unanswered Automation permission prompt?)` };

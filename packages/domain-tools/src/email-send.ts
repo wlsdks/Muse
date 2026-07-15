@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * Draft-first, fail-closed outbound email — the send half, the
  * first capability that *transmits content to a third party*, governed
@@ -96,7 +97,7 @@ async function dispatchEmailDraft(
     decision = await deps.approvalGate(draft);
   } catch (cause) {
     // A gate that throws (undeliverable prompt, timeout) is fail-closed.
-    decision = { approved: false, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+    decision = { approved: false, reason: `approval gate error: ${errorMessage(cause)}` };
   }
   if (!decision.approved) {
     await deps.log("refused", `email to ${draft.to}: ${draft.subject}`, "outbound email refused", decision.reason ?? "not approved");
@@ -106,7 +107,7 @@ async function dispatchEmailDraft(
   try {
     messageId = await deps.sender.sendEmail(draft.to, draft.subject, draft.body);
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    const detail = errorMessage(cause);
     await deps.log("failed", `email to ${draft.to}: ${draft.subject}`, "user-approved outbound email", detail);
     return { detail, reason: "send-failed", sent: false };
   }

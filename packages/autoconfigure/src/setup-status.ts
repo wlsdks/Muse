@@ -14,7 +14,7 @@ import { existsSync, promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter as pathDelimiter, join as pathJoin } from "node:path";
 
-import { isRecord, parseJson } from "@muse/shared";
+import { errorMessage, isRecord, parseJson } from "@muse/shared";
 import { hasStoredEmailImapCredentialSync, hasStoredGmailCredentialSync } from "@muse/stores";
 
 import { parseBoolean, parseBooleanTriState, parseInteger } from "./env-parsers.js";
@@ -402,7 +402,7 @@ export function evaluateLocalOnlyPosture(env: Readonly<Record<string, string | u
         status: "ok"
       };
     } catch (cause) {
-      return { detail: cause instanceof Error ? cause.message : "cloud provider selected under local-only", enabled, status: "fail" };
+      return { detail: errorMessage(cause, "cloud provider selected under local-only"), enabled, status: "fail" };
     }
   }
   const cloudKey = CLOUD_CREDENTIAL_ENV_KEYS.find((k) => (env[k] ?? "").trim().length > 0);

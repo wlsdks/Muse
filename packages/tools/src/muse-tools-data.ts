@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import type { JsonObject } from "@muse/shared";
+import { errorMessage, type JsonObject } from "@muse/shared";
 
 import type { MuseTool } from "./index.js";
 
@@ -50,7 +50,7 @@ export function createMathEvalTool(): MuseTool {
         }
         return { expression, result } satisfies JsonObject;
       } catch (error) {
-        return { error: error instanceof Error ? error.message : "expression evaluation failed" };
+        return { error: errorMessage(error, "expression evaluation failed") };
       }
     }
   };

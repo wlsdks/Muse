@@ -241,5 +241,5 @@ export async function runDueBackgroundExitNotices(
 }
 
 function describe(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+  return errorMessage(cause);
 }

@@ -7,6 +7,7 @@
  */
 
 import { isPermissionError, type MacOsascriptRunner } from "./macos-exec.js";
+import { errorMessage } from "@muse/shared";
 
 // Matches @muse/autoconfigure's parseBoolean truthy set (env-parsers.ts). Kept
 // local so @muse/macos stays dependency-free (autoconfigure depends on macos —
@@ -57,7 +58,7 @@ export async function runMirrorScript(
     }
     return { mirrored: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     return { mirrored: false, warning: `${labels.app} mirror failed: ${message}` };
   }
 }

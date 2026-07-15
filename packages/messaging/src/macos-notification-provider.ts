@@ -18,7 +18,7 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 
-import { runCommandWithTimeout } from "@muse/shared";
+import { errorMessage, runCommandWithTimeout } from "@muse/shared";
 
 import { MessagingProviderError, MessagingValidationError } from "./errors.js";
 import type {
@@ -132,7 +132,7 @@ export class MacosNotificationProvider implements MessagingProvider {
       throw new MessagingProviderError(
         this.id,
         "UPSTREAM_FAILED",
-        cause instanceof Error ? `osascript spawn failed: ${cause.message}` : "osascript spawn failed"
+        `osascript spawn failed: ${errorMessage(cause, "osascript spawn failed")}`
       );
     });
     if (result.exitCode !== 0) {

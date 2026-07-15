@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@muse/shared";
+import { errorMessage, type JsonObject, type JsonValue } from "@muse/shared";
 
 import { readString } from "@muse/mcp";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -36,7 +36,7 @@ export function createJsonMcpServer(): LoopbackMcpServer {
           try {
             parsed = JSON.parse(json);
           } catch (error) {
-            return { error: `invalid JSON: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `invalid JSON: ${errorMessage(error)}` };
           }
           const indentValue = args.indent;
           const indent = typeof indentValue === "number" && Number.isInteger(indentValue) && indentValue >= 0 && indentValue <= 8
@@ -73,7 +73,7 @@ export function createJsonMcpServer(): LoopbackMcpServer {
             try {
               target = JSON.parse(jsonArg);
             } catch (error) {
-              return { error: `invalid JSON: ${error instanceof Error ? error.message : String(error)}` };
+              return { error: `invalid JSON: ${errorMessage(error)}` };
             }
           } else {
             target = valueArg;

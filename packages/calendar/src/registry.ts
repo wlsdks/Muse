@@ -1,5 +1,6 @@
 import { CalendarProviderError } from "./errors.js";
 import type {
+import { errorMessage } from "@muse/shared";
   CalendarEvent,
   CalendarEventInput,
   CalendarEventUpdate,
@@ -108,7 +109,7 @@ export class CalendarProviderRegistry {
         try {
           return await provider.listEvents(range);
         } catch (cause) {
-          const message = cause instanceof Error ? cause.message : String(cause);
+          const message = errorMessage(cause);
           failedProviders.push({ providerId: provider.id, message });
           this.onProviderError?.(provider.id, message);
           return [] as readonly CalendarEvent[];

@@ -1,4 +1,4 @@
-import { isRecord, stripUntrustedTerminalChars, type JsonObject, type JsonValue } from "@muse/shared";
+import { errorMessage, isRecord, stripUntrustedTerminalChars, type JsonObject, type JsonValue } from "@muse/shared";
 
 import { fetchWithRetry, type RetryOptions } from "@muse/mcp-shared";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -176,7 +176,7 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
               }
             });
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             return { error: `search failed: ${message}` };
           }
           if (!response.ok) {
@@ -193,7 +193,7 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           try {
             html = await response.text();
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             return { error: `search failed: ${message}` };
           }
           const parsed = parseDuckDuckGoHtml(html, maxResults);

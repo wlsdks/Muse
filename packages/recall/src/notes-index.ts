@@ -6,6 +6,7 @@
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
+import { errorMessage } from "@muse/shared";
 
 import { atomicWriteFile } from "@muse/stores";
 import { homedir } from "node:os";
@@ -393,7 +394,7 @@ export async function reindexNotes(
       body = await extractNoteText(path);
     } catch (cause) {
       failed += 1;
-      options.onProgress?.(`${at}✗ ${path} (could not read — skipped: ${cause instanceof Error ? cause.message : String(cause)})`);
+      options.onProgress?.(`${at}✗ ${path} (could not read — skipped: ${errorMessage(cause)})`);
       continue;
     }
     const overlap = Math.min(200, Math.max(0, Math.floor(chunkChars / 20)));
@@ -412,7 +413,7 @@ export async function reindexNotes(
         });
         out.push({ chunkIndex: i, embedding, file: path, text: chunks[i]! });
       } catch (cause) {
-        options.onProgress?.(`embed failed for ${path} chunk ${i.toString()}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        options.onProgress?.(`embed failed for ${path} chunk ${i.toString()}: ${errorMessage(cause)}`);
       }
     }
     // A file with no successfully-embedded chunks is NOT "embedded" — count it

@@ -12,7 +12,7 @@
  * is wired enough to surface audit data).
  */
 
-import type { JsonObject, JsonValue } from "@muse/shared";
+import { errorMessage, type JsonObject, type JsonValue } from "@muse/shared";
 
 import type { LoopbackMcpServer, LoopbackMcpToolDefinition } from "@muse/mcp";
 import { readProactiveHistory } from "@muse/stores";
@@ -42,7 +42,7 @@ export function createProactiveMcpServer(options: ProactiveMcpServerOptions): Lo
           total: entries.length
         };
       } catch (error) {
-        return { error: error instanceof Error ? error.message : String(error) };
+        return { error: errorMessage(error) };
       }
     },
     inputSchema: {

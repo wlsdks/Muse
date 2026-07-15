@@ -5,6 +5,8 @@
  * `SAFE_MATH_PATTERN` whitelist and `evaluateArithmetic` helper.
  */
 
+import { errorMessage } from "@muse/shared";
+
 const SAFE_MATH_PATTERN = /^[\s\d+\-*/().,%]+$/u;
 
 /**
@@ -32,7 +34,7 @@ export function evaluateArithmeticExpression(expression: string): { result: numb
     }
     return { result };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "expression evaluation failed" };
+    return { error: errorMessage(error, "expression evaluation failed") };
   }
 }
 

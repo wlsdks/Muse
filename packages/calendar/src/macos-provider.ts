@@ -8,7 +8,7 @@ import type {
   CalendarRange,
   CredentialRequirement
 } from "./types.js";
-import { runCommandWithTimeout } from "@muse/shared";
+import { errorMessage, runCommandWithTimeout } from "@muse/shared";
 
 export interface MacOsCalendarProviderOptions {
   readonly calendarName?: string;
@@ -196,8 +196,8 @@ export class MacOsCalendarProvider implements CalendarProvider {
       throw new CalendarProviderError(
         this.id,
         "OSASCRIPT_FAILED",
-        error instanceof Error ? error.message : String(error),
-        error instanceof Error ? error : undefined
+        errorMessage(error),
+        error
       );
     }
 

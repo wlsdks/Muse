@@ -27,8 +27,7 @@
  *   - `FETCH_FAILED` when the underlying fetch rejects
  */
 
-import {
-  TasksProviderError,
+import { errorMessage, TasksProviderError,
   TasksValidationError,
   type Task,
   type TaskInput,
@@ -291,7 +290,7 @@ export class NotionTasksProvider implements TasksProvider {
         throw new TasksProviderError(
           this.id,
           "FETCH_FAILED",
-          `Notion request failed: ${cause instanceof Error ? cause.message : String(cause)}`
+          `Notion request failed: ${errorMessage(cause)}`
         );
       }
       if (!response.ok) {
@@ -316,7 +315,7 @@ export class NotionTasksProvider implements TasksProvider {
         throw new TasksProviderError(
           this.id,
           "NOTION_BAD_JSON",
-          `Notion response was not JSON: ${cause instanceof Error ? cause.message : String(cause)}`
+          `Notion response was not JSON: ${errorMessage(cause)}`
         );
       }
     }

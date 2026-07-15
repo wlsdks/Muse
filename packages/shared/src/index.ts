@@ -177,6 +177,19 @@ export function redactSecretsInText(value: string): string {
   return redactSecrets(scrubbed);
 }
 
+function asMessageFromValue(cause: unknown): string | undefined {
+  if (typeof cause === "string") {
+    return cause;
+  }
+
+  if (cause !== null && typeof cause === "object" && "message" in cause) {
+    const message = (cause as { message?: unknown }).message;
+    return typeof message === "string" ? message : undefined;
+  }
+
+  return undefined;
+}
+
 /**
  * One-stop sanitizer for printing an unknown error to a terminal.
  * Extracts the message (Error instance or String fallback), strips
@@ -188,7 +201,7 @@ export function redactSecretsInText(value: string): string {
  * inject text that mimics a real prompt.
  */
 export function formatErrorForTerminal(cause: unknown, cap: number = DEFAULT_ERROR_BODY_CAP): string {
-  const message = cause instanceof Error ? cause.message : String(cause);
+  const message = asMessageFromValue(cause) ?? String(cause);
   return truncateErrorBody(stripUntrustedTerminalChars(message), cap);
 }
 
@@ -200,10 +213,7 @@ export function formatErrorForTerminal(cause: unknown, cap: number = DEFAULT_ERR
  * of a generic placeholder).
  */
 export function errorMessage(cause: unknown, fallback?: string): string {
-  if (cause instanceof Error) {
-    return cause.message;
-  }
-  return fallback ?? String(cause);
+  return asMessageFromValue(cause) ?? fallback ?? String(cause);
 }
 
 /**
@@ -269,7 +279,8 @@ export function createCancellationToken(): CancellationToken {
     throwIfCancelled: () => {
       if (controller.signal.aborted) {
         const reason = controller.signal.reason;
-        throw reason instanceof Error ? reason : new Error("Operation cancelled");
+        const message = asMessageFromValue(reason);
+        throw new Error(message ?? "Operation cancelled");
       }
     }
   };

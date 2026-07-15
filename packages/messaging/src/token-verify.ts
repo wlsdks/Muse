@@ -1,4 +1,5 @@
 import { fetchWithTimeout, tryParseJson } from "./provider-helpers.js";
+import { errorMessage } from "@muse/shared";
 
 export type TokenVerification =
   | { readonly ok: true; readonly account?: string }
@@ -109,6 +110,6 @@ export async function verifyMessagingToken(
         return { ok: false, reason: `unknown messaging provider "${providerId}"` };
     }
   } catch (cause) {
-    return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
+    return { ok: false, reason: errorMessage(cause) };
   }
 }

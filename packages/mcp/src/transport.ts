@@ -221,7 +221,7 @@ class SdkMcpConnection implements McpConnection {
     };
     this.client.onerror = (error: Error) => {
       this.alive = false;
-      this.closeReason = error instanceof Error ? error.message : String(error);
+      this.closeReason = errorMessage(error);
     };
   }
 

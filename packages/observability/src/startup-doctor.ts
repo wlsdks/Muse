@@ -6,6 +6,7 @@
  */
 
 import type {
+import { errorMessage } from "@muse/shared";
   CacheHealthProbe,
   McpHealthProbe,
   StartupCheck,
@@ -34,7 +35,7 @@ export class StartupDoctor {
       } catch (error) {
         reports.push({
           details: {
-            message: error instanceof Error ? error.message : String(error)
+            message: errorMessage(error)
           },
           id: check.id,
           ok: false,

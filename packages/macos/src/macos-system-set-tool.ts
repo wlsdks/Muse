@@ -165,7 +165,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         try {
           result = await shortcuts(["run", name, "--output-path", "-"]);
         } catch (cause) {
-          return { reason: `shortcuts spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+          return { reason: `shortcuts spawn failed: ${errorMessage(cause)}`, set: false };
         }
         if (result.timedOut) {
           return { reason: "shortcuts run timed out", set: false };
@@ -188,7 +188,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         try {
           result = await shortcuts(["run", name, "--output-path", "-"]);
         } catch (cause) {
-          return { reason: `shortcuts spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+          return { reason: `shortcuts spawn failed: ${errorMessage(cause)}`, set: false };
         }
         if (result.timedOut) {
           return { reason: "shortcuts run timed out", set: false };
@@ -206,7 +206,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
       }
       if (setting === "display_sleep" || setting === "sleep") {
         const argv = setting === "sleep" ? ["sleepnow"] : ["displaysleepnow"];
-        const result = await pmset(argv).catch((cause: unknown) => ({ exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause), stdout: "", timedOut: false }));
+        const result = await pmset(argv).catch((cause: unknown) => ({ exitCode: 1, stderr: errorMessage(cause), stdout: "", timedOut: false }));
         return result.exitCode === 0
           ? { set: true, setting }
           : { reason: `pmset failed: ${result.stderr.trim().slice(0, 200)}`, set: false };
@@ -216,14 +216,14 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         try {
           ports = await networksetup(["-listallhardwareports"]);
         } catch (cause) {
-          return { reason: `networksetup spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+          return { reason: `networksetup spawn failed: ${errorMessage(cause)}`, set: false };
         }
         const device = parseWifiDevice(ports.stdout);
         if (!device) {
           return { reason: "no Wi-Fi interface found on this Mac", set: false };
         }
         const power = await networksetup(["-setairportpower", device, setting === "wifi_on" ? "on" : "off"])
-          .catch((cause: unknown) => ({ exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause), stdout: "", timedOut: false }));
+          .catch((cause: unknown) => ({ exitCode: 1, stderr: errorMessage(cause), stdout: "", timedOut: false }));
         return power.exitCode === 0
           ? { device, set: true, setting }
           : { reason: `networksetup failed: ${power.stderr.trim().slice(0, 200)}`, set: false };
@@ -241,7 +241,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         try {
           result = await osascript(script);
         } catch (cause) {
-          return { reason: `osascript spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+          return { reason: `osascript spawn failed: ${errorMessage(cause)}`, set: false };
         }
         if (result.timedOut) {
           return { reason: `osascript timed out after ${OSASCRIPT_TIMEOUT_MS.toString()}ms`, set: false };
@@ -259,7 +259,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         try {
           result = await osascript(script);
         } catch (cause) {
-          return { reason: `osascript spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+          return { reason: `osascript spawn failed: ${errorMessage(cause)}`, set: false };
         }
         if (result.timedOut) {
           return { reason: `osascript timed out after ${OSASCRIPT_TIMEOUT_MS.toString()}ms`, set: false };
@@ -279,7 +279,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         try {
           result = await shortcuts(["run", brightnessShortcut, "--input-path", "-", "--output-path", "-"], String(level));
         } catch (cause) {
-          return { reason: `shortcuts spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+          return { reason: `shortcuts spawn failed: ${errorMessage(cause)}`, set: false };
         }
         if (result.timedOut) {
           return { reason: "shortcuts run timed out", set: false };
@@ -311,7 +311,7 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
       try {
         result = await osascript(script);
       } catch (cause) {
-        return { reason: `osascript spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`, set: false };
+        return { reason: `osascript spawn failed: ${errorMessage(cause)}`, set: false };
       }
       if (result.timedOut) {
         return { reason: `osascript timed out after ${OSASCRIPT_TIMEOUT_MS.toString()}ms`, set: false };

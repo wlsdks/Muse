@@ -155,7 +155,7 @@ export async function sendImessageWithApproval(options: SendImessageWithApproval
   try {
     decision = await options.approvalGate(draft);
   } catch (cause) {
-    decision = { approved: false, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+    decision = { approved: false, reason: `approval gate error: ${errorMessage(cause)}` };
   }
   if (!decision.approved) {
     await log("refused", "iMessage refused (not confirmed)", decision.reason ?? "not approved");
@@ -174,7 +174,7 @@ export async function sendImessageWithApproval(options: SendImessageWithApproval
   try {
     result = await runner(script);
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    const detail = errorMessage(cause);
     await log("failed", "user-approved iMessage", detail);
     return { detail, reason: "send-failed", sent: false };
   }

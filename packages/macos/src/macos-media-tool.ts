@@ -75,7 +75,7 @@ export function createMacMediaControlTool(deps: MacMediaControlToolDeps = {}): M
       try {
         result = await runner(buildMediaScript(action as MediaAction));
       } catch (cause) {
-        return { controlled: false, reason: `osascript spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { controlled: false, reason: `osascript spawn failed: ${errorMessage(cause)}` };
       }
       if (result.timedOut) {
         return { controlled: false, reason: `osascript timed out after ${OSASCRIPT_TIMEOUT_MS.toString()}ms` };

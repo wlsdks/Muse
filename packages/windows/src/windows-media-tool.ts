@@ -61,7 +61,7 @@ export function createWinMediaControlTool(deps: WindowsToolDeps = {}): MuseTool 
         if (result.exitCode !== 0) return { ok: false, reason: result.stderr.trim().slice(0, 300) || "media key event failed" };
         return { action, ok: true };
       } catch (cause) {
-        return { ok: false, reason: `powershell spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { ok: false, reason: `powershell spawn failed: ${errorMessage(cause)}` };
       }
     }
   };

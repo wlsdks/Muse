@@ -75,7 +75,7 @@ export function createMacScreenshotTool(deps: MacScreenshotToolDeps = {}): MuseT
       try {
         result = await runner(targetPath);
       } catch (cause) {
-        return { captured: false, reason: `screencapture spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { captured: false, reason: `screencapture spawn failed: ${errorMessage(cause)}` };
       }
       if (result.timedOut) {
         return { captured: false, reason: `screencapture timed out after ${SCREENSHOT_TIMEOUT_MS.toString()}ms` };
@@ -151,7 +151,7 @@ export function createMacScreenReadTool(deps: MacScreenReadToolDeps): MuseTool {
       try {
         captureResult = await runner(path);
       } catch (cause) {
-        return { described: false, reason: `screencapture spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { described: false, reason: `screencapture spawn failed: ${errorMessage(cause)}` };
       }
       if (captureResult.timedOut || captureResult.exitCode !== 0) {
         return {
@@ -169,7 +169,7 @@ export function createMacScreenReadTool(deps: MacScreenReadToolDeps): MuseTool {
         }
         return { described: true, text: described.text };
       } catch (cause) {
-        return { described: false, reason: cause instanceof Error ? cause.message : String(cause) };
+        return { described: false, reason: errorMessage(cause) };
       } finally {
         await cleanup(path).catch(() => { /* best-effort */ });
       }

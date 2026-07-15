@@ -26,7 +26,7 @@
  * documented Gemini Live frames.
  */
 
-import { isRecord } from "@muse/shared";
+import { errorMessage, isRecord } from "@muse/shared";
 
 import type { LiveVoiceEvent } from "./live-voice.js";
 
@@ -121,7 +121,7 @@ export function parseGeminiLiveServerFrame(rawJson: string): readonly LiveVoiceE
     parsed = JSON.parse(rawJson);
   } catch (cause) {
     return [{
-      error: cause instanceof Error ? cause : new Error("Gemini Live: malformed JSON frame"),
+      error: new Error(errorMessage(cause, "Gemini Live: malformed JSON frame")),
       type: "error"
     }];
   }
@@ -161,7 +161,7 @@ export function parseGeminiLiveServerFrame(rawJson: string): readonly LiveVoiceE
           });
         } catch (cause) {
           events.push({
-            error: cause instanceof Error ? cause : new Error("Gemini Live: invalid base64 audio chunk"),
+            error: new Error(errorMessage(cause, "Gemini Live: invalid base64 audio chunk")),
             type: "error"
           });
         }

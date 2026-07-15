@@ -31,6 +31,7 @@
 import { homedir } from "node:os";
 import { join as pathJoin } from "node:path";
 import process from "node:process";
+import { errorMessage } from "@muse/shared";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -137,7 +138,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
     };
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = errorMessage(cause);
     return {
       content: [{ type: "text", text: `tool '${request.params.name}' failed: ${message}` }],
       isError: true

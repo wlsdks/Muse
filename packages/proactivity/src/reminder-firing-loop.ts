@@ -1,5 +1,6 @@
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import { composeIdentityPrompt } from "@muse/prompts";
+import { errorMessage } from "@muse/shared";
 
 import { sendWithRetry } from "@muse/mcp-shared";
 import { appendReminderHistory, withProcessLock } from "@muse/stores";
@@ -130,7 +131,7 @@ async function runDueRemindersUnderLock(options: RunDueRemindersOptions): Promis
     const destination = reminder.via?.destination ?? options.destination;
     const deliveredText = phaseDActive
       ? await synthesizeReminderText(reminder, options).catch((cause) => {
-          const message = cause instanceof Error ? cause.message : String(cause);
+          const message = errorMessage(cause);
           errors.push(`${reminder.id} synthesis: ${message}`);
           return reminder.text;
         })
@@ -168,7 +169,7 @@ async function runDueRemindersUnderLock(options: RunDueRemindersOptions): Promis
         });
       }
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorMessage(cause);
       errors.push(`${reminder.id}: ${message}`);
       if (options.historyFile) {
         await appendReminderHistory(options.historyFile, {

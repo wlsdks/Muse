@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@muse/shared";
+import { errorMessage, type JsonObject, type JsonValue } from "@muse/shared";
 
 import { fetchWithRetry, type RetryOptions } from "@muse/mcp-shared";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -61,7 +61,7 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
     try {
       parsed = new URL(rawUrl);
     } catch (error) {
-      return { allowed: false, error: `invalid URL: ${error instanceof Error ? error.message : String(error)}` };
+      return { allowed: false, error: `invalid URL: ${errorMessage(error)}` };
     }
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return { allowed: false, error: `unsupported protocol: ${parsed.protocol}` };
@@ -207,7 +207,7 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
               truncated: result.truncated
             } satisfies JsonObject;
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             return { error: `fetch failed: ${message}` };
           }
         },
@@ -249,7 +249,7 @@ export function createFetchMcpServer(options: FetchMcpServerOptions): LoopbackMc
               status: result.status
             } satisfies JsonObject;
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             return { error: `fetch failed: ${message}` };
           }
         },

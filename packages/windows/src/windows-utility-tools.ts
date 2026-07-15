@@ -52,7 +52,7 @@ export function createWinClipboardSetTool(deps: WindowsToolDeps = {}): MuseTool 
         if (result.exitCode !== 0) return failSoft(result.stderr.trim().slice(0, 300) || "Set-Clipboard failed");
         return { chars: text.length, ok: true };
       } catch (cause) {
-        return failSoft(`powershell spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return failSoft(`powershell spawn failed: ${errorMessage(cause)}`);
       }
     }
   };
@@ -100,7 +100,7 @@ export function createWinSayTool(deps: WindowsToolDeps = {}): MuseTool {
         if (result.exitCode !== 0) return failSoft(result.stderr.trim().slice(0, 300) || "speech synthesis failed");
         return { ok: true, spokenChars: text.length };
       } catch (cause) {
-        return failSoft(`powershell spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return failSoft(`powershell spawn failed: ${errorMessage(cause)}`);
       }
     }
   };

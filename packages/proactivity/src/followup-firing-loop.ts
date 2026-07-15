@@ -26,6 +26,7 @@
 
 import type { MessagingProviderRegistry } from "@muse/messaging";
 import { composeIdentityPrompt } from "@muse/prompts";
+import { errorMessage } from "@muse/shared";
 
 import { sendWithRetry } from "@muse/mcp-shared";
 import {
@@ -200,7 +201,7 @@ async function runDueFollowupsUnderLock(options: RunDueFollowupsOptions): Promis
         delivered += 1;
       }
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorMessage(cause);
       errors.push(`${followup.id}: ${message}`);
     }
   }

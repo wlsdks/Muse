@@ -21,6 +21,7 @@
 import type { GuardBlockRateMonitor } from "@muse/policy";
 import type { AgentMetrics, MuseTracer } from "@muse/observability";
 import type { ModelResponse } from "@muse/model";
+import { errorMessage } from "@muse/shared";
 
 import { GuardBlockedError, OutputGuardBlockedError } from "./errors.js";
 import type {
@@ -50,7 +51,7 @@ export async function evaluateGuards(
     try {
       decision = await guard.evaluate(context);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Guard failed closed";
+      const message = errorMessage(error, "Guard failed closed");
       span.setError(error);
       span.setAttribute("guard.allowed", false);
       span.setAttribute("guard.reason", message);
@@ -149,7 +150,7 @@ export async function applyOutputGuards(
         runId: context.runId
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Output guard failed closed";
+      const message = errorMessage(error, "Output guard failed closed");
       span.setError(error);
       span.setAttribute("output_guard.action", "rejected");
       span.setAttribute("output_guard.reason", message);

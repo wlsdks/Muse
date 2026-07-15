@@ -24,6 +24,16 @@ import { type AgentWorker, NoAgentWorkerError } from "./workers.js";
 import type { SubAgentRunRegistry } from "./subagent-run-registry.js";
 import type { BackgroundOrchestrationHandle, BackgroundOrchestrationStore } from "./background-orchestration.js";
 
+function asError(value: unknown): Error {
+  if (value !== null && typeof value === "object" && "message" in value) {
+    const message = (value as { message?: unknown }).message;
+    if (typeof message === "string" && "name" in value) {
+      return value as Error;
+    }
+  }
+  return new Error(errorMessage(value, "Worker execution failed"));
+}
+
 export class SupervisorAgent {
   private readonly workers: readonly AgentWorker[];
   private readonly defaultWorkerId?: string;
@@ -281,7 +291,8 @@ export class MultiAgentOrchestrator {
     try {
       return this.selectWorkers(workerIds, maxWorkers);
     } catch (error) {
-      this.runRegistry?.fail(runId, error instanceof Error ? error.message : "selection failed");
+      const errorMessageValue = errorMessage(error);
+      this.runRegistry?.fail(runId, errorMessageValue);
       this.recordHistory({
         completedCount: 0,
         failedCount: 0,
@@ -291,7 +302,7 @@ export class MultiAgentOrchestrator {
         startedAt,
         status: "failed",
         workerCount: 0,
-        ...(error instanceof Error ? { error: error.message } : {})
+        error: errorMessageValue
       });
       throw error;
     }
@@ -319,7 +330,8 @@ export class MultiAgentOrchestrator {
         results = await this.runSequential(input, selectedWorkers);
       }
     } catch (error) {
-      this.runRegistry?.fail(runId, error instanceof Error ? error.message : "orchestration failed");
+      const errorMessageValue = errorMessage(error);
+      this.runRegistry?.fail(runId, errorMessageValue);
       this.recordHistory({
         completedCount: 0,
         failedCount: selectedWorkers.length,
@@ -329,7 +341,7 @@ export class MultiAgentOrchestrator {
         startedAt,
         status: "failed",
         workerCount: selectedWorkers.length,
-        ...(error instanceof Error ? { error: error.message } : {})
+        error: errorMessageValue
       });
       throw error;
     }
@@ -513,7 +525,7 @@ export class MultiAgentOrchestrator {
       await this.publishWorkerResult(worker.id, result).catch(() => undefined);
       return { handoffOutput: handoff.output, step: { result, status: "completed", workerId: worker.id } };
     } catch (error) {
-      const failure = error instanceof Error ? error : new Error(errorMessage(error));
+      const failure = asError(error);
       await this.publishWorkerFailure(worker.id, error).catch(() => undefined);
       return { failure, step: { error: errorMessage(error), status: "failed", workerId: worker.id } };
     }

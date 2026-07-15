@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * Filesystem-backed tasks provider — same on-disk JSON shape as
  * the inline `createTasksMcpServer` in `loopback-tasks.ts`
@@ -212,7 +213,7 @@ export class LocalFileTasksProvider implements TasksProvider {
   }
 
   private errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    return errorMessage(error);
   }
 }
 

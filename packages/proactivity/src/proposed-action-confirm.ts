@@ -8,6 +8,7 @@
 
 import { appendActionLog } from "@muse/stores";
 import { isProposalActionable, patchProposedActionStatus, readProposedActions, withFileMutationQueue } from "@muse/stores";
+import { errorMessage } from "@muse/shared";
 
 import type { MessagingProviderRegistry } from "@muse/messaging";
 
@@ -65,7 +66,7 @@ export async function confirmProposedAction(options: ConfirmProposedActionOption
       });
       return { executed: true, messageId: receipt.messageId };
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorMessage(cause);
       // Leave it `pending` so the user can retry; record the failure.
       await appendActionLog(options.actionLogFile, {
         detail: `send failed: ${message}`,

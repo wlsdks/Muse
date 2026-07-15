@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@muse/shared";
+import { errorMessage, type JsonObject, type JsonValue } from "@muse/shared";
 
 import { readString } from "@muse/mcp";
 import type { LoopbackMcpServer } from "@muse/mcp";
@@ -24,7 +24,7 @@ export function createUrlMcpServer(): LoopbackMcpServer {
           try {
             parsed = new URL(url);
           } catch (error) {
-            return { error: `invalid URL: ${error instanceof Error ? error.message : String(error)}` };
+            return { error: `invalid URL: ${errorMessage(error)}` };
           }
           // Null-prototype map: a `__proto__` or `constructor` query param must land as
           // a plain DATA key, not hit the prototype setter (pollution + the param vanishing)

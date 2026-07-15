@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * Fetch a PUBLIC web page and return its readable text — SSRF-guarded
  * (before every physical fetch in a manual redirect chain), retry-hardened
@@ -113,7 +114,7 @@ export async function fetchReadableUrl(
     response = fetched.response;
     finalUrl = fetched.finalUrl;
   } catch (error) {
-    return { ok: false, error: `fetch failed: ${error instanceof Error ? error.message : String(error)}` };
+    return { ok: false, error: `fetch failed: ${errorMessage(error)}` };
   }
   if (!response.ok) return { ok: false, error: `fetch failed: HTTP ${response.status.toString()}` };
 
@@ -130,7 +131,7 @@ export async function fetchReadableUrl(
     try {
       text = await options.pdfExtractor(new Uint8Array(await response.arrayBuffer()));
     } catch (error) {
-      return { ok: false, error: `PDF could not be read: ${error instanceof Error ? error.message : String(error)}` };
+      return { ok: false, error: `PDF could not be read: ${errorMessage(error)}` };
     }
     const trimmed = text.trim();
     if (trimmed.length === 0) {

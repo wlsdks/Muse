@@ -50,7 +50,7 @@ export function createWinScreenshotTool(deps: WindowsToolDeps = {}): MuseTool {
         if (result.exitCode !== 0) return { captured: false, reason: result.stderr.trim().slice(0, 300) || "screen capture failed" };
         return { captured: true, path: target.resolved };
       } catch (cause) {
-        return { captured: false, reason: `powershell spawn failed: ${cause instanceof Error ? cause.message : String(cause)}` };
+        return { captured: false, reason: `powershell spawn failed: ${errorMessage(cause)}` };
       }
     }
   };

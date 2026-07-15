@@ -1,5 +1,6 @@
 import type { MessagingProviderRegistry } from "./registry.js";
 import type { InboundMessage } from "./types.js";
+import { errorMessage } from "@muse/shared";
 
 /**
  * Structural duck-type of the agent runner. `@muse/messaging` must
@@ -165,7 +166,7 @@ export async function respondToInbound(
       handled.push(key);
       replied += 1;
     } catch (cause) {
-      errors.push(`${key}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      errors.push(`${key}: ${errorMessage(cause)}`);
     } finally {
       if (typingTimer) {
         clearInterval(typingTimer);

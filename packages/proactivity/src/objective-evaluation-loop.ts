@@ -16,6 +16,7 @@
  */
 
 import {
+import { errorMessage } from "@muse/shared";
   patchObjective,
   readObjectives,
   withProcessLock,
@@ -213,7 +214,7 @@ async function runDueObjectivesUnderLock(options: RunDueObjectivesOptions): Prom
       // Fail-open: an evaluator/action error leaves the objective
       // active for the next tick — it is recorded, never silently
       // dropped, and never crashes the loop for sibling objectives.
-      errors.push(`${objective.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      errors.push(`${objective.id}: ${errorMessage(cause)}`);
     }
   }
 

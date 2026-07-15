@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
 
-import type { JsonObject } from "@muse/shared";
+import { errorMessage, type JsonObject } from "@muse/shared";
 
 import type { BuiltinLoopbackOptions, LoopbackMcpServer } from "@muse/mcp";
 import { readString } from "@muse/mcp";
@@ -63,7 +63,7 @@ export function createCryptoMcpServer(options: BuiltinLoopbackOptions = {}): Loo
             const digest = createHash(algorithm).update(text, "utf8").digest(encoding);
             return { algorithm, digest, encoding } satisfies JsonObject;
           } catch (error) {
-            return { error: error instanceof Error ? error.message : "hash failed" };
+            return { error: errorMessage(error, "hash failed") };
           }
         },
         inputSchema: {
@@ -100,7 +100,7 @@ export function createCryptoMcpServer(options: BuiltinLoopbackOptions = {}): Loo
             const result = decodeBytesAsUtf8(Buffer.from(text, "base64"), "base64");
             return "error" in result ? result : { mode, output: result.output } satisfies JsonObject;
           } catch (error) {
-            return { error: error instanceof Error ? error.message : "base64 failed" };
+            return { error: errorMessage(error, "base64 failed") };
           }
         },
         inputSchema: {
@@ -136,7 +136,7 @@ export function createCryptoMcpServer(options: BuiltinLoopbackOptions = {}): Loo
             const result = decodeBytesAsUtf8(Buffer.from(text, "hex"), "hex");
             return "error" in result ? result : { mode, output: result.output } satisfies JsonObject;
           } catch (error) {
-            return { error: error instanceof Error ? error.message : "hex failed" };
+            return { error: errorMessage(error, "hex failed") };
           }
         },
         inputSchema: {

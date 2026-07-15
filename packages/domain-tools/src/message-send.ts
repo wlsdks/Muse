@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * Draft-first, fail-closed outbound chat message — the messaging-tool
  * analogue of `sendEmailWithApproval`, governed by
@@ -80,7 +81,7 @@ export async function sendMessageWithApproval(options: SendMessageWithApprovalOp
     try {
       decision = await options.approvalGate(draft);
     } catch (cause) {
-      decision = { approved: false, reason: `approval gate error: ${cause instanceof Error ? cause.message : String(cause)}` };
+      decision = { approved: false, reason: `approval gate error: ${errorMessage(cause)}` };
     }
   }
   if (!decision.approved) {
@@ -103,7 +104,7 @@ export async function sendMessageWithApproval(options: SendMessageWithApprovalOp
     await log("performed", "user-approved outbound message", `sent: ${options.text.slice(0, 200)}`);
     return { destination: receipt.destination, messageId: receipt.messageId, sent: true };
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    const detail = errorMessage(cause);
     await log("failed", "user-approved outbound message", detail);
     return { detail, reason: "send-failed", sent: false };
   }

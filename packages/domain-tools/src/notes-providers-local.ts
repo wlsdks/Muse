@@ -1,3 +1,4 @@
+import { errorMessage } from "@muse/shared";
 /**
  * Filesystem-backed notes provider.
  *
@@ -322,7 +323,7 @@ export class LocalDirNotesProvider implements NotesProvider {
   }
 
   private errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    return errorMessage(error);
   }
 }
 

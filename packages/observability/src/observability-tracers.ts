@@ -213,7 +213,7 @@ class InMemorySpanHandle implements SpanHandle {
       return;
     }
 
-    this.span.error = error instanceof Error ? error.message : String(error);
+    this.span.error = errorMessage(error);
   }
 
   end(): void {
@@ -243,7 +243,7 @@ class PersistedSpanHandle implements SpanHandle {
 
   setError(error: unknown): void {
     if (!this.closed) {
-      this.span.error = error instanceof Error ? error.message : String(error);
+      this.span.error = errorMessage(error);
     }
   }
 

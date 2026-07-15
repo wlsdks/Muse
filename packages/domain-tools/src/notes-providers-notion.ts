@@ -27,8 +27,7 @@
  *   - `MISSING_DATABASE_ID` when an op requires databaseId but none was set
  */
 
-import {
-  NotesProviderError,
+import { errorMessage, NotesProviderError,
   NotesValidationError,
   type NotesAppendInput,
   type NotesContent,
@@ -341,7 +340,7 @@ export class NotionNotesProvider implements NotesProvider {
           await this.sleep(this.baseDelayMs * 2 ** attempt);
           continue;
         }
-        throw new NotesProviderError(this.id, "FETCH_FAILED", `Notion request failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        throw new NotesProviderError(this.id, "FETCH_FAILED", `Notion request failed: ${errorMessage(cause)}`);
       }
       if (!response.ok) {
         if (attempt < maxRetries && isTransientNotionStatus(response.status)) {
@@ -364,7 +363,7 @@ export class NotionNotesProvider implements NotesProvider {
       try {
         return await response.json();
       } catch (cause) {
-        throw new NotesProviderError(this.id, "NOTION_BAD_JSON", `Notion response was not JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
+        throw new NotesProviderError(this.id, "NOTION_BAD_JSON", `Notion response was not JSON: ${errorMessage(cause)}`);
       }
     }
   }
