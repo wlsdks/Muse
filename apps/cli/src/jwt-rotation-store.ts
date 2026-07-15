@@ -27,8 +27,10 @@
 
 import { promises as fs } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { homedir } from "node:os";
+
+import { atomicWriteFile, withFileLock, withFileMutationQueue } from "@muse/stores";
 
 interface PreviousSecretEntry {
   readonly secret: string;
@@ -140,9 +142,29 @@ export function rotateJwtState(args: {
  */
 export async function writeJwtRotationState(file: string, state: JwtRotationState): Promise<void> {
   const payload = `${JSON.stringify(state, null, 2)}\n`;
-  const tmp = `${file}.tmp-${process.pid.toString()}-${Date.now().toString()}`;
-  await fs.mkdir(dirname(file), { recursive: true });
-  await fs.writeFile(tmp, payload, { encoding: "utf8", mode: 0o600 });
-  await fs.rename(tmp, file);
-  await fs.chmod(file, 0o600).catch(() => undefined);
+  await atomicWriteFile(file, payload);
+}
+
+export interface RotateAndPersistJwtStateInput {
+  readonly file: string;
+  readonly fallbackCurrent?: string;
+  readonly now: Date;
+  readonly graceMs: number;
+  readonly secretFactory?: () => string;
+}
+
+/**
+ * Atomically read, rotate, and persist the signing-key state. A rotation that
+ * reads before taking the lock can overwrite another daemon's newly current
+ * key, making still-issued tokens unverifiable instead of grace-windowed.
+ */
+export async function rotateAndPersistJwtState(input: RotateAndPersistJwtStateInput): Promise<JwtRotationState> {
+  const { file, ...rotation } = input;
+  return withFileMutationQueue(file, () =>
+    withFileLock(file, async () => {
+      const next = rotateJwtState({ ...rotation, state: await readJwtRotationState(file) });
+      await writeJwtRotationState(file, next);
+      return next;
+    })
+  );
 }
