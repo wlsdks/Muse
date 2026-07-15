@@ -5,7 +5,9 @@
   contracts, removed generated import damage, and made the CLI command manifest
   match the real tree. `pnpm exec tsc -b --force` is the baseline verification;
   retain the TS6 compatibility alias only for compiler-API tooling, then
-  explicitly re-evaluate it when those tools support the stable TS7 API.
+  explicitly re-evaluate it when those tools support the stable TS7 API. Package
+  manifests must also follow the import owner: RSS/PDF parsers belong to
+  `@muse/recall`, not the CLI that exposes them.
 
 - ★ USER-SIM FUEL (2026-07-12, Haiku 페르소나 3종 × 실파이프라인 시뮬레이션 → Opus 아티팩트-우선 교차감사; 도구 scripts/channel-sim.mjs; 상세 감사는 세션 기록):
   - ✓ [HIGH] false-done 리마인더 — fix-wave (요일·절대날짜 룰 + 미예약 시 결정론 정직 caveat; 라이브 재프로브로 8/5 followup 실생성 확인)
