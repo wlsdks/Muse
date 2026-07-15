@@ -1,12 +1,12 @@
 import { promises as fs } from "node:fs";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 
-import { readTasks } from "@muse/stores";
+import { readTaskById, readTasks } from "@muse/stores";
 
 import { AttunementStoreError } from "./attunement-store.js";
 
 import type { ArtifactLinkValidator } from "./attunement-store.js";
-import type { ResolvedArtifact } from "./types.js";
+import type { ExactArtifactResolver, ResolvedArtifact } from "./types.js";
 
 export interface LocalArtifactValidatorOptions {
   readonly notesDir: string;
@@ -81,5 +81,31 @@ export function createLocalArtifactValidator(options: LocalArtifactValidatorOpti
       return { artifactId: note.artifactId, artifactType, providerId };
     }
     throw new AttunementStoreError("local artifact validation supports task and note only");
+  };
+}
+
+/** Resolve only the already-linked local sources; it never searches or guesses. */
+export function createLocalExactArtifactResolver(options: LocalArtifactValidatorOptions): ExactArtifactResolver {
+  return async (link) => {
+    if (link.providerId !== "local") return undefined;
+    if (link.artifactType === "task") {
+      const task = await readTaskById(options.tasksFile, link.artifactId);
+      if (!task) return undefined;
+      return {
+        artifactId: task.id,
+        artifactType: "task",
+        providerId: "local",
+        role: link.role,
+        ...(task.notes ? { summary: task.notes.slice(0, 240) } : {}),
+        taskStatus: task.status,
+        title: task.title,
+        updatedAt: task.completedAt ?? task.createdAt
+      };
+    }
+    if (link.artifactType === "note") {
+      const note = await readCanonicalLocalNote(options.notesDir, link.artifactId);
+      return note ? { ...note, role: link.role } : undefined;
+    }
+    return undefined;
   };
 }

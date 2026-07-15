@@ -40,6 +40,11 @@ interface ReviewResponse {
   }[];
 }
 
+interface OpenedPack {
+  readonly delivery: { readonly id: string; readonly runId?: string };
+  readonly pack: { readonly evidence: readonly { readonly artifact?: { readonly artifactId: string; readonly title: string }; readonly reference: { readonly artifactId: string; readonly artifactType: string }; readonly status: "available" | "unavailable" }[]; readonly nextStep?: { readonly artifactId: string; readonly title: string }; readonly thread: { readonly kind: Kind; readonly title: string } };
+}
+
 function rate(part: number, total: number): string {
   return total === 0 ? "-" : `${Math.round((part / total) * 100)}%`;
 }
@@ -107,6 +112,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
   const queryClient = useQueryClient();
   const [newThreadKind, setNewThreadKind] = useState<Kind | undefined>();
   const [newThreadTitle, setNewThreadTitle] = useState("");
+  const [openedPack, setOpenedPack] = useState<OpenedPack | undefined>();
   const review = useQuery({
     queryFn: () => client.get<ReviewResponse>("/api/attunement/review"),
     queryKey: ["attunement-review", client.baseUrl]
@@ -139,6 +145,13 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
       client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/links`, { artifactId, artifactType, role }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
   });
+  const continueThread = useMutation({
+    mutationFn: (threadId: string) => client.post<OpenedPack>(`/api/attunement/threads/${encodeURIComponent(threadId)}/continue`),
+    onSuccess: (result) => {
+      setOpenedPack(result);
+      return queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] });
+    }
+  });
   const data = review.data;
 
   return (
@@ -154,6 +167,14 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
               <KindSummary kind="life" evaluation={data.evaluation.byKind.life} />
               <KindSummary kind="work" evaluation={data.evaluation.byKind.work} />
             </div>
+            {openedPack ? <Card>
+              <div className="row-title">{t("continuity.packTitle", { title: openedPack.pack.thread.title })}</div>
+              <div className="row-meta">{kindLabel(openedPack.pack.thread.kind)} · {t("continuity.delivery", { id: openedPack.delivery.id })}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+                {openedPack.pack.evidence.map((entry) => <div className="row-meta" key={`${entry.reference.artifactType}:${entry.reference.artifactId}`}>{entry.status === "available" ? entry.artifact?.title : t("continuity.unavailable")} · {entry.reference.artifactType}:{entry.reference.artifactId}</div>)}
+              </div>
+              {openedPack.pack.nextStep ? <div className="row-meta" style={{ marginTop: 12 }}>{t("continuity.nextStep", { title: openedPack.pack.nextStep.title })}</div> : null}
+            </Card> : null}
 
             <h2 className="page-title" style={{ fontSize: 20, marginTop: 32 }}>{t("continuity.threads")}</h2>
             <Card>
@@ -193,6 +214,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
                         <Button disabled={reset.isPending} size="sm" variant="ghost" onClick={() => {
                           if (window.confirm(t("continuity.resetConfirm", { title: thread.title }))) reset.mutate(thread.id);
                         }}>{t("continuity.reset")}</Button>
+                        <Button disabled={continueThread.isPending || thread.linkCount === 0} size="sm" variant="secondary" onClick={() => continueThread.mutate(thread.id)}>{t("continuity.openPack")}</Button>
                         {latestReset ? <Button disabled={undoReset.isPending} size="sm" variant="ghost" onClick={() => undoReset.mutate({ resetId: latestReset.id, threadId: thread.id })}>{t("continuity.undoReset")}</Button> : null}
                       </div>
                     </div>
@@ -241,6 +263,7 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
             {reset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.resetError")}</p> : null}
             {undoReset.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.undoResetError")}</p> : null}
             {link.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.linkError")}</p> : null}
+            {continueThread.error ? <p className="banner err" style={{ marginTop: 12 }}>{t("continuity.packError")}</p> : null}
           </>
         ) : null}
       </AsyncBlock>

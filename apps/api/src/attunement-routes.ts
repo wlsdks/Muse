@@ -1,4 +1,4 @@
-import { ARTIFACT_ROLES, ARTIFACT_TYPES, computeContinuityEvaluation, createLocalArtifactValidator, createPersonalThread, linkArtifact, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS, undoThreadReset } from "@muse/attunement";
+import { ARTIFACT_ROLES, ARTIFACT_TYPES, buildContinuityPack, computeContinuityEvaluation, createLocalArtifactValidator, createLocalExactArtifactResolver, createPersonalThread, linkArtifact, openContinuityDelivery, OUTCOMES, readAttunementState, recordContinuityOutcome, resetThreadPolicy, THREAD_KINDS, undoThreadReset } from "@muse/attunement";
 import type { ContinuityOutcome } from "@muse/attunement";
 import type { FastifyInstance } from "fastify";
 
@@ -89,6 +89,26 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
       role: role as "context" | "next-step",
       threadId: request.params.threadId
     }, { validateArtifact: createLocalArtifactValidator({ notesDir: gate.notesDir, tasksFile: gate.tasksFile }) });
+  });
+
+  server.post<{ Params: { readonly threadId: string } }>("/api/attunement/threads/:threadId/continue", async (request, reply) => {
+    if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
+    const state = await readAttunementState(gate.attunementFile);
+    const thread = state.threads.find((candidate) => candidate.id === request.params.threadId);
+    if (!thread) return reply.code(404).send({ errorMessage: "personal thread not found" });
+    if (thread.links.some((link) => link.providerId !== "local")) {
+      return reply.code(409).send({ errorMessage: "this thread has an external resource; continue it through the CLI while its MCP connection is verified" });
+    }
+    const pack = await buildContinuityPack(state, thread.id, createLocalExactArtifactResolver({ notesDir: gate.notesDir, tasksFile: gate.tasksFile }));
+    if (!pack.evidence.some((entry) => entry.status === "available")) {
+      return reply.code(409).send({ errorMessage: "this thread has no currently available linked evidence" });
+    }
+    const delivery = await openContinuityDelivery(gate.attunementFile, {
+      evidenceRefs: pack.evidenceRefs,
+      expectedPolicyVersion: pack.deliveryPolicyVersion,
+      threadId: thread.id
+    });
+    return { delivery, pack };
   });
 
   server.post<{ Params: { readonly threadId: string } }>("/api/attunement/threads/:threadId/reset", async (request, reply) => {
