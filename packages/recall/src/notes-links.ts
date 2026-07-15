@@ -11,6 +11,8 @@
 
 import { levenshteinDistance } from "@muse/shared";
 
+import { TitleMentionMatcher } from "./title-mention-matcher.js";
+
 /**
  * A note's link key for resolution: basename without extension, NFC-normalized,
  * lowercased. NFC matters: macOS filesystems hand back NFD-decomposed Korean
@@ -198,20 +200,34 @@ function addTitleMentionEdges(
   addEdge: (fromId: string, target: string) => void
 ): void {
   const hubCap = Math.max(2, Math.ceil(notes.length * 0.3));
-  const bodies = notes.map((note) => ({ id: note.id, text: note.body.normalize("NFC").toLowerCase() }));
+  const eligible: { readonly key: string; readonly targetId: string }[] = [];
   for (const [key, targetId] of keyToId) {
     const minLength = /[ᄀ-ᇿ㄰-㆏가-힯぀-ヿ一-鿿]/u.test(key) ? 3 : 5;
-    if (key.length < minLength) {
-      continue;
-    }
-    const mentioners = bodies.filter((b) => b.id !== targetId && b.text.includes(key));
-    if (mentioners.length === 0 || mentioners.length > hubCap) {
-      continue;
-    }
-    for (const mentioner of mentioners) {
-      addEdge(mentioner.id, targetId);
+    if (key.length >= minLength) {
+      eligible.push({ key, targetId });
     }
   }
+  if (eligible.length === 0) {
+    return;
+  }
+  const matcher = new TitleMentionMatcher(eligible.map((entry) => entry.key));
+  const mentionersByPattern: string[][] = eligible.map(() => []);
+  for (const note of notes) {
+    for (const index of matcher.match(note.body.normalize("NFC").toLowerCase())) {
+      if (note.id !== eligible[index]!.targetId) {
+        mentionersByPattern[index]!.push(note.id);
+      }
+    }
+  }
+  eligible.forEach((entry, index) => {
+    const mentioners = mentionersByPattern[index]!;
+    if (mentioners.length === 0 || mentioners.length > hubCap) {
+      return;
+    }
+    for (const mentioner of mentioners) {
+      addEdge(mentioner, entry.targetId);
+    }
+  });
 }
 
 export interface NoteLinkView {
@@ -291,6 +307,24 @@ export function linkedFromResults(
  * one that cites the topic note the query matched (GraphRAG / HippoRAG). Pure:
  * the caller ranks candidates by their real query cosine and promotes the best.
  */
+/** FNV-1a over ids + bodies: a full-content fingerprint costs ~10ms at 5M chars, vs a graph rebuild in the hundreds of ms — cheap enough to run per ask, strong enough that an edit (even length-preserving) invalidates. */
+function corpusFingerprint(notes: readonly { readonly id: string; readonly body: string }[]): number {
+  let hash = 0x811c9dc5;
+  const mix = (text: string): void => {
+    for (let i = 0; i < text.length; i += 1) {
+      hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+    }
+  };
+  for (const note of notes) {
+    mix(note.id);
+    hash = Math.imul(hash ^ note.body.length, 0x01000193);
+    mix(note.body);
+  }
+  return hash >>> 0;
+}
+
+let cachedExpandGraph: { readonly fingerprint: number; readonly noteCount: number; readonly graph: NoteLinkGraph } | undefined;
+
 export function linkExpandRefs(args: {
   readonly seedRefs: readonly string[];
   readonly noteBodies: readonly { readonly id: string; readonly body: string }[];
@@ -300,7 +334,11 @@ export function linkExpandRefs(args: {
   if (cap <= 0 || args.seedRefs.length === 0) {
     return [];
   }
-  return linkedFromResults(args.seedRefs, buildNoteLinkGraph(args.noteBodies, { includeTitleMentions: true }), cap, { includeBacklinks: true });
+  const fingerprint = corpusFingerprint(args.noteBodies);
+  if (!cachedExpandGraph || cachedExpandGraph.fingerprint !== fingerprint || cachedExpandGraph.noteCount !== args.noteBodies.length) {
+    cachedExpandGraph = { fingerprint, graph: buildNoteLinkGraph(args.noteBodies, { includeTitleMentions: true }), noteCount: args.noteBodies.length };
+  }
+  return linkedFromResults(args.seedRefs, cachedExpandGraph.graph, cap, { includeBacklinks: true });
 }
 
 export interface NoteGraphAudit {

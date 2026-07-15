@@ -294,3 +294,30 @@ describe("buildNoteLinkGraph — title-mention edges for linkless notes (opt-in)
     expect(linkedFromResults(["clip.md"], graph, 5)).toEqual([`${"로드맵정리".normalize("NFD")}.md`]);
   });
 });
+
+describe("linkExpandRefs — content-fingerprint graph cache", () => {
+  it("a LENGTH-PRESERVING body edit still invalidates the cached graph (no stale edges)", () => {
+    const before = [
+      { body: "seed links [[fwd]]", id: "seed.md" },
+      { body: "forward target", id: "fwd.md" }
+    ];
+    expect(linkExpandRefs({ noteBodies: before, seedRefs: ["seed.md"] })).toEqual(["fwd.md"]);
+
+    const after = [
+      { body: "seed links [[gwd]]", id: "seed.md" },
+      { body: "forward target", id: "fwd.md" }
+    ];
+    expect(after[0]!.body.length).toBe(before[0]!.body.length);
+    expect(linkExpandRefs({ noteBodies: after, seedRefs: ["seed.md"] })).toEqual([]);
+  });
+
+  it("repeat calls with identical content stay correct (cache hit path)", () => {
+    const notes = [
+      { body: "cites [[target]]", id: "src.md" },
+      { body: "the target", id: "target.md" }
+    ];
+    expect(linkExpandRefs({ noteBodies: notes, seedRefs: ["src.md"] })).toEqual(["target.md"]);
+    expect(linkExpandRefs({ noteBodies: notes, seedRefs: ["src.md"] })).toEqual(["target.md"]);
+    expect(linkExpandRefs({ noteBodies: notes, seedRefs: ["target.md"], cap: 5 })).toEqual(["src.md"]);
+  });
+});
