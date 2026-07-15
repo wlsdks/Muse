@@ -657,7 +657,12 @@ async function persist(
   // (ADD/UPDATE/NOOP/DELETE) instead of blind-upserting — NOOP skips the
   // redundant write + provenance on a re-confirmation, DELETE drops a key the
   // extractor reported as a no-value/retraction token rather than storing junk.
-  const existing = await Promise.resolve(store.findByUserId(userId)).catch(() => undefined);
+  let existing: Awaited<ReturnType<typeof store.findByUserId>> | undefined;
+  try {
+    existing = await store.findByUserId(userId);
+  } catch {
+    existing = undefined;
+  }
   const forget = store.forget?.bind(store);
   // Forgotten-fact suppression: a key the user explicitly retracted (`forget`) must NOT
   // be resurfaced by the auto-extractor — an inference overriding an explicit user

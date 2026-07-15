@@ -165,10 +165,12 @@ async function runDuePatternNoticesUnderLock(options: RunDuePatternNoticesOption
         const composed = await options.composeSuggestion(match).catch(() => undefined);
         if (composed && composed.trim().length > 0) text = composed.trim();
       }
-      const deliver = (): Promise<void> => sendWithRetry(options.registry, options.providerId, {
-        destination: options.destination,
-        text
-      }).then(() => undefined);
+      const deliver = async (): Promise<void> => {
+        await sendWithRetry(options.registry, options.providerId, {
+          destination: options.destination,
+          text
+        });
+      };
       let outcome: "delivered" | "digested" | "skipped" = "delivered";
       if (options.interruptionBudget) {
         const budget = options.interruptionBudget;
