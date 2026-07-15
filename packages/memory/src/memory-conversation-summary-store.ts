@@ -19,7 +19,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { isRecord, withBestEffort } from "@muse/shared";
+import { isRecord, withBestEffort, type JsonObject } from "@muse/shared";
 import type { ConversationSummaryTable, MuseDatabase } from "@muse/db";
 import type { Insertable, Kysely, Selectable } from "kysely";
 import type {
@@ -53,7 +53,7 @@ interface RequiredConversationSummary {
 const DEFAULT_LIST_LIMIT = 200;
 const MAX_LIST_LIMIT = 1_000;
 
-interface SerializedStructuredFact {
+interface SerializedStructuredFact extends JsonObject {
   readonly key: string;
   readonly value: string;
   readonly category: FactCategory;
