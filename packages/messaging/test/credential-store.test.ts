@@ -79,16 +79,23 @@ describe("FileMessagingCredentialStore", () => {
     expect(await store.load("telegram")).toEqual({ token: "original" });
   });
 
-  it("treats a corrupt / non-object credential file as empty rather than crashing", async () => {
+  it("quarantines a corrupt / non-object credential file before recovering", async () => {
     const flat = join(dir, "corrupt.json");
     await writeFile(flat, "{ this is not json", "utf8");
     const store = new FileMessagingCredentialStore(flat);
     expect(await store.load("telegram")).toBeUndefined();
     expect(await store.list()).toEqual([]);
+    let quarantined = (await readdir(dir)).filter((entry) => entry.startsWith("corrupt.json.corrupt-"));
+    expect(quarantined).toHaveLength(1);
+    expect(await readFile(join(dir, quarantined[0]!), "utf8")).toBe("{ this is not json");
+
     // a well-formed JSON value that lacks `providers` is also treated as empty
     await writeFile(flat, JSON.stringify({ version: 1 }), "utf8");
     expect(await store.list()).toEqual([]);
-    // and the store can still save over the corrupt file
+    quarantined = (await readdir(dir)).filter((entry) => entry.startsWith("corrupt.json.corrupt-"));
+    expect(quarantined).toHaveLength(2);
+
+    // The store can then start fresh without destroying either malformed input.
     await store.save("telegram", { token: "recovered" });
     expect(await store.load("telegram")).toEqual({ token: "recovered" });
   });

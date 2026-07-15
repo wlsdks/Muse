@@ -8,7 +8,7 @@ import {
   type JsonObject
 } from "@muse/shared";
 
-import { atomicWritePrivateFile, withMessagingFileMutation } from "./messaging-file-store.js";
+import { atomicWritePrivateFile, quarantineCorruptMessagingFile, withMessagingFileMutation } from "./messaging-file-store.js";
 
 export type MessagingCredentials = JsonObject;
 
@@ -90,11 +90,13 @@ export class FileMessagingCredentialStore implements MessagingCredentialStore {
     try {
       parsed = JSON.parse(raw);
     } catch {
+      await quarantineCorruptMessagingFile(this.file);
       return { providers: emptyProviderMap(), version: 1 };
     }
     parsed = decodeMaybeEncryptedCredentialsJson(parsed, this.env); // THROWS fail-closed on a wrong key
     const shape = parsed as Partial<PersistedShape>;
     if (!shape || typeof shape !== "object" || !shape.providers || typeof shape.providers !== "object") {
+      await quarantineCorruptMessagingFile(this.file);
       return { providers: emptyProviderMap(), version: 1 };
     }
     const providers = emptyProviderMap();

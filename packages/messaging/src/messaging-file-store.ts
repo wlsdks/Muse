@@ -30,6 +30,12 @@ export async function atomicWritePrivateFile(file: string, contents: string): Pr
   await fs.chmod(file, 0o600).catch(() => undefined);
 }
 
+/** Preserve malformed private state for recovery instead of silently overwriting it. */
+export async function quarantineCorruptMessagingFile(file: string): Promise<void> {
+  const quarantined = `${file}.corrupt-${Date.now().toString()}-${randomUUID()}`;
+  await fs.rename(file, quarantined).catch(() => undefined);
+}
+
 async function withMessagingFileLock<T>(file: string, operation: () => Promise<T>): Promise<T> {
   const lockFile = `${file}.lock`;
   const nonce = randomUUID();
