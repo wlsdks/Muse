@@ -388,9 +388,29 @@ async function formatThreadReview(state: AttunementState, resolveExactArtifact: 
       : pack.nextStep
         ? `next step: ${pack.nextStep.title} [${pack.nextStep.artifactId}]`
         : "next step: none set";
+    const readiness = pack.evidence.length === 0
+      ? {
+          action: `link an exact local source: muse thread link ${thread.id} <task|note|resource> <id> --role <context|next-step>`,
+          status: "needs-link"
+        }
+      : availableEvidence === 0
+        ? {
+            action: `inspect and relink an available source: muse thread inspect ${thread.id}`,
+            status: "needs-relink"
+          }
+        : pack.policy.nextStep === "hidden"
+          ? {
+              action: `inspect feedback before changing policy: muse thread inspect ${thread.id}`,
+              status: "blocked-by-feedback"
+            }
+          : {
+              action: `prepare a pack manually: muse thread continue ${thread.id}`,
+              status: "ready"
+            };
 
-    lines.push(`  ${thread.id}  [${thread.kind}]  ${thread.title}`);
+    lines.push(`  ${thread.id}  [${thread.kind}]  ${thread.title}  (${readiness.status})`);
     lines.push(`    ${evidence}; ${nextStep}${latestFeedback ? `; latest feedback: ${latestFeedback}` : ""}`);
+    lines.push(`    manual action: ${readiness.action}`);
   }
   return `${lines.join("\n")}\n`;
 }
