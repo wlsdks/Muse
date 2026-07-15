@@ -38,11 +38,35 @@ export function isRecordArray(body: unknown, key: string): readonly unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+export function toRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+export function readRecordField(record: unknown, key: string): Record<string, unknown> | undefined {
+  const value = toRecord(record)?.[key];
+  return isRecord(value) ? value : undefined;
+}
+
+export function readStringField(record: unknown, key: string): string | undefined {
+  const value = toRecord(record)?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+export function readBooleanField(record: unknown, key: string): boolean | undefined {
+  const value = toRecord(record)?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+export function readArrayField(record: unknown, key: string): readonly unknown[] | undefined {
+  const value = toRecord(record)?.[key];
+  return Array.isArray(value) ? value : undefined;
+}
+
 export function extractTitleString(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return undefined;
   }
-  const titleArr = (value as { title?: unknown }).title;
+  const titleArr = value.title;
   if (!Array.isArray(titleArr)) {
     return undefined;
   }
@@ -51,12 +75,15 @@ export function extractTitleString(value: unknown): string | undefined {
       if (!entry || typeof entry !== "object") {
         return "";
       }
-      const plain = (entry as { plain_text?: string }).plain_text;
-      if (typeof plain === "string") {
+      if (!isRecord(entry)) {
+        return "";
+      }
+      const plain = readStringField(entry, "plain_text");
+      if (plain !== undefined) {
         return plain;
       }
-      const inner = (entry as { text?: { content?: string } }).text?.content;
-      return typeof inner === "string" ? inner : "";
+      const textBlock = readRecordField(entry, "text");
+      return typeof textBlock?.content === "string" ? textBlock.content : "";
     })
     .join("");
   return text.length > 0 ? text : undefined;
