@@ -90,8 +90,9 @@ export function parseExternalMcpConfig(raw: string, source = "<inline>"): readon
   const out: McpServerInput[] = [];
   for (const [name, value] of entries) {
     const trimmedName = name.trim();
-    if (trimmedName.length === 0) {
-      throw new ConfigurationError(`MCP config (${source}) has an empty server name`);
+    const nameError = serverNameError(trimmedName);
+    if (nameError) {
+      throw new ConfigurationError(`MCP config (${source}) has ${nameError}`);
     }
     const entry = parseEntry(trimmedName, value, source);
     if (entry) {
@@ -106,12 +107,18 @@ function parseEntry(name: string, value: unknown, source: string): McpServerInpu
     throw new ConfigurationError(`MCP config (${source}).mcpServers.${name} must be an object`);
   }
   const entry = value as Record<string, unknown>;
+  if (entry.disabled !== undefined && typeof entry.disabled !== "boolean") {
+    throw new ConfigurationError(`MCP config (${source}).mcpServers.${name}.disabled must be a boolean`);
+  }
   if (entry.disabled === true) {
     return undefined;
   }
   const description = stringOrUndefined(entry.description);
   const autoConnectRaw = entry.autoConnect;
-  const autoConnect = typeof autoConnectRaw === "boolean" ? autoConnectRaw : true;
+  if (autoConnectRaw !== undefined && typeof autoConnectRaw !== "boolean") {
+    throw new ConfigurationError(`MCP config (${source}).mcpServers.${name}.autoConnect must be a boolean`);
+  }
+  const autoConnect = autoConnectRaw ?? true;
   const transport = inferTransport(name, entry, source);
   const config = buildConfig(name, entry, transport, source);
   return {
@@ -259,8 +266,9 @@ export function diagnoseExternalMcpConfig(
   const out: ExternalMcpEntryDiagnosis[] = [];
   for (const [rawName, value] of Object.entries(servers as Record<string, unknown>)) {
     const trimmedName = rawName.trim();
-    if (trimmedName.length === 0) {
-      out.push({ findings: ["server name must be a non-empty string"], name: rawName, status: "error" });
+    const nameError = serverNameError(trimmedName);
+    if (nameError) {
+      out.push({ findings: [nameError], name: rawName, status: "error" });
       continue;
     }
     if (value && typeof value === "object" && !Array.isArray(value) && (value as Record<string, unknown>).disabled === true) {
@@ -361,4 +369,14 @@ function tryReadFile(path: string): string | undefined {
       `Failed to read MCP config at ${path}: ${errorMessage(cause)}`
     );
   }
+}
+
+function serverNameError(name: string): string | undefined {
+  if (name.length === 0) {
+    return "an empty server name";
+  }
+  if (/[\u0000-\u001F\u007F]/u.test(name)) {
+    return "a server name containing control characters";
+  }
+  return undefined;
 }

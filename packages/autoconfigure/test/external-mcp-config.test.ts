@@ -130,6 +130,19 @@ describe("parseExternalMcpConfig", () => {
     expect(() => parseExternalMcpConfig(JSON.stringify({ mcpServers: { good: "not-an-object" } }))).toThrow(/mcpServers\.good must be an object/);
   });
 
+  it("rejects control characters in a server name before seeding", () => {
+    const raw = JSON.stringify({ mcpServers: { "bad\nname": { command: "node" } } });
+
+    expect(() => parseExternalMcpConfig(raw)).toThrow(/server name containing control characters/);
+    expect(diagnoseExternalMcpConfig(raw)).toEqual([
+      expect.objectContaining({
+        findings: ["a server name containing control characters"],
+        name: "bad\nname",
+        status: "error"
+      })
+    ]);
+  });
+
   it("rejects a non-array args and an empty command on a stdio entry", () => {
     expect(() => parseExternalMcpConfig(JSON.stringify({ mcpServers: { s: { args: "notarray", command: "run" } } }))).toThrow(/args must be a string array/);
     expect(() => parseExternalMcpConfig(JSON.stringify({ mcpServers: { s: { command: "   " } } }))).toThrow(/command must be a non-empty string/);
@@ -140,6 +153,15 @@ describe("parseExternalMcpConfig", () => {
     expect(entry?.autoConnect).toBe(false);
     const [dflt] = parseExternalMcpConfig(JSON.stringify({ mcpServers: { s: { command: "run" } } }));
     expect(dflt?.autoConnect).toBe(true);
+  });
+
+  it("rejects non-boolean connection switches instead of enabling them", () => {
+    expect(() => parseExternalMcpConfig(JSON.stringify({
+      mcpServers: { s: { autoConnect: "false", command: "run" } }
+    }))).toThrow(/autoConnect must be a boolean/);
+    expect(() => parseExternalMcpConfig(JSON.stringify({
+      mcpServers: { s: { command: "run", disabled: "true" } }
+    }))).toThrow(/disabled must be a boolean/);
   });
 });
 
