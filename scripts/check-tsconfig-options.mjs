@@ -73,6 +73,13 @@ function findMissingBaseTypes(baseValue, overrideValue) {
   return baseValue.filter((entry) => !overrideSet.has(entry));
 }
 
+export function formatTsconfigProblems(problemByConfig) {
+  const entries = Object.entries(problemByConfig).sort(([left], [right]) => left.localeCompare(right, "en", { sensitivity: "base" }));
+  return entries.flatMap(([configPath, issues]) =>
+    issues.map((issue) => `${configPath}: ${issue}`)
+  );
+}
+
 export function collectTsconfigProblems(config, compilerOptions) {
   const problems = [];
   if (!isBaseAligned(config.extends)) {
@@ -130,24 +137,6 @@ function main() {
   }
 
   console.log("✓ tsconfig alignment: all project configs extend base and keep option scope stable");
-}
-
-export {
-  collectConfigPaths,
-  isBaseAligned,
-  findDisallowedCompilerOptions,
-  findBaseConflictKeys,
-  findMissingBaseTypes,
-  collectTsconfigProblems,
-  collectAllTsconfigProblems,
-  formatTsconfigProblems
-};
-
-export function formatTsconfigProblems(problemByConfig) {
-  const entries = Object.entries(problemByConfig).sort(([left], [right]) => left.localeCompare(right, "en", { sensitivity: "base" }));
-  return entries.flatMap(([configPath, issues]) =>
-    issues.map((issue) => `${configPath}: ${issue}`)
-  );
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

@@ -29,7 +29,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-import { hasNodeErrorCodeIn, NODE_ERROR_CODES, sleep } from "@muse/shared";
+import { hasNodeErrorCodeIn, NODE_ERROR_CODES, serializePerKey, sleep } from "@muse/shared";
 
 export interface AtomicWriteOptions {
   /** fsync the tmp file before rename (durable against a crash mid-rename). Default true. */
@@ -104,7 +104,6 @@ export async function atomicWriteFile(file: string, contents: string, options: A
 
 
 const mutationQueues = new Map<string, Promise<unknown>>();
-const resolvedPromise = async (): Promise<unknown> => undefined;
 
 /**
  * Serialise a read-modify-write `op` against `file` so concurrent callers run
@@ -113,8 +112,5 @@ const resolvedPromise = async (): Promise<unknown> => undefined;
  * rejection for sequencing while still rejecting the returned promise.
  */
 export async function withFileMutationQueue<T>(file: string, op: () => Promise<T>): Promise<T> {
-  const prior = mutationQueues.get(file) ?? resolvedPromise();
-  const next = prior.catch(() => undefined).then(op);
-  mutationQueues.set(file, next.then(() => undefined).catch(() => undefined));
-  return next;
+  return serializePerKey(mutationQueues, file, op);
 }
