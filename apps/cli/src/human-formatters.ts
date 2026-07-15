@@ -12,6 +12,8 @@
 
 import { isGoalKey, isVetoKey } from "@muse/recall";
 
+import { t } from "./cli-i18n.js";
+
 interface HumanTaskRow {
   readonly id: string;
   readonly title: string;
@@ -29,7 +31,7 @@ export function formatTaskList(
   const tasks = payload.tasks;
   const status = payload.status ?? "open";
   if (tasks.length === 0) {
-    return `Tasks (${status}): (none)\n`;
+    return `${t("tasks.list.empty", { status })}\n`;
   }
   const header = `Tasks (${tasks.length} ${status}):\n`;
   const lines = tasks.map((task) => formatTaskRow(task, nowMs));
@@ -52,7 +54,7 @@ export function formatProvidersList(label: string, providers: ReadonlyArray<{
   readonly description?: string;
 }>): string {
   if (providers.length === 0) {
-    return `${label}: (none configured)\n`;
+    return `${t("providers.list.empty", { label })}\n`;
   }
   const header = `${label} (${providers.length}):\n`;
   const lines = providers.map((provider) => {

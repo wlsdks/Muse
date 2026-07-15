@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { resetCliLanguageCache } from "./cli-i18n.js";
 import {
   formatBytes,
   formatCalendarEvents,
@@ -7,9 +9,30 @@ import {
   formatLocalDateTime,
   formatLocalTime,
   formatMemoryShow,
+  formatProvidersList,
   formatRelativeTime,
   formatTaskList
 } from "./human-formatters.js";
+
+afterEach(() => {
+  resetCliLanguageCache();
+});
+
+describe("formatTaskList — empty state points at how to add one (E4b audit #4)", () => {
+  it("names the `muse tasks add` on-ramp instead of a bare '(none)'", () => {
+    const out = formatTaskList({ status: "open", tasks: [] });
+    expect(out).toContain("Tasks (open): (none)");
+    expect(out).toContain("muse tasks add");
+  });
+});
+
+describe("formatProvidersList — empty state points at `muse doctor` (E4b audit #5)", () => {
+  it("names the doctor on-ramp instead of a bare '(none configured)'", () => {
+    const out = formatProvidersList("Messaging providers", []);
+    expect(out).toContain("Messaging providers: (none configured)");
+    expect(out).toContain("muse doctor");
+  });
+});
 
 describe("formatMemoryShow — splits veto:/goal: preferences into their own headings (audit parity with the persona block)", () => {
   it("renders vetoes and goals under distinct headings with the prefix stripped, leaving plain prefs", () => {

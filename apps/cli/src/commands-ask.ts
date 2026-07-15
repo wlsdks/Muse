@@ -93,6 +93,7 @@ import {
   createTrustedAskToolRun
 } from "./trusted-local-cli-authority.js";
 import { buildLearnQueuePendingNotice } from "./learn-queue-notice.js";
+import { reportNoModelConfigured } from "./no-model-message.js";
 
 /**
  * Drain the chat-only fast-path model stream. A provider `error`
@@ -250,8 +251,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       }
       const assembly = createMuseRuntimeAssembly();
       if (!assembly.modelProvider || !(options.model ?? assembly.defaultModel)) {
-        io.stderr("muse ask requires a configured model. Set MUSE_MODEL or pass --model.\n");
-        process.exitCode = 2;
+        await reportNoModelConfigured(io, process.env, "ask");
         return;
       }
       const baseModel = options.model ?? assembly.defaultModel!;

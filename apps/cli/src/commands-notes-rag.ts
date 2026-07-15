@@ -24,6 +24,7 @@ import type { Command } from "commander";
 
 export { chunkText } from "./notes-chunk.js";
 import { embed } from "./embed.js";
+import { reportNoModelConfigured } from "./no-model-message.js";
 import { formatBridges, selectBridges } from "./note-bridges.js";
 import { classifyNoteContradiction, formatNoteConflicts, selectConflictCandidatePairs, selectSemanticConflictCandidatePairs, type ConflictNote, type NoteConflict } from "./note-conflicts.js";
 import {
@@ -233,8 +234,7 @@ export function registerNotesRagCommands(program: Command, io: ProgramIO): void 
       const assembly = createMuseRuntimeAssembly({});
       const model = options.model ?? assembly.defaultModel;
       if (!assembly.modelProvider || !model) {
-        io.stderr("muse notes conflicts requires a configured model. Set MUSE_MODEL or pass --model.\n");
-        process.exitCode = 2;
+        await reportNoModelConfigured(io, process.env, "notes conflicts");
         return;
       }
 

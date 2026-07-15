@@ -59,6 +59,8 @@ import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
 import { checkinsFile } from "./commands-checkins.js";
 import { formatLocalDate, formatLocalDateTime, formatLocalTime } from "./human-formatters.js";
 import { resolvePersona } from "./program-helpers.js";
+import { reportNoModelConfigured } from "./no-model-message.js";
+import { commandErrorLine } from "./format-cli-error.js";
 import { buildMusePersona } from "@muse/recall";
 import type { ProgramIO } from "./program.js";
 
@@ -323,8 +325,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
 
       const assembly = createMuseRuntimeAssembly();
       if (!assembly.modelProvider || !(options.model ?? assembly.defaultModel)) {
-        io.stderr("muse brief requires a configured model. Set MUSE_MODEL or pass --model.\n");
-        process.exitCode = 2;
+        await reportNoModelConfigured(io, process.env, "brief");
         return;
       }
       const model = options.model ?? assembly.defaultModel!;
@@ -505,7 +506,7 @@ export function registerBriefCommand(program: Command, io: ProgramIO): void {
         () => false
       );
       if (streamError !== undefined) {
-        io.stderr(`\n(error: ${streamError})\n`);
+        io.stderr(`\n${commandErrorLine("brief", streamError)}`);
         process.exitCode = 1;
         return;
       }

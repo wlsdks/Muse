@@ -26,6 +26,7 @@ import type { Command } from "commander";
 import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
 import { resolvePersona } from "./program-helpers.js";
 import type { ProgramIO } from "./program.js";
+import { reportNoModelConfigured } from "./no-model-message.js";
 
 interface RememberOptions {
   readonly user?: string;
@@ -76,13 +77,12 @@ Examples:
       const userKey = composeKey(options.user, options.persona);
       const assembly = createMuseRuntimeAssembly();
       if (!assembly.modelProvider || !(options.model ?? assembly.defaultModel)) {
+        await reportNoModelConfigured(io, process.env, "remember");
         io.stderr(
-          "muse remember requires a configured model for natural-language extraction.\n"
-          + "  Set MUSE_MODEL or pass --model, OR use the no-LLM direct path:\n"
+          "  Or use the no-LLM direct path:\n"
           + `  muse memory set --local --user ${userKey} fact <key> "<value>"\n`
           + `  muse memory set --local --user ${userKey} preference <key> "<value>"\n`
         );
-        process.exitCode = 2;
         return;
       }
       const model = options.model ?? assembly.defaultModel!;

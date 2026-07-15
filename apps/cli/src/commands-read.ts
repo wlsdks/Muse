@@ -25,6 +25,7 @@ import { consumeAskStream, type AskStreamEvent } from "./commands-ask.js";
 import { extractDocumentText, walkDocuments, type PdfParsed } from "./document-reader.js";
 import type { ProgramIO } from "./program.js";
 import { withSigintAbort } from "./sigint-abort.js";
+import { reportNoModelConfigured } from "./no-model-message.js";
 
 interface ReadOptions {
   readonly ask?: string;
@@ -238,8 +239,7 @@ export function registerReadCommand(program: Command, io: ProgramIO): void {
       const assembly = createMuseRuntimeAssembly();
       const model = options.model ?? assembly.defaultModel;
       if (!assembly.modelProvider || !model) {
-        io.stderr("muse read --ask: requires a configured model (set MUSE_MODEL or pass --model)\n");
-        process.exitCode = 2;
+        await reportNoModelConfigured(io, process.env, "read --ask");
         return;
       }
       const systemPrompt = buildReadAskSystemPrompt(text);
