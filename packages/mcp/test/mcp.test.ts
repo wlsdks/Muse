@@ -222,6 +222,12 @@ describe("MCP security policy", () => {
 });
 
 describe("DefaultMcpTransportConnector", () => {
+  it("rejects invalid request timeouts before they can disable MCP call bounds", () => {
+    for (const requestTimeoutMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5]) {
+      expect(() => new DefaultMcpTransportConnector({ requestTimeoutMs })).toThrow(RangeError);
+    }
+  });
+
   it("connects stdio MCP servers and calls tools through the SDK client", async () => {
     const serverCode = [
       'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";',

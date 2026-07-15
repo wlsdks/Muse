@@ -65,6 +65,15 @@ import {
 
 const defaultMcpRequestTimeoutMs = 15_000;
 
+function requirePositiveSafeInteger(value: number | undefined, fallback: number, name: string): number {
+  const resolved = value ?? fallback;
+  if (!Number.isSafeInteger(resolved) || resolved <= 0) {
+    throw new RangeError(`${name} must be a positive safe integer`);
+  }
+
+  return resolved;
+}
+
 export class DefaultMcpTransportConnector implements McpTransportConnector {
   private readonly clientName: string;
   private readonly clientVersion: string;
@@ -80,7 +89,7 @@ export class DefaultMcpTransportConnector implements McpTransportConnector {
     this.externalTransportAllowed = options.externalTransportAllowed ?? true;
     this.clientName = options.clientName ?? "muse";
     this.clientVersion = options.clientVersion ?? "1.0.0";
-    this.requestTimeoutMs = options.requestTimeoutMs ?? defaultMcpRequestTimeoutMs;
+    this.requestTimeoutMs = requirePositiveSafeInteger(options.requestTimeoutMs, defaultMcpRequestTimeoutMs, "requestTimeoutMs");
     this.stderr = options.stderr ?? "inherit";
     this.clientRoots = (options.clientRoots ?? []).filter((path) => path.trim().length > 0);
     this.oauthConfig = options.oauthConfig;
