@@ -76,6 +76,13 @@ export interface WhisperCppSttProviderOptions {
 }
 
 const DEFAULT_WHISPER_TIMEOUT_MS = 120_000;
+const MAX_WHISPER_TIMEOUT_MS = 2_147_483_647;
+
+function normalizeWhisperTimeoutMs(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.min(Math.trunc(value), MAX_WHISPER_TIMEOUT_MS)
+    : DEFAULT_WHISPER_TIMEOUT_MS;
+}
 
 /**
  * Local Whisper.cpp adapter. Drops a tmp WAV next to a tmp output
@@ -97,10 +104,7 @@ export class WhisperCppSttProvider implements SpeechToTextProvider {
     this.id = options.id ?? "whisper-cpp";
     this.binaryPath = options.binaryPath ?? "whisper-cpp";
     this.modelPath = options.modelPath ?? resolveDefaultWhisperModelPath();
-    const timeoutMs =
-      typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
-        ? options.timeoutMs
-        : DEFAULT_WHISPER_TIMEOUT_MS;
+    const timeoutMs = normalizeWhisperTimeoutMs(options.timeoutMs);
     this.runner = options.runner ?? createWhisperCppRunner(timeoutMs);
   }
 
@@ -261,17 +265,18 @@ function extensionForMime(mime: string): string {
  * coverage.
  */
 export function createWhisperCppRunner(timeoutMs: number = DEFAULT_WHISPER_TIMEOUT_MS): WhisperCppRunner {
+  const effectiveTimeoutMs = normalizeWhisperTimeoutMs(timeoutMs);
   return async (binary, args): Promise<WhisperCppRunResult> => {
     const result = await runCommandWithTimeout({
       command: binary,
       args: [...args],
-      timeoutMs,
+      timeoutMs: effectiveTimeoutMs,
       maxStderrBytes: 200_000,
       killSignal: "SIGKILL"
     });
 
     if (result.timedOut) {
-      throw new Error(`whisper-cpp timed out after ${timeoutMs.toString()}ms and was killed`);
+      throw new Error(`whisper-cpp timed out after ${effectiveTimeoutMs.toString()}ms and was killed`);
     }
 
     return { exitCode: result.exitCode, stderr: result.stderr };
