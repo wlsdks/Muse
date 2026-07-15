@@ -189,6 +189,10 @@ export async function invokeRustRunner(
       stdin: `${responseText}\n`,
       timeoutMs: runnerWatchdogMs(request),
       spawnImpl: spawn,
+      // The Rust runner puts each command in its own process group. If this
+      // outer watchdog kills a wedged runner, kill that whole inherited group
+      // too; otherwise a backgrounded command can survive its runner parent.
+      killProcessGroup: true,
       maxStdoutBytes: 200_000,
       maxStderrBytes: 200_000
     });

@@ -877,6 +877,39 @@ describe.skipIf(process.platform === "win32")("Rust runner watchdog", () => {
     // watchdog = 1 + 5000 grace; killed well before any 15s test cap.
     expect(Date.now() - start).toBeLessThan(9_000);
   }, 15_000);
+
+  it("kills a wedged runner's inherited command process group", async () => {
+    const { chmodSync, mkdtempSync, readFileSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "muse-runner-tree-"));
+    const pidFile = join(dir, "command.pid");
+    const script = join(dir, "wedged-runner");
+    writeFileSync(
+      script,
+      `#!${process.execPath}\nconst { spawn } = require("node:child_process");\nconst { writeFileSync } = require("node:fs");\nconst command = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });\nwriteFileSync(${JSON.stringify(pidFile)}, String(command.pid));\nsetInterval(() => {}, 1000);\n`
+    );
+    chmodSync(script, 0o755);
+
+    await expect(invokeRustRunner(script, { command: "noop", timeoutMs: 1 })).resolves.toMatchObject({ timedOut: true });
+    const commandPid = Number(readFileSync(pidFile, "utf8"));
+
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        process.kill(commandPid, 0);
+      } catch {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    try {
+      process.kill(commandPid, "SIGKILL");
+    } catch {
+      // The assertion below has the clearer failure when the process is gone.
+    }
+    throw new Error(`runner watchdog left command process ${commandPid.toString()} alive`);
+  }, 15_000);
 });
 
 // The runner is a SEPARATE child process; its stdout is an untrusted boundary

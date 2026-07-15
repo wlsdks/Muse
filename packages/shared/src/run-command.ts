@@ -22,6 +22,8 @@ export interface RunCommandOptions {
   readonly maxStdoutBytes?: number;
   readonly maxStderrBytes?: number;
   readonly abortSignal?: AbortSignal;
+  /** Start a dedicated POSIX process group and terminate its whole tree on timeout/abort. */
+  readonly killProcessGroup?: boolean;
 }
 
 interface StreamAccumulator {
@@ -100,7 +102,8 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
     env,
     maxStdoutBytes,
     maxStderrBytes,
-    abortSignal
+    abortSignal,
+    killProcessGroup = false
   } = options;
 
   if (abortSignal?.aborted) {
@@ -109,9 +112,22 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
 
   const child = spawnImpl(command, [...args], {
     stdio: ["pipe", "pipe", "pipe"],
+    ...(killProcessGroup && process.platform !== "win32" ? { detached: true } : {}),
     ...(cwd !== undefined ? { cwd } : {}),
     ...(env !== undefined ? { env } : {})
   });
+
+  const terminateChild = (): void => {
+    if (killProcessGroup && process.platform !== "win32" && child.pid !== undefined) {
+      try {
+        process.kill(-child.pid, killSignal);
+        return;
+      } catch {
+        // The group may already have exited between the timeout and the signal.
+      }
+    }
+    child.kill(killSignal);
+  };
   const stdout: StreamAccumulator = {
     bytes: 0,
     chunks: [],
@@ -159,7 +175,7 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
     ? (() => {
       const abortDeferred = Promise.withResolvers<never>();
       const onAbort = (): void => {
-        child.kill(killSignal);
+        terminateChild();
         abortDeferred.reject(abortError(abortSignal.reason));
       };
       abortSignal.addEventListener("abort", onAbort, { once: true });
@@ -185,7 +201,7 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<RunCommandResult>((resolve) => {
     timeoutHandle = setTimeout(() => {
-      child.kill(killSignal);
+      terminateChild();
       resolve({
         exitCode: null,
         signal: typeof killSignal === "string" ? killSignal : null,
