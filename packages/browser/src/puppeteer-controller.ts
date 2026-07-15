@@ -16,7 +16,7 @@ import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { sleep } from "@muse/shared";
+import { sleep, withBestEffort } from "@muse/shared";
 
 import {
   Browser as InstalledBrowser,
@@ -134,7 +134,7 @@ export class PuppeteerBrowserController implements BrowserController {
       process.env.MUSE_CHROME_PATH ??
       computeSystemExecutablePath({ browser: InstalledBrowser.CHROME, channel: ChromeReleaseChannel.STABLE });
     // A stale port file must not race the fresh launch's probe loop.
-    await rm(join(this.userDataDir, "DevToolsActivePort"), { force: true }).catch(() => { /* best-effort */ });
+    await withBestEffort(rm(join(this.userDataDir, "DevToolsActivePort"), { force: true }), undefined);
     const child = spawn(executable, [
       `--user-data-dir=${this.userDataDir}`,
       "--no-first-run",
@@ -182,7 +182,7 @@ export class PuppeteerBrowserController implements BrowserController {
     page.on("dialog", (dialog) => {
       const plan = planDialogResponse(dialog.type(), dialog.message(), dialog.defaultValue());
       this.lastDialog = plan.record;
-      settleDialog(dialog, plan).catch(() => { /* already handled / page gone */ });
+      void withBestEffort(settleDialog(dialog, plan), undefined);
     });
   }
 
@@ -201,16 +201,17 @@ export class PuppeteerBrowserController implements BrowserController {
     await action();
     // A new tab fires `targetcreated` essentially at click time, so a short
     // window catches it; a normal click (no new tab) isn't taxed beyond it.
-    const newestTarget = await browser
-      .waitForTarget((candidate) => !knownTargets.has(candidate), { timeout: NEW_TAB_WINDOW_MS })
-      .catch(() => null);
-    const newest = newestTarget ? await newestTarget.page().catch(() => null) : null;
+    const newestTarget = await withBestEffort(
+      browser.waitForTarget((candidate) => !knownTargets.has(candidate), { timeout: NEW_TAB_WINDOW_MS }),
+      null
+    );
+    const pageFromTarget = newestTarget ? await withBestEffort(newestTarget.page(), null) : null;
 
-    if (newest && !newest.isClosed()) {
-      this.page = newest;
-      this.registerDialogHandler(newest);
-      await newest.bringToFront().catch(() => { /* best-effort */ });
-      await newest.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* static popup */ });
+    if (pageFromTarget && !pageFromTarget.isClosed()) {
+      this.page = pageFromTarget;
+      this.registerDialogHandler(pageFromTarget);
+      await withBestEffort(pageFromTarget.bringToFront(), undefined);
+      await withBestEffort(pageFromTarget.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     }
   }
 
@@ -485,7 +486,7 @@ export class PuppeteerBrowserController implements BrowserController {
     const page = await this.ensurePage();
     const selector = `pierce/[data-muse-ref="${ref.toString()}"]`;
     for (const frame of page.frames()) {
-      const handle = await frame.$(selector).catch(() => null);
+      const handle = await withBestEffort(frame.$(selector), null);
       if (handle) {
         await handle.dispose();
         return { frame, selector };
@@ -504,7 +505,7 @@ export class PuppeteerBrowserController implements BrowserController {
     // error page (404/500) surfaces its HTTP status like open/back.
     await this.withNavStatus(() => this.withNewTabFollow(() => frame.locator(selector).setTimeout(this.timeout).click()));
     const page = await this.ensurePage();
-    await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* page may not navigate */ });
+    await withBestEffort(page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     await this.settleDom(page);
     return this.snapshot();
   }
@@ -568,7 +569,7 @@ export class PuppeteerBrowserController implements BrowserController {
       // its status so the model isn't handed the error body as results.
       await this.withNavStatus(() => this.withNewTabFollow(() => page.keyboard.press("Enter")));
       const active = await this.ensurePage();
-      await active.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* may not navigate */ });
+      await withBestEffort(active.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     }
     const current = await this.ensurePage();
     await this.settleDom(current);
@@ -602,7 +603,7 @@ export class PuppeteerBrowserController implements BrowserController {
 
   async back(): Promise<PageSnapshot> {
     const page = await this.ensurePage();
-    const response = await page.goBack({ timeout: this.timeout, waitUntil: "domcontentloaded" }).catch(() => null);
+    const response = await withBestEffort(page.goBack({ timeout: this.timeout, waitUntil: "domcontentloaded" }), null);
     this.lastHttpStatus = response?.status();
     return this.snapshot();
   }
@@ -616,7 +617,7 @@ export class PuppeteerBrowserController implements BrowserController {
       else window.scrollBy({ top: dir === "up" ? -by : by });
     }, direction);
     // Lazy-loaders fire on scroll — let the new content settle before observing.
-    await page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }).catch(() => { /* static page */ });
+    await withBestEffort(page.waitForNetworkIdle({ idleTime: 500, timeout: this.timeout }), undefined);
     await this.settleDom(page);
     return this.snapshot();
   }
@@ -686,15 +687,17 @@ export class PuppeteerBrowserController implements BrowserController {
   }
 
   async disconnect(): Promise<void> {
-    try {
-      await this.browser?.disconnect();
-    } catch { /* best-effort */ }
+    if (this.browser) {
+      await withBestEffort(this.browser.disconnect(), undefined);
+    }
     this.browser = undefined;
     this.page = undefined;
   }
 
   async close(): Promise<void> {
-    await this.browser?.close().catch(() => { /* best-effort */ });
+    if (this.browser) {
+      await withBestEffort(this.browser.close(), undefined);
+    }
     this.browser = undefined;
     this.page = undefined;
   }
