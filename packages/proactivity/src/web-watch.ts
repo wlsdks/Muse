@@ -299,7 +299,7 @@ function parseHeaders(raw: unknown): Record<string, string> | undefined {
   }
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof value === "string" && key.length > 0) {
+    if (typeof value === "string" && /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(key) && !/[\u0000-\u001f\u007f]/u.test(value)) {
       out[key] = value;
     }
   }
@@ -334,6 +334,7 @@ export function webWatchesFromConfig(
     return [];
   }
   const out: WebWatch[] = [];
+  const ids = new Set<string>();
   for (const entry of parsed) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       continue;
@@ -343,7 +344,7 @@ export function webWatchesFromConfig(
     // PATH, web/chrome watches at a URL.
     const source = e.source === "file" ? "file" : e.source === "chrome" ? "chrome" : "http";
     const locator = source === "file" ? e.path : e.url;
-    if (typeof e.id !== "string" || e.id.length === 0 || typeof locator !== "string" || locator.length === 0) {
+    if (typeof e.id !== "string" || e.id.length === 0 || ids.has(e.id) || typeof locator !== "string" || locator.length === 0) {
       continue;
     }
     if (typeof e.title !== "string" || typeof e.message !== "string") {
@@ -377,6 +378,7 @@ export function webWatchesFromConfig(
             : createHttpSnapshot(locator, httpOptions),
       title: e.title
     });
+    ids.add(e.id);
   }
   return out;
 }
