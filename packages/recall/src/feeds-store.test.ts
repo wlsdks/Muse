@@ -178,6 +178,11 @@ describe("readFeedsStore — tolerant-read normalises each feed's `entries` to a
     expect(store.feeds.map((f) => f.entries)).toEqual([[], [], []]);
   });
 
+  it("treats a non-array feeds field as an empty store", async () => {
+    await writeFile(file, JSON.stringify({ version: FEEDS_STORE_SCHEMA_VERSION, feeds: { corrupt: true } }));
+    await expect(readFeedsStore(file)).resolves.toMatchObject({ feeds: [] });
+  });
+
   it("defaults `name` to the feed id when the on-disk record has no `name` field, so `muse feeds list` doesn't print the literal 'undefined'", async () => {
     await writeFile(
       file,
