@@ -21,6 +21,7 @@ import { ImapFlow, type FetchMessageObject, type FetchOptions, type FetchQueryOb
 import { createTransport } from "nodemailer";
 
 import type { EmailMessage, EmailProvider, EmailReader, EmailSearcher, EmailSender, EmailSummary } from "./email-provider.js";
+import { isRecord } from "@muse/shared";
 
 const GMAIL_IMAP_HOST = "imap.gmail.com";
 const GMAIL_IMAP_PORT = 993;
@@ -131,9 +132,9 @@ function redact(message: string, appPassword: string): string {
 }
 
 function isAuthFailure(cause: unknown): boolean {
-  if (!(cause instanceof Error)) return false;
-  if ((cause as { readonly authenticationFailed?: boolean }).authenticationFailed === true) return true;
-  if ((cause as { readonly code?: string }).code === "EAUTH") return true;
+  if (!(cause instanceof Error) || !isRecord(cause)) return false;
+  if (readBooleanField(cause, "authenticationFailed") === true) return true;
+  if (readStringField(cause, "code") === "EAUTH") return true;
   return /invalid credentials|authentication failed|auth\w*\s*fail/iu.test(cause.message);
 }
 
@@ -145,7 +146,7 @@ function isAuthFailure(cause: unknown): boolean {
  */
 function serverRejectionDetail(cause: unknown, appPassword: string): string {
   if (!(cause instanceof Error)) return "";
-  const responseText = (cause as { readonly responseText?: unknown }).responseText;
+  const responseText = readStringField(cause, "responseText");
   const raw = typeof responseText === "string" && responseText.trim().length > 0 ? responseText : cause.message;
   const trimmed = redact(raw, appPassword).replace(/\s+/gu, " ").trim().slice(0, 200);
   return trimmed.length > 0 ? ` Server said: "${trimmed}".` : "";
@@ -155,6 +156,16 @@ function webLoginBlockHint(detail: string): string {
   return /web browser|web login/iu.test(detail)
     ? " Google is blocking this sign-in (not a wrong password) — open https://accounts.google.com/DisplayUnlockCaptcha, click Continue, then retry within a few minutes."
     : "";
+}
+
+function readBooleanField(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 function classifyImapError(cause: unknown, email: string, appPassword: string): Error {
