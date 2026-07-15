@@ -42,9 +42,17 @@ import {
 import type { ProgramIO } from "./program.js";
 
 const THREAD_KINDS = ["life", "work"] as const;
+type ThreadKind = (typeof THREAD_KINDS)[number];
+const THREAD_KIND_SET = new Set<string>(THREAD_KINDS);
 const ARTIFACT_TYPES = ["task", "note", "resource"] as const;
+type ArtifactType = (typeof ARTIFACT_TYPES)[number];
+const ARTIFACT_TYPE_SET = new Set<string>(ARTIFACT_TYPES);
 const ARTIFACT_ROLES = ["context", "next-step"] as const;
+type ArtifactRole = (typeof ARTIFACT_ROLES)[number];
+const ARTIFACT_ROLE_SET = new Set<string>(ARTIFACT_ROLES);
 const OUTCOMES = ["used", "adjusted", "ignored", "rejected"] as const;
+type Outcome = (typeof OUTCOMES)[number];
+const OUTCOME_SET = new Set<string>(OUTCOMES);
 
 export interface AttunementCommandDeps {
   /**
@@ -72,8 +80,11 @@ function notesDir(): string {
   return resolveNotesDir(environment());
 }
 
-function assertChoice(value: string, allowed: readonly string[], name: string): void {
-  if (!allowed.includes(value)) throw new AttunementStoreError(`${name} must be one of: ${allowed.join(", ")}`);
+function assertChoice<T extends string>(value: string, allowed: readonly T[], allowedSet: ReadonlySet<string>, name: string): asserts value is T {
+  if (allowedSet.has(value)) {
+    return;
+  }
+  throw new AttunementStoreError(`${name} must be one of: ${allowed.join(", ")}`);
 }
 
 function assertNoDotDotPath(value: string): void {
@@ -407,8 +418,8 @@ export function registerAttunementCommands(program: Command, io: ProgramIO, deps
     .action(async (titleParts: string[], options: { readonly kind: string }, command: Command) => {
       await commandAction(command, io, "thread start", async () => {
         const kind = options.kind.trim().toLowerCase();
-        assertChoice(kind, THREAD_KINDS, "--kind");
-        const created = await createPersonalThread(attunementFile(), { kind: kind as PersonalThread["kind"], title: titleParts.join(" ") });
+        assertChoice(kind, THREAD_KINDS, THREAD_KIND_SET, "--kind");
+        const created = await createPersonalThread(attunementFile(), { kind, title: titleParts.join(" ") });
         io.stdout(`Started ${created.kind} thread ${created.id}: ${created.title}\n`);
       });
     });
@@ -445,14 +456,14 @@ Examples:
       await commandAction(command, io, "thread link", async () => {
         const type = artifactType.trim().toLowerCase();
         const role = options.role.trim().toLowerCase();
-        assertChoice(type, ARTIFACT_TYPES, "artifact type");
-        assertChoice(role, ARTIFACT_ROLES, "--role");
+        assertChoice(type, ARTIFACT_TYPES, ARTIFACT_TYPE_SET, "artifact type");
+        assertChoice(role, ARTIFACT_ROLES, ARTIFACT_ROLE_SET, "--role");
         const input = type === "resource"
-          ? buildResourceLinkInput(artifactId, role as ArtifactLink["role"], threadId.trim())
+          ? buildResourceLinkInput(artifactId, role, threadId.trim())
           : {
               artifactId,
-              artifactType: type as ArtifactLink["artifactType"],
-              role: role as ArtifactLink["role"],
+              artifactType: type,
+              role,
               threadId: threadId.trim()
             };
         const result = await linkArtifact(attunementFile(), input, { validateArtifact });
@@ -466,8 +477,8 @@ Examples:
     .action(async (threadId: string, artifactType: string, artifactId: string, _options: unknown, command: Command) => {
       await commandAction(command, io, "thread unlink", async () => {
         const type = artifactType.trim().toLowerCase();
-        assertChoice(type, ARTIFACT_TYPES, "artifact type");
-        const removed = await unlinkArtifact(attunementFile(), { artifactId: artifactId.trim(), artifactType: type as ArtifactLink["artifactType"], threadId: threadId.trim() });
+        assertChoice(type, ARTIFACT_TYPES, ARTIFACT_TYPE_SET, "artifact type");
+        const removed = await unlinkArtifact(attunementFile(), { artifactId: artifactId.trim(), artifactType: type, threadId: threadId.trim() });
         if (!removed) throw new AttunementStoreError(`no ${type} link '${artifactId}' on thread '${threadId}'`);
         io.stdout(`Unlinked ${type}:${artifactId}\n`);
       });
@@ -518,8 +529,8 @@ Examples:
     .action(async (deliveryId: string, outcome: string, _options: unknown, command: Command) => {
       await commandAction(command, io, "thread outcome", async () => {
         const canonicalOutcome = outcome.trim().toLowerCase();
-        assertChoice(canonicalOutcome, OUTCOMES, "outcome");
-        const recorded = await recordContinuityOutcome(attunementFile(), deliveryId.trim(), canonicalOutcome as (typeof OUTCOMES)[number]);
+        assertChoice(canonicalOutcome, OUTCOMES, OUTCOME_SET, "outcome");
+        const recorded = await recordContinuityOutcome(attunementFile(), deliveryId.trim(), canonicalOutcome);
         io.stdout(`${recorded.applied ? "Recorded" : "Already recorded"} ${canonicalOutcome} for ${deliveryId}; policy v${recorded.policy.version.toString()}\n`);
       });
     });
