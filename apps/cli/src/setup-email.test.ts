@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OAuthCallbackServer } from "@muse/mcp";
 
 import { readEmailImapCredential, readGmailCredential } from "./credential-store.js";
-import { runEmailSetup, runGmailOAuthLoopback, type SetupEmailIO } from "./setup-email.js";
+import { buildGmailAppPasswordUrls, classifyEmailProvider, runEmailSetup, runGmailOAuthLoopback, type SetupEmailIO } from "./setup-email.js";
 
 function captureIo(overrides: Partial<SetupEmailIO> = {}): { readonly io: SetupEmailIO; readonly lines: string[] } {
   const lines: string[] = [];
@@ -373,6 +373,131 @@ describe("runEmailSetup — the App Password wizard (choice 1, recommended; prom
       const lines = await run() as string[];
       expect(lines.join("")).not.toContain(secretMarker);
     }
+  });
+
+  it("browser-open is offered ONLY for a Gmail-family domain — never called for a Korean-webmail or generic domain", async () => {
+    const gmailOffers: string[] = [];
+    await runEmailSetup(io("gmail-offer"), {
+      ...apppassword,
+      confirmOpenBrowser: async (message) => { gmailOffers.push(message); return false; },
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@gmail.com",
+      verifyImapConnection: async () => ({ messageCount: 0, ok: true })
+    });
+    expect(gmailOffers).toHaveLength(1);
+
+    const naverOffers: string[] = [];
+    await runEmailSetup(io("naver-offer"), {
+      ...apppassword,
+      confirmOpenBrowser: async (message) => { naverOffers.push(message); return false; },
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@naver.com",
+      promptImapHost: async () => undefined,
+      promptSmtpHost: async () => undefined,
+      verifyImapConnection: async () => ({ messageCount: 0, ok: true })
+    });
+    expect(naverOffers).toHaveLength(0);
+
+    const genericOffers: string[] = [];
+    await runEmailSetup(io("generic-offer"), {
+      ...apppassword,
+      confirmOpenBrowser: async (message) => { genericOffers.push(message); return false; },
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@example.com",
+      promptImapHost: async () => undefined,
+      promptSmtpHost: async () => undefined,
+      verifyImapConnection: async () => ({ messageCount: 0, ok: true })
+    });
+    expect(genericOffers).toHaveLength(0);
+
+    function io(dir: string): SetupEmailIO {
+      return captureIo({ configDir: path.join(workdir, dir) }).io;
+    }
+  });
+
+  it("declining the open-browser offer still prints the account-pinned URL (the printed URL is the real fallback)", async () => {
+    const { io, lines } = captureIo({ configDir: workdir });
+    const result = await runEmailSetup(io, {
+      ...apppassword,
+      confirmOpenBrowser: async () => false,
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@gmail.com",
+      verifyImapConnection: async () => ({ messageCount: 0, ok: true })
+    });
+    expect(result.ok).toBe(true);
+    const { appPasswordUrl } = buildGmailAppPasswordUrls("user@gmail.com");
+    expect(lines.some((line) => line.includes(appPasswordUrl))).toBe(true);
+  });
+
+  it("accepting the open-browser offer opens exactly the printed, account-pinned app-password URL", async () => {
+    const { io } = captureIo({ configDir: workdir });
+    const openedUrls: string[] = [];
+    const result = await runEmailSetup(io, {
+      ...apppassword,
+      confirmOpenBrowser: async () => true,
+      openBrowser: (url) => { openedUrls.push(url); },
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@gmail.com",
+      verifyImapConnection: async () => ({ messageCount: 0, ok: true })
+    });
+    expect(result.ok).toBe(true);
+    expect(openedUrls).toEqual([buildGmailAppPasswordUrls("user@gmail.com").appPasswordUrl]);
+  });
+
+  it("a Korean webmail domain (Naver, Daum, Kakao, Hanmail) shows only that provider's short note, never Google's wall", async () => {
+    const { io, lines } = captureIo({ configDir: workdir });
+    const result = await runEmailSetup(io, {
+      ...apppassword,
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@daum.net",
+      promptImapHost: async () => undefined,
+      promptSmtpHost: async () => undefined,
+      verifyImapConnection: async () => ({ messageCount: 0, ok: true })
+    });
+    expect(result.ok).toBe(true);
+    const printed = lines.join("");
+    expect(printed).toContain("Daum Mail");
+    expect(printed).not.toContain("myaccount.google.com");
+  });
+});
+
+describe("classifyEmailProvider — domain branching (AC1's routing table)", () => {
+  it("gmail.com routes to the gmail branch", () => {
+    expect(classifyEmailProvider("user@gmail.com")).toEqual({ kind: "gmail" });
+  });
+
+  it("googlemail.com (Gmail's alternate domain) also routes to the gmail branch", () => {
+    expect(classifyEmailProvider("user@googlemail.com")).toEqual({ kind: "gmail" });
+  });
+
+  it("naver.com routes to ko-webmail WITH verified imap.naver.com/smtp.naver.com host prefill", () => {
+    expect(classifyEmailProvider("user@naver.com")).toEqual({
+      imapHost: "imap.naver.com", kind: "ko-webmail", label: expect.stringContaining("Naver"), smtpHost: "smtp.naver.com"
+    });
+  });
+
+  it("an unlisted domain routes to the generic branch (today's bare host prompts)", () => {
+    expect(classifyEmailProvider("user@example.com")).toEqual({ kind: "generic" });
+  });
+
+  it("is case-insensitive on the domain", () => {
+    expect(classifyEmailProvider("USER@GMAIL.COM")).toEqual({ kind: "gmail" });
+  });
+});
+
+describe("buildGmailAppPasswordUrls — authuser pinning + URL encoding", () => {
+  it("pins both URLs to the exact typed address via authuser", () => {
+    const { appPasswordUrl, twoStepUrl } = buildGmailAppPasswordUrls("user@gmail.com");
+    expect(new URL(appPasswordUrl).searchParams.get("authuser")).toBe("user@gmail.com");
+    expect(new URL(twoStepUrl).searchParams.get("authuser")).toBe("user@gmail.com");
+    expect(appPasswordUrl.startsWith("https://myaccount.google.com/apppasswords?")).toBe(true);
+  });
+
+  it("an address containing '+' round-trips through the query string intact (never decoded as a space)", () => {
+    const email = "user+tag@gmail.com";
+    const { appPasswordUrl } = buildGmailAppPasswordUrls(email);
+    expect(appPasswordUrl).toContain("authuser=user%2Btag%40gmail.com");
+    expect(new URL(appPasswordUrl).searchParams.get("authuser")).toBe(email);
   });
 });
 

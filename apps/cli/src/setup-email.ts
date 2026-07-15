@@ -27,10 +27,11 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 
-import { password, select, text, isCancel } from "@clack/prompts";
+import { confirm, password, select, text, isCancel } from "@clack/prompts";
 import { ImapSmtpEmailProvider, type ImapSmtpEmailProviderConfig } from "@muse/domain-tools";
 import { startOAuthCallbackServer, type OAuthCallbackServer } from "@muse/mcp";
 
+import { isNoInput } from "./cli-context.js";
 import { writeEmailImapCredential, writeGmailCredential, type GmailOAuthCredential, type ImapEmailCredential } from "./credential-store.js";
 import { generateOAuthState, generatePkcePair } from "./setup-calendar.js";
 import { exchangeGmailAuthorizationCode, GMAIL_AUTH_ENDPOINT, GMAIL_SCOPES, googlePreflightGuidance, looksLikeClientSecretJsonInput, parseGoogleClientSecretJson, preflightGoogleOAuthClient, validateGoogleOAuthClientIdInput, type GmailClientPreflightResult, type GmailTokenExchangeResult } from "./gmail-oauth.js";
@@ -226,6 +227,10 @@ export interface AppPasswordSetupDeps {
   readonly promptSmtpHost?: () => Promise<string | undefined>;
   /** Real IMAP login + mailbox open, injectable so tests never touch a socket. */
   readonly verifyImapConnection?: (config: ImapSmtpEmailProviderConfig) => Promise<ImapVerifyOutcome>;
+  /** macOS `open`, shared with the OAuth path's `defaultOpenBrowser`. */
+  readonly openBrowser?: (url: string) => Promise<void> | void;
+  /** Gmail-only: offer to open the account-pinned app-password page. Defaults to a clack confirm, skipped (never offered) under `--no-input` or a non-TTY session. */
+  readonly confirmOpenBrowser?: (message: string) => Promise<boolean>;
 }
 
 export interface SetupEmailDeps extends GmailOAuthLoopbackDeps, AppPasswordSetupDeps {
@@ -263,26 +268,81 @@ export async function runEmailSetup(io: SetupEmailIO, deps: Partial<SetupEmailDe
   return runOAuthEmailSetup(io, deps);
 }
 
-const APP_PASSWORD_WALKTHROUGH = `
-App Password setup — about 2 minutes, no Google Cloud project needed.
+/** The address family that gets Gmail's IMAP/SMTP hosts by default and the account-pinned app-password-page offer. */
+const GMAIL_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
 
-  Google:
-  1. Turn on 2-Step Verification (if it isn't already):
-     https://myaccount.google.com/signinoptions/two-step-verification
-  2. Generate a 16-character App Password:
-     https://myaccount.google.com/apppasswords
-  3. Paste the 16 characters below — Google shows them with spaces
-     ("abcd efgh ijkl mnop"); spaces are stripped automatically.
+/**
+ * Korean webmail providers get a short NAMED note (IMAP + app-password
+ * location) instead of Google's wall. Only `naver.com` ships prefillable
+ * host defaults — verified against Naver's own DNS (`imap.naver.com` /
+ * `smtp.naver.com` resolve to Naver-operated mail infrastructure); the
+ * other three have no publicly confirmable default here, so they fall
+ * through to a blank host prompt like any unlisted provider.
+ */
+const KO_WEBMAIL_PROVIDERS: Readonly<Record<string, { readonly label: string; readonly imapHost?: string; readonly smtpHost?: string }>> = {
+  "daum.net": { label: "다음 메일 (Daum Mail)" },
+  "hanmail.net": { label: "한메일 (Hanmail)" },
+  "kakao.com": { label: "카카오메일 (Kakao Mail)" },
+  "naver.com": { imapHost: "imap.naver.com", label: "네이버 메일 (Naver Mail)", smtpHost: "smtp.naver.com" }
+};
 
-  Any other provider (Naver, Daum, ...): check that provider's mail
-  settings / security page for its own IMAP/app-password option, then
-  answer the IMAP/SMTP host prompts below.
+export type EmailProviderClass =
+  | { readonly kind: "gmail" }
+  | { readonly kind: "ko-webmail"; readonly label: string; readonly imapHost?: string; readonly smtpHost?: string }
+  | { readonly kind: "generic" };
 
-`;
+function emailDomain(email: string): string {
+  const at = email.lastIndexOf("@");
+  return at === -1 ? "" : email.slice(at + 1).trim().toLowerCase();
+}
 
-/** `email@gmail.com` (case-insensitive) — the only address family that gets Gmail's IMAP/SMTP hosts by default. */
-function isGmailAddress(email: string): boolean {
-  return /@gmail\.com$/iu.test(email.trim());
+/** Pure domain router behind the App Password flow's branching (AC1) — no prompt/IO here, so it's directly unit-testable. */
+export function classifyEmailProvider(email: string): EmailProviderClass {
+  const domain = emailDomain(email);
+  if (GMAIL_DOMAINS.has(domain)) return { kind: "gmail" };
+  const koProvider = KO_WEBMAIL_PROVIDERS[domain];
+  if (koProvider) return { kind: "ko-webmail", ...koProvider };
+  return { kind: "generic" };
+}
+
+/** `authuser=<email>` pins both pages to the account the user just typed — the single biggest App Password real-world failure is minting the password on the wrong signed-in Google account. */
+export function buildGmailAppPasswordUrls(email: string): { readonly appPasswordUrl: string; readonly twoStepUrl: string } {
+  const authuser = encodeURIComponent(email);
+  return {
+    appPasswordUrl: `https://myaccount.google.com/apppasswords?authuser=${authuser}`,
+    twoStepUrl: `https://myaccount.google.com/signinoptions/two-step-verification?authuser=${authuser}`
+  };
+}
+
+function koWebmailNote(label: string): string {
+  return `${label}: 메일 설정에서 IMAP 사용을 켜고, 2단계 인증을 켠 뒤 앱 비밀번호를 발급하세요.\n`
+    + `${label}: in that provider's mail security settings, turn on IMAP access, enable 2-step verification, then generate an app password.\n\n`;
+}
+
+/** Skipped (never offered — no clack prompt) under `--no-input` or a non-TTY session, so a scripted run never hangs. */
+async function defaultConfirmOpenBrowser(message: string): Promise<boolean> {
+  if (isNoInput() || !process.stdin.isTTY || !process.stdout.isTTY) return false;
+  const answer = await confirm({ initialValue: true, message });
+  return isCancel(answer) ? false : answer === true;
+}
+
+async function presentGmailAppPasswordStep(io: SetupEmailIO, email: string, deps: Partial<AppPasswordSetupDeps>): Promise<void> {
+  const { appPasswordUrl, twoStepUrl } = buildGmailAppPasswordUrls(email);
+  io.stdout(
+    `${email} 계정으로 고정된 앱 비밀번호 생성 페이지를 엽니다 (16자리 비밀번호를 다음 단계에서 붙여넣으세요).\n`
+    + `Opening the app-password page pinned to ${email} (paste the 16 characters at the next step).\n`
+    + `  ${appPasswordUrl}\n`
+    + `2단계 인증이 꺼져 있다면 먼저 켜세요 · if 2-Step Verification isn't on yet, enable it first:\n  ${twoStepUrl}\n\n`
+  );
+  const confirmOpen = deps.confirmOpenBrowser ?? defaultConfirmOpenBrowser;
+  const shouldOpen = await confirmOpen("Open the app-password page in your browser now?");
+  if (!shouldOpen) return;
+  const openBrowser = deps.openBrowser ?? defaultOpenBrowser;
+  try {
+    await openBrowser(appPasswordUrl);
+  } catch {
+    // Non-blocking open step — the printed URL above is the real fallback.
+  }
 }
 
 async function defaultPromptEmail(): Promise<string | undefined> {
@@ -309,8 +369,12 @@ async function defaultPromptAppPassword(): Promise<string | undefined> {
   return stripped.length > 0 ? stripped : undefined;
 }
 
-async function defaultPromptHost(label: string): Promise<string | undefined> {
-  const value = await text({ message: `${label} host (leave blank to use the provider default):`, placeholder: `${label.toLowerCase()}.example.com` });
+async function defaultPromptHost(label: string, prefill?: string): Promise<string | undefined> {
+  const value = await text({
+    initialValue: prefill,
+    message: `${label} host (leave blank to use the provider default):`,
+    placeholder: `${label.toLowerCase()}.example.com`
+  });
   return isCancel(value) || typeof value !== "string" || value.trim().length === 0 ? undefined : value.trim();
 }
 
@@ -324,13 +388,26 @@ async function defaultVerifyImapConnection(config: ImapSmtpEmailProviderConfig):
 }
 
 export async function runAppPasswordEmailSetup(io: SetupEmailIO, deps: Partial<AppPasswordSetupDeps> = {}): Promise<SetupEmailResult> {
-  io.stdout(APP_PASSWORD_WALKTHROUGH);
-
   const email = await (deps.promptEmail ?? defaultPromptEmail)();
   if (!email) {
     io.stdout("Setup cancelled.\n");
     return { ok: false };
   }
+
+  let imapHost: string | undefined;
+  let smtpHost: string | undefined;
+  const provider = classifyEmailProvider(email);
+  if (provider.kind === "gmail") {
+    await presentGmailAppPasswordStep(io, email, deps);
+  } else if (provider.kind === "ko-webmail") {
+    io.stdout(koWebmailNote(provider.label));
+    imapHost = await (deps.promptImapHost ?? (() => defaultPromptHost("IMAP", provider.imapHost)))();
+    smtpHost = await (deps.promptSmtpHost ?? (() => defaultPromptHost("SMTP", provider.smtpHost)))();
+  } else {
+    imapHost = await (deps.promptImapHost ?? (() => defaultPromptHost("IMAP")))();
+    smtpHost = await (deps.promptSmtpHost ?? (() => defaultPromptHost("SMTP")))();
+  }
+
   const rawAppPassword = await (deps.promptAppPassword ?? defaultPromptAppPassword)();
   // Spaces stripped unconditionally here (not just in the default prompt) —
   // Google always displays the 16 characters with spaces, and a pasted
@@ -340,13 +417,6 @@ export async function runAppPasswordEmailSetup(io: SetupEmailIO, deps: Partial<A
   if (!appPassword) {
     io.stdout("Setup cancelled.\n");
     return { ok: false };
-  }
-
-  let imapHost: string | undefined;
-  let smtpHost: string | undefined;
-  if (!isGmailAddress(email)) {
-    imapHost = await (deps.promptImapHost ?? (() => defaultPromptHost("IMAP")))();
-    smtpHost = await (deps.promptSmtpHost ?? (() => defaultPromptHost("SMTP")))();
   }
 
   const credential: ImapEmailCredential = {
