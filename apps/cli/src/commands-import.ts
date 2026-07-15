@@ -146,19 +146,16 @@ export async function findImportCollisions(
   home: string,
   entries: readonly string[]
 ): Promise<readonly string[]> {
-  const collisions: string[] = [];
-  for (const entry of entries) {
+  const checks = entries.map(async (entry) => {
     const abs = join(home, entry);
-    try {
-      const s = await stat(abs);
-      if (s.isFile()) {
-        collisions.push(entry.replace(/^\.muse\//, ""));
-      }
-    } catch {
-      // missing — no collision
+    const statResult = await withBestEffort(stat(abs), undefined);
+    if (!statResult || !statResult.isFile()) {
+      return undefined;
     }
-  }
-  return collisions;
+    return entry.replace(/^\.muse\//, "");
+  });
+  const collisions = await Promise.all(checks);
+  return collisions.filter((entry): entry is string => typeof entry === "string");
 }
 
 /**
@@ -242,9 +239,10 @@ export function registerImportCommand(program: Command, io: ProgramIO): void {
 
         if (options.dryRun) {
           io.stdout(`Plan for ${bundlePath} → ${home}:\n`);
+          const collisionSet = new Set(collisions);
           for (const entry of entries) {
             const rel = entry.replace(/^\.muse\//, "");
-            const willOverwrite = collisions.includes(rel);
+            const willOverwrite = collisionSet.has(rel);
             io.stdout(`  ${willOverwrite ? "OVERWRITE" : "create   "} ~/.muse/${rel}\n`);
           }
           io.stdout(`\n${entries.length.toString()} entry/entries, ${collisions.length.toString()} collision(s).\n`);
