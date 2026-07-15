@@ -71,6 +71,12 @@ describe("users and password auth", () => {
     expect(store.count()).toBe(1);
   });
 
+  it("rejects invalid capacity limits instead of silently disabling eviction", () => {
+    for (const maxUsers of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new InMemoryUserStore(maxUsers)).toThrow("maxUsers must be a positive safe integer");
+    }
+  });
+
   it("rejects a blank passwordHash with INVALID_USER (parity with the existing email / name blank checks — pre-fix an empty hash silently created a user record with no credential)", () => {
     // The sibling email / name fields already reject blank input via
     // INVALID_USER; passwordHash quietly accepted "" / "   " and

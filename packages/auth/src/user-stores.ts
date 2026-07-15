@@ -62,7 +62,10 @@ export class InMemoryUserStore implements UserStore {
   private readonly usersByEmail = new Map<string, User>();
 
   constructor(maxUsers = defaultMaxUsers) {
-    this.maxUsers = Math.max(1, maxUsers);
+    if (!Number.isSafeInteger(maxUsers) || maxUsers < 1) {
+      throw new RangeError("maxUsers must be a positive safe integer");
+    }
+    this.maxUsers = maxUsers;
   }
 
   findByEmail(email: string): User | undefined {
