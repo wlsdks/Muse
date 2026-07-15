@@ -150,9 +150,29 @@ describe("InMemoryAgentMessageBus", () => {
     expect(seen).toEqual(["second", "third"]);
   });
 
+  it("retains only the newest bounded conversation tail", async () => {
+    const bus = new InMemoryAgentMessageBus({ maxMessages: 2 });
+    await bus.publish({ content: "first", sourceAgentId: "x", timestamp: new Date() });
+    await bus.publish({ content: "second", sourceAgentId: "x", timestamp: new Date() });
+    await bus.publish({ content: "third", sourceAgentId: "x", timestamp: new Date() });
+    expect(bus.getConversation().map((message) => message.content)).toEqual(["second", "third"]);
+  });
+
+  it("evicts the oldest handler within an over-subscribed agent bucket", async () => {
+    const bus = new InMemoryAgentMessageBus({ maxHandlersPerSubscriber: 2 });
+    const seen: string[] = [];
+    bus.subscribe("agent", () => { seen.push("first"); });
+    bus.subscribe("agent", () => { seen.push("second"); });
+    bus.subscribe("agent", () => { seen.push("third"); });
+    await bus.publish({ content: "go", sourceAgentId: "x", targetAgentId: "agent", timestamp: new Date() });
+    expect(seen).toEqual(["second", "third"]);
+  });
+
   it("rejects non-positive maxSubscribers", () => {
     expect(() => new InMemoryAgentMessageBus({ maxSubscribers: 0 })).toThrow(RangeError);
     expect(() => new InMemoryAgentMessageBus({ maxSubscribers: -5 })).toThrow(RangeError);
+    expect(() => new InMemoryAgentMessageBus({ maxMessages: Number.POSITIVE_INFINITY })).toThrow(RangeError);
+    expect(() => new InMemoryAgentMessageBus({ maxHandlersPerSubscriber: 0 })).toThrow(RangeError);
   });
 });
 
