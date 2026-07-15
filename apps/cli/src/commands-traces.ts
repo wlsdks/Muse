@@ -66,7 +66,7 @@ export function registerTracesCommands(program: Command, io: ProgramIO, helpers:
       const seen = new Set<string>();
       try {
         while (!stopped) {
-          const response = await helpers.apiRequest(io, command, `/api/admin/traces?limit=${limit.toString()}`) as unknown;
+          const response = await helpers.apiRequest(io, command, `/api/admin/traces?limit=${limit.toString()}`);
           const events = extractTraceTailEvents(response);
           for (const event of events) {
             const key = traceEventKey(event);

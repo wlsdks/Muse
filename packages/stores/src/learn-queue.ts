@@ -70,7 +70,7 @@ export async function readPendingLearnEvents(file: string): Promise<readonly Lea
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     try {
-      const parsed = JSON.parse(trimmed) as unknown;
+      const parsed = JSON.parse(trimmed);
       if (isEvent(parsed)) out.push(parsed);
     } catch { /* skip corrupt line */ }
   }

@@ -54,7 +54,7 @@ export async function apiRequest(
     throw formatApiErrorResponse(response, responseText, baseUrl);
   }
 
-  return responseText.length > 0 ? JSON.parse(responseText) as unknown : undefined;
+  return responseText.length > 0 ? JSON.parse(responseText) : undefined;
 }
 
 /**
@@ -342,7 +342,7 @@ export async function streamRemoteChat(
 
     if (event.event === "citations") {
       try {
-        const parsed = JSON.parse(event.data) as unknown;
+        const parsed = JSON.parse(event.data);
         if (Array.isArray(parsed)) {
           streamCitations = parsed as Array<{ url: string; title: string }>;
         }

@@ -114,14 +114,16 @@ function countCorpusFiles(dir: string, cap = 1_000): number {
   const stack = [dir];
   while (stack.length > 0 && count < cap) {
     let entries;
+    let currentDir = dir;
     try {
-      entries = readdirSync(stack.pop()!, { withFileTypes: true });
+      currentDir = stack.pop()!;
+      entries = readdirSync(currentDir, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const e of entries) {
       if (e.name.startsWith(".")) continue;
-      const full = join((e as unknown as { parentPath?: string; path?: string }).parentPath ?? (e as unknown as { path: string }).path ?? dir, e.name);
+      const full = join(currentDir, e.name);
       if (e.isDirectory()) stack.push(full);
       else if (e.isFile() && /\.(md|markdown|txt|pdf)$/iu.test(e.name)) count += 1;
       if (count >= cap) break;

@@ -280,7 +280,7 @@ export async function readCheckins(file: string): Promise<readonly PersistedChec
     return [];
   }
   try {
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (e): e is PersistedCheckin =>

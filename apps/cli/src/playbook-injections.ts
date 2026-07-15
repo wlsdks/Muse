@@ -70,7 +70,7 @@ async function trimIfOversized(filePath: string): Promise<void> {
 
 function parseInjectionLine(line: string): PlaybookInjectionRecord | undefined {
   try {
-    const parsed = JSON.parse(line) as unknown;
+    const parsed = JSON.parse(line);
     if (
       !isRecord(parsed)
       || typeof parsed.tsIso !== "string"

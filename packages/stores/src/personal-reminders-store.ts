@@ -70,7 +70,7 @@ export async function readReminders(file: string): Promise<readonly PersistedRem
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return [];

@@ -19,7 +19,7 @@
  * persona rendering, CLI surface — those live in steps 2–5.
  */
 
-import type { JsonObject, JsonValue } from "@muse/shared";
+import type { JsonObject } from "@muse/shared";
 
 import { withFileMutationQueue } from "./atomic-file-store.js";
 import {
@@ -101,7 +101,7 @@ export async function readEpisodes(
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    parsed = JSON.parse(text);
   } catch {
     await quarantineCorruptStore(file);
     return [];
@@ -140,7 +140,7 @@ export function serializeEpisode(episode: PersistedEpisode): JsonObject {
     summary: episode.summary,
     userId: episode.userId,
     ...(episode.topics && episode.topics.length > 0
-      ? { topics: episode.topics as JsonValue }
+      ? { topics: episode.topics }
       : {}),
     ...(typeof episode.importance === "number" && Number.isFinite(episode.importance)
       ? { importance: episode.importance }

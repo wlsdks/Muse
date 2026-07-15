@@ -130,7 +130,7 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
     const raw = await readFile(file, "utf8");
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw) as unknown;
+      parsed = JSON.parse(raw);
     } catch {
       throw new Error(
         `config file is not valid JSON: ${file} — fix or delete it (a fresh one is written on next \`muse setup\`)`

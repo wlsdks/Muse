@@ -14,6 +14,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { isRecord } from "@muse/shared";
+
 interface TrailEdge {
   readonly a: string;
   readonly b: string;
@@ -182,14 +184,39 @@ export function resolveTrailsFile(env: Record<string, string | undefined> = proc
 /** Read the trail store, fail-soft to empty on any error (missing / corrupt). */
 export async function readTrails(file: string): Promise<CoRecallTrails> {
   try {
-    const parsed = JSON.parse(await readFile(file, "utf8")) as unknown;
-    if (parsed && typeof parsed === "object" && (parsed as CoRecallTrails).version === 1 && (parsed as CoRecallTrails).trails && typeof (parsed as CoRecallTrails).trails === "object") {
-      return parsed as CoRecallTrails;
+    const parsed = JSON.parse(await readFile(file, "utf8"));
+    if (isCoRecallTrails(parsed)) {
+      return parsed;
     }
   } catch {
     // missing / unreadable / corrupt — start fresh
   }
   return emptyTrails();
+}
+
+function isCoRecallTrails(value: unknown): value is CoRecallTrails {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+
+  const raw = value as { readonly version?: unknown; readonly trails?: unknown };
+  if (raw.version !== 1 || raw.trails === undefined || raw.trails === null || Array.isArray(raw.trails)) {
+    return false;
+  }
+  return isRecord(raw.trails) && Object.values(raw.trails).every((item) => isTrailEdge(item));
+}
+
+function isTrailEdge(value: unknown): value is TrailEdge {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const edge = value as { readonly a: unknown; readonly b: unknown; readonly weight: unknown; readonly lastDepositMs: unknown };
+  return (
+    typeof edge.a === "string" && edge.a.length > 0 &&
+    typeof edge.b === "string" && edge.b.length > 0 &&
+    typeof edge.weight === "number" && Number.isFinite(edge.weight) &&
+    typeof edge.lastDepositMs === "number" && Number.isFinite(edge.lastDepositMs)
+  );
 }
 
 export async function writeTrails(file: string, trails: CoRecallTrails): Promise<void> {

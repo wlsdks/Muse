@@ -13,7 +13,7 @@ import { glob, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
-import type { JsonObject, JsonValue } from "@muse/shared";
+import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
 import { createIgnoreFilter, type IgnoreFilter } from "./fs-gitignore.js";
@@ -176,13 +176,13 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
     const ranked = rankFileCandidates(candidates, input);
     const top = ranked[0];
     if (!top) {
-      const recent = [...candidates]
+        const recent = [...candidates]
         .sort((a, b) => b.modifiedMs - a.modifiedMs)
         .slice(0, RECENT_LIST)
         .map((candidate: FileCandidate) => candidate.name);
       return {
         ok: false,
-        result: { read: false, reason: `no file matching "${input}" in your everyday folders`, recent: recent as JsonValue }
+        result: { read: false, reason: `no file matching "${input}" in your everyday folders`, recent: [...recent] }
       };
     }
     const safe = await resolveSafePath(top.path, { ...options, baseDir: docRoots[0] }, resolved);

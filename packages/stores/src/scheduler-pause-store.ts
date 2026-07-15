@@ -37,7 +37,7 @@ export async function readSchedulerPauseState(file: string): Promise<SchedulerPa
     return { paused: false };
   }
   try {
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && (parsed as { paused?: unknown }).paused === true) {
       const since = (parsed as { since?: unknown }).since;
       return { paused: true, ...(typeof since === "string" ? { since } : {}) };

@@ -279,7 +279,7 @@ function safeJsonObject(value: string): Record<string, unknown> | undefined {
     return undefined;
   }
   try {
-    const parsed = JSON.parse(trimmed) as unknown;
+    const parsed = JSON.parse(trimmed);
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : undefined;
@@ -294,7 +294,7 @@ function safeJsonArray(value: string): unknown[] | undefined {
     return undefined;
   }
   try {
-    const parsed = JSON.parse(trimmed) as unknown;
+    const parsed = JSON.parse(trimmed);
     return Array.isArray(parsed) ? parsed : undefined;
   } catch {
     return undefined;

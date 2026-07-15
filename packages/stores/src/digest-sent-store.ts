@@ -35,7 +35,7 @@ export async function readDigestSentDate(file: string): Promise<string | undefin
     return undefined;
   }
   try {
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(raw);
     const lastSentDate = (parsed as { lastSentDate?: unknown } | null)?.lastSentDate;
     return typeof lastSentDate === "string" && lastSentDate.length > 0 ? lastSentDate : undefined;
   } catch {

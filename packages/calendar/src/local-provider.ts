@@ -180,7 +180,7 @@ export class LocalCalendarProvider implements CalendarProvider {
     let parsed: unknown;
 
     try {
-      parsed = JSON.parse(raw) as unknown;
+      parsed = JSON.parse(raw);
     } catch {
       await quarantineCorruptStore(this.file);
       return [];
@@ -198,7 +198,7 @@ export class LocalCalendarProvider implements CalendarProvider {
       }
 
       try {
-        parsed = JSON.parse(decrypted) as unknown;
+        parsed = JSON.parse(decrypted);
       } catch {
         await quarantineCorruptStore(this.file);
         return [];

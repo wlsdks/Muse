@@ -102,7 +102,7 @@ export async function readReflections(file: string, env: NodeJS.ProcessEnv = pro
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    parsed = JSON.parse(text);
   } catch {
     return [];
   }

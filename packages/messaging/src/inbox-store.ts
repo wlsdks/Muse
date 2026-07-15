@@ -43,7 +43,7 @@ export async function readInbox(file: string, limit?: number): Promise<readonly 
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
@@ -111,13 +111,14 @@ async function readPersistedRaw(file: string): Promise<readonly InboundMessage[]
     return [];
   }
   try {
-    const parsed = JSON.parse(raw) as { inbox?: unknown };
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.inbox)) {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
       return [];
     }
-    return (parsed.inbox as unknown[]).flatMap((entry): readonly InboundMessage[] =>
-      isInboundMessage(entry) ? [entry] : []
-    );
+    const inbox = Object.entries(parsed).find(([key]) => key === "inbox")?.[1];
+    return Array.isArray(inbox)
+      ? inbox.flatMap((entry): readonly InboundMessage[] => isInboundMessage(entry) ? [entry] : [])
+      : [];
   } catch {
     return [];
   }

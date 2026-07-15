@@ -18,7 +18,7 @@
 
 import { spawn } from "node:child_process";
 
-import { redactSecretsInText, runCommandWithTimeout, type JsonObject, type JsonValue } from "@muse/shared";
+import { redactSecretsInText, runCommandWithTimeout, type JsonObject } from "@muse/shared";
 
 import type { MuseTool } from "./index.js";
 import { readOptionalNumber, readOptionalString } from "./muse-tools-helpers.js";
@@ -73,7 +73,7 @@ export function createSkillListTool(registry: SkillRegistryView): MuseTool {
         name: skill.name,
         ...(skill.requiresBins ? { requiresBins: [...skill.requiresBins] } : {}),
         ...(skill.requiresAnyBins ? { requiresAnyBins: [...skill.requiresAnyBins] } : {})
-      })) as JsonValue
+      }))
     })
   };
 }

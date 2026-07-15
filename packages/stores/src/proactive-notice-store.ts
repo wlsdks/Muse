@@ -89,7 +89,7 @@ export async function readProactiveFired(file: string): Promise<readonly Proacti
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }

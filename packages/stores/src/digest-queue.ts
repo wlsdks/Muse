@@ -57,7 +57,7 @@ export async function readDigestQueue(file: string): Promise<readonly DigestQueu
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }

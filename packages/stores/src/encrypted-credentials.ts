@@ -200,10 +200,10 @@ export function hasStoredGmailCredentialSync(io: CredentialStoreIO): boolean {
     return false;
   }
   try {
-    const file = JSON.parse(raw) as unknown;
+    const file = JSON.parse(raw);
     if (!isEncryptedCredentialFile(file)) return false;
     const plaintext = decryptCredentialPayload(io, file);
-    const store = JSON.parse(plaintext) as unknown;
+    const store = JSON.parse(plaintext);
     return isCredentialStore(store) && store.gmail !== undefined && !store.gmail.refreshTokenInvalid;
   } catch {
     return false;
@@ -234,10 +234,10 @@ export function readEmailImapCredentialSync(io: CredentialStoreIO): ImapEmailCre
     return undefined;
   }
   try {
-    const file = JSON.parse(raw) as unknown;
+    const file = JSON.parse(raw);
     if (!isEncryptedCredentialFile(file)) return undefined;
     const plaintext = decryptCredentialPayload(io, file);
-    const store = JSON.parse(plaintext) as unknown;
+    const store = JSON.parse(plaintext);
     return isCredentialStore(store) ? store.emailImap : undefined;
   } catch {
     return undefined;
@@ -261,13 +261,13 @@ async function readCredentialStore(
   }
 
   try {
-    const file = JSON.parse(raw) as unknown;
+    const file = JSON.parse(raw);
     if (!isEncryptedCredentialFile(file)) {
       throw new Error("Invalid Muse credential store format");
     }
 
     const plaintext = decryptCredentialPayload(io, file);
-    const store = JSON.parse(plaintext) as unknown;
+    const store = JSON.parse(plaintext);
     if (!isCredentialStore(store)) {
       throw new Error("Invalid Muse credential payload");
     }

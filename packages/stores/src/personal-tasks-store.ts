@@ -15,7 +15,7 @@ import { atomicWriteFile } from "./atomic-file-store.js";
 
 import { promises as fs } from "node:fs";
 
-import type { JsonObject, JsonValue } from "@muse/shared";
+import type { JsonObject } from "@muse/shared";
 
 import { formatDueLocal } from "@muse/mcp-shared";
 import { isoDateHeadRoundTrips, resolveRelativeTimePhrase } from "@muse/mcp-shared";
@@ -59,7 +59,7 @@ export async function readTasks(file: string): Promise<readonly PersistedTask[]>
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return [];
@@ -113,7 +113,7 @@ export function serializeTask(task: PersistedTask): JsonObject {
     ...(task.completedAt ? { completedAt: task.completedAt } : {}),
     ...(task.dueAt ? { dueAt: task.dueAt } : {}),
     ...(task.notes ? { notes: task.notes } : {}),
-    ...(task.tags && task.tags.length > 0 ? { tags: [...task.tags] as JsonValue } : {}),
+    ...(task.tags && task.tags.length > 0 ? { tags: [...task.tags] } : {}),
     ...(task.proactive === false ? { proactive: false } : {}),
     ...(task.urgent === true ? { urgent: true } : {})
   };

@@ -30,7 +30,7 @@ export async function readActiveConversationId(file: string = defaultActiveConve
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
+    parsed = JSON.parse(raw);
   } catch {
     await quarantineCorruptStore(file);
     return undefined;

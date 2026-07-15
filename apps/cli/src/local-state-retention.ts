@@ -66,7 +66,7 @@ interface PruneMeta {
 async function readPruneMeta(file: string): Promise<PruneMeta> {
   try {
     const raw = await readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && typeof (parsed as PruneMeta).lastPrunedAtMs === "number") {
       return parsed as PruneMeta;
     }

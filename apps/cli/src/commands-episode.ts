@@ -540,7 +540,7 @@ function parseLlmJudgeIds(raw: string): readonly string[] {
   }
   if (!body) return [];
   let parsed: unknown;
-  try { parsed = JSON.parse(body) as unknown; } catch { return []; }
+  try { parsed = JSON.parse(body); } catch { return []; }
   if (!Array.isArray(parsed)) return [];
   return parsed.filter((id): id is string => typeof id === "string" && id.length > 0);
 }

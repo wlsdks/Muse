@@ -94,7 +94,7 @@ export function receiveFromPeer(options: ReceiveFromPeerOptions): InboundDecisio
   }
   let body: unknown;
   try {
-    body = JSON.parse(options.rawBody) as unknown;
+    body = JSON.parse(options.rawBody);
   } catch {
     return { disposition: "reject", reason: "unparseable A2A body" };
   }
