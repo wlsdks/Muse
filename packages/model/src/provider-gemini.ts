@@ -255,7 +255,12 @@ export function fromGeminiResponse(providerId: string, model: string, payload: u
   const groundingChunks = Array.isArray(groundingMetadata?.groundingChunks) ? groundingMetadata.groundingChunks : [];
   const citations: WebSearchCitation[] = [];
   for (const chunk of groundingChunks) {
-    if (isJsonObject(chunk) && isRecord(chunk.web) && chunk.web.uri && chunk.web.title) {
+    if (
+      isJsonObject(chunk)
+      && isRecord(chunk.web)
+      && typeof chunk.web.uri === "string"
+      && typeof chunk.web.title === "string"
+    ) {
       citations.push({
         url: chunk.web.uri,
         title: chunk.web.title,
