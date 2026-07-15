@@ -46,7 +46,13 @@ pushlock_acquire "$git_common_dir/muse-pre-push.lock" || exit 1
 # (corepack/nvm/volta) pnpm is absent. Resolve it from common install dirs.
 resolve_pnpm() {
   command -v pnpm >/dev/null 2>&1 && return 0
-  for d in "$HOME/.local/share/pnpm" "$HOME/Library/pnpm" "/opt/homebrew/bin" "/usr/local/bin"; do
+  # nvm installs live under versioned dirs — scan them too (newest first),
+  # plus volta. A GUI git client's minimal PATH misses all of these; the
+  # owner's real pnpm is nvm-managed (observed live: BLOCKED on push).
+  for nvmbin in $(ls -dt "$HOME"/.nvm/versions/node/*/bin 2>/dev/null); do
+    [ -x "$nvmbin/pnpm" ] && PATH="$nvmbin:$PATH" && break
+  done
+  for d in "$HOME/.local/share/pnpm" "$HOME/Library/pnpm" "$HOME/.volta/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
     [ -x "$d/pnpm" ] && PATH="$d:$PATH"
   done
   command -v pnpm >/dev/null 2>&1

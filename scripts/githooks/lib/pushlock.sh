@@ -61,6 +61,9 @@ pushlock_acquire() {
   # check (mtime-based) never false-reclaims a slow-but-ALIVE holder.
   ( while :; do sleep 30; touch "$lockdir" 2>/dev/null || exit 0; done ) &
   MUSE_PREPUSH_LOCK_HEARTBEAT_PID=$!
+  # disown: without it, bash prints "Terminated: 15" job noise into the
+  # user's push output when the EXIT trap kills the heartbeat.
+  disown "$MUSE_PREPUSH_LOCK_HEARTBEAT_PID" 2>/dev/null || true
   trap 'kill "$MUSE_PREPUSH_LOCK_HEARTBEAT_PID" 2>/dev/null; rm -rf "'"$lockdir"'"' EXIT
   return 0
 }
