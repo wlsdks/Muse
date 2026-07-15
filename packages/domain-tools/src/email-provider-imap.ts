@@ -69,8 +69,28 @@ export interface ImapSmtpEmailProviderDeps {
   readonly timeoutMs?: number;
 }
 
+/**
+ * Coarse cause behind a rejected login, distinct from the free-text
+ * `message` so a locale-aware caller (the CLI) can render its own
+ * translated guidance instead of parsing English prose. `auth-unknown`
+ * means the server's rejection didn't match any of the known shapes —
+ * callers fall back to `message` itself for that case.
+ */
+export type ImapSmtpAuthErrorCode = "app-password-required" | "invalid-credentials" | "web-login-block" | "auth-unknown";
+
 /** Auth rejected by the server — the credential itself is wrong (or 2-Step Verification isn't on), never a transient condition. */
-export class ImapSmtpAuthError extends Error {}
+export class ImapSmtpAuthError extends Error {
+  readonly code: ImapSmtpAuthErrorCode;
+  /** The server's own rejection line, redacted + capped — same text `serverRejectionDetail` folds into `message`, exposed structured for a caller that wants to render its own wrapper. */
+  readonly serverDetail?: string;
+
+  constructor(message: string, code: ImapSmtpAuthErrorCode = "auth-unknown", serverDetail?: string) {
+    super(message);
+    this.name = "ImapSmtpAuthError";
+    this.code = code;
+    this.serverDetail = serverDetail;
+  }
+}
 
 /** DNS/connect/timeout failure — worth a retry, unlike a rejected credential. */
 export class ImapSmtpNetworkError extends Error {}
@@ -135,6 +155,14 @@ function isAuthFailure(cause: unknown): boolean {
   return /invalid credentials|authentication failed|auth\w*\s*fail/iu.test(cause.message);
 }
 
+/** The server's rejection text (responseText, falling back to the raw message), redacted + capped — the shared basis for both `serverRejectionDetail`'s English wrapper and the structured code classification below. */
+function trimmedServerText(cause: unknown, appPassword: string): string {
+  if (!(cause instanceof Error)) return "";
+  const responseText = (cause as { readonly responseText?: unknown }).responseText;
+  const raw = typeof responseText === "string" && responseText.trim().length > 0 ? responseText : cause.message;
+  return redact(raw, appPassword).replace(/\s+/gu, " ").trim().slice(0, 200);
+}
+
 /**
  * The server's own rejection line distinguishes causes our generic advice
  * can't: "Invalid credentials" (wrong/other-account app password) vs
@@ -142,10 +170,7 @@ function isAuthFailure(cause: unknown): boolean {
  * password cannot pass — needs the DisplayUnlock flow). Redacted, capped.
  */
 function serverRejectionDetail(cause: unknown, appPassword: string): string {
-  if (!(cause instanceof Error)) return "";
-  const responseText = (cause as { readonly responseText?: unknown }).responseText;
-  const raw = typeof responseText === "string" && responseText.trim().length > 0 ? responseText : cause.message;
-  const trimmed = redact(raw, appPassword).replace(/\s+/gu, " ").trim().slice(0, 200);
+  const trimmed = trimmedServerText(cause, appPassword);
   return trimmed.length > 0 ? ` Server said: "${trimmed}".` : "";
 }
 
@@ -155,12 +180,33 @@ function webLoginBlockHint(detail: string): string {
     : "";
 }
 
+/**
+ * Coarse, locale-neutral classification of the same rejection text
+ * `serverRejectionDetail` renders into English prose — a caller that wants
+ * to render its OWN translated guidance reads `.code` instead of parsing
+ * `.message`. Order matters: app-password-required and web-login-block are
+ * checked before the generic "invalid credentials" match since Google's
+ * own rejection text for those cases can also contain the word
+ * "credentials".
+ */
+function classifyAuthErrorCode(cause: unknown, appPassword: string): { readonly code: ImapSmtpAuthErrorCode; readonly serverDetail?: string } {
+  const trimmed = trimmedServerText(cause, appPassword);
+  const serverDetail = trimmed.length > 0 ? trimmed : undefined;
+  if (/application-specific password required/iu.test(trimmed)) return { code: "app-password-required", serverDetail };
+  if (/web browser|web login/iu.test(trimmed)) return { code: "web-login-block", serverDetail };
+  if (/invalid credentials/iu.test(trimmed)) return { code: "invalid-credentials", serverDetail };
+  return { code: "auth-unknown", serverDetail };
+}
+
 function classifyImapError(cause: unknown, email: string, appPassword: string): Error {
   if (cause instanceof ImapSmtpNetworkError || cause instanceof ImapSmtpAuthError) return cause;
   if (isAuthFailure(cause)) {
     const detail = serverRejectionDetail(cause, appPassword);
+    const { code, serverDetail } = classifyAuthErrorCode(cause, appPassword);
     return new ImapSmtpAuthError(
-      `IMAP login rejected for ${email} — check the 16-character app password (Google shows it with spaces; they must be stripped) at https://myaccount.google.com/apppasswords, confirm 2-Step Verification is on for THIS account, and make sure the app password was created on the same account.${detail}${webLoginBlockHint(detail)}`
+      `IMAP login rejected for ${email} — check the 16-character app password (Google shows it with spaces; they must be stripped) at https://myaccount.google.com/apppasswords, confirm 2-Step Verification is on for THIS account, and make sure the app password was created on the same account.${detail}${webLoginBlockHint(detail)}`,
+      code,
+      serverDetail
     );
   }
   const detail = cause instanceof Error ? cause.message : String(cause);
@@ -170,8 +216,11 @@ function classifyImapError(cause: unknown, email: string, appPassword: string): 
 function classifySmtpError(cause: unknown, email: string, appPassword: string): Error {
   if (cause instanceof ImapSmtpNetworkError || cause instanceof ImapSmtpAuthError) return cause;
   if (isAuthFailure(cause)) {
+    const { code, serverDetail } = classifyAuthErrorCode(cause, appPassword);
     return new ImapSmtpAuthError(
-      `SMTP login rejected for ${email} — check the 16-character app password (Google shows it with spaces; they must be stripped) at https://myaccount.google.com/apppasswords, and confirm 2-Step Verification is on for this account.`
+      `SMTP login rejected for ${email} — check the 16-character app password (Google shows it with spaces; they must be stripped) at https://myaccount.google.com/apppasswords, and confirm 2-Step Verification is on for this account.`,
+      code,
+      serverDetail
     );
   }
   const detail = cause instanceof Error ? cause.message : String(cause);

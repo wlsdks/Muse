@@ -226,9 +226,10 @@ describe("firstNonEmpty (readApiOptions / token precedence-chain helper)", () =>
 });
 
 describe("setConfigValue", () => {
-  it("accepts the two supported keys + trims the value", () => {
+  it("accepts the three supported keys + trims the value", () => {
     expect(setConfigValue({}, "apiUrl", "  http://localhost:3030  ")).toMatchObject({ apiUrl: "http://localhost:3030" });
     expect(setConfigValue({}, "defaultModel", "  qwen3:8b  ")).toMatchObject({ defaultModel: "qwen3:8b" });
+    expect(setConfigValue({}, "language", "  ko  ")).toMatchObject({ language: "ko" });
   });
 
   it("rejects an empty / whitespace-only value", () => {
@@ -236,12 +237,18 @@ describe("setConfigValue", () => {
   });
 
   it("rejects an unknown key with a `did you mean` hint for a near-miss typo", () => {
-    expect(() => setConfigValue({}, "apirurl", "x")).toThrow(/Unsupported config key 'apirurl'.*expected one of: apiUrl, defaultModel.*did you mean 'apiUrl'/u);
+    expect(() => setConfigValue({}, "apirurl", "x")).toThrow(/Unsupported config key 'apirurl'.*expected one of: apiUrl, defaultModel, language.*did you mean 'apiUrl'/u);
     expect(() => setConfigValue({}, "deafultModel", "x")).toThrow(/did you mean 'defaultModel'/u);
   });
 
   it("rejects an unknown key WITHOUT a guess when nothing is close (no random suggestion)", () => {
-    expect(() => setConfigValue({}, "totallydifferent", "x")).toThrow(/Unsupported config key 'totallydifferent'.*expected one of: apiUrl, defaultModel\)$/u);
+    expect(() => setConfigValue({}, "totallydifferent", "x")).toThrow(/Unsupported config key 'totallydifferent'.*expected one of: apiUrl, defaultModel, language\)$/u);
+  });
+
+  it("language: normalizes case and rejects anything other than ko/en (fail-close, lists the accepted values)", () => {
+    expect(setConfigValue({}, "language", "KO")).toMatchObject({ language: "ko" });
+    expect(setConfigValue({}, "language", "EN")).toMatchObject({ language: "en" });
+    expect(() => setConfigValue({}, "language", "fr")).toThrow(/Invalid language 'fr' \(expected one of: ko, en\)/u);
   });
 });
 
@@ -261,6 +268,12 @@ describe("unsetConfigValue — set's missing inverse (revert a key to the built-
 
   it("rejects an unknown key with the same `did you mean` hint as set", () => {
     expect(() => unsetConfigValue({}, "apirurl")).toThrow(/Unsupported config key 'apirurl'.*did you mean 'apiUrl'/u);
+  });
+
+  it("clears a set language key and reports wasSet=true", () => {
+    const r = unsetConfigValue({ language: "ko" }, "language");
+    expect(r.wasSet).toBe(true);
+    expect(r.config).toEqual({});
   });
 });
 
@@ -389,6 +402,21 @@ describe("readConfigStore / writeConfigStore — atomic write + unreadable-path 
       expect(readdirSync(dir).some((n) => n.includes(".tmp-"))).toBe(false); // temp file renamed away, not left behind
       const mode = statSync(join(dir, "config.json")).mode & 0o777;
       if (process.platform !== "win32") expect(mode).toBe(0o600);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("writeConfigStore/readConfigStore round-trips the language key, and ignores a corrupt/non-ko-en value on read (AC1)", async () => {
+    const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "muse-cfglang-"));
+    try {
+      const io = ioFor(dir);
+      await writeConfigStore(io, { language: "ko" });
+      expect(await readConfigStore(io)).toEqual({ language: "ko" });
+
+      writeFileSync(join(dir, "config.json"), JSON.stringify({ language: "fr" }));
+      expect(await readConfigStore(io)).toEqual({});
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }

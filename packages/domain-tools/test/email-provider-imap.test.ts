@@ -267,6 +267,44 @@ describe("ImapSmtpEmailProvider — auth / network error classification (safety:
   });
 });
 
+describe("ImapSmtpAuthError.code — structured classification for a locale-aware caller (AC3)", () => {
+  async function rejectionFor(responseText: string): Promise<ImapSmtpAuthError> {
+    const authError = Object.assign(new Error("login rejected"), { authenticationFailed: true, responseText });
+    const { client } = fakeImapClient({ connectError: authError, messages: [] });
+    const provider = new ImapSmtpEmailProvider({ appPassword: "pw", email: "user@gmail.com" }, { imapClientFactory: factoryFor(client) });
+    const error = await provider.listRecent(5).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ImapSmtpAuthError);
+    return error as ImapSmtpAuthError;
+  }
+
+  it("'Application-specific password required' classifies as app-password-required", async () => {
+    const error = await rejectionFor("Application-specific password required");
+    expect(error.code).toBe("app-password-required");
+    expect(error.serverDetail).toContain("Application-specific password required");
+  });
+
+  it("a 'please log in via your web browser' rejection classifies as web-login-block", async () => {
+    const error = await rejectionFor("Please log in via your web browser");
+    expect(error.code).toBe("web-login-block");
+  });
+
+  it("a bare 'Invalid credentials' rejection classifies as invalid-credentials", async () => {
+    const error = await rejectionFor("Invalid credentials");
+    expect(error.code).toBe("invalid-credentials");
+  });
+
+  it("an unrecognized rejection shape classifies as auth-unknown (never throws on an unmapped cause)", async () => {
+    const error = await rejectionFor("Something the server said that matches no known shape");
+    expect(error.code).toBe("auth-unknown");
+  });
+
+  it("the English message stays intact regardless of code — the package itself stays locale-free", async () => {
+    const error = await rejectionFor("Application-specific password required");
+    expect(error.message).toContain("check the 16-character app password");
+    expect(error.message).toContain("myaccount.google.com/apppasswords");
+  });
+});
+
 describe("ImapSmtpEmailProvider.verifyConnection", () => {
   it("reports the mailbox message count on a successful login (the wizard's immediate-verification step)", async () => {
     const { client } = fakeImapClient({ exists: 7, messages: [] });

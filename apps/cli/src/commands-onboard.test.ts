@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { computeOnboarding, registerOnboardCommand, type OnboardingState } from "./commands-onboard.js";
 import { readDaemonConfig, writeDaemonConfig } from "./commands-daemon-config.js";
+import { readConfigStore, writeConfigStore } from "./program-config.js";
 import type { ProgramIO } from "./program.js";
 
 const base: OnboardingState = {
@@ -317,5 +318,71 @@ describe("muse onboard — native macOS notification offer", () => {
     });
     await program.parseAsync(["node", "muse", "onboard"]);
     expect(out.join("")).toContain("notifications.log");
+  });
+});
+
+describe("muse onboard — the FIRST interactive question (AC1: language)", () => {
+  function runIo(configDir: string): { io: ProgramIO; out: string[] } {
+    const out: string[] = [];
+    const io: ProgramIO = {
+      configDir,
+      fetch: (() => Promise.reject(new Error("no network in test"))) as typeof globalThis.fetch,
+      stderr: () => undefined,
+      stdout: (s) => out.push(s)
+    };
+    return { io, out };
+  }
+
+  it("non-interactive (no TTY under vitest, no selectLanguage helper injected) persists OS-locale auto-detect without hanging or prompting", async () => {
+    const configDir = mkdtempSync(join(tmpdir(), "muse-onboard-lang-auto-"));
+    const { io } = runIo(configDir);
+    const originalLang = process.env.LANG;
+    process.env.LANG = "ko_KR.UTF-8";
+    try {
+      const program = new Command();
+      registerOnboardCommand(program, io);
+      await program.parseAsync(["node", "muse", "onboard", "--json"]);
+      expect((await readConfigStore(io)).language).toBe("ko");
+    } finally {
+      if (originalLang === undefined) delete process.env.LANG; else process.env.LANG = originalLang;
+    }
+  });
+
+  it("non-interactive keeps an already-chosen language rather than overwriting it from the current locale", async () => {
+    const configDir = mkdtempSync(join(tmpdir(), "muse-onboard-lang-keep-"));
+    const { io } = runIo(configDir);
+    await writeConfigStore(io, { language: "en" });
+    const originalLang = process.env.LANG;
+    process.env.LANG = "ko_KR.UTF-8";
+    try {
+      const program = new Command();
+      registerOnboardCommand(program, io);
+      await program.parseAsync(["node", "muse", "onboard", "--json"]);
+      expect((await readConfigStore(io)).language).toBe("en");
+    } finally {
+      if (originalLang === undefined) delete process.env.LANG; else process.env.LANG = originalLang;
+    }
+  });
+
+  it("an injected selectLanguage (simulating the interactive select) is offered the current default and its answer persists", async () => {
+    const configDir = mkdtempSync(join(tmpdir(), "muse-onboard-lang-select-"));
+    const { io } = runIo(configDir);
+    const offeredDefaults: string[] = [];
+    const program = new Command();
+    registerOnboardCommand(program, io, {
+      selectLanguage: async (defaultLang) => { offeredDefaults.push(defaultLang); return "ko"; }
+    });
+    await program.parseAsync(["node", "muse", "onboard", "--json"]);
+    expect(offeredDefaults).toHaveLength(1);
+    expect((await readConfigStore(io)).language).toBe("ko");
+  });
+
+  it("cancelling the language select (undefined) persists nothing and does not throw", async () => {
+    const configDir = mkdtempSync(join(tmpdir(), "muse-onboard-lang-cancel-"));
+    const { io } = runIo(configDir);
+    const program = new Command();
+    registerOnboardCommand(program, io, { selectLanguage: async () => undefined });
+    await program.parseAsync(["node", "muse", "onboard", "--json"]);
+    expect((await readConfigStore(io)).language).toBeUndefined();
   });
 });

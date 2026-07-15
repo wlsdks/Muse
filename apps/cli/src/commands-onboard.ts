@@ -16,8 +16,10 @@ import { LOCAL_FIRST_DEFAULT_MODEL, resolveNotesDir } from "@muse/autoconfigure"
 import type { Command } from "commander";
 
 import { isNoInput } from "./cli-context.js";
+import { detectLangFromLocale, type Lang } from "./cli-i18n.js";
 import { installDaemonAutostart, type DaemonHelpers } from "./commands-daemon.js";
 import { readDaemonConfig, resolveDaemonConfigFile, writeDaemonConfig } from "./commands-daemon-config.js";
+import { readConfigStore, writeConfigStore } from "./program-config.js";
 import type { ProgramIO } from "./program.js";
 import { DEFAULT_EMBED_MODEL } from "./embed-model-default.js";
 import { probeOllamaModels } from "./ollama-probe.js";
@@ -181,6 +183,14 @@ async function safeCount(read: () => Promise<number>): Promise<number> {
 
 export interface OnboardHelpers {
   /**
+   * Test seam for the FIRST interactive question (AC1) — bypasses the real
+   * TTY/`--no-input` gate and `@clack/prompts` entirely; a test injects the
+   * answer directly. Absent → the real interactive select (skipped on any
+   * non-TTY or `--no-input` run, falling back to OS-locale auto-detect so a
+   * piped/CI onboard never hangs on a language choice).
+   */
+  readonly selectLanguage?: (defaultLang: Lang) => Promise<Lang | undefined>;
+  /**
    * Test seam — bypasses the real TTY/`--no-input` gate and `@clack/prompts`
    * entirely; a test injects the answer directly. Absent → the real
    * interactive confirm (skipped, safe-default `false`, on any non-TTY or
@@ -294,12 +304,47 @@ async function offerNativeNotifications(io: ProgramIO, helpers: OnboardHelpers):
   }
 }
 
+/**
+ * Non-interactive (`--no-input`, no TTY, or piped) takes `defaultLang`
+ * — already `config.language` if previously chosen, else the OS-locale
+ * auto-detect — without prompting, so a scripted/CI `muse onboard` can
+ * never hang on this question. This inline bilingual phrasing (한국어 ·
+ * English side by side) is the one place that format survives post-E4a
+ * — every OTHER onboarding string stays English-only; it's the language
+ * question ITSELF that can't yet be rendered in the language it's asking
+ * about.
+ */
+async function defaultSelectLanguage(defaultLang: Lang): Promise<Lang | undefined> {
+  if (isNoInput() || !process.stdin.isTTY || !process.stdout.isTTY) return defaultLang;
+  const { select, isCancel } = await import("@clack/prompts");
+  const answer = await select({
+    initialValue: defaultLang,
+    message: "언어를 선택하세요 · Choose your language",
+    options: [
+      { label: "한국어", value: "ko" as const },
+      { label: "English", value: "en" as const }
+    ]
+  });
+  return isCancel(answer) ? undefined : answer;
+}
+
+/** AC1's FIRST interactive question. The chosen language persists to `config.json` so every later command's `resolveCliLanguage` picks it up without re-asking. */
+async function selectLanguageStep(io: ProgramIO, helpers: OnboardHelpers): Promise<void> {
+  const config = await readConfigStore(io);
+  const defaultLang = config.language ?? detectLangFromLocale(process.env);
+  const answer = await (helpers.selectLanguage ?? defaultSelectLanguage)(defaultLang);
+  if (answer && answer !== config.language) {
+    await writeConfigStore(io, { ...config, language: answer });
+  }
+}
+
 export function registerOnboardCommand(program: Command, io: ProgramIO, helpers: OnboardHelpers = {}): void {
   program
     .command("onboard")
     .description("Guided setup: the single next step to your first private, cited answer")
     .option("--json", "Print the raw readiness report")
     .action(async (options: { readonly json?: boolean }) => {
+      await selectLanguageStep(io, helpers);
       const report = computeOnboarding(await gatherState(io));
       if (options.json) {
         io.stdout(`${JSON.stringify(report, null, 2)}\n`);

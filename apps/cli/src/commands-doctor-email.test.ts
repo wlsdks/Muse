@@ -5,6 +5,7 @@ import path from "node:path";
 import { ImapSmtpAuthError, type ImapSmtpEmailProviderConfig } from "@muse/domain-tools";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { resetCliLanguageCache } from "./cli-i18n.js";
 import { writeEmailImapCredential, writeGmailCredential } from "./credential-store.js";
 import { emailAuthCheck } from "./commands-doctor-email.js";
 import type { ProgramIO } from "./program.js";
@@ -15,6 +16,7 @@ describe("emailAuthCheck — muse doctor's Gmail auth probe (never mutates the c
 
   beforeEach(async () => {
     workdir = await mkdtemp(path.join(tmpdir(), "muse-doctor-email-"));
+    resetCliLanguageCache();
   });
   afterEach(async () => {
     await rm(workdir, { force: true, recursive: true });
@@ -77,6 +79,7 @@ describe("emailAuthCheck — App Password (IMAP) path (choice 1, recommended)", 
 
   beforeEach(async () => {
     workdir = await mkdtemp(path.join(tmpdir(), "muse-doctor-email-imap-"));
+    resetCliLanguageCache();
   });
   afterEach(async () => {
     await rm(workdir, { force: true, recursive: true });
@@ -103,6 +106,18 @@ describe("emailAuthCheck — App Password (IMAP) path (choice 1, recommended)", 
     });
     expect(result.status).toBe("fail");
     expect(result.detail).toContain("muse setup email");
+  });
+
+  it("app-password-required (AC3): renders the code-driven guidance with the account-pinned URL, in the resolved language (ko)", async () => {
+    const io = makeIo();
+    await writeEmailImapCredential(io, { appPassword: "regularpw", email: "user@gmail.com" });
+    const result = await emailAuthCheck(io, { MUSE_LANG: "ko" }, fetch, async () => {
+      throw new ImapSmtpAuthError("IMAP login rejected — application-specific password required", "app-password-required");
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("일반 로그인 비밀번호를 입력하셨어요");
+    expect(result.detail).toContain("myaccount.google.com/apppasswords?authuser=user%40gmail.com");
+    expect(result.detail).not.toContain("IMAP login rejected");
   });
 
   it("warn (not fail) on a network hiccup during the IMAP probe", async () => {

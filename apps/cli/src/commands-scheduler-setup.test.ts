@@ -18,10 +18,13 @@ vi.mock("./setup-messaging.js", () => ({
   runMessagingSetup: (io: { stdout(s: string): void }) => { io.stdout("messaging step\n"); return Promise.resolve(); }
 }));
 
+import { resetCliLanguageCache } from "./cli-i18n.js";
+import { writeConfigStore } from "./program-config.js";
 import {
   comparePreviewEntriesByWhen,
   formatDaemonLivenessNotice,
   formatSetupStatusLines,
+  languageStatusLine,
   registerSchedulerCommands,
   runSetupWizard,
   SCHEDULER_ADD_DAEMON_STALE_MS,
@@ -302,6 +305,47 @@ describe("formatSetupStatusLines — daily brief row (R2-3 pattern, muse setup b
     const out = formatSetupStatusLines(snap).join("\n");
     expect(out).toContain("daily brief — enabled, 07:15 local");
     expect(out).not.toContain("→ muse setup briefing");
+  });
+});
+
+describe("languageStatusLine — `muse setup status`'s AC1 language row", () => {
+  let workdir: string;
+  afterEach(() => {
+    resetCliLanguageCache();
+  });
+
+  function ioFor(configDir: string): ProgramIO {
+    return { configDir, stderr: () => undefined, stdout: () => undefined } as unknown as ProgramIO;
+  }
+
+  it("MUSE_LANG env wins, reported as source=env", async () => {
+    workdir = mkdtempSync(join(tmpdir(), "muse-setup-lang-env-"));
+    const io = ioFor(workdir);
+    const original = process.env.MUSE_LANG;
+    process.env.MUSE_LANG = "ko";
+    try {
+      const line = await languageStatusLine(io);
+      expect(line).toContain("language");
+      expect(line).toContain("ko");
+      expect(line).toContain("env");
+    } finally {
+      if (original === undefined) delete process.env.MUSE_LANG; else process.env.MUSE_LANG = original;
+    }
+  });
+
+  it("config.language wins over auto-detect when MUSE_LANG is unset, reported as source=config", async () => {
+    workdir = mkdtempSync(join(tmpdir(), "muse-setup-lang-config-"));
+    const io = ioFor(workdir);
+    await writeConfigStore(io, { language: "ko" });
+    const original = process.env.MUSE_LANG;
+    delete process.env.MUSE_LANG;
+    try {
+      const line = await languageStatusLine(io);
+      expect(line).toContain("ko");
+      expect(line).toContain("config");
+    } finally {
+      if (original !== undefined) process.env.MUSE_LANG = original;
+    }
   });
 });
 

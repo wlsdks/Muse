@@ -51,7 +51,7 @@ export function registerConfigCommands(program: Command, io: ProgramIO, helpers:
   config
     .command("set")
     .description("Set a CLI config value")
-    .argument("<key>", "Config key: apiUrl or defaultModel")
+    .argument("<key>", "Config key: apiUrl, defaultModel, or language (ko/en)")
     .argument("<value>", "Config value")
     .option("--json", "Emit a structured payload instead of the human-readable confirmation")
     .action(async (key: string, value: string, options: { readonly json?: boolean }) => {
@@ -68,7 +68,7 @@ export function registerConfigCommands(program: Command, io: ProgramIO, helpers:
   config
     .command("unset")
     .description("Clear a CLI config value (reverts to the built-in default)")
-    .argument("<key>", "Config key: apiUrl or defaultModel")
+    .argument("<key>", "Config key: apiUrl, defaultModel, or language (ko/en)")
     .option("--json", "Emit a structured payload instead of the human-readable confirmation")
     .action(async (key: string, options: { readonly json?: boolean }) => {
       const current = await helpers.readConfigStore(io);

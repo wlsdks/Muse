@@ -5,15 +5,31 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OAuthCallbackServer } from "@muse/mcp";
 
+import { resetCliLanguageCache, setCliLanguage } from "./cli-i18n.js";
 import { readEmailImapCredential, readGmailCredential } from "./credential-store.js";
-import { buildGmailAppPasswordUrls, classifyEmailProvider, runEmailSetup, runGmailOAuthLoopback, type SetupEmailIO } from "./setup-email.js";
+import { buildGmailAppPasswordUrls, classifyEmailProvider, runAppPasswordEmailSetup, runEmailSetup, runGmailOAuthLoopback, type SetupEmailIO } from "./setup-email.js";
+
+// Every wizard entrypoint (`runEmailSetup` / `runAppPasswordEmailSetup` /
+// `runOAuthEmailSetup`) resolves its rendering language once via
+// `resolveCliLanguage`, which caches per PROCESS. `resetCliLanguageCache`
+// before each test forces a fresh resolution from THIS test's own
+// `io.env` (defaulted to `MUSE_LANG: "en"` below) — deterministic on any
+// dev/CI machine's OS locale, and lets the KO-rendering tests further down
+// override it explicitly. `setCliLanguage("en")` is the same safety net
+// for `runGmailOAuthLoopback`'s standalone tests, which call `t()`
+// directly without ever going through a wizard entrypoint that resolves.
+beforeEach(() => {
+  resetCliLanguageCache();
+  setCliLanguage("en");
+});
 
 function captureIo(overrides: Partial<SetupEmailIO> = {}): { readonly io: SetupEmailIO; readonly lines: string[] } {
   const lines: string[] = [];
   const io: SetupEmailIO = {
     stderr: (m) => lines.push(m),
     stdout: (m) => lines.push(m),
-    ...overrides
+    ...overrides,
+    env: { MUSE_LANG: "en", ...overrides.env }
   };
   return { io, lines };
 }
@@ -311,7 +327,7 @@ describe("runEmailSetup — the App Password wizard (choice 1, recommended; prom
     expect(result.ok).toBe(true);
     expect(hostPromptCalled).toBe(false);
     expect(await readEmailImapCredential(io)).toEqual({ appPassword: "abcdefghijklmnop", email: "user@gmail.com" });
-    expect(lines.some((line) => line.includes("inbox has 12 messages"))).toBe(true);
+    expect(lines.some((line) => line.includes("inbox has 12 message(s)"))).toBe(true);
     const fileStat = await stat(path.join(workdir, "credentials.json"));
     expect((fileStat.mode & 0o777).toString(8)).toBe("600");
   });
@@ -611,5 +627,78 @@ describe("runEmailSetup — client_secret_*.json input (no hand-pasting)", () =>
     expect(result.ok).toBe(false);
     expect(lines.some((line) => line.includes("/nope/missing.json"))).toBe(true);
     expect(await readGmailCredential(io)).toBeUndefined();
+  });
+});
+
+describe("muse setup email — KO rendering (AC4: language=ko reads natural Korean, never the pre-language dual '한국어 · English' format)", () => {
+  let workdir: string;
+  const koEnv = { MUSE_LANG: "ko" };
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(path.join(tmpdir(), "muse-setup-email-ko-"));
+  });
+  afterEach(async () => {
+    await rm(workdir, { force: true, recursive: true });
+  });
+
+  it("runEmailSetup resolves the language BEFORE the method-select prompt runs, so defaultPromptMethod's t() calls already read Korean", async () => {
+    const { io } = captureIo({ configDir: workdir, env: koEnv });
+    // Cancel at the method prompt itself (never touches the real @clack/prompts
+    // select, which would hang for real input under vitest) — the point is
+    // that `ensureLanguageResolved` runs BEFORE that prompt is reached.
+    await runEmailSetup(io, { promptMethod: async () => undefined });
+    const { getCliLanguage, t } = await import("./cli-i18n.js");
+    expect(getCliLanguage()).toBe("ko");
+    expect(t("email.method.prompt")).toBe("이메일을 어떻게 연결할까요?");
+  });
+
+  it("the App Password happy path (Gmail) renders the Korean success line and Korean app-password step, never the English wording", async () => {
+    const { io, lines } = captureIo({ configDir: workdir, env: koEnv });
+    const result = await runAppPasswordEmailSetup(io, {
+      confirmOpenBrowser: async () => false,
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@gmail.com",
+      verifyImapConnection: async () => ({ messageCount: 3, ok: true })
+    });
+    expect(result.ok).toBe(true);
+    const printed = lines.join("");
+    expect(printed).toContain("앱 비밀번호 생성 페이지");
+    expect(printed).toContain("연결됨 — 받은편지함에 메시지 3개");
+    expect(printed).not.toContain("Opening the app-password page");
+    expect(printed).not.toContain("✓ connected");
+  });
+
+  it("a Korean webmail note renders as a single Korean sentence, not the old bilingual '· English' dual line", async () => {
+    const { io, lines } = captureIo({ configDir: workdir, env: koEnv });
+    const result = await runAppPasswordEmailSetup(io, {
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@daum.net",
+      promptImapHost: async () => undefined,
+      promptSmtpHost: async () => undefined,
+      verifyImapConnection: async () => ({ messageCount: 0, ok: true })
+    });
+    expect(result.ok).toBe(true);
+    const printed = lines.join("");
+    expect(printed).toContain("Daum Mail");
+    expect(printed).toContain("메일 설정에서 IMAP 사용을 켜고");
+    expect(printed).not.toContain("in that provider's mail security settings");
+  });
+
+  it("a verify failure renders CODE-driven Korean guidance (AC3), never the package's raw English message", async () => {
+    const { ImapSmtpAuthError } = await import("@muse/domain-tools");
+    const { io, lines } = captureIo({ configDir: workdir, env: koEnv });
+    const result = await runAppPasswordEmailSetup(io, {
+      promptAppPassword: async () => "pw",
+      promptEmail: async () => "user@gmail.com",
+      verifyImapConnection: async () => ({
+        error: new ImapSmtpAuthError("IMAP login rejected for user@gmail.com — application-specific password required", "app-password-required"),
+        ok: false
+      })
+    });
+    expect(result.ok).toBe(false);
+    const printed = lines.join("");
+    expect(printed).toContain("일반 로그인 비밀번호를 입력하셨어요");
+    expect(printed).toContain("myaccount.google.com/apppasswords?authuser=user%40gmail.com");
+    expect(printed).not.toContain("IMAP login rejected");
   });
 });

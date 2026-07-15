@@ -15,7 +15,10 @@ import { extractEmailAddress, summarizeInbox, type EmailMessage, type EmailProvi
 import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
+import { resolveCliLanguage } from "./cli-i18n.js";
+import { formatEmailAuthGuidance } from "./email-auth-guidance.js";
 import { parseBoundedInt } from "./parse-bounded-int.js";
+import { readConfigStore } from "./program-config.js";
 import type { ProgramIO } from "./program.js";
 import { resolveGmailProvider } from "./resolve-gmail-provider.js";
 
@@ -110,6 +113,9 @@ export function registerInboxCommand(
         process.exitCode = 1;
         return;
       }
+      // AC3: resolved once here so every downstream catch (below AND inside
+      // `readMessage`) renders code-driven guidance in the same language.
+      await resolveCliLanguage(env, () => readConfigStore(io));
       let email = provider;
       if (!email) {
         const resolved = resolveGmailProvider({ env, fetchImpl: io.fetch ?? globalThis.fetch, io });
@@ -132,7 +138,7 @@ export function registerInboxCommand(
       try {
         messages = await email.listRecent(limit);
       } catch (cause) {
-        io.stderr(`muse inbox: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+        io.stderr(`muse inbox: ${formatEmailAuthGuidance(cause)}\n`);
         process.exitCode = 1;
         return;
       }
@@ -170,7 +176,7 @@ async function readMessage(
   try {
     recent = await email.listRecent(50);
   } catch (cause) {
-    io.stderr(`muse inbox: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+    io.stderr(`muse inbox: ${formatEmailAuthGuidance(cause)}\n`);
     process.exitCode = 1;
     return;
   }
@@ -184,7 +190,7 @@ async function readMessage(
   try {
     full = await email.getMessage(match.id);
   } catch (cause) {
-    io.stderr(`muse inbox: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+    io.stderr(`muse inbox: ${formatEmailAuthGuidance(cause)}\n`);
     process.exitCode = 1;
     return;
   }

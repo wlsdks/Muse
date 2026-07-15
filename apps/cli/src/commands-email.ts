@@ -15,7 +15,10 @@ import { extractEmailAddress, composeForward, replyEmailWithApproval, replySubje
 import { confirm, isCancel } from "@clack/prompts";
 import type { Command } from "commander";
 
+import { resolveCliLanguage } from "./cli-i18n.js";
+import { formatEmailAuthGuidance } from "./email-auth-guidance.js";
 import { syncEmailsToNotes } from "./email-sync.js";
+import { readConfigStore } from "./program-config.js";
 import type { ProgramIO } from "./program.js";
 import { resolveGmailProvider, type ResolvedEmailProvider } from "./resolve-gmail-provider.js";
 
@@ -235,7 +238,12 @@ export function registerEmailCommands(program: Command, io: ProgramIO, deps: Ema
       try {
         written = await syncEmailsToNotes(provider, notesDir, limit);
       } catch (cause) {
-        io.stderr(`muse email sync: could not read Gmail (${cause instanceof Error ? cause.message : String(cause)}).\n`);
+        // AC3: code-driven, localized guidance for a rejected app-password
+        // login — no email address is known at this call site (`provider`
+        // is an already-constructed reader), so the app-password-required
+        // case renders without the account-pinned URL.
+        await resolveCliLanguage(env, () => readConfigStore(io));
+        io.stderr(`muse email sync: could not read Gmail (${formatEmailAuthGuidance(cause)}).\n`);
         process.exitCode = 1;
         return;
       }

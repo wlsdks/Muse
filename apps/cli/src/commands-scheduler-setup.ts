@@ -24,6 +24,8 @@ import {
 import type { Command } from "commander";
 
 import { DEFAULT_DAEMON_INTERVAL_MS } from "./commands-daemon-loop.js";
+import { resolveCliLanguage, t } from "./cli-i18n.js";
+import { readConfigStore } from "./program-config.js";
 import { runCalendarSetup } from "./setup-calendar.js";
 import { runEmailSetup } from "./setup-email.js";
 import { runMessagingSetup } from "./setup-messaging.js";
@@ -415,7 +417,7 @@ Examples:
         io.stdout(`${JSON.stringify(snapshot, null, 2)}\n`);
         return;
       }
-      io.stdout(await renderSetupStatus());
+      io.stdout(await renderSetupStatus(io));
     });
 
   setup
@@ -495,14 +497,35 @@ export async function runSetupWizard(io: { stderr(line: string): void; stdout(li
   io.stdout("\n");
 }
 
-async function renderSetupStatus(): Promise<string> {
+async function renderSetupStatus(io: ProgramIO): Promise<string> {
   // Single source of truth: format the same snapshot the REST + web
   // surfaces consume, so the per-section guidance under each [todo]/
   // [info] row matches the `nextStep` strings the snapshot owns.
   // Without this, the text renderer drifts from the structured
   // shape every time someone touches a wizard wording.
   const snap = await collectSetupStatusJson();
-  return `${formatSetupStatusLines(snap).join("\n")}\n`;
+  const lines = formatSetupStatusLines(snap);
+  // Spliced right after the header (index 0) rather than appended at the
+  // end — the end sits past `formatSetupStatusLines`'s own "Wizards:"
+  // footer, where a status row would read as an afterthought.
+  lines.splice(1, 0, await languageStatusLine(io));
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * AC1's "language row" — outside `formatSetupStatusLines` (which is
+ * pure over the shared `SetupStatusSnapshot` from `@muse/autoconfigure`)
+ * because the language config lives in the CLI's own `config.json`, not
+ * that cross-surface snapshot. `source` names WHERE the resolved value
+ * came from (env override wins, then config, then OS-locale auto-detect)
+ * so a user confused about why the language is what it is can see why.
+ */
+export async function languageStatusLine(io: ProgramIO): Promise<string> {
+  const config = await readConfigStore(io);
+  const envLang = process.env.MUSE_LANG?.trim().toLowerCase();
+  const source = envLang === "ko" || envLang === "en" ? "env" : config.language ? "config" : "auto-detected";
+  const lang = await resolveCliLanguage(process.env, () => Promise.resolve(config));
+  return `  [ok]   language — ${t("setup.status.language", { lang, source })}`;
 }
 
 /**

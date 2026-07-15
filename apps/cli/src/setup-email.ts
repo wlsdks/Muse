@@ -32,38 +32,23 @@ import { ImapSmtpEmailProvider, type ImapSmtpEmailProviderConfig } from "@muse/d
 import { startOAuthCallbackServer, type OAuthCallbackServer } from "@muse/mcp";
 
 import { isNoInput } from "./cli-context.js";
+import { resolveCliLanguage, t } from "./cli-i18n.js";
 import { writeEmailImapCredential, writeGmailCredential, type GmailOAuthCredential, type ImapEmailCredential } from "./credential-store.js";
+import { formatEmailAuthGuidance } from "./email-auth-guidance.js";
+import { buildGmailAppPasswordUrls } from "./gmail-app-password-url.js";
+import { readConfigStore } from "./program-config.js";
 import { generateOAuthState, generatePkcePair } from "./setup-calendar.js";
 import { exchangeGmailAuthorizationCode, GMAIL_AUTH_ENDPOINT, GMAIL_SCOPES, googlePreflightGuidance, looksLikeClientSecretJsonInput, parseGoogleClientSecretJson, preflightGoogleOAuthClient, validateGoogleOAuthClientIdInput, type GmailClientPreflightResult, type GmailTokenExchangeResult } from "./gmail-oauth.js";
 import type { ProgramIO } from "./program.js";
 
-const WALKTHROUGH = `
-Gmail setup — one-time browser consent, then it refreshes itself forever.
-
-  1. Open https://console.cloud.google.com/apis/library/gmail.googleapis.com
-     (create a project first if you don't have one) and click "Enable".
-  2. Open the Google Auth Platform: https://console.cloud.google.com/auth/overview
-     First time: click "Get started" and fill in the app name + your email
-     (this is the consent-screen "Branding" step). Choose "External".
-  3. Add yourself as a test user:
-     https://console.cloud.google.com/auth/audience → "Test users" → + Add users.
-  4. Create the client: https://console.cloud.google.com/auth/clients
-     "+ Create client" → Application type "Desktop app".
-  5. EASIEST: click ⬇ in the creation dialog to download the
-     client_secret_*.json and paste that file's PATH below — Muse reads the
-     ID + secret from it, so nothing can be mis-pasted or mismatched.
-     (Or copy the Client ID and Client Secret by hand as before.)
-
-  ⚠️  Google shows the Client Secret ONLY ONCE, in that creation dialog.
-      If you closed it, create a new client — the secret is not viewable later.
-  ⚠️  While the app's publishing status is "Testing", Google expires your
-      refresh token every 7 days (you'll re-run this wizard weekly). Publish
-      to "Production" on https://console.cloud.google.com/auth/audience to
-      avoid that — for personal use no verification review is needed.
-
-`;
+export { buildGmailAppPasswordUrls } from "./gmail-app-password-url.js";
 
 const PREFLIGHT_GUIDANCE = googlePreflightGuidance("muse setup email");
+
+/** Every entrypoint below is independently testable/callable, so each resolves language for itself; `resolveCliLanguage` caches per process, so calling it from several entry points costs nothing after the first. */
+async function ensureLanguageResolved(io: SetupEmailIO): Promise<void> {
+  await resolveCliLanguage(io.env ?? process.env, () => readConfigStore(io));
+}
 
 export interface GmailOAuthLoopbackDeps {
   readonly stdout: (message: string) => void;
@@ -129,7 +114,7 @@ export async function runGmailOAuthLoopback(params: {
       state
     }).toString();
 
-    params.stdout(`Open this URL to authorize Gmail access:\n  ${authUrl.toString()}\n\nWaiting for the browser redirect on ${redirectUri} ...\n`);
+    params.stdout(`${t("email.oauth.authUrl", { redirectUri, url: authUrl.toString() })}\n`);
     if (params.openBrowser) {
       try {
         await params.openBrowser(authUrl.toString());
@@ -177,7 +162,7 @@ export async function runGmailOAuthLoopback(params: {
 
 async function defaultPromptClientId(): Promise<string | undefined> {
   const value = await text({
-    message: "Google OAuth Client ID (or path to the downloaded client_secret_*.json):",
+    message: t("email.oauth.prompt.clientId"),
     placeholder: "xxx.apps.googleusercontent.com  ·  ~/Downloads/client_secret_xxx.json",
     validate: (input) => looksLikeClientSecretJsonInput(input ?? "") ? undefined : validateGoogleOAuthClientIdInput(input)
   });
@@ -185,7 +170,7 @@ async function defaultPromptClientId(): Promise<string | undefined> {
 }
 
 async function defaultPromptClientSecret(): Promise<string | undefined> {
-  const value = await password({ message: "Google OAuth Client Secret:" });
+  const value = await password({ message: t("email.oauth.prompt.clientSecret") });
   return isCancel(value) || typeof value !== "string" || value.length === 0 ? undefined : value;
 }
 
@@ -247,19 +232,20 @@ export interface SetupEmailResult {
 
 async function defaultPromptMethod(): Promise<EmailSetupMethod | undefined> {
   const value = await select({
-    message: "How do you want to connect email?",
+    message: t("email.method.prompt"),
     options: [
-      { hint: "2 minutes, Gmail or any other IMAP provider — no Google Cloud project", label: "App Password (recommended)", value: "apppassword" as const },
-      { hint: "existing flow — needs a Google Cloud project + OAuth client", label: "Google OAuth", value: "oauth" as const }
+      { hint: t("email.method.appPassword.hint"), label: t("email.method.appPassword.label"), value: "apppassword" as const },
+      { hint: t("email.method.oauth.hint"), label: t("email.method.oauth.label"), value: "oauth" as const }
     ]
   });
   return isCancel(value) ? undefined : value;
 }
 
 export async function runEmailSetup(io: SetupEmailIO, deps: Partial<SetupEmailDeps> = {}): Promise<SetupEmailResult> {
+  await ensureLanguageResolved(io);
   const method = await (deps.promptMethod ?? defaultPromptMethod)();
   if (!method) {
-    io.stdout("Setup cancelled.\n");
+    io.stdout(`${t("email.setupCancelled")}\n`);
     return { ok: false };
   }
   if (method === "apppassword") {
@@ -305,18 +291,8 @@ export function classifyEmailProvider(email: string): EmailProviderClass {
   return { kind: "generic" };
 }
 
-/** `authuser=<email>` pins both pages to the account the user just typed — the single biggest App Password real-world failure is minting the password on the wrong signed-in Google account. */
-export function buildGmailAppPasswordUrls(email: string): { readonly appPasswordUrl: string; readonly twoStepUrl: string } {
-  const authuser = encodeURIComponent(email);
-  return {
-    appPasswordUrl: `https://myaccount.google.com/apppasswords?authuser=${authuser}`,
-    twoStepUrl: `https://myaccount.google.com/signinoptions/two-step-verification?authuser=${authuser}`
-  };
-}
-
 function koWebmailNote(label: string): string {
-  return `${label}: 메일 설정에서 IMAP 사용을 켜고, 2단계 인증을 켠 뒤 앱 비밀번호를 발급하세요.\n`
-    + `${label}: in that provider's mail security settings, turn on IMAP access, enable 2-step verification, then generate an app password.\n\n`;
+  return `${t("email.koWebmail.note", { label })}\n\n`;
 }
 
 /** Skipped (never offered — no clack prompt) under `--no-input` or a non-TTY session, so a scripted run never hangs. */
@@ -328,14 +304,9 @@ async function defaultConfirmOpenBrowser(message: string): Promise<boolean> {
 
 async function presentGmailAppPasswordStep(io: SetupEmailIO, email: string, deps: Partial<AppPasswordSetupDeps>): Promise<void> {
   const { appPasswordUrl, twoStepUrl } = buildGmailAppPasswordUrls(email);
-  io.stdout(
-    `${email} 계정으로 고정된 앱 비밀번호 생성 페이지를 엽니다 (16자리 비밀번호를 다음 단계에서 붙여넣으세요).\n`
-    + `Opening the app-password page pinned to ${email} (paste the 16 characters at the next step).\n`
-    + `  ${appPasswordUrl}\n`
-    + `2단계 인증이 꺼져 있다면 먼저 켜세요 · if 2-Step Verification isn't on yet, enable it first:\n  ${twoStepUrl}\n\n`
-  );
+  io.stdout(`${t("email.gmail.appPasswordStep", { appPasswordUrl, email, twoStepUrl })}\n`);
   const confirmOpen = deps.confirmOpenBrowser ?? defaultConfirmOpenBrowser;
-  const shouldOpen = await confirmOpen("Open the app-password page in your browser now?");
+  const shouldOpen = await confirmOpen(t("email.gmail.openBrowserConfirm"));
   if (!shouldOpen) return;
   const openBrowser = deps.openBrowser ?? defaultOpenBrowser;
   try {
@@ -347,12 +318,12 @@ async function presentGmailAppPasswordStep(io: SetupEmailIO, email: string, deps
 
 async function defaultPromptEmail(): Promise<string | undefined> {
   const value = await text({
-    message: "Email address:",
+    message: t("email.prompt.email"),
     placeholder: "you@gmail.com",
     validate: (input) => {
       const trimmed = (input ?? "").trim();
-      if (trimmed.length === 0) return "Email is required";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(trimmed)) return "That doesn't look like a valid email address";
+      if (trimmed.length === 0) return t("email.prompt.email.required");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(trimmed)) return t("email.prompt.email.invalidFormat");
       return undefined;
     }
   });
@@ -361,8 +332,8 @@ async function defaultPromptEmail(): Promise<string | undefined> {
 
 async function defaultPromptAppPassword(): Promise<string | undefined> {
   const value = await password({
-    message: "App password (spaces are fine — they're stripped):",
-    validate: (input) => ((input ?? "").replace(/\s+/gu, "").length === 0 ? "App password is required" : undefined)
+    message: t("email.prompt.appPassword"),
+    validate: (input) => ((input ?? "").replace(/\s+/gu, "").length === 0 ? t("email.prompt.appPassword.required") : undefined)
   });
   if (isCancel(value) || typeof value !== "string") return undefined;
   const stripped = value.replace(/\s+/gu, "");
@@ -372,7 +343,7 @@ async function defaultPromptAppPassword(): Promise<string | undefined> {
 async function defaultPromptHost(label: string, prefill?: string): Promise<string | undefined> {
   const value = await text({
     initialValue: prefill,
-    message: `${label} host (leave blank to use the provider default):`,
+    message: t("email.prompt.host", { label }),
     placeholder: `${label.toLowerCase()}.example.com`
   });
   return isCancel(value) || typeof value !== "string" || value.trim().length === 0 ? undefined : value.trim();
@@ -388,9 +359,10 @@ async function defaultVerifyImapConnection(config: ImapSmtpEmailProviderConfig):
 }
 
 export async function runAppPasswordEmailSetup(io: SetupEmailIO, deps: Partial<AppPasswordSetupDeps> = {}): Promise<SetupEmailResult> {
+  await ensureLanguageResolved(io);
   const email = await (deps.promptEmail ?? defaultPromptEmail)();
   if (!email) {
-    io.stdout("Setup cancelled.\n");
+    io.stdout(`${t("email.setupCancelled")}\n`);
     return { ok: false };
   }
 
@@ -415,7 +387,7 @@ export async function runAppPasswordEmailSetup(io: SetupEmailIO, deps: Partial<A
   // injected by a test.
   const appPassword = rawAppPassword?.replace(/\s+/gu, "");
   if (!appPassword) {
-    io.stdout("Setup cancelled.\n");
+    io.stdout(`${t("email.setupCancelled")}\n`);
     return { ok: false };
   }
 
@@ -429,21 +401,22 @@ export async function runAppPasswordEmailSetup(io: SetupEmailIO, deps: Partial<A
   const verify = deps.verifyImapConnection ?? defaultVerifyImapConnection;
   const verified = await verify(credential);
   if (!verified.ok) {
-    io.stderr(`muse setup email: could not connect — ${verified.error.message}\n`);
+    io.stderr(`${t("email.appPassword.verifyFailed", { detail: formatEmailAuthGuidance(verified.error, email) })}\n`);
     return { ok: false };
   }
 
   await writeEmailImapCredential(io, credential);
-  io.stdout(`✓ connected — inbox has ${verified.messageCount.toString()} message${verified.messageCount === 1 ? "" : "s"}\n`);
+  io.stdout(`${t("email.appPassword.connected", { count: verified.messageCount })}\n`);
   return { ok: true };
 }
 
 async function runOAuthEmailSetup(io: SetupEmailIO, deps: Partial<SetupEmailDeps>): Promise<SetupEmailResult> {
-  io.stdout(WALKTHROUGH);
+  await ensureLanguageResolved(io);
+  io.stdout(`${t("email.oauth.walkthrough")}\n`);
 
   const clientIdInput = await (deps.promptClientId ?? defaultPromptClientId)();
   if (!clientIdInput) {
-    io.stdout("Setup cancelled.\n");
+    io.stdout(`${t("email.setupCancelled")}\n`);
     return { ok: false };
   }
 
@@ -457,22 +430,22 @@ async function runOAuthEmailSetup(io: SetupEmailIO, deps: Partial<SetupEmailDeps
       try {
         content = await (deps.readFileImpl ?? ((p: string) => readFile(p, "utf8")))(expanded);
       } catch {
-        io.stderr(`muse setup email: could not read ${expanded}\n`);
+        io.stderr(`${t("email.oauth.jsonRead.fail", { path: expanded })}\n`);
         return { ok: false };
       }
     }
     const parsed = parseGoogleClientSecretJson(content);
     if (!parsed.ok) {
-      io.stderr(`muse setup email: ${parsed.error}\n`);
+      io.stderr(`${t("email.oauth.jsonParse.fail", { reason: parsed.error })}\n`);
       return { ok: false };
     }
     clientId = parsed.credentials.clientId;
     clientSecret = parsed.credentials.clientSecret;
-    io.stdout("✓ Desktop-app client credentials read from the JSON\n");
+    io.stdout(`${t("email.oauth.jsonRead.ok")}\n`);
   } else {
     const promptedSecret = await (deps.promptClientSecret ?? defaultPromptClientSecret)();
     if (!promptedSecret) {
-      io.stdout("Setup cancelled.\n");
+      io.stdout(`${t("email.setupCancelled")}\n`);
       return { ok: false };
     }
     clientSecret = promptedSecret;
@@ -492,19 +465,19 @@ async function runOAuthEmailSetup(io: SetupEmailIO, deps: Partial<SetupEmailDeps
   });
 
   if (!result.ok) {
-    io.stderr(`muse setup email: authorization failed — ${result.reason}\n`);
+    io.stderr(`${t("email.oauth.authFailed", { reason: result.reason })}\n`);
     return { ok: false };
   }
 
   await writeGmailCredential(io, result.credential);
-  io.stdout("✓ Gmail connected — the access token now refreshes itself automatically.\n");
+  io.stdout(`${t("email.oauth.connected")}\n`);
 
   const verifyProfile = deps.verifyProfile ?? defaultVerifyGmailProfile;
   const emailAddress = result.credential.accessToken ? await verifyProfile(result.credential.accessToken, fetchImpl) : undefined;
   if (emailAddress) {
-    io.stdout(`✓ connected as ${emailAddress}\n`);
+    io.stdout(`${t("email.oauth.connectedAs", { email: emailAddress })}\n`);
   } else {
-    io.stderr("(saved, but couldn't verify with a live Gmail profile read — try `muse inbox` or `muse doctor` to confirm.)\n");
+    io.stderr(`${t("email.oauth.verifySoftFail")}\n`);
   }
 
   return { ok: true };

@@ -11,8 +11,11 @@
  */
 import { ImapSmtpAuthError, ImapSmtpEmailProvider, type ImapSmtpEmailProviderConfig } from "@muse/domain-tools";
 
+import { resolveCliLanguage } from "./cli-i18n.js";
 import { readEmailImapCredential, readGmailCredential } from "./credential-store.js";
+import { formatEmailAuthGuidance } from "./email-auth-guidance.js";
 import { GmailOAuthInvalidGrantError, GmailOAuthRetryableError, refreshGmailAccessToken } from "./gmail-oauth.js";
+import { readConfigStore } from "./program-config.js";
 import type { ProgramIO } from "./program.js";
 
 export interface EmailAuthCheckResult {
@@ -52,7 +55,12 @@ export async function emailAuthCheck(
       return { detail: `connected via app password (IMAP), login verified — inbox has ${messageCount.toString()} message${messageCount === 1 ? "" : "s"} — ${LOCAL_ONLY_NOTE}`, name, status: "ok" };
     } catch (cause) {
       if (cause instanceof ImapSmtpAuthError) {
-        return { detail: "connected but the IMAP login failed — the app password may be wrong or revoked; run `muse setup email` again", name, status: "fail" };
+        // AC3: localized, code-driven guidance (never the raw English
+        // package message) — `imapCredential.email` is known here, so the
+        // app-password-required case gets the account-pinned URL too.
+        await resolveCliLanguage(env, () => readConfigStore(io));
+        const guidance = formatEmailAuthGuidance(cause, imapCredential.email);
+        return { detail: `connected but the IMAP login failed — ${guidance} Run \`muse setup email\` again.`, name, status: "fail" };
       }
       return { detail: `connected but couldn't verify the IMAP login right now: ${cause instanceof Error ? cause.message : String(cause)}`, name, status: "warn" };
     }

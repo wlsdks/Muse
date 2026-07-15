@@ -2,11 +2,16 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { EmailApprovalGate, EmailMessage, EmailReader, EmailSender } from "@muse/domain-tools";
+import { ImapSmtpAuthError, type EmailApprovalGate, type EmailMessage, type EmailReader, type EmailSender } from "@muse/domain-tools";
 import { Command } from "commander";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { registerEmailCommands, type EmailCommandDeps } from "./commands-email.js";
+import { resetCliLanguageCache } from "./cli-i18n.js";
+
+beforeEach(() => {
+  resetCliLanguageCache();
+});
 
 function fixtures(contacts: Array<{ id: string; name: string; email?: string }>): { contactsFile: string; actionLogFile: string } {
   const dir = mkdtempSync(join(tmpdir(), "muse-cli-email-"));
@@ -187,6 +192,19 @@ describe("muse email sync — pull recent emails into recallable notes (contract
     const res = await run(["sync"], { emailSource: new GmailEmailProvider("tok", boom), notesDir });
     expect(res.exitCode).toBe(1);
     expect(res.output).toContain("could not read Gmail");
+  });
+
+  it("a rejected app-password login (AC3) renders CODE-driven, localized guidance — in Korean when MUSE_LANG=ko", async () => {
+    const notesDir = mkdtempSync(join(tmpdir(), "muse-email-sync-authcode-"));
+    const failingProvider = {
+      getMessage: async () => undefined,
+      listRecent: async () => { throw new ImapSmtpAuthError("IMAP login rejected — application-specific password required", "app-password-required"); },
+      sendEmail: async () => undefined
+    };
+    const res = await run(["sync"], { emailSource: failingProvider, env: { MUSE_LANG: "ko" }, notesDir });
+    expect(res.exitCode).toBe(1);
+    expect(res.output).toContain("일반 로그인 비밀번호를 입력하셨어요");
+    expect(res.output).not.toContain("IMAP login rejected");
   });
 });
 

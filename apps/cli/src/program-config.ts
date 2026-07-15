@@ -33,6 +33,8 @@ export interface ApiOptions {
 export interface MuseCliConfig {
   readonly apiUrl?: string;
   readonly defaultModel?: string;
+  /** UI/guidance language for the CLI surface — `resolveCliLanguage` (cli-i18n.ts) reads this when `MUSE_LANG` is unset. */
+  readonly language?: "ko" | "en";
 }
 
 export interface ReadApiOptionsOptions {
@@ -145,7 +147,8 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
       ...(typeof parsed.apiUrl === "string" && parsed.apiUrl.trim().length > 0 ? { apiUrl: parsed.apiUrl } : {}),
       ...(typeof parsed.defaultModel === "string" && parsed.defaultModel.trim().length > 0
         ? { defaultModel: parsed.defaultModel }
-        : {})
+        : {}),
+      ...(parsed.language === "ko" || parsed.language === "en" ? { language: parsed.language } : {})
     };
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
@@ -179,7 +182,7 @@ export async function writeConfigStore(io: ProgramIO, config: MuseCliConfig): Pr
   await chmod(filePath, 0o600).catch(() => undefined);
 }
 
-const SUPPORTED_CONFIG_KEYS = ["apiUrl", "defaultModel"] as const;
+const SUPPORTED_CONFIG_KEYS = ["apiUrl", "defaultModel", "language"] as const;
 
 export function setConfigValue(config: MuseCliConfig, key: string, value: string): MuseCliConfig {
   const trimmed = value.trim();
@@ -194,6 +197,14 @@ export function setConfigValue(config: MuseCliConfig, key: string, value: string
 
   if (key === "defaultModel") {
     return { ...config, defaultModel: trimmed };
+  }
+
+  if (key === "language") {
+    const lang = trimmed.toLowerCase();
+    if (lang !== "ko" && lang !== "en") {
+      throw new Error(`Invalid language '${trimmed}' (expected one of: ko, en)`);
+    }
+    return { ...config, language: lang };
   }
 
   const suggestion = closestCommandName(key, SUPPORTED_CONFIG_KEYS);
@@ -213,7 +224,7 @@ export function unsetConfigValue(
   config: MuseCliConfig,
   key: string
 ): { readonly config: MuseCliConfig; readonly wasSet: boolean } {
-  if (key !== "apiUrl" && key !== "defaultModel") {
+  if (key !== "apiUrl" && key !== "defaultModel" && key !== "language") {
     const suggestion = closestCommandName(key, SUPPORTED_CONFIG_KEYS);
     const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
     throw new Error(`Unsupported config key '${key}' (expected one of: ${SUPPORTED_CONFIG_KEYS.join(", ")})${hint}`);

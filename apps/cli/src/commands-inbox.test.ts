@@ -3,23 +3,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { writeContacts, type Contact } from "@muse/stores";
-import { type EmailMessage, type EmailProvider, type EmailReader, type EmailSummary } from "@muse/domain-tools";
+import { ImapSmtpAuthError, type EmailMessage, type EmailProvider, type EmailReader, type EmailSummary } from "@muse/domain-tools";
 import { Command } from "commander";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
+import { resetCliLanguageCache } from "./cli-i18n.js";
 import { buildInboxKnownSender, formatEmailMessage, formatInboxLine, registerInboxCommand } from "./commands-inbox.js";
+
+beforeEach(() => {
+  resetCliLanguageCache();
+});
 
 const INBOX: EmailSummary[] = [
   { from: "Alice <a@x.com>", id: "m1", snippet: "draft", subject: "Q3 plan", unread: true },
   { from: "Bob <b@y.com>", id: "m2", snippet: "noon", subject: "lunch?", unread: false }
 ];
 
-function run(args: string[], provider?: EmailProvider & Partial<EmailReader>) {
+function run(args: string[], provider?: EmailProvider & Partial<EmailReader>, env?: Record<string, string | undefined>) {
   const output: string[] = [];
   const io = { stderr: (m: string) => output.push(m), stdout: (m: string) => output.push(m) };
   const program = new Command();
   program.exitOverride();
-  registerInboxCommand(program, io, provider);
+  registerInboxCommand(program, io, provider, undefined, env ?? process.env);
   return { output, run: program.parseAsync(["node", "muse", "inbox", ...args]) };
 }
 
@@ -55,6 +60,21 @@ describe("muse inbox", () => {
     const { output, run: done } = run([], provider);
     await done;
     expect(output.join("")).toContain("Gmail auth rejected (401)");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = prevExit;
+  });
+
+  it("a rejected app-password login (AC3) renders CODE-driven, localized guidance — in Korean when MUSE_LANG=ko", async () => {
+    const prevExit = process.exitCode;
+    process.exitCode = 0;
+    const provider: EmailProvider = {
+      listRecent: async () => { throw new ImapSmtpAuthError("IMAP login rejected — application-specific password required", "app-password-required"); }
+    };
+    const { output, run: done } = run([], provider, { MUSE_LANG: "ko" });
+    await done;
+    const text = output.join("");
+    expect(text).toContain("일반 로그인 비밀번호를 입력하셨어요");
+    expect(text).not.toContain("IMAP login rejected");
     expect(process.exitCode).toBe(1);
     process.exitCode = prevExit;
   });
