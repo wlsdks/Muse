@@ -25,7 +25,7 @@ import {
 import { CalendarProviderRegistry, type CalendarEvent } from "@muse/calendar";
 
 import { createGateEmbedder, createOllamaEmbedder } from "./embedder-base.js";
-import { withBestEffort, type JsonObject } from "@muse/shared";
+import { isRecord, type JsonObject, type JsonValue, withBestEffort } from "@muse/shared";
 import { readFadedMemoryKeys, readReminders, readVetoes, queryPlaybook, queryPlanCache, readRecallHits, recordPlanTemplate, recordRecallHits } from "@muse/stores";
 import { hashQuery, type ConversationSummaryStore, type TaskMemoryStore, type UserMemoryStore } from "@muse/memory";
 import { FileBackedInboxContextProvider, type InboxSourceConfig } from "@muse/messaging";
@@ -505,7 +505,7 @@ export function buildPlanCacheProvider(env: MuseEnvironment): PlanCacheProvider 
       const entries = (await queryPlanCache(file, userId)).map((entry) => ({
         prompt: entry.prompt,
         // Store args are JSON-sourced; narrow Record<string,unknown> → JsonObject at the boundary.
-        steps: entry.steps.map((step) => ({ args: step.args as JsonObject, description: step.description, tool: step.tool }))
+        steps: entry.steps.map((step) => ({ args: toJsonObject(step.args), description: step.description, tool: step.tool }))
       }));
       // Embedding-blended reuse so a paraphrased / Korean-particle prompt
       // still hits a cached plan; degrades to the lexical selector when the
@@ -522,4 +522,29 @@ export function buildPlanCacheProvider(env: MuseEnvironment): PlanCacheProvider 
       });
     }
   };
+}
+
+function toJsonObject(value: unknown): JsonObject {
+  const source = isRecord(value) ? value : undefined;
+  if (source === undefined) {
+    return {};
+  }
+  const out: JsonObject = {};
+  for (const [key, raw] of Object.entries(source)) {
+    const sanitized = toJsonValue(raw);
+    if (sanitized !== undefined) {
+      out[key] = sanitized;
+    }
+  }
+  return out;
+}
+
+function toJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toJsonValue(item)).filter((item): item is JsonValue => item !== undefined);
+  }
+  return isRecord(value) ? toJsonObject(value) : undefined;
 }

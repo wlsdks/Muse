@@ -70,11 +70,13 @@ export function stringMapField(value: unknown): Record<string, string> {
     return {};
   }
 
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter((entry): entry is [string, string] =>
-        typeof entry[0] === "string" && typeof entry[1] === "string")
-  );
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") {
+      out[key] = entry;
+    }
+  }
+  return out;
 }
 
 export function coerceNumber(value: unknown, fallback: number): number {

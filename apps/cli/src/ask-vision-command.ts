@@ -161,12 +161,16 @@ export async function runVisionCommandAction(params: {
     process.exitCode = 1;
     return;
   }
+  const schemaProperties: Record<string, { readonly type: "string" }> = {};
+  for (const field of fields) {
+    schemaProperties[field] = { type: "string" };
+  }
   const ex = await extractStructuredFromImage(modelProvider, {
     imageBase64: img.dataBase64,
     instruction: `Extract these fields from the image: ${fields.join(", ")}.`,
     mimeType: img.mimeType,
     model,
-    schema: { properties: Object.fromEntries(fields.map((f) => [f, { type: "string" }])), type: "object" }
+    schema: { properties: schemaProperties, type: "object" }
   });
   if (!ex.ok) {
     io.stderr(`muse ask --extract: ${ex.error}\n`);

@@ -50,7 +50,7 @@ import {
   selectToolNamesForExposureAuthority,
   type GuardBlockRateMonitor
 } from "@muse/policy";
-import { createRunId, type JsonObject } from "@muse/shared";
+import { createRunId, isRecord, type JsonObject, type JsonValue } from "@muse/shared";
 import {
   ToolExecutor,
   ToolRegistry,
@@ -939,7 +939,7 @@ export class AgentRuntime {
     const executor: ToolPlanExecutor = async (tool, args) => {
       stepIndex += 1;
       const toolCall: ModelToolCall = {
-        arguments: args as JsonObject,
+        arguments: toJsonObject(args),
         id: `${context.runId}-ptc-${stepIndex.toString()}`,
         name: tool
       };
@@ -1606,6 +1606,28 @@ export class AgentRuntime {
       historyStore: this.historyStore
     });
   }
+}
+
+function toJsonObject(value: Record<string, unknown> | undefined): JsonObject {
+  const out: JsonObject = {};
+  const source = value ?? {};
+  for (const [key, raw] of Object.entries(source)) {
+    const sanitized = toJsonValue(raw);
+    if (sanitized !== undefined) {
+      out[key] = sanitized;
+    }
+  }
+  return out;
+}
+
+function toJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toJsonValue(item)).filter((item): item is JsonValue => item !== undefined);
+  }
+  return isRecord(value) ? toJsonObject(value) : undefined;
 }
 
 /**

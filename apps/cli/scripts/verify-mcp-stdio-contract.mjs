@@ -54,7 +54,13 @@ writeFileSync(
 );
 
 function definedEnv(source) {
-  return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined));
+  const output = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined) {
+      output[key] = value;
+    }
+  }
+  return output;
 }
 
 let failures = 0;
