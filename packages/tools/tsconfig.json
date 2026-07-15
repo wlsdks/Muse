@@ -20,6 +20,9 @@
       "path": "../policy"
     },
     {
+      "path": "../resilience"
+    },
+    {
       "path": "../shared"
     }
   ]

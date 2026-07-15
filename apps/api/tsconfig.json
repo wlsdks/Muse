@@ -20,6 +20,9 @@
       "path": "../../packages/agent-specs"
     },
     {
+      "path": "../../packages/attunement"
+    },
+    {
       "path": "../../packages/auth"
     },
     {

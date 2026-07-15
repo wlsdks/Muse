@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# pre-push (versioned — scripts/githooks/pre-push, installed via
+# `core.hooksPath` by scripts/setup-githooks.mjs, NOT copied into
+# .git/hooks). Three stages, in order:
+#
+#   1. push-window lock (scripts/githooks/lib/pushlock.sh) — serializes the
+#      whole hook run across same-machine agents. All worktrees of this repo
+#      share one .git (git-common-dir), so the lock lives there and
+#      serializes across worktrees too. This is what closes the "concurrent
+#      pushes race the 1-2min gate window" failure class: only one agent's
+#      checks (and its immediately-following `git push`) run at a time,
+#      instead of several agents passing their own stale-branch checks
+#      simultaneously and then colliding on push.
+#   2. fail-CLOSED compile gate — `pnpm -s typecheck:fast` (the tsc -b
+#      project-reference graph) plus a direct `tsc --noEmit` for apps/web
+#      (intentionally OUTSIDE that reference graph — see
+#      .claude/rules/architecture.md). Unlike the old hook, a push whose
+#      code doesn't compile — or whose environment can't even resolve pnpm
+#      — is BLOCKED, never silently skipped.
+#   3. fail-OPEN grounding tripwire — unchanged from the original
+#      .git/hooks/pre-push: `pnpm -s precheck:grounding`. Skips itself when
+#      pnpm/Ollama aren't reachable so it never hard-blocks a model-less
+#      box; MUSE_SKIP_PREPUSH=1 skips ONLY this stage.
+#
+# Escape hatches (documented, greppable — prefer these to --no-verify):
+#   MUSE_SKIP_PREPUSH=1     — skip stage 3 (grounding) only. Stages 1-2 still run.
+#   MUSE_SKIP_PREPUSH_ALL=1 — skip EVERYTHING (lock + compile gate + grounding).
+#                             Genuine emergencies only — this is the one knob
+#                             that can let broken code reach origin/main.
+set -uo pipefail
+
+hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(git rev-parse --show-toplevel)"
+git_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
+
+if [ "${MUSE_SKIP_PREPUSH_ALL:-0}" = "1" ]; then
+  echo "pre-push: *** ALL stages skipped (MUSE_SKIP_PREPUSH_ALL=1) *** — lock, compile gate, and grounding tripwire did NOT run. Emergency-only; unset this before your next push." >&2
+  exit 0
+fi
+
+# shellcheck source=lib/pushlock.sh
+source "$hook_dir/lib/pushlock.sh"
+pushlock_acquire "$git_common_dir/muse-pre-push.lock" || exit 1
+
+# Git GUI / IDE clients spawn hooks with a minimal PATH where a version-manager
+# (corepack/nvm/volta) pnpm is absent. Resolve it from common install dirs.
+resolve_pnpm() {
+  command -v pnpm >/dev/null 2>&1 && return 0
+  for d in "$HOME/.local/share/pnpm" "$HOME/Library/pnpm" "/opt/homebrew/bin" "/usr/local/bin"; do
+    [ -x "$d/pnpm" ] && PATH="$d:$PATH"
+  done
+  command -v pnpm >/dev/null 2>&1
+}
+
+if ! resolve_pnpm; then
+  echo "pre-push: BLOCKED — pnpm not found on PATH (checked common install dirs). The compile gate cannot run, so the push is refused rather than silently skipped. Fix your PATH, or run the checks manually: pnpm -s typecheck:fast && pnpm --filter @muse/web exec tsc -p tsconfig.json --noEmit" >&2
+  exit 1
+fi
+
+cd "$repo_root" || exit 1
+
+echo "pre-push: compile gate — pnpm -s typecheck:fast" >&2
+if ! pnpm -s typecheck:fast; then
+  echo "pre-push: BLOCKED — typecheck:fast failed (see errors above). Fix them before pushing, or MUSE_SKIP_PREPUSH_ALL=1 for a genuine emergency." >&2
+  exit 1
+fi
+
+echo "pre-push: compile gate — apps/web tsc --noEmit (outside the tsc -b reference graph)" >&2
+if ! pnpm --filter @muse/web exec tsc -p tsconfig.json --noEmit; then
+  echo "pre-push: BLOCKED — apps/web typecheck failed (see errors above). Fix them before pushing, or MUSE_SKIP_PREPUSH_ALL=1 for a genuine emergency." >&2
+  exit 1
+fi
+
+if [ "${MUSE_SKIP_PREPUSH:-0}" = "1" ]; then
+  echo "pre-push: grounding tripwire skipped (MUSE_SKIP_PREPUSH=1) — the compile gate above still ran and passed." >&2
+  exit 0
+fi
+
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pre-push: pnpm not on PATH — grounding tripwire skipped (run 'pnpm precheck:grounding' manually to verify)" >&2
+  exit 0
+fi
+
+pnpm -s precheck:grounding
+exit $?

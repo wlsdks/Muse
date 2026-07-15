@@ -19,6 +19,7 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
+    "postinstall": "node scripts/setup-githooks.mjs",
     "build": "tsc -b --incremental --pretty false && pnpm --filter @muse/web build",
     "build:ts7-fast": "tsc -b --checkers 4 --builders 4 --pretty false && pnpm --filter @muse/web build",
     "build:ts7-single-thread": "tsc -b --singleThreaded",
