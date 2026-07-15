@@ -21,6 +21,7 @@ import { isRecord } from "@muse/shared";
 
 import { readGmailCredential, writeGmailCredential, type GmailOAuthCredential } from "./credential-store.js";
 import type { ProgramIO } from "./program.js";
+import { withBestEffort } from "./async-promises.js";
 
 export const GMAIL_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 export const GMAIL_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -237,7 +238,7 @@ export async function exchangeGmailAuthorizationCode(params: {
     throw new Error(`Gmail token exchange failed: network error (${cause instanceof Error ? cause.message : String(cause)})`, { cause });
   }
   if (!response.ok) {
-    const errorCode = parseOAuthErrorCode(await response.text().catch(() => ""));
+    const errorCode = parseOAuthErrorCode(await withBestEffort(response.text(), ""));
     // Never echo the response body — Google's OAuth errors don't carry the
     // client secret, but the redaction floor (AC4) applies to every error
     // surface, so only a parsed, allow-listed field ever reaches the message.
@@ -287,7 +288,7 @@ export async function refreshGmailAccessToken(params: {
     throw new GmailOAuthRetryableError(`Gmail token refresh failed: server error (${response.status.toString()})`);
   }
   if (!response.ok) {
-    const errorCode = parseOAuthErrorCode(await response.text().catch(() => ""));
+    const errorCode = parseOAuthErrorCode(await withBestEffort(response.text(), ""));
     if (errorCode === "invalid_grant") {
       throw new GmailOAuthInvalidGrantError("Gmail refresh token is invalid or revoked — run `muse setup email` again. If this happens every ~7 days, your Google app is still in \"Testing\": publish it to Production at https://console.cloud.google.com/auth/audience (personal use needs no review).");
     }

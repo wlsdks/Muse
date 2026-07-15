@@ -27,6 +27,7 @@ import { isRecord } from "@muse/shared";
 import { confirm, isCancel, multiselect, password, text } from "@clack/prompts";
 import { FileCalendarCredentialStore } from "@muse/calendar";
 import { isLocalOnlyEnabled } from "@muse/model";
+import { withBestEffort } from "./async-promises.js";
 
 import { googlePreflightGuidance, preflightGoogleOAuthClient, validateGoogleOAuthClientIdInput } from "./gmail-oauth.js";
 
@@ -176,7 +177,7 @@ async function setupGoogle(store: FileCalendarCredentialStore, io: SetupCalendar
   });
 
   if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text().catch(() => "");
+    const errorText = await withBestEffort(tokenResponse.text(), "");
     io.stderr(`Google OAuth token exchange failed (${tokenResponse.status}): ${errorText}\n`);
     return false;
   }
