@@ -241,9 +241,14 @@ export function matchAgentNames(value: string, names: readonly string[]): readon
  */
 export function extractAttachmentPaths(message: string): string[] {
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const match of message.matchAll(/(?:^|\s)@([^\s]+)/gu)) {
     const path = match[1];
-    if (path && !out.includes(path)) out.push(path);
+    if (!path || seen.has(path)) {
+      continue;
+    }
+    seen.add(path);
+    out.push(path);
   }
   return out;
 }
