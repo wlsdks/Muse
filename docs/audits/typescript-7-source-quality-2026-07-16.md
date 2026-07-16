@@ -412,3 +412,10 @@ the TypeScript 7 announcement and release-notes links.
 - Such envelopes are now quarantined before the best-effort empty recovery path. Wrong-key and authentication-tag failures still throw before quarantine or overwrite.
 - Verified with `pnpm --filter @muse/memory exec vitest run test/belief-provenance-store.test.ts src/belief-provenance-store.test.ts` (61 passed) and `pnpm --filter @muse/memory build`.
 - Independent architecture review: PASS.
+### MCP: duplicate server conflict parity
+
+- Inspected in-memory and Kysely MCP server stores plus API error shaping.
+- Fixed an API contract mismatch: a PostgreSQL unique-name violation from Kysely save is now normalized to `McpRegistryError`, matching in-memory behavior and yielding the curated 409 response instead of a generic 500.
+- Non-unique database failures remain unmodified and follow the generic server-error path.
+- Verified with `pnpm --filter @muse/mcp exec vitest run test/server-stores.test.ts` (2 passed) and `pnpm --filter @muse/mcp build`.
+- Independent architecture review: PASS.
