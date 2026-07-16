@@ -494,3 +494,12 @@ the TypeScript 7 announcement and release-notes links.
 - The helper normalizes its own direct inputs too, so negative, non-finite, and oversized values cannot bypass its timer-safe contract.
 - Verified with `pnpm --filter @muse/calendar exec vitest run test/errors.test.ts test/google-provider.test.ts test/caldav-provider.test.ts` (42 passed) and `pnpm --filter @muse/calendar build`.
 - Independent runtime-contract review: PASS after helper self-normalization coverage was added.
+
+### CLI: bug-report secret boundary
+
+- Audited unexpected-error formatting, GitHub issue URL construction, the shared secret-redaction contract, and focused formatter tests against OWASP guidance for remote diagnostic data.
+- Fixed an external disclosure path: error text, command, and version values are now redacted at the final title/body boundary before they are encoded into the GitHub issue URL.
+- Local terminal output intentionally retains the original error text for direct diagnosis; only the remote pre-filled issue payload is sanitized.
+- Added regressions for secrets in both error text and public formatter option fields.
+- Verified with `pnpm --filter @muse/cli exec vitest run src/format-cli-error.test.ts` (16 passed) and `pnpm --filter @muse/cli build`.
+- Independent runtime-contract review: PASS after final-boundary redaction was added for command and version interpolation.
