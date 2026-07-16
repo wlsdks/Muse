@@ -72,9 +72,14 @@ pack. It does not require desktop observation.
   suppression. It cannot expand data sources, retention, permissions, recipients, or actions.
 - Golden examples cover both a daily-life thread and a work thread; neither may rely on a
   work-only field or prompt.
+- `muse thread review` reads the oldest unreviewed delivery in the first-20 window, resolves
+  its exact persisted evidence, and prints copy-ready commands for all four outcomes.
+  `--json` exposes deterministic progress. Review is read-only: only the user-authored
+  `muse thread outcome` command may create feedback.
 
 **Kill criterion:** if fewer than 20% of the first 20 eligible packs are used, or more than
-30% are rejected, stop adding automation. Fix the pack's usefulness first.
+30% are rejected, stop adding automation. Fix the pack's usefulness first. Passing this
+threshold is measurement evidence only; it never grants permission for proactive delivery.
 
 ## Slice B — safe observation and better timing
 

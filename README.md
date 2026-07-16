@@ -160,8 +160,10 @@ for a single call; it remembers you and shapes every future turn *and* every pro
 
 - **Model-neutral core.** OpenAI, Anthropic, Google Gemini, OpenRouter, Ollama, LM Studio,
   and any OpenAI-compatible endpoint live behind a single `ModelProvider` adapter. The
-  runtime calls the abstraction, never a vendor SDK directly. The same core drives the CLI,
-  the API server, and the web UI.
+  runtime calls the abstraction, never a vendor SDK directly. CLI-local turns, API/web chat,
+  inbound messaging, scheduled agent jobs, and delegated workers all enter through the same
+  `createMuseRuntimeAssembly` → `AgentRuntime` composition root. Delegated workers carry only
+  Muse model IDs; the runtime's shared provider registry resolves them.
 - **Tool & MCP first.** Tools are first-class — read, write, or execute — with explicit risk
   levels, approval gates, and deterministic loop limits. 25 in-process `muse.*` servers ship
   built-in (eight pure-utility: `time` / `text` / `math` / `json` / `url` / `crypto` / `diff` /
@@ -175,8 +177,9 @@ for a single call; it remembers you and shapes every future turn *and* every pro
   plus macOS Reminders / Notes mirrors — all stored locally by default, queryable by the agent,
   editable from CLI / Web UI.
 - **Multi-agent orchestration.** Sequential or parallel worker fan-out, an in-memory
-  cross-agent message bus, per-run history with full conversation snapshots — exposed over
-  HTTP and SSE.
+  cross-agent message bus, per-run history with full conversation snapshots, per-worker model
+  routing, and a bounded fast→heavy cascade — exposed over HTTP and SSE without a second agent
+  runtime.
 - **Messaging channels.** Inbound/outbound adapters for **Telegram, Discord, Slack, and LINE**
   (plus local macOS desktop notifications), all routed through the same fail-closed
   channel-approval gate — a reply toward a person is draft-first, never autonomous.
