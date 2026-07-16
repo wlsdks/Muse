@@ -467,3 +467,12 @@ the TypeScript 7 announcement and release-notes links.
 - Added byte-preservation regression coverage for both a wrong encryption key and malformed on-disk JSON.
 - Verified with `pnpm --filter @muse/stores exec vitest run test/encrypted-credentials.test.ts` (9 passed) and `pnpm --filter @muse/stores build`.
 - Independent runtime-contract review: PASS after recovery guidance correction.
+
+### Web: chat-stream request lifecycle
+
+- Audited `useChatStream`, persisted transcript handling, SSE event commits, reset behavior, and the existing conversation/approval/commit tests.
+- Fixed a stale asynchronous state defect: reset and unmount now abort the active chat request, and stale stream/JSON/error/finally callbacks cannot repopulate a cleared conversation or clear a newer request's state.
+- Added synchronous lifecycle ownership before optimistic UI mutation, closing the React pre-rerender double-send race that could create an orphan assistant draft or clear the active stream indicator.
+- Kept lifecycle ownership local to the hook module and added focused unit coverage for abort, stale completion, and re-entry rejection.
+- Verified with `pnpm --filter @muse/web exec vitest run src/api/useChatStream.lifecycle.test.ts src/api/useChatStream.conversationId.test.ts src/api/useChatStream.commit.test.ts src/api/useChatStream.pendingApprovals.test.ts` (27 passed) and `pnpm --filter @muse/web build`.
+- Independent runtime-contract review: PASS after two concurrency follow-up findings were addressed.
