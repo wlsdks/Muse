@@ -215,3 +215,11 @@ the TypeScript 7 announcement and release-notes links.
 - **Decision:** normalize Slack request/body failures as `UPSTREAM_FAILED`, preserve Retry-After for final reads, and require an entirely numeric positive Slack timestamp before it may affect a cursor or ISO conversion.
 - **Evidence:** focused tests cover timeout-shaped POST rejection, unreadable success body, 429 retry/success, exhausted 429 metadata, and timestamp suffix rejection.
 - **Follow-up:** timestamp validation now also requires Date-range validity, so an out-of-range numeric API value cannot be persisted as a future `oldest` cursor; the polling-after-file regression is covered directly.
+
+## Telegram API and update-offset boundary
+
+- **Area:** `packages/messaging` Telegram Bot API requests and persisted getUpdates offset.
+- **Finding:** raw request/body failures crossed the provider boundary; final rate limits discarded Telegram's body retry-after; malformed numeric update IDs or dates could make offset persistence fail or crash conversion.
+- **Decision:** one Telegram-local request/body boundary normalizes every Bot API operation. Only safe update IDs advance offsets; malformed message dates are skipped while valid updates still progress. A missing valid message ID may safely fall back to the update ID for snapshot compatibility.
+- **Evidence:** focused tests cover ambiguous outbound failure, unreadable success body, mixed malformed/valid update progression, and body-supplied retry-after preservation.
+- **Follow-up:** Telegram result entries are now runtime-narrowed as arrays and records before any field access. Null, non-object, malformed chat, and malformed date entries are skipped without blocking a valid later update or corrupting its offset.
