@@ -20,9 +20,9 @@ describe("SidebarNav — a11y semantics for the primary navigation", () => {
   });
 
   it("marks exactly the active view with aria-current=page, and it moves with `view`", () => {
-    const todayHtml = renderToStaticMarkup(<SidebarNav view="today" taskCount={0} t={t} onSelect={() => {}} />);
-    expect((todayHtml.match(/aria-current="page"/g) ?? []).length).toBe(1);
-    expect(activeLabel(todayHtml)).toBe("nav.today");
+    const homeHtml = renderToStaticMarkup(<SidebarNav view="home" taskCount={0} t={t} onSelect={() => {}} />);
+    expect((homeHtml.match(/aria-current="page"/g) ?? []).length).toBe(1);
+    expect(activeLabel(homeHtml)).toBe("nav.home");
 
     // dashboard is an engine-room (advanced) view — visible only in dev mode.
     const dashHtml = renderToStaticMarkup(<SidebarNav view="dashboard" taskCount={0} t={t} onSelect={() => {}} devMode />);
@@ -35,8 +35,9 @@ describe("SidebarNav — a11y semantics for the primary navigation", () => {
     expect(defaultHtml).not.toContain("nav.dashboard");
     expect(defaultHtml).not.toContain("nav.promptLab");
     expect(defaultHtml).not.toContain("nav.scheduler");
+    expect(defaultHtml).not.toContain("nav.today");
     // the companion core stays
-    for (const core of ["nav.chat", "nav.today", "nav.notes", "nav.memory", "nav.continuity", "nav.integrations", "nav.settings"]) {
+    for (const core of ["nav.home", "nav.chat", "nav.notes", "nav.memory", "nav.continuity", "nav.integrations", "nav.settings"]) {
       expect(defaultHtml).toContain(core);
     }
 

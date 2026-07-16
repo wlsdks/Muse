@@ -27,6 +27,7 @@ import { SchedulerView } from "../views/Scheduler.js";
 import { SettingsView } from "../views/Settings.js";
 import { TasksView } from "../views/Tasks.js";
 import { TodayView } from "../views/Today.js";
+import { HomeView } from "../views/Home.js";
 import { McpServersView } from "../views/McpServers.js";
 import { SelfImprovementView } from "../views/SelfImprovement.js";
 import { SkillsView } from "../views/Skills.js";
@@ -44,6 +45,7 @@ const queryClient = new QueryClient({
 });
 
 type ViewId =
+  | "home"
   | "today"
   | "chat"
   | "chats"
@@ -83,7 +85,8 @@ interface NavEntry {
 }
 
 export const NAV: readonly NavEntry[] = [
-  { Component: TodayView, group: "group.workspace", icon: Icon.home, id: "today", key: "t", labelKey: "nav.today" },
+  { Component: HomeView, group: "group.workspace", icon: Icon.home, id: "home", key: "z", labelKey: "nav.home" },
+  { Component: TodayView, group: "group.workspace", icon: Icon.calendar, id: "today", advanced: true, key: "t", labelKey: "nav.today" },
   { Component: ChatView, group: "group.workspace", icon: Icon.chat, id: "chat", key: "c", labelKey: "nav.chat" },
   { Component: ChatsView, group: "group.workspace", icon: Icon.clock, id: "chats", advanced: true, key: "h", labelKey: "nav.chats" },
   { Component: TasksView, group: "group.workspace", icon: Icon.task, id: "tasks", advanced: true, key: "k", labelKey: "nav.tasks" },
