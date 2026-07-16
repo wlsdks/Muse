@@ -23,7 +23,10 @@
   --ink: #f4f6fb;
   --ink-muted: #c3c8d6;
   --ink-subtle: #868ca0;
-  --ink-tertiary: #5b6072;
+  /* Meta/informational text must stay AA-readable (≥4.5:1) on both the
+     canvas and card surfaces — measured 2026-07: #5b6072 sat at ~3:1 and
+     produced unreadable gray-on-gray list meta. Keep below --ink-subtle. */
+  --ink-tertiary: #7d8396;
 
   /* The single accent — indigo/lavender. Used scarcely, on purpose. */
   --primary: #5e6ad2;
@@ -898,6 +901,25 @@ button {
   border-radius: var(--r-md);
   border-bottom: 1px solid var(--hairline);
   transition: background 0.14s ease;
+}
+/* A row rendered as a <button> (clickable list rows) must not pick up the
+   UA button chrome — without this it renders as a native gray macOS button
+   bubble sized to its content instead of a full-width list row. */
+button.row {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  width: calc(100% + 2 * var(--s-sm));
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+}
+button.row:last-child {
+  border-bottom: none;
 }
 .row:last-child {
   border-bottom: none;
