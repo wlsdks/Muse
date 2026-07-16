@@ -271,3 +271,11 @@ the TypeScript 7 announcement and release-notes links.
 - Inspected CLI SIGINT cancellation, REPL session lifecycle, and the persisted crash marker. Scoped SIGINT listeners already clean up in `finally` and thread cancellation into the long-running streaming callers; no evidence-backed edit was needed there.
 - Hardened the shared session crash-marker reader: only a positive safe-integer PID and a parseable start timestamp count as recoverable prior-session evidence. Malformed marker JSON fields now fail closed instead of producing a misleading crash notice.
 - Focused session-marker tests: 9 passed. `pnpm --filter @muse/stores build`: passed. Independent review: pending.
+
+### CLI JWT rotation persistence boundary (2026-07-16)
+
+- Inspected `apps/cli/src/jwt-rotation-store.ts`, `apps/cli/src/commands-auth.ts`, and their focused tests.
+- Finding: TypeScript's static contract did not protect the exported rotation function from an invalid `Date`, non-finite/negative `graceMs`, or a computed expiry beyond JavaScript's supported `Date` range; those inputs could otherwise reach `toISOString()` as an implementation-level error.
+- Decision: validate only at `rotateJwtState`, the persistence-domain owner of the `now + graceMs` calculation. A shared duration abstraction would have one consumer and would not improve the contract. The CLI continues to reject malformed text; the store rejects invalid programmatic input with a domain-specific `RangeError` before state construction.
+- External basis: TypeScript erases types at runtime (TypeScript Handbook), JWT expiry processing is time-bound (RFC 7519), and invalid dates fail when converted to ISO form (MDN). OWASP's cryptographic-storage guidance also treats rotation procedures as a security boundary that should be ready before an incident.
+- Verification: `pnpm --filter @muse/cli exec vitest run src/jwt-rotation-store.test.ts src/commands-auth.test.ts` (15 passed); `pnpm --filter @muse/cli build` passed.

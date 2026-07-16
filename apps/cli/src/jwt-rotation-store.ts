@@ -115,8 +115,19 @@ export function rotateJwtState(args: {
   readonly secretFactory?: () => string;
 }): JwtRotationState {
   const generate = args.secretFactory ?? (() => randomBytes(32).toString("hex"));
-  const nowIso = args.now.toISOString();
-  const validUntil = new Date(args.now.getTime() + args.graceMs).toISOString();
+  const nowMs = args.now.getTime();
+  if (!Number.isFinite(nowMs)) {
+    throw new RangeError("JWT rotation requires a valid current time");
+  }
+  if (!Number.isFinite(args.graceMs) || args.graceMs < 0) {
+    throw new RangeError("JWT rotation graceMs must be a finite, non-negative duration");
+  }
+  const validUntilDate = new Date(nowMs + args.graceMs);
+  if (!Number.isFinite(validUntilDate.getTime())) {
+    throw new RangeError("JWT rotation graceMs exceeds the supported date range");
+  }
+  const nowIso = new Date(nowMs).toISOString();
+  const validUntil = validUntilDate.toISOString();
   const existingCurrent = args.state?.current ?? args.fallbackCurrent;
   if (!existingCurrent) {
     // First-time rotation with no prior state — promote a brand

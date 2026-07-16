@@ -66,6 +66,28 @@ describe("rotateJwtState", () => {
     expect(out.current).toBe("NEWSECRET");
     expect(out.previous[0]?.secret).toBe("ENVSECRET");
   });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    "rejects an invalid grace duration of %s milliseconds",
+    (graceMs) => {
+      expect(() => rotateJwtState({ state: undefined, now: NOW, graceMs, secretFactory })).toThrow(RangeError);
+    }
+  );
+
+  it("rejects an invalid current time and a grace duration outside Date's supported range", () => {
+    expect(() => rotateJwtState({
+      state: undefined,
+      now: new Date("invalid"),
+      graceMs: 0,
+      secretFactory
+    })).toThrow(RangeError);
+    expect(() => rotateJwtState({
+      state: undefined,
+      now: NOW,
+      graceMs: 8_640_000_000_000_000,
+      secretFactory
+    })).toThrow(RangeError);
+  });
 });
 
 describe("rotateAndPersistJwtState", () => {
