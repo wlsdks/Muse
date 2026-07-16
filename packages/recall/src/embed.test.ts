@@ -58,6 +58,8 @@ describe("embed", () => {
     const neverResolves: typeof globalThis.fetch = (_input, init) => {
       const pending = Promise.withResolvers<Response>();
       const signal = (init as { signal?: AbortSignal } | undefined)?.signal;
+      // Many fetch adapters surface AbortError (not TimeoutError) when the
+      // caller-owned timeout signal fires; embed must still normalize it.
       signal?.addEventListener("abort", () => {
         pending.reject(new DOMException("aborted", "AbortError"));
       }, { once: true });

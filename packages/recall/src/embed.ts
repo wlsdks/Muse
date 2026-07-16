@@ -73,7 +73,10 @@ export async function embed(text: string, model: string, options: EmbedOptions =
       ...(timeoutSignal ? { signal: timeoutSignal } : {})
     });
   } catch (cause) {
-    if (cause instanceof DOMException && cause.name === "TimeoutError") {
+    // Fetch implementations do not agree on the rejection they surface when
+    // our timeout signal aborts: Node fetch uses TimeoutError, while adapters
+    // commonly reject with AbortError. The signal is the source of truth.
+    if (timeoutSignal?.aborted || (cause instanceof DOMException && cause.name === "TimeoutError")) {
       throw new Error(`embeddings ${baseUrl}/api/embeddings timed out after ${timeoutMs.toString()}ms`, { cause });
     }
     throw cause;
