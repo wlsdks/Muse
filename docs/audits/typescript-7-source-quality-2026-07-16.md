@@ -395,3 +395,12 @@ the TypeScript 7 announcement and release-notes links.
 - Normalized invalid runtime `Date` inputs to the store clock across in-memory saves, file saves, and Kysely inserts; corrupted database dates map to epoch instead of leaking invalid dates into a later serialization path.
 - Verified with `pnpm --filter @muse/memory exec vitest run test/conversation-summary-store.test.ts` (17 passed) and `pnpm --filter @muse/memory build`.
 - Independent architecture review: PASS after a follow-up correction for caller-supplied invalid dates.
+
+### Memory: Kysely user-memory concurrent mutation
+
+- Inspected file-backed user-memory encryption/locking/CAS tests and the Kysely user-memory implementation and focused tests.
+- Fixed a DB concurrency defect: Kysely fact, preference, and typed-slot writes previously read a full row then wrote it back without a per-user transaction lock, allowing concurrent requests to lose unrelated updates.
+- Added a shared internal mutation boundary that acquires a transaction-scoped PostgreSQL advisory lock per user before read-modify-write; independent users remain concurrent.
+- Kept the PostgreSQL detail inside `KyselyUserMemoryStore`; provider-neutral memory interfaces remain unchanged. The injected lock seam is private to construction options for deterministic storage tests.
+- Verified with `pnpm --filter @muse/memory exec vitest run test/memory-user-store-kysely.test.ts` (17 passed) and `pnpm --filter @muse/memory build`.
+- Independent architecture review: PASS.
