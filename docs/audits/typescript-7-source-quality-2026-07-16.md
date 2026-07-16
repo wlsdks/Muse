@@ -191,3 +191,11 @@ the TypeScript 7 announcement and release-notes links.
 - **Finding:** `osascript` and `notify-send` ran through the shared subprocess helper without capture limits, allowing an untrusted diagnostic stream to consume memory. The duplicated watchdog implementations also risked diverging.
 - **Decision:** A messaging-local helper now owns the common 30-second watchdog and a 16 KiB per-stream diagnostic boundary. A successful zero exit code remains a successful delivery even when diagnostics are truncated, avoiding false failures and duplicate notifications; failed receipts explicitly mark truncated diagnostics.
 - **Evidence:** focused macOS and libnotify provider tests cover timeout behavior, UTF-8 diagnostic decoding, bounded output, and truncated-error reporting.
+
+## LINE outbound transport normalization
+
+- **Area:** `packages/messaging` LINE push provider.
+- **Finding:** non-OK LINE responses became `MessagingProviderError`, but a rejected fetch (including the timeout helper's rejection) escaped as an untyped raw exception. That bypassed the provider error contract used by retry policy.
+- **Decision:** normalize every LINE push transport rejection as `UPSTREAM_FAILED`, retaining the safe causal message while preserving HTTP status and Retry-After handling for actual responses.
+- **Evidence:** focused provider coverage now distinguishes validation-before-network, HTTP failure mapping, and rejected transport normalization.
+- **Follow-up:** unreadable non-OK response bodies are also normalized while retaining the HTTP status and Retry-After metadata; focused tests cover 429, a rejected body stream, and timeout-shaped transport rejection.
