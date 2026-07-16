@@ -154,10 +154,26 @@ export async function readBrowsingStore(file: string): Promise<BrowsingStore> {
 
 export async function writeBrowsingStore(file: string, store: BrowsingStore): Promise<void> {
   await withFileMutationQueue(file, () => withFileLock(file, async () => {
-    await fs.mkdir(dirname(file), { recursive: true });
-    await atomicWriteFile(file, `${JSON.stringify(store, null, 2)}\n`);
-    await fs.chmod(file, 0o600).catch(() => undefined);
+    await writeBrowsingStoreUnlocked(file, store);
   }));
+}
+
+/** Apply a read-modify-write transition to the latest cross-process store snapshot. */
+export async function mutateBrowsingStore(
+  file: string,
+  mutate: (current: BrowsingStore) => BrowsingStore | Promise<BrowsingStore>
+): Promise<BrowsingStore> {
+  return withFileMutationQueue(file, () => withFileLock(file, async () => {
+    const next = await mutate(await readBrowsingStore(file));
+    await writeBrowsingStoreUnlocked(file, next);
+    return next;
+  }));
+}
+
+async function writeBrowsingStoreUnlocked(file: string, store: BrowsingStore): Promise<void> {
+  await fs.mkdir(dirname(file), { recursive: true });
+  await atomicWriteFile(file, `${JSON.stringify(store, null, 2)}\n`);
+  await fs.chmod(file, 0o600).catch(() => undefined);
 }
 
 /**
