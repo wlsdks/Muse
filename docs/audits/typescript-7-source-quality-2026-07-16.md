@@ -207,3 +207,11 @@ the TypeScript 7 announcement and release-notes links.
 - **Decision:** Discord now normalizes request and body-read failures to `UPSTREAM_FAILED`. Body failures retain status and Retry-After metadata; transport failures have no status and remain non-retryable, preventing an ambiguous POST from being replayed.
 - **Evidence:** focused tests cover timeout-shaped send rejection, unreadable successful send response, and unreadable inbound error response.
 - **Follow-up:** the final retried inbound HTTP error now retains Retry-After too. Focused tests pin a server-directed zero-delay retry that succeeds and an exhausted 429 receipt that retains `retryAfterMs`.
+
+## Slack API and cursor boundary
+
+- **Area:** `packages/messaging` Slack Web API provider, outbound chat post and inbound history polling.
+- **Finding:** request/body failures escaped untyped; exhausted inbound rate limits discarded Retry-After; permissive `parseFloat` accepted malformed timestamp prefixes and could advance a cursor past valid history.
+- **Decision:** normalize Slack request/body failures as `UPSTREAM_FAILED`, preserve Retry-After for final reads, and require an entirely numeric positive Slack timestamp before it may affect a cursor or ISO conversion.
+- **Evidence:** focused tests cover timeout-shaped POST rejection, unreadable success body, 429 retry/success, exhausted 429 metadata, and timestamp suffix rejection.
+- **Follow-up:** timestamp validation now also requires Date-range validity, so an out-of-range numeric API value cannot be persisted as a future `oldest` cursor; the polling-after-file regression is covered directly.
