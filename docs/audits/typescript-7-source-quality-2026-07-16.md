@@ -352,3 +352,12 @@ the TypeScript 7 announcement and release-notes links.
 - Independent review found a cross-run deadlock: save held its run's v1/v2 locks while retention could lock another run; concurrent saves could invert those dependencies.
 - Decision: complete the atomic checkpoint commit under the owning run locks, release them, then invoke retention. Retention still re-evaluates candidates under the candidate run's locks, but no longer nests a second run lock beneath a held save lock.
 - Verification: `pnpm --filter @muse/runtime-state exec vitest run src/file-checkpoint-store.test.ts` (20 passed); `pnpm --filter @muse/runtime-state build` passed.
+
+### Runtime state: debug replay listing contract
+
+- Inspected `packages/runtime-state/src/debug-replay.ts`, its in-memory tests, and the autoconfigure factory path.
+- Aligned the Kysely and in-memory listing contracts: `captured_at DESC, id ASC` is now deterministic for equal timestamps, and list limits normalize finite integer boundaries before reaching PostgreSQL.
+- Kept the normalization private to this store because it is an API persistence boundary rather than a shared cross-domain contract.
+- Added a Kysely query-shape test for the ordered listing and invalid numeric limits.
+- Verified with `pnpm --filter @muse/runtime-state exec vitest run test/debug-replay.test.ts test/debug-replay-kysely.test.ts` (15 passed) and `pnpm --filter @muse/runtime-state build`.
+- Independent architecture review: PASS.
