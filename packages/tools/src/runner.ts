@@ -209,6 +209,18 @@ export async function invokeRustRunner(
       };
     }
 
+    if (result.truncated) {
+      return {
+        error: "runner process output exceeded the 200000 byte capture limit",
+        ok: false,
+        status: null,
+        stderr: result.stderr,
+        stdout: result.stdout,
+        timedOut: false,
+        truncated: true
+      };
+    }
+
     const parsed = parseRunnerResponse(result.stdout);
     if (parsed) {
       return parsed;

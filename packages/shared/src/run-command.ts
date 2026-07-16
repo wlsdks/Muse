@@ -7,6 +7,8 @@ export interface RunCommandResult {
   readonly exitCode: number | null;
   readonly signal: string | null;
   readonly timedOut: boolean;
+  /** Either stream exceeded its configured capture limit. */
+  readonly truncated: boolean;
 }
 
 export interface RunCommandOptions {
@@ -30,6 +32,7 @@ interface StreamAccumulator {
   chunks: Buffer[];
   limit?: number;
   bytes: number;
+  truncated: boolean;
 }
 
 function toBuffer(chunk: unknown): Buffer {
@@ -50,6 +53,7 @@ function appendChunk(target: StreamAccumulator, chunk: unknown): void {
 
   const remaining = limit - target.bytes;
   if (remaining <= 0) {
+    target.truncated ||= raw.length > 0;
     return;
   }
   if (raw.length <= remaining) {
@@ -60,6 +64,7 @@ function appendChunk(target: StreamAccumulator, chunk: unknown): void {
 
   target.chunks.push(raw.subarray(0, remaining));
   target.bytes += remaining;
+  target.truncated = true;
 }
 
 function asError(cause: unknown): Error {
@@ -131,11 +136,13 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
   const stdout: StreamAccumulator = {
     bytes: 0,
     chunks: [],
+    truncated: false,
     ...(maxStdoutBytes !== undefined ? { limit: maxStdoutBytes } : {})
   };
   const stderr: StreamAccumulator = {
     bytes: 0,
     chunks: [],
+    truncated: false,
     ...(maxStderrBytes !== undefined ? { limit: maxStderrBytes } : {})
   };
 
@@ -162,7 +169,8 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
       signal: signal ?? null,
       stderr: Buffer.concat(stderr.chunks).toString(encoding),
       stdout: Buffer.concat(stdout.chunks).toString(encoding),
-      timedOut: false
+      timedOut: false,
+      truncated: stdout.truncated || stderr.truncated
     }) as RunCommandResult),
     once(child, "error").then(([error]) => {
       throw asError(error);
@@ -207,7 +215,8 @@ export async function runCommandWithTimeout(options: RunCommandOptions): Promise
         signal: typeof killSignal === "string" ? killSignal : null,
         stderr: Buffer.concat(stderr.chunks).toString(encoding),
         stdout: Buffer.concat(stdout.chunks).toString(encoding),
-        timedOut: true
+        timedOut: true,
+        truncated: stdout.truncated || stderr.truncated
       });
     }, timeoutMs);
     timeoutHandle.unref?.();

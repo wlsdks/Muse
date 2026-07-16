@@ -170,3 +170,8 @@ the TypeScript 7 announcement and release-notes links.
 - Inspected the execute-risk Contacts writer: schema, approval gate, AppleScript escaping, runner errors, timeout/permission mapping, and action logging.
 - Kept the approval boundary fail-closed. After a successful irreversible Contacts write, action-log failures are now isolated and reported as `auditLogged: false` while retaining `written: true`; callers cannot mistake a completed write for a failed one and retry into a duplicate contact.
 - Refusal and execution-failure paths remain non-writing and keep their best-effort audit attempt.
+## Shared subprocess truncation contract
+
+- Inspected `runCommandWithTimeout`, its bounded stream accumulator, and the Rust runner/voice consumer impact graph.
+- Added an explicit `truncated` result signal whenever either bounded stream exceeds its capture limit. The Rust runner now fail-closes with that signal instead of misclassifying a partial JSON response as generic invalid JSON.
+- Voice consumers retain their existing stderr behavior because they do not parse captured stdout; no unrelated output contract change was made.
