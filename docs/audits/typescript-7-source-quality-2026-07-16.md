@@ -155,3 +155,8 @@ the TypeScript 7 announcement and release-notes links.
 - `name`, aliases, email, phone, and handle remain the only recipient identifiers; relationship, connection, and free-text recall fields stay non-identifying material.
 - Fixed Apple Contacts import's stale read-merge-write sequence. `mutateContactsWithResult` now derives an importer result and replacement list from one queued, locked snapshot, so an intervening local add or removal cannot be overwritten by the final import write.
 - Added a locked-snapshot regression test. Contact status/type strings remain domain-owned literal unions rather than a global enum or constants bucket; no shared extraction was warranted beyond the existing stores API surface.
+## macOS Contacts external-date validation
+
+- Inspected the Contacts AppleScript payload boundary, parser, normalization, cap/error handling, and its focused tests.
+- Tightened birthday normalization from component-range checks to real calendar validation. Valid yearless leap-day values remain supported, but impossible dates such as `1990-02-29` and `04-31`, plus unrepresentable years, are discarded before persistence.
+- `DAYS_PER_MONTH` and leap-year logic are local parser implementation details, not cross-domain constants or enums.
