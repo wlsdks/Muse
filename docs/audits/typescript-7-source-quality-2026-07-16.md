@@ -521,3 +521,12 @@ the TypeScript 7 announcement and release-notes links.
 - Added direct helper coverage for default rejection and explicitly approved signals, plus an end-to-end timed capture regression returning WAV data after the controlled stop.
 - Verified with `pnpm --filter @muse/cli exec vitest run src/async-promises.test.ts src/commands-listen.test.ts src/commands-brief.test.ts src/voice-playback.test.ts src/commands-glance.test.ts` (67 passed) and `pnpm --filter @muse/cli build`.
 - Independent runtime-contract review: PASS after listener-owned stop handling was added.
+
+### CLI: shared audio-player lifecycle ownership
+
+- Audited `muse brief --speak` custom-player execution against the shared voice playback watchdog and the provider-neutral TTS response contract.
+- Confirmed TTS format is a closed `TtsFormat` union, so no speculative filename validation was added. The concrete maintenance risk was duplicate player lifecycle ownership: brief independently implemented the same spawn/watchdog/kill contract as shared voice playback.
+- Kept the public brief wrapper and timeout constant stable, but delegated custom-player execution to the shared watchdog so stderr draining, output sanitization, timeout behavior, and future child-process fixes have one owner.
+- During independent review, fixed the shared watchdog to preserve `close(code = null, signal)` diagnostics. Signal exits now report their actual signal rather than an unknown exit code; nonzero exit and stderr behavior is unchanged.
+- Verified with `pnpm --filter @muse/cli exec vitest run src/commands-brief.test.ts src/voice-playback.test.ts src/async-promises.test.ts` (46 passed) and `pnpm --filter @muse/cli build`.
+- Independent runtime-contract review: PASS after signal diagnostic coverage was added.
