@@ -20,6 +20,9 @@
       "path": "../../packages/agent-core"
     },
     {
+      "path": "../../packages/auth"
+    },
+    {
       "path": "../../packages/attunement"
     },
     {
