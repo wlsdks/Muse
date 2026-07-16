@@ -165,3 +165,8 @@ the TypeScript 7 announcement and release-notes links.
 - Inspected the Apple-to-Muse merge contract, direct identifier normalization, user-authored field preservation, duplicate handling, and focused merge tests.
 - Fixed a same-name false-merge path: addressable contacts now require one unambiguous matching phone/email. Name fallback is permitted only for a single candidate when either the imported or stored record has no addressable identifier.
 - This preserves useful enrichment of relationship-only or birthday-only records without collapsing distinct people who happen to share a name.
+## macOS Contacts write completion and audit isolation
+
+- Inspected the execute-risk Contacts writer: schema, approval gate, AppleScript escaping, runner errors, timeout/permission mapping, and action logging.
+- Kept the approval boundary fail-closed. After a successful irreversible Contacts write, action-log failures are now isolated and reported as `auditLogged: false` while retaining `written: true`; callers cannot mistake a completed write for a failed one and retry into a duplicate contact.
+- Refusal and execution-failure paths remain non-writing and keep their best-effort audit attempt.
