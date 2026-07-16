@@ -441,3 +441,11 @@ the TypeScript 7 announcement and release-notes links.
 - The shared guard retains finite-number validation and recursive array/object validation, so API input behavior is unchanged while the contract has one owner.
 - Verified with `pnpm --filter @muse/api exec vitest run src/server-input-utils.test.ts` (9 passed) and `pnpm --filter @muse/api build`.
 - Independent architecture review: PASS.
+### Runtime settings: audit actor, cache races, and JSON persistence
+
+- Audited bare and admin runtime-settings routes, auth identity attachment, runtime-settings cache lifecycle, persisted JSON parsing, and focused contract tests.
+- Auth-required bare `/settings/:key` writes now record the authenticated user instead of accepting client-controlled `updatedBy`; unauthenticated local mode retains its existing body-driven behavior.
+- Added per-key generations plus a monotonic cache epoch so an in-flight store read cannot repopulate stale cache data after `set`, `delete`, or `refreshCache`.
+- `getJson` now accepts parsed data only when the shared recursive JSON guard verifies finite numbers, preventing `1e400` from surfacing as `Infinity`.
+- Verified with `pnpm --filter @muse/runtime-settings exec vitest run test/runtime-settings.test.ts` (10 passed), `pnpm --filter @muse/runtime-settings build`, `pnpm --filter @muse/api exec vitest run test/runtime-settings-auth.test.ts test/server.contract.test.ts` (14 passed), and `pnpm --filter @muse/api build`.
+- Independent architecture review: PASS after the refresh-cache race finding was addressed.
