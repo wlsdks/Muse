@@ -122,7 +122,13 @@ export async function fetchWithTimeout(
 ): Promise<Response> {
   const effectiveMs = normalizeTimerDelay(timeoutMs, DEFAULT_PROVIDER_FETCH_TIMEOUT_MS);
   const timeoutSignal = effectiveMs > 0 ? AbortSignal.timeout(effectiveMs) : undefined;
-  const requestInit = timeoutSignal === undefined ? init : { ...init, signal: timeoutSignal };
+  const callerSignal = init.signal ?? undefined;
+  const signal = timeoutSignal === undefined
+    ? callerSignal
+    : callerSignal === undefined
+      ? timeoutSignal
+      : AbortSignal.any([callerSignal, timeoutSignal]);
+  const requestInit = signal === undefined ? init : { ...init, signal };
   try {
     return await fetchImpl(url, requestInit);
   } catch (cause) {
@@ -208,6 +214,9 @@ export async function fetchReadWithRetry(
       }
       await delay(parseRetryAfterMs(response.headers.get("retry-after")) ?? baseDelayMs * attempt);
     } catch (cause) {
+      if (init.signal?.aborted) {
+        throw cause;
+      }
       lastError = cause;
       if (attempt === maxAttempts) {
         throw cause;

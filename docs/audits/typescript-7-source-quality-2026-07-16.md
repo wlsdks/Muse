@@ -530,3 +530,12 @@ the TypeScript 7 announcement and release-notes links.
 - During independent review, fixed the shared watchdog to preserve `close(code = null, signal)` diagnostics. Signal exits now report their actual signal rather than an unknown exit code; nonzero exit and stderr behavior is unchanged.
 - Verified with `pnpm --filter @muse/cli exec vitest run src/commands-brief.test.ts src/voice-playback.test.ts src/async-promises.test.ts` (46 passed) and `pnpm --filter @muse/cli build`.
 - Independent runtime-contract review: PASS after signal diagnostic coverage was added.
+
+### Messaging: fetch timeout and caller cancellation ownership
+
+- Audited shared messaging-provider HTTP timeout/retry helpers, their provider callers, and focused reliability tests against the Fetch/AbortSignal composition contract.
+- Fixed caller-cancellation loss: adding a timeout previously overwrote `RequestInit.signal`, so a provider caller could not cancel an in-flight request. Timeout and caller signals are now composed, with `null` normalized as no caller signal.
+- Fixed a second-order retry defect found in independent review: idempotent read retry now immediately propagates an aborted caller signal rather than retrying already-cancelled requests and waiting through backoff. Internal timeout failures remain retryable and ordinary transient failures preserve existing retries.
+- Added regression coverage for composed caller cancellation and for one-attempt/no-delay cancellation through `fetchReadWithRetry`.
+- Verified with `pnpm --filter @muse/messaging exec vitest run src/provider-helpers.test.ts test/provider-helpers.test.ts test/read-retry.test.ts` (42 passed) and `pnpm --filter @muse/messaging build`.
+- Independent runtime-contract review: PASS after retry cancellation handling was added.

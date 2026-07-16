@@ -182,6 +182,24 @@ describe("fetchReadWithRetry", () => {
     expect(delays).toEqual([100]); // base * attempt(1), not base + attempt
   });
 
+  it("does not retry a caller-cancelled read", async () => {
+    const caller = new AbortController();
+    const callerAbort = new DOMException("caller cancelled", "AbortError");
+    const delays: number[] = [];
+    let calls = 0;
+    const cancelled: typeof fetch = (async () => {
+      calls += 1;
+      caller.abort(callerAbort);
+      throw callerAbort;
+    }) as typeof fetch;
+
+    await expect(
+      fetchReadWithRetry(cancelled, "http://x", { signal: caller.signal }, { maxAttempts: 3, sleep: async (ms) => { delays.push(ms); } })
+    ).rejects.toBe(callerAbort);
+    expect(calls).toBe(1);
+    expect(delays).toEqual([]);
+  });
+
   it("normalizes non-finite retry controls to bounded defaults", async () => {
     const delays: number[] = [];
     let calls = 0;
