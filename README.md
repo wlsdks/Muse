@@ -85,12 +85,22 @@ WhisperKit + Qwen3-TTS) is the newest surface — the same provider-neutral, gro
 ## ⚡ See it
 
 ```bash
-# Requirements: Node.js >= 22.12 (24 LTS recommended) + pnpm 10 · macOS only (Windows support planned)
-pnpm install && pnpm build && pnpm test
+# Requirements: Git + Node.js >= 22.12 (24 LTS recommended) + pnpm 10
+git clone https://github.com/wlsdks/muse-agent.git
+cd muse-agent
+corepack enable
+pnpm install:muse
+muse onboard
 
 # 30-second JARVIS demo (runs on your local default model, gemma4:12b via Ollama):
 pnpm demo
 ```
+
+The supported source install stays on a clean `main` checkout. It performs a
+frozen dependency install, builds the workspace, globally links the `muse` CLI,
+and verifies the built CLI. Update with `muse update`; remove the global link
+with `pnpm --global remove @muse/cli`. Preview without changing anything using
+`pnpm install:muse -- --dry-run`.
 
 The demo exercises chat with cross-turn memory, a credential-free proactive notice, the
 setup diagnostic, and the Codex / Claude Desktop MCP bridge in one narrated run. Then
