@@ -1,144 +1,86 @@
 ---
 name: grow-muse
-description: Autonomous NEW-CAPABILITY cycle for the Muse repo — source the highest-value missing user-facing capability (진안's stated direction, dogfood friction, attunement north-star gap, vetted parity reservoir), score it on a value rubric, design-gate it, build it end-to-end, verify (maker≠judge + live-path proof), then commit AND push. For hardening/reliability/debt work on what already exists, use improve-muse instead.
+description: Use when deciding what NEW user-facing capability to build next for Muse — the owner asked for growth, a daily flow dead-ends because a capability doesn't exist, or a growth-loop fire. For defects, debt, or dead code in what already exists, use improve-muse instead.
 ---
 
-# grow-muse — the growth cycle (새 가치를 만드는 쪽)
+# grow-muse — the growth cycle
 
-## What this is
+One invocation = one new user-visible capability slice, end-to-end: source →
+score → design-gate → build → verify → push. Sibling `improve-muse` hardens
+what exists.
 
-One invocation = **one new user-visible capability slice, carried
-end-to-end**: source → score → design-gate → build → verify → push. Its
-sibling [`improve-muse`](../improve-muse/SKILL.md) hardens what exists; this
-skill grows what doesn't. Never mix the two in one slice — a capability
-shipped on a shaky substrate and a substrate polished with no user story are
-the two failure modes the split prevents.
+Every slice MUST carry a one-sentence **user story** — "진안 asks X / lives
+situation X, and Muse now does Y." No user story ⇒ filler, drop the item.
 
-A capability slice MUST carry a **user story in one sentence** — "진안 asks
-X / lives situation X, and Muse now does Y" — plus acceptance criteria and a
-nameable gate. No user story ⇒ it is not a capability, it is filler.
+**Boundary (one item, one owner):** MISSING capability → here.
+Working-but-poor UX of an existing surface → here (it changes what the user
+can do/feel). BROKEN / debt → improve-muse; hardening debt found mid-build
+gets one ◦ line tagged `→improve-muse`, never absorbed into the slice.
+A loop calling only this skill grows forever — pair with improve-muse.
 
-- **Boundary:** MISSING capability → here. BROKEN existing surface →
-  improve-muse. **Working-but-poor** (functions, but serves the user badly —
-  UX/quality of an existing surface) → HERE, because it changes what the
-  user can do/feel. One item, one owner — never both, never neither.
-- **Solo-loop limitation:** a loop that calls only this skill grows forever
-  and never hardens. Pair or alternate with an improve-muse loop.
-
-## Standing authorizations (same deltas as improve-muse — Jinan 2026-06-27)
-
-- **PUSHES** on green verify only. Never red.
-- **Auto-picks** (⏳ human forks skipped, never guessed — product-boundary
-  calls, security-posture tradeoffs, and anything under `outbound-safety.md`
-  are ALWAYS ⏳).
-- **Bigger slices** — a real capability, not a stub.
+**Standing authorizations (Jinan 2026-06-27, this skill only):** push on
+green verify (never red); auto-pick — but new outbound send classes,
+privacy-posture changes, and product-boundary calls are ALWAYS ⏳ (skip
+with the exact question recorded, never guess); scope a real capability,
+not a stub.
 
 ## The cycle
 
-1. **ORIENT** — `pnpm self-eval` first: **a regression outranks all growth**;
-   if red, STOP and run improve-muse instead (a product that's broken doesn't
-   need a new feature). `git log --oneline -8`; Ollama reachable?
+1. **ORIENT** — `pnpm self-eval` red ⇒ STOP; hand off to improve-muse
+   (regression outranks growth). Else check recent log; is Ollama up?
 
-2. **SOURCE — in priority order; take the FIRST rung that yields.**
+2. **SOURCE — take the FIRST rung that yields:**
+   1. **Owner's stated direction** — an explicit ask this session, or a ★
+      directive in memory/strategy docs. Stated intent outranks anything inferred.
+   2. **Dogfood friction (≤5 min probe):** where does a real daily flow
+      dead-end because the capability doesn't exist? ("I wanted to ask Muse
+      X and there was no way to.")
+   3. **North-star gap** — `docs/strategy/attunement.md`: which stage of
+      thread → Continuity Pack → outcome → adaptation is still
+      substrate-only? Build the missing stage; NEVER relabel existing
+      substrate as the loop.
+   4. **Parity reservoir** — grep `docs/goals/capability-parity-backlog.md`
+      filtered by `capability-parity-judgment.md` (build/core/strengthens
+      only; never full-load). Cross-check git log + codegraph first —
+      already shipped ⇒ flip ✓, keep sourcing.
 
-   1. **진안's stated direction** — an explicit ask from the session, a ★
-      directive in memory/strategy docs (`docs/strategy/*.md` current-phase
-      items). The owner's stated intent outranks anything inferred.
-   2. **dogfood friction implying a MISSING capability** — probe the live
-      product as a user (≤5 min): where does a real daily flow dead-end
-      because the capability doesn't exist (not because it's broken — broken
-      is improve-muse's rung 3)? "I wanted to ask Muse X and there was no way
-      to" is the highest-signal growth seed there is.
-   3. **north-star gap** — the attunement contract
-      (`docs/strategy/attunement.md`): which stage of personal thread →
-      Continuity Pack → outcome → adaptation is still substrate-only? Grep
-      the contract's open items; never relabel existing substrate as the
-      loop — build the missing stage.
-   4. **capability-parity reservoir** — `docs/goals/capability-parity-backlog.md`
-      filtered by `capability-parity-judgment.md` (`build`/`core`/`strengthens`
-      only). RETRIEVAL DISCIPLINE: grep the section, never full-load. Apply
-      the FRESHNESS GUARD (git log + codegraph — parity items go stale).
+3. **SCORE (anti-vibes gate)** — score top candidates 1–5 each and record
+   the line: **D** daily felt value · **T** trust-floor effect · **N**
+   north-star advance (a generic-assistant feature any product could ship
+   scores low) · **C** cost+risk inverse (one-shot local-model tool
+   feasibility, surface area, deps). **Anchors or the pick is INVALID:**
+   D cites the concrete observation/owner quote (no evidence ⇒ D≤2); C
+   names countable facts (packages touched, new deps, new tools). Pick =
+   max(D×T×N/C), one-line justification per rejected runner-up.
+   Interactive: show the scored top-3, then proceed. Loop: scores go in
+   the commit body.
 
-3. **SCORE (the anti-vibes gate) — before committing to the pick,** score the
-   top candidates 1–5 on each axis and record the line:
-   - **D** — daily felt value: will 진안 notice it this week, unprompted?
-   - **T** — trust floor: does it strengthen grounding/correction/legibility
-     (or at least not dilute them)?
-   - **N** — north star: does it advance attunement/personal-continuity, or
-     is it a generic-assistant feature any product could ship?
-   - **C** — cost+risk (inverse): local-model feasibility in ONE tool shot
-     (`tool-calling.md`), surface area, new deps.
-   **Anti-gaming anchors (a score line without these is an INVALID pick):**
-   **D** must cite the concrete evidence — the dogfood observation, owner
-   quote, or trace that proves "notice this week" (no evidence ⇒ D≤2);
-   **C** must name the countable facts: packages touched, new deps, new
-   tools. The independent evaluator rejects unanchored score lines, not
-   just bad builds. Pick = max(D×T×N/C) with a one-line justification per
-   rejected runner-up. In an interactive session show the scored top-3
-   before proceeding; in a loop fire, record the scores in the commit body.
+4. **DESIGN GATE (M+ scope)** — acceptance criteria + seam sketch first
+   (`harness/core/handoff-template.md`), then an independent adversarial
+   design review (wrong-layer? trust-floor violation? one-shot
+   tool-calling feasible? simpler alternative?). Small slices skip the
+   reviewer, never the written criteria.
 
-4. **DESIGN GATE (M+ scope only)** — write the acceptance criteria + a sketch
-   of the seams FIRST (planner contract,
-   [`harness/core/handoff-template.md`](../../../harness/core/handoff-template.md)),
-   then have an **adversarial design reviewer** (independent subagent) attack
-   it — wrong-layer, trust-floor violation, one-shot tool-calling feasibility,
-   simpler-alternative. Incorporate or defer. Small slices may skip the
-   subagent but never the written acceptance criteria.
+5. **BUILD + VERIFY** — per `harness/host/dev-loop.md` §3. A new tool
+   ships with the `tool-calling.md` checklist + an `eval:tools` case
+   STABLE k=3. **Live-path proof is mandatory** — a handler the model
+   never selects, or a flow never driven end-to-end, is not delivered
+   (`smoke:live` / real-browser / live probe). Independent evaluator is
+   MANDATORY (growth is user-visible by definition). **Gate-delta:** the
+   named gate/battery moved, or it's `⚠ shipped-but-insufficient`.
 
-5. **BUILD** — per [`harness/host/dev-loop.md`](../../../harness/host/dev-loop.md) §3.
-   Non-negotiables that bite hardest on growth work: model-agnostic core
-   (no vendor SDK outside adapters), deterministic policy/guards (never a
-   prompt), draft-first for anything outbound, a new tool ships with the
-   `tool-calling.md` checklist + an `eval:tools` case.
+6. **SHIP + CURATE** — one Conventional Commit (user story + scores +
+   evidence in body), push on green. Flip the source line ✓, prune ≥1
+   stale line.
 
-6. **VERIFY (fail-closed, maker≠judge, LIVE-path proof)** —
-   - `pnpm test:changed` + build + lint, plus the rung that proves the
-     capability LIVE: `smoke:live`/live probe for request-path work (a
-     handler the model never selects is not delivered), real-browser
-     measurement for web UI, `eval:tools` STABLE k=3 for a new tool.
-   - Mutation check on the new tests (RED on mutation, or
-     deterministic-by-construction stated).
-   - **Independent evaluator** — MANDATORY for growth slices (they are
-     user-visible by definition). Uncertain ⇒ FAIL.
-   - **GATE-DELTA:** the named gate/battery moved (often: a new battery case
-     exists AND passes; a smoke case covers the new path). No delta ⇒
-     `⚠ shipped-but-insufficient`.
+## Rationalizations (reject on sight)
 
-7. **SHIP + CURATE** — one Conventional Commit (user story + scores +
-   verification evidence in the body), `git push` on green. Write-back:
-   distill to one ✓ line where the item came from (backlog/parity ledger),
-   prune ≥1 stale line, tag discovered hardening debt `→improve-muse` as one
-   ◦ line instead of building it here.
-
-## Guardrails (fail-closed)
-
-- **Regression outranks growth** — red self-eval ⇒ hand off to improve-muse.
-- **Maker ≠ judge; evaluator mandatory** (user-visible tier,
-  `harness.md` risk-tiering).
-- **fabrication = 0**, `MUSE_LOCAL_ONLY` posture, draft-first outbound,
-  banking permanently out of scope, provider-neutral core — all bind.
-- **⏳ human forks:** new outbound send classes, privacy-posture changes,
-  product-boundary redefinitions — skip and record, never guess.
-- **Product identity:** Muse is a continuing personal AI for ONE person —
-  never reduce it to a work assistant / productivity tracker / admin console
-  (`product-identity.md`). A capability that only makes the console bigger
-  fails N.
-- **Concurrent-loop hygiene:** same as improve-muse (rebase-pull, explicit
-  adds, rebuild touched deps, never force).
-
-## Forbidden outputs
-
-| Rationalization | Reality |
+| Excuse | Reality |
 |---|---|
-| "유저 스토리 없이 기능부터" | No user story ⇒ filler. Write the sentence or drop the item. |
-| "점수 없이 감으로 픽" | SCORE is mandatory — record D/T/N/C or the pick is invalid. |
-| "레저부아에 있으니 가치 있다" | The reservoir is rung 4 and still needs SCORE + freshness. |
-| "깨진 것 고치기로 성장 슬라이스 완료" | Defects/debt are improve-muse. (Working-but-poor UX of an existing surface IS growth — see Boundary.) |
-| "eval:tools/스모크 없이 '동작함'" | A capability without live-path proof is not delivered. |
-| "substrate를 attunement로 재라벨" | ROADMAP is not a shipped claim. Build the missing stage or pick elsewhere. |
-| "테스트/평가자 건너뛰고 푸시" | Green verify + evaluator PASS or no push. |
+| "유저 스토리는 나중에" | No user story ⇒ filler. Write the sentence or drop it. |
+| "점수 없이 감으로 픽" | Unscored or unanchored pick = invalid. Re-pick. |
+| "저수지에 있으니 가치 있음" | Reservoir is rung 4 and still needs SCORE + freshness. |
+| "substrate를 attunement로 재라벨" | ROADMAP ≠ shipped claim. Build the missing stage. |
+| "유닛 그린이니 delivered" | Live-path proof or it doesn't exist for the user. |
 
-## Evaluation
-
-[`evals.md`](evals.md): repo-state → expected end-to-end behavior. Grade the
-outcome shape; grow it from real misses.
+Golden set: [`evals.md`](evals.md) — grade outcome shapes, grow from real misses.
