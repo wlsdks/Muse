@@ -11,6 +11,7 @@ import { readLocationSeed, stripCompanionSeed } from "../lib/companion-seed.js";
 import { modelChip } from "../lib/model-chip.js";
 import { readToken } from "../lib/token-storage.js";
 import { shouldStickToBottom } from "./chat-autoscroll.js";
+import { ChatsView } from "./Chats.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { ModelsResponse } from "../api/types.js";
@@ -161,7 +162,56 @@ export function ChatEmptyState({
   );
 }
 
-export function ChatView({ client }: { client: ApiClient }) {
+/** The 대화 surface: a conversation session plus a 기록 (history) tab — the
+ * read-only conversation list lives INSIDE chat, not as a separate sidebar
+ * destination. Resuming from history bumps `epoch` so the remounted session
+ * picks up the stored conversation id (useChatStream reads it at mount). */
+export function ChatView({ client, onNavigate }: { client: ApiClient; onNavigate?: (view: string) => void }) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<"chat" | "history">("chat");
+  const [epoch, setEpoch] = useState(0);
+
+  const handleHistoryNavigate = (view: string) => {
+    if (view === "chat") {
+      setEpoch((e) => e + 1);
+      setTab("chat");
+      return;
+    }
+    onNavigate?.(view);
+  };
+
+  return (
+    <div className="chat-shell">
+      <div className="chat-tabs" role="tablist" aria-label={t("nav.chat")}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "chat"}
+          className={`chat-tab${tab === "chat" ? " active" : ""}`}
+          onClick={() => setTab("chat")}
+        >
+          {t("nav.chat")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "history"}
+          className={`chat-tab${tab === "history" ? " active" : ""}`}
+          onClick={() => setTab("history")}
+        >
+          {t("nav.chats")}
+        </button>
+      </div>
+      {tab === "chat" ? (
+        <ChatSession key={epoch} client={client} />
+      ) : (
+        <ChatsView client={client} onNavigate={handleHistoryNavigate} />
+      )}
+    </div>
+  );
+}
+
+export function ChatSession({ client }: { client: ApiClient }) {
   const { t } = useI18n();
   const token = readToken();
   const { activeTool, approve, approving, deny, error, pending, reset, send, thinking, turns } = useChatStream(
@@ -263,7 +313,7 @@ export function ChatView({ client }: { client: ApiClient }) {
   const pickStarter = (prompt: string) => applyStarterPrompt(prompt, setDraft, textareaRef);
 
   return (
-    <div className="chat" style={{ margin: "-24px", height: "calc(100% + 48px)" }}>
+    <div className="chat">
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         <div className="chat-thread">
           <ChatEmptyState hasMessages={turns.length > 0} onPickStarter={pickStarter} />

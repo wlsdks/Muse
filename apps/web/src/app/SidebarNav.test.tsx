@@ -24,8 +24,24 @@ describe("SidebarNav — a11y semantics for the primary navigation", () => {
     expect((todayHtml.match(/aria-current="page"/g) ?? []).length).toBe(1);
     expect(activeLabel(todayHtml)).toBe("nav.today");
 
-    const dashHtml = renderToStaticMarkup(<SidebarNav view="dashboard" taskCount={0} t={t} onSelect={() => {}} />);
+    // dashboard is an engine-room (advanced) view — visible only in dev mode.
+    const dashHtml = renderToStaticMarkup(<SidebarNav view="dashboard" taskCount={0} t={t} onSelect={() => {}} devMode />);
     expect((dashHtml.match(/aria-current="page"/g) ?? []).length).toBe(1);
     expect(activeLabel(dashHtml)).toBe("nav.dashboard");
+  });
+
+  it("hides engine-room views unless developer mode is on", () => {
+    const defaultHtml = renderToStaticMarkup(<SidebarNav view="chat" taskCount={0} t={t} onSelect={() => {}} />);
+    expect(defaultHtml).not.toContain("nav.dashboard");
+    expect(defaultHtml).not.toContain("nav.promptLab");
+    expect(defaultHtml).not.toContain("nav.scheduler");
+    // the companion core stays
+    for (const core of ["nav.chat", "nav.today", "nav.notes", "nav.memory", "nav.continuity", "nav.integrations", "nav.settings"]) {
+      expect(defaultHtml).toContain(core);
+    }
+
+    const devHtml = renderToStaticMarkup(<SidebarNav view="chat" taskCount={0} t={t} onSelect={() => {}} devMode />);
+    expect(devHtml).toContain("nav.dashboard");
+    expect(devHtml).toContain("nav.promptLab");
   });
 });

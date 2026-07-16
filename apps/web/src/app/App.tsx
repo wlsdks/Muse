@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createApiClient } from "../api/client.js";
 import { CommandPalette } from "../components/CommandPalette.js";
 import { NoticeToaster } from "../components/NoticeToaster.js";
 import { Badge, Icon } from "../components/ui.js";
 import { I18nProvider, useI18n } from "../i18n/index.js";
+import { onDeveloperModeChange, readDeveloperMode } from "../lib/developer-mode.js";
 import { ActivityView } from "../views/Activity.js";
 import { AgentsView } from "../views/Agents.js";
 import { BoardView } from "../views/Board.js";
@@ -76,32 +77,35 @@ interface NavEntry {
   readonly icon: ComponentType<{ className?: string }>;
   readonly group: GroupKey;
   readonly Component: ComponentType<{ client: ApiClient; onNavigate?: (view: string) => void }>;
+  /** Engine-room views: removed from the sidebar unless developer mode is
+   * on. Still reachable via the ⌘K palette and leader shortcuts. */
+  readonly advanced?: boolean;
 }
 
 export const NAV: readonly NavEntry[] = [
   { Component: TodayView, group: "group.workspace", icon: Icon.home, id: "today", key: "t", labelKey: "nav.today" },
   { Component: ChatView, group: "group.workspace", icon: Icon.chat, id: "chat", key: "c", labelKey: "nav.chat" },
-  { Component: ChatsView, group: "group.workspace", icon: Icon.clock, id: "chats", key: "h", labelKey: "nav.chats" },
-  { Component: TasksView, group: "group.workspace", icon: Icon.task, id: "tasks", key: "k", labelKey: "nav.tasks" },
-  { Component: BoardView, group: "group.workspace", icon: Icon.chart, id: "board", key: "b", labelKey: "nav.board" },
-  { Component: AgentsView, group: "group.workspace", icon: Icon.brain, id: "agents", key: "x", labelKey: "nav.agents" },
-  { Component: CalendarView, group: "group.workspace", icon: Icon.calendar, id: "calendar", key: "l", labelKey: "nav.calendar" },
-  { Component: RemindersView, group: "group.workspace", icon: Icon.bell, id: "reminders", key: "r", labelKey: "nav.reminders" },
-  { Component: MessagingView, group: "group.workspace", icon: Icon.mail, id: "messaging", key: "i", labelKey: "nav.messaging" },
+  { Component: ChatsView, group: "group.workspace", icon: Icon.clock, id: "chats", advanced: true, key: "h", labelKey: "nav.chats" },
+  { Component: TasksView, group: "group.workspace", icon: Icon.task, id: "tasks", advanced: true, key: "k", labelKey: "nav.tasks" },
+  { Component: BoardView, group: "group.workspace", icon: Icon.chart, id: "board", advanced: true, key: "b", labelKey: "nav.board" },
+  { Component: AgentsView, group: "group.workspace", icon: Icon.brain, id: "agents", advanced: true, key: "x", labelKey: "nav.agents" },
+  { Component: CalendarView, group: "group.workspace", icon: Icon.calendar, id: "calendar", advanced: true, key: "l", labelKey: "nav.calendar" },
+  { Component: RemindersView, group: "group.workspace", icon: Icon.bell, id: "reminders", advanced: true, key: "r", labelKey: "nav.reminders" },
+  { Component: MessagingView, group: "group.workspace", icon: Icon.mail, id: "messaging", advanced: true, key: "i", labelKey: "nav.messaging" },
   { Component: IntegrationsView, group: "group.workspace", icon: Icon.plug, id: "integrations", key: "e", labelKey: "nav.integrations" },
   { Component: NotesView, group: "group.knowledge", icon: Icon.note, id: "notes", key: "n", labelKey: "nav.notes" },
   { Component: MemoryView, group: "group.knowledge", icon: Icon.brain, id: "memory", key: "m", labelKey: "nav.memory" },
   { Component: ContinuityReviewView, group: "group.knowledge", icon: Icon.clock, id: "continuity", key: "q", labelKey: "nav.continuity" },
-  { Component: JourneyView, group: "group.knowledge", icon: Icon.clock, id: "journey", key: "u", labelKey: "nav.journey" },
-  { Component: ActivityView, group: "group.knowledge", icon: Icon.activity, id: "activity", key: "a", labelKey: "nav.activity" },
-  { Component: AutonomyView, group: "group.system", icon: Icon.shield, id: "autonomy", key: "y", labelKey: "nav.autonomy" },
-  { Component: DashboardView, group: "group.system", icon: Icon.chart, id: "dashboard", key: "d", labelKey: "nav.dashboard" },
-  { Component: ToolsView, group: "group.system", icon: Icon.tool, id: "tools", key: "o", labelKey: "nav.tools" },
-  { Component: McpServersView, group: "group.system", icon: Icon.plug, id: "mcp", key: "p", labelKey: "nav.mcp" },
-  { Component: SelfImprovementView, group: "group.system", icon: Icon.brain, id: "self-improvement", key: "w", labelKey: "nav.selfImprovement" },
-  { Component: SkillsView, group: "group.system", icon: Icon.tool, id: "skills", key: "j", labelKey: "nav.skills" },
-  { Component: PromptLab, group: "group.system", icon: Icon.tool, id: "prompt-lab", key: "f", labelKey: "nav.promptLab" },
-  { Component: SchedulerView, group: "group.system", icon: Icon.clock, id: "scheduler", key: "v", labelKey: "nav.scheduler" },
+  { Component: JourneyView, group: "group.knowledge", icon: Icon.clock, id: "journey", advanced: true, key: "u", labelKey: "nav.journey" },
+  { Component: ActivityView, group: "group.knowledge", icon: Icon.activity, id: "activity", advanced: true, key: "a", labelKey: "nav.activity" },
+  { Component: AutonomyView, group: "group.system", icon: Icon.shield, id: "autonomy", advanced: true, key: "y", labelKey: "nav.autonomy" },
+  { Component: DashboardView, group: "group.system", icon: Icon.chart, id: "dashboard", advanced: true, key: "d", labelKey: "nav.dashboard" },
+  { Component: ToolsView, group: "group.system", icon: Icon.tool, id: "tools", advanced: true, key: "o", labelKey: "nav.tools" },
+  { Component: McpServersView, group: "group.system", icon: Icon.plug, id: "mcp", advanced: true, key: "p", labelKey: "nav.mcp" },
+  { Component: SelfImprovementView, group: "group.system", icon: Icon.brain, id: "self-improvement", advanced: true, key: "w", labelKey: "nav.selfImprovement" },
+  { Component: SkillsView, group: "group.system", icon: Icon.tool, id: "skills", advanced: true, key: "j", labelKey: "nav.skills" },
+  { Component: PromptLab, group: "group.system", icon: Icon.tool, id: "prompt-lab", advanced: true, key: "f", labelKey: "nav.promptLab" },
+  { Component: SchedulerView, group: "group.system", icon: Icon.clock, id: "scheduler", advanced: true, key: "v", labelKey: "nav.scheduler" },
   { Component: SettingsView, group: "group.system", icon: Icon.settings, id: "settings", key: "s", labelKey: "nav.settings" }
 ];
 
@@ -114,19 +118,22 @@ export function SidebarNav({
   view,
   taskCount,
   t,
-  onSelect
+  onSelect,
+  devMode = false
 }: {
   readonly view: ViewId;
   readonly taskCount: number;
   readonly t: Translate;
   readonly onSelect: (id: ViewId) => void;
+  readonly devMode?: boolean;
 }) {
+  const visible = (group: GroupKey) => NAV.filter((n) => n.group === group && (devMode || !n.advanced));
   return (
     <nav className="sidebar-nav" aria-label={t("nav.primary")}>
-      {GROUPS.map((group) => (
+      {GROUPS.filter((group) => visible(group).length > 0).map((group) => (
         <div key={group}>
           <div className="nav-group-label">{t(group)}</div>
-          {NAV.filter((n) => n.group === group).map((n) => {
+          {visible(group).map((n) => {
             const NavIcon = n.icon;
             const current = n.id === view;
             return (
@@ -216,6 +223,8 @@ function Console() {
   // console boots there too. 홈/오늘 are one sidebar click away.
   const [view, setView] = useState<ViewId>("chat");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [devMode, setDevMode] = useState(() => readDeveloperMode());
+  useEffect(() => onDeveloperModeChange(setDevMode), []);
 
   const client = useMemo(() => createApiClient(apiUrl, token), [apiUrl, token]);
 
@@ -280,7 +289,7 @@ function Console() {
       <aside className="sidebar">
         <Brand tagline={tagline.data?.tagline} t={t} />
 
-        <SidebarNav view={view} taskCount={openTasks.data?.total ?? 0} t={t} onSelect={setView} />
+        <SidebarNav view={view} taskCount={openTasks.data?.total ?? 0} t={t} onSelect={setView} devMode={devMode} />
 
         <div className="sidebar-foot">
           <LangToggle lang={lang} onChange={setLang} />

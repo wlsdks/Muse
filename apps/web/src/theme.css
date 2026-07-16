@@ -1168,10 +1168,50 @@ button.row:last-child {
   height: 100%;
   min-height: 0;
 }
+/* Fills the content pane edge-to-edge (undoes the pane's 24px padding) and
+   stacks the tab strip above whichever tab body is active. */
+.chat-shell {
+  display: flex;
+  flex-direction: column;
+  margin: -24px;
+  height: calc(100% + 48px);
+  min-height: 0;
+}
+.chat-shell > .content-narrow {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-lg);
+}
+.chat-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px var(--s-lg) 0;
+  border-bottom: 1px solid var(--hairline);
+  flex: none;
+}
+.chat-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-subtle);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: 6px 10px 8px;
+  cursor: pointer;
+}
+.chat-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--primary);
+}
+
 .chat {
   display: flex;
   flex-direction: column;
   height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 .chat-scroll {
   flex: 1;
