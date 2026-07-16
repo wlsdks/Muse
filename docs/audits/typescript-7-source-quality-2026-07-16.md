@@ -160,3 +160,8 @@ the TypeScript 7 announcement and release-notes links.
 - Inspected the Contacts AppleScript payload boundary, parser, normalization, cap/error handling, and its focused tests.
 - Tightened birthday normalization from component-range checks to real calendar validation. Valid yearless leap-day values remain supported, but impossible dates such as `1990-02-29` and `04-31`, plus unrepresentable years, are discarded before persistence.
 - `DAYS_PER_MONTH` and leap-year logic are local parser implementation details, not cross-domain constants or enums.
+## Apple Contacts identity merge safety
+
+- Inspected the Apple-to-Muse merge contract, direct identifier normalization, user-authored field preservation, duplicate handling, and focused merge tests.
+- Fixed a same-name false-merge path: addressable contacts now require one unambiguous matching phone/email. Name fallback is permitted only for a single candidate when either the imported or stored record has no addressable identifier.
+- This preserves useful enrichment of relationship-only or birthday-only records without collapsing distinct people who happen to share a name.
