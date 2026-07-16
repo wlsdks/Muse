@@ -291,3 +291,18 @@ the TypeScript 7 announcement and release-notes links.
 - Decision: place the pure persisted-state parser in `@muse/auth`, which owns JWT semantics. CLI and autoconfigure retain their own file I/O and their fail-open fallback behavior. The CLI now declares its direct package dependency rather than reaching through an unrelated shared module.
 - Contract: current key and timestamps must be canonical ISO values emitted by the writer; malformed top-level state falls back to the configured environment secret, while malformed historical entries are omitted. This avoids provider coupling and prevents a permissive boot parser from accepting state the CLI would later reject.
 - Verification: `pnpm --filter @muse/auth exec vitest run test/jwt-rotation-state.test.ts` (2 passed); `pnpm --filter @muse/autoconfigure exec vitest run test/auth-wiring.test.ts` (9 passed); `pnpm --filter @muse/cli exec vitest run src/jwt-rotation-store.test.ts` (13 passed); builds for `@muse/auth`, `@muse/autoconfigure`, and `@muse/cli` passed.
+
+### JWT compact serialization and clock boundary (2026-07-16)
+
+- Inspected `packages/auth/src/jwt.ts` and its focused verifier tests after tracing `JwtTokenProvider.parseToken` with CodeGraph.
+- Finding: destructuring `token.split(".")` ignored a fourth segment, so an otherwise valid compact JWS with appended data could be accepted. Also, an invalid injected `Date` produced `NaN` in the expiry comparison, allowing the comparison to fail open.
+- Decision: require exactly three compact JWS segments before MAC verification; reject invalid clocks before token creation or expiry evaluation. Existing server-side HS256 pinning, constant-time signature comparison, and expiration boundary remain unchanged.
+- External basis: RFC 7515 defines JWS Compact Serialization as exactly protected-header, payload, and signature joined by periods; RFC 7519 requires the current time to precede `exp`. OWASP also recommends server-side algorithm selection rather than trusting a token header.
+- Verification: `pnpm --filter @muse/auth exec vitest run test/jwt.test.ts` (23 passed); `pnpm --filter @muse/auth build` passed.
+
+### JWT verifier follow-up: Date range and canonical encoding (2026-07-16)
+
+- Independent review found two remaining verifier edges: a finite but enormous configured duration could serialize an invalid expiry, and Node's permissive base64url decoder could accept a noncanonical compact segment.
+- Decision: validate the computed expiration as a real `Date` before signing. Require every compact JWS segment to use canonical unpadded base64url by round-tripping Node's decoder/encoder after an alphabet check. This is intentionally local to JWT parsing because generic base64 helpers would not encode the JWS canonicality requirement.
+- External basis: Node documents permissive base64/base64url decoding behavior, while RFC 7515 specifies compact JWS as URL-safe base64url segments without padding.
+- Verification: `pnpm --filter @muse/auth exec vitest run test/jwt.test.ts` (25 passed); `pnpm --filter @muse/auth build` passed.
