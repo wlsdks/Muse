@@ -937,12 +937,24 @@ describe.skipIf(process.platform === "win32")("invokeRustRunner — runner outpu
     expect(result).toEqual({ error: null, ok: true, status: null, stderr: "", stdout: "", timedOut: false, truncated: false });
   });
 
-  it("coerces wrong-typed runner fields to safe defaults (ok only on ===true; status only when numeric; strings else \"\")", async () => {
+  it("coerces wrong-typed runner fields to safe defaults (ok only on ===true; status only when a valid exit code; strings else \"\")", async () => {
     const result = await invokeRustRunner(
       await fakeRunner(JSON.stringify({ ok: 1, status: "x", stdout: 5, stderr: null, timedOut: "yes", truncated: 1 })),
       { command: "x" }
     );
     expect(result).toMatchObject({ ok: false, status: null, stderr: "", stdout: "", timedOut: false, truncated: false });
+  });
+
+  it.each([-1, 1.5, 2_147_483_648, 1e400])("coerces invalid numeric runner status %p to null", async (status) => {
+    const result = await invokeRustRunner(await fakeRunner(JSON.stringify({ ok: false, status })), { command: "x" });
+
+    expect(result.status).toBeNull();
+  });
+
+  it.each([0, 127])("preserves valid runner exit status %i", async (status) => {
+    const result = await invokeRustRunner(await fakeRunner(JSON.stringify({ ok: false, status })), { command: "x" });
+
+    expect(result.status).toBe(status);
   });
 
   it("falls back to a typed `runner returned invalid JSON` failure when stdout is not JSON (never throws)", async () => {

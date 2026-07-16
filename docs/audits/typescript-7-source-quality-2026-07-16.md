@@ -232,3 +232,11 @@ the TypeScript 7 announcement and release-notes links.
 - **Evidence:** focused tests cover empty next_batch token preservation and exhausted Matrix 429 retry_after_ms handling.
 - **Follow-up:** `sendWithRetry` now creates one retry-scoped idempotency key and passes it through the registry; Matrix forwards it as the encoded native transaction ID, so retryable failures cannot turn a retry into a duplicate event.
 - **Follow-up:** Matrix `/sync` nested rooms, timelines, and events are now parsed as untrusted records/arrays. Malformed entries and invalid timestamps are isolated while a valid later text event and `next_batch` continue normally.
+
+### 2026-07-16 - tools Rust runner response boundary
+
+- Inspected `packages/tools/src/runner.ts` and its contract-faithful child-process tests in `packages/tools/test/tools.test.ts` after CodeGraph sync.
+- The existing output cap already operates on UTF-8 bytes and avoids splitting multibyte sequences; no duplicate truncation change was warranted.
+- Tightened the untrusted runner JSON parser: `status` is now accepted only as a safe integer, otherwise normalised to `null`. This prevents non-finite or precision-losing JSON numbers from reaching process-failure classification.
+- Added the `1e400` contract fixture. Focused runner boundary tests: 7 passed. `pnpm --filter @muse/tools build`: passed.
+- Independent review further matched the parser to Rust's `Option<i32>` exit-code wire contract: accepted statuses are non-negative integers through `0x7fff_ffff`; negative, fractional, overflowing, and non-finite values normalise to `null`. The focused contract suite now has 12 passing tests and the package build remains green.

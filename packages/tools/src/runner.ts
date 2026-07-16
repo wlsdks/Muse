@@ -315,6 +315,12 @@ export function parseRunnerCommandRequest(value: JsonObject): RunnerCommandReque
   };
 }
 
+const MAX_RUNNER_EXIT_CODE = 0x7fff_ffff;
+
+function isRunnerExitCode(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_RUNNER_EXIT_CODE;
+}
+
 function parseRunnerResponse(value: string): RunnerCommandResponse | undefined {
   try {
     const parsed = JSON.parse(value);
@@ -326,7 +332,7 @@ function parseRunnerResponse(value: string): RunnerCommandResponse | undefined {
     return {
       error: typeof parsed.error === "string" ? parsed.error : null,
       ok: parsed.ok === true,
-      status: typeof parsed.status === "number" ? parsed.status : null,
+      status: isRunnerExitCode(parsed.status) ? parsed.status : null,
       stderr: typeof parsed.stderr === "string" ? parsed.stderr : "",
       stdout: typeof parsed.stdout === "string" ? parsed.stdout : "",
       timedOut: parsed.timedOut === true,
