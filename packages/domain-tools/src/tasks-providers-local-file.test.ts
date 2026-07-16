@@ -222,13 +222,19 @@ describe("LocalFileTasksProvider corrupt / malformed store", () => {
     expect(listed[0]?.id).toBe("good");
   });
 
-  it("a successful add after a corrupt store overwrites it with a clean, valid file", async () => {
+  it("quarantines corrupt source bytes before creating a clean replacement store", async () => {
     await fs.writeFile(file, "{{{garbage", "utf8");
     const provider = makeProvider({ idFactory: () => "task_1" });
     await provider.add({ title: "Recovered task" });
     const raw = await fs.readFile(file, "utf8");
     const parsed = JSON.parse(raw) as { tasks: unknown[] };
     expect(parsed.tasks).toHaveLength(1);
+    const preservedContents = await Promise.all(
+      (await fs.readdir(dir))
+        .filter((name) => name !== "tasks.json")
+        .map(async (name) => fs.readFile(join(dir, name), "utf8").catch(() => ""))
+    );
+    expect(preservedContents).toContain("{{{garbage");
   });
 });
 

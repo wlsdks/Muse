@@ -40,6 +40,7 @@ import {
   type TasksProvider,
   type TasksProviderInfo
 } from "./tasks-providers.js";
+import { readTasks as readStoredTasks } from "@muse/stores";
 
 export interface LocalFileTasksProviderOptions {
   readonly file: string;
@@ -174,25 +175,7 @@ export class LocalFileTasksProvider implements TasksProvider {
   }
 
   private async readTasks(): Promise<readonly PersistedTask[]> {
-    let raw: string;
-    try {
-      raw = await fs.readFile(this.file, "utf8");
-    } catch {
-      return [];
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw) as unknown;
-    } catch {
-      return [];
-    }
-    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { tasks?: unknown }).tasks)) {
-      return [];
-    }
-    // Use Array#filter with a type predicate so TypeScript narrows the
-    // result to PersistedTask[] without the verbose flatMap-with-empty-arr
-    // workaround. Same idiom that `LocalDirNotesProvider.list` could use.
-    return (parsed as { tasks: unknown[] }).tasks.filter(isPersistedTask);
+    return readStoredTasks(this.file);
   }
 
   private async writeTasks(tasks: readonly PersistedTask[]): Promise<void> {
