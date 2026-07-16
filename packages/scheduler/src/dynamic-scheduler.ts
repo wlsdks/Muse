@@ -23,6 +23,7 @@ import {
   type ScheduledJobInput,
   type ScheduledJobStore,
   type ScheduledJobType,
+  type ScheduledJobUpdateInput,
   type ScheduledTaskHandle
 } from "./index.js";
 
@@ -85,7 +86,7 @@ export class DynamicScheduler {
     return saved;
   }
 
-  async update(id: string, input: ScheduledJobInput): Promise<ScheduledJob | undefined> {
+  async update(id: string, input: ScheduledJobUpdateInput): Promise<ScheduledJob | undefined> {
     this.validator.validate(input);
     const updated = await this.store.update(id, input);
 

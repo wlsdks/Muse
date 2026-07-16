@@ -449,3 +449,12 @@ the TypeScript 7 announcement and release-notes links.
 - `getJson` now accepts parsed data only when the shared recursive JSON guard verifies finite numbers, preventing `1e400` from surfacing as `Infinity`.
 - Verified with `pnpm --filter @muse/runtime-settings exec vitest run test/runtime-settings.test.ts` (10 passed), `pnpm --filter @muse/runtime-settings build`, `pnpm --filter @muse/api exec vitest run test/runtime-settings-auth.test.ts test/server.contract.test.ts` (14 passed), and `pnpm --filter @muse/api build`.
 - Independent architecture review: PASS after the refresh-cache race finding was addressed.
+
+### Scheduler: configuration and execution lifecycle ownership
+
+- Audited the public scheduler store contract, API parser, dynamic scheduler, in-memory/file/Kysely stores, and Kysely update shaping against TypeScript narrowing and explicit input-boundary guidance.
+- Fixed a concurrent lost-write risk: a configuration update can no longer submit `last_result`, `last_run_at`, or `last_status` and overwrite a result concurrently recorded by `updateExecutionResult`.
+- Added `ScheduledJobUpdateInput` so the API parser, dynamic scheduler, all stores, and Kysely update helper share the same configuration-only contract; identity and audit fields are excluded too.
+- Added regression coverage for all three lifecycle fields, including an explicit unsafe-JavaScript input that proves the in-memory path preserves the latest execution outcome.
+- Verified with `pnpm --filter @muse/scheduler exec vitest run test/scheduler-helpers-templating.test.ts` (11 passed), `pnpm --filter @muse/scheduler build`, and `pnpm --filter @muse/api build`.
+- Independent runtime-contract review: PASS after end-to-end type propagation.

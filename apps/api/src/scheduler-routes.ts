@@ -6,7 +6,8 @@ import {
   type ScheduledJobExecutionStore,
   type ScheduledJobInput,
   type ScheduledJobStore,
-  type ScheduledJobType
+  type ScheduledJobType,
+  type ScheduledJobUpdateInput
 } from "@muse/scheduler";
 import type { FastifyInstance } from "fastify";
 
@@ -340,7 +341,7 @@ function schedulerResultPreview(result: string | undefined, maxLength = 140): st
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
-function parseScheduledJobInput(value: unknown, existing?: ScheduledJob): ParseResult<ScheduledJobInput> {
+function parseScheduledJobInput(value: unknown, existing?: ScheduledJob): ParseResult<ScheduledJobUpdateInput> {
   if (!isRecord(value)) {
     return invalid("INVALID_SCHEDULED_JOB", "Body must be an object");
   }
@@ -487,5 +488,4 @@ function readNullableNumber(
 
   return typeof value[key] === "number" && Number.isFinite(value[key]) ? value[key] : undefined;
 }
-
 
