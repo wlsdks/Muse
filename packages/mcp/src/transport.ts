@@ -402,7 +402,7 @@ export function riskFromMcpAnnotations(annotations: unknown): ToolRisk {
   return "write";
 }
 
-function formatMcpToolResult(result: unknown): string | JsonValue {
+export function formatMcpToolResult(result: unknown): string | JsonValue {
   if (!isRecord(result)) {
     return normalizeJsonValue(result);
   }
@@ -442,13 +442,12 @@ function formatMcpToolResult(result: unknown): string | JsonValue {
 }
 
 function normalizeJsonValue(value: unknown): JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return Number.isNaN(value) ? null : value;
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
   }
 
   if (Array.isArray(value)) {
