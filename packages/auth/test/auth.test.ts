@@ -148,6 +148,30 @@ describe("Kysely auth mapping", () => {
     await expect(store.save({ email: "user@example.com", name: "User", passwordHash: "hash" }))
       .rejects.toMatchObject({ code: "USER_EXISTS" });
   });
+
+  it("normalizes a PostgreSQL unique violation that races an insert", async () => {
+    const { db } = createUserInsertDb(undefined, Object.assign(new Error("unique violation"), { code: "23505" }));
+    const store = new KyselyUserStore(db);
+
+    await expect(store.save({ email: "user@example.com", name: "User", passwordHash: "hash" }))
+      .rejects.toMatchObject({ code: "USER_EXISTS" });
+  });
+
+  it("normalizes a concurrent email conflict during an ID-targeted upsert", async () => {
+    const db = createUserUpdateDb(Object.assign(new Error("unique violation"), { code: "23505" }));
+    const store = new KyselyUserStore(db);
+
+    await expect(store.update({ email: "user@example.com", id: "user-1", name: "User", passwordHash: "hash" }))
+      .rejects.toMatchObject({ code: "USER_EXISTS" });
+  });
+
+  it("propagates non-unique update failures unchanged", async () => {
+    const failure = new Error("database unavailable");
+    const store = new KyselyUserStore(createUserUpdateDb(failure));
+
+    await expect(store.update({ email: "user@example.com", id: "user-1", name: "User", passwordHash: "hash" }))
+      .rejects.toBe(failure);
+  });
 });
 
 describe("jwt tokens", () => {
@@ -286,7 +310,10 @@ function createPostgresBuilder(): Kysely<MuseDatabase> {
   });
 }
 
-function createUserInsertDb(row: unknown): { readonly conflictColumn: () => string | undefined; readonly db: Kysely<MuseDatabase> } {
+function createUserInsertDb(
+  row: unknown,
+  failure?: unknown
+): { readonly conflictColumn: () => string | undefined; readonly db: Kysely<MuseDatabase> } {
   let target: string | undefined;
   const db = {
     insertInto: () => ({
@@ -299,11 +326,38 @@ function createUserInsertDb(row: unknown): { readonly conflictColumn: () => stri
             }
           });
           return {
-            returningAll: () => ({ executeTakeFirst: async () => row })
+            returningAll: () => ({
+              executeTakeFirst: async () => {
+                if (failure !== undefined) throw failure;
+                return row;
+              }
+            })
           };
         }
       })
     })
   } as unknown as Kysely<MuseDatabase>;
   return { conflictColumn: () => target, db };
+}
+
+function createUserUpdateDb(failure: unknown): Kysely<MuseDatabase> {
+  return {
+    insertInto: () => ({
+      values: () => ({
+        onConflict: (configure: (oc: { column(column: string): { doUpdateSet(values: unknown): void } }) => unknown) => {
+          configure({ column: () => ({ doUpdateSet: () => undefined }) });
+          return {
+            returningAll: () => ({
+              executeTakeFirstOrThrow: async () => { throw failure; }
+            })
+          };
+        }
+      })
+    }),
+    selectFrom: () => ({
+      selectAll: () => ({
+        where: () => ({ executeTakeFirst: async () => undefined })
+      })
+    })
+  } as unknown as Kysely<MuseDatabase>;
 }

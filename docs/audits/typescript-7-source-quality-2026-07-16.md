@@ -314,3 +314,15 @@ the TypeScript 7 announcement and release-notes links.
 - Decision: make `INSERT ... ON CONFLICT (email) DO NOTHING RETURNING` the atomic arbiter. A missing returned row maps to `AuthError(USER_EXISTS)`. This removes a database round trip and preserves the public API result without coupling to PostgreSQL driver's error object shape.
 - External basis: PostgreSQL documents that `ON CONFLICT` provides an atomic insert-or-alternative outcome under concurrency, and SQLSTATE `23505` represents a unique violation.
 - Verification: `pnpm --filter @muse/auth exec vitest run test/auth.test.ts` (17 passed); `pnpm --filter @muse/auth build` passed.
+
+### Kysely user update conflict normalization (2026-07-16)
+
+- Follow-up inspection found that ID-targeted upsert can still race with a concurrent change to the unique `email` column. The preflight duplicate lookup cannot make that conflict impossible.
+- Decision: use one module-local write wrapper for save/update. It reuses the shared error-shape guard and maps PostgreSQL's stable `23505` unique-violation code to `AuthError(USER_EXISTS)`; all other errors propagate unchanged. The code and helper remain in the auth persistence owner rather than a generic exception module.
+- Verification: `pnpm --filter @muse/auth exec vitest run test/auth.test.ts` (18 passed); `pnpm --filter @muse/auth build` passed.
+
+### Kysely update race test follow-up (2026-07-16)
+
+- Independent review required direct coverage of the `findByEmail` then ID-targeted upsert path, rather than inferring it from the insert test.
+- Added a narrow Kysely-shaped test double that reaches `update`, simulates the post-precheck `23505`, and separately proves a non-unique database error is rethrown unchanged.
+- Verification: `pnpm --filter @muse/auth exec vitest run test/auth.test.ts` (20 passed); `pnpm --filter @muse/auth build` passed.
