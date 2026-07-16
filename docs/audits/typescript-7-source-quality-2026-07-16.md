@@ -584,3 +584,11 @@ the TypeScript 7 announcement and release-notes links.
 - Legacy unversioned object files remain writable and are upgraded to v1. Any other version marker, or any non-object JSON root, now fails closed while the file lock is held, so both writers leave the original file byte-for-byte intact until the user upgrades Muse.
 - The shared typed format error is mapped to HTTP `409` for both web settings PATCH endpoints and to a concise stderr/nonzero result for `muse quiet`, rather than a generic server failure or raw CLI rejection.
 - Added coverage for legacy migration, future versions, non-object JSON roots, both mutation APIs, HTTP conflict responses, and the CLI diagnostic path.
+
+### Rust runner: tool-controlled environment execution boundary
+
+- Audited command spawning, process-group cleanup, pipe draining, Seatbelt path handling, and the request environment filter against current Rust, Git, Cargo, and OpenSSH documentation.
+- Confirmed existing timeout, descendant process-group cleanup, bounded output, UTF-8 truncation, and canonicalized Seatbelt-path contracts; no speculative lifecycle rewrite was made.
+- Fixed an environment-injection gap: request-controlled `GIT_EXEC_PATH`, Git template/config/editor variants and global/repository config-discovery roots, Cargo/Rustup compiler/wrapper/rustflags/credential-provider/target/toolchain configuration and config-discovery roots, and OpenSSH askpass/security-key-provider variables could select executables, hooks, or libraries after a bare command passed the runner's path guard.
+- Added explicit exact and prefix-owned denials while preserving ordinary uppercase environment variables such as `GIT_AUTHOR_NAME` and `MUSE_RUNNER_LABEL`.
+- The config-root boundary also covers Windows `USERPROFILE` and Git's `HOMEDRIVE`/`HOMEPATH` fallback, so request input cannot reactivate OpenSSH user config or platform-specific Git global config discovery.
