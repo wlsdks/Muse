@@ -306,3 +306,11 @@ the TypeScript 7 announcement and release-notes links.
 - Decision: validate the computed expiration as a real `Date` before signing. Require every compact JWS segment to use canonical unpadded base64url by round-tripping Node's decoder/encoder after an alphabet check. This is intentionally local to JWT parsing because generic base64 helpers would not encode the JWS canonicality requirement.
 - External basis: Node documents permissive base64/base64url decoding behavior, while RFC 7515 specifies compact JWS as URL-safe base64url segments without padding.
 - Verification: `pnpm --filter @muse/auth exec vitest run test/jwt.test.ts` (25 passed); `pnpm --filter @muse/auth build` passed.
+
+### Kysely user registration concurrency boundary (2026-07-16)
+
+- Inspected `packages/auth/src/user-stores.ts`, its in-memory parity behavior, the `users.email` unique constraint in migrations, and API mapping of `USER_EXISTS` to HTTP 409.
+- Finding: the Kysely store used `existsByEmail()` before insert. Concurrent registrations could both observe absence, then one received a raw database uniqueness error instead of the application duplicate-user contract.
+- Decision: make `INSERT ... ON CONFLICT (email) DO NOTHING RETURNING` the atomic arbiter. A missing returned row maps to `AuthError(USER_EXISTS)`. This removes a database round trip and preserves the public API result without coupling to PostgreSQL driver's error object shape.
+- External basis: PostgreSQL documents that `ON CONFLICT` provides an atomic insert-or-alternative outcome under concurrency, and SQLSTATE `23505` represents a unique violation.
+- Verification: `pnpm --filter @muse/auth exec vitest run test/auth.test.ts` (17 passed); `pnpm --filter @muse/auth build` passed.

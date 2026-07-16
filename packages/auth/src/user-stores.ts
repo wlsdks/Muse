@@ -159,15 +159,17 @@ export class KyselyUserStore implements AsyncUserStore {
   }
 
   async save(input: UserInput): Promise<User> {
-    if (await this.existsByEmail(input.email)) {
-      throw new AuthError("USER_EXISTS", `User already exists: ${normalizeEmail(input.email)}`);
-    }
-
+    const user = createUserInsert(input);
     const row = await this.db
       .insertInto("users")
-      .values(createUserInsert(input))
+      .values(user)
+      .onConflict((oc) => oc.column("email").doNothing())
       .returningAll()
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
+
+    if (!row) {
+      throw new AuthError("USER_EXISTS", `User already exists: ${user.email}`);
+    }
 
     return mapUserRow(row);
   }
