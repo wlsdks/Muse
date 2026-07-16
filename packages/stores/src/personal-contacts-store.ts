@@ -56,6 +56,12 @@ export interface Contact {
   readonly about?: string;
 }
 
+/** A contact-store mutation and the value derived from its locked snapshot. */
+export interface ContactMutation<TResult> {
+  readonly contacts: readonly Contact[];
+  readonly result: TResult;
+}
+
 export interface UpcomingBirthday {
   readonly contact: Contact;
   /** Normalised `MM-DD`. */
@@ -248,6 +254,29 @@ async function mutateContacts(
       await writeContactsUnlocked(file, next, env);
     }
   }));
+}
+
+/**
+ * Applies a read-modify-write operation while holding the contact-store lock.
+ *
+ * Importers must derive both their next contact list and their reported summary
+ * from this latest locked snapshot; a separate read followed by `writeContacts`
+ * can otherwise erase an intervening add or removal.
+ */
+export async function mutateContactsWithResult<TResult>(
+  file: string,
+  mutate: (contacts: readonly Contact[]) => Promise<ContactMutation<TResult>> | ContactMutation<TResult>,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<TResult> {
+  let mutation: ContactMutation<TResult> | undefined;
+  await mutateContacts(file, env, async (contacts) => {
+    mutation = await mutate(contacts);
+    return mutation.contacts;
+  });
+  if (!mutation) {
+    throw new Error("Contact mutation completed without a result");
+  }
+  return mutation.result;
 }
 
 async function writeContactsUnlocked(file: string, contacts: readonly Contact[], env: NodeJS.ProcessEnv): Promise<void> {

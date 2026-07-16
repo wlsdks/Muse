@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { addContact, readContacts, writeContacts, type Contact } from "../src/personal-contacts-store.js";
+import { addContact, mutateContactsWithResult, readContacts, writeContacts, type Contact } from "../src/personal-contacts-store.js";
 
 let dir: string;
 let file: string;
@@ -37,5 +37,25 @@ describe("addContact", () => {
     await pending;
 
     expect((await readContacts(file)).map((entry) => entry.id).sort()).toEqual(["external", "local", "seed"]);
+  }, 10_000);
+});
+
+describe("mutateContactsWithResult", () => {
+  it("derives an import-style merge from the post-lock snapshot without losing an external change", async () => {
+    await writeContacts(file, [contact("seed")]);
+    const lockPath = `${file}.lock`;
+    await writeFile(lockPath, "external-holder", "utf8");
+
+    const pending = mutateContactsWithResult(file, (current) => ({
+      contacts: [...current, contact("imported")],
+      result: { imported: 1 }
+    }));
+    await sleep(300);
+
+    await writeFile(file, JSON.stringify({ contacts: [contact("seed"), contact("external")] }), "utf8");
+    await unlink(lockPath);
+
+    await expect(pending).resolves.toEqual({ imported: 1 });
+    expect((await readContacts(file)).map((entry) => entry.id).sort()).toEqual(["external", "imported", "seed"]);
   }, 10_000);
 });

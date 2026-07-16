@@ -149,3 +149,9 @@ the TypeScript 7 announcement and release-notes links.
 - Extracted the shared `snoozeReminder` state transition used by API and loopback reminder paths. Re-arming a fired reminder now clears its obsolete `firedAt` receipt while preserving its identity, routing, recurrence, and new due time.
 - Both consumers now resolve the updated reminder from the latest locked snapshot, so an id removed between initial reference resolution and mutation returns not-found instead of a stale success payload.
 - Focused verification: `pnpm --filter @muse/stores exec vitest run test/personal-reminders-serialize.test.ts` (16 passed), `pnpm --filter @muse/stores build`, `pnpm --filter @muse/domain-tools build`, and `pnpm --filter @muse/api build`.
+## Contacts import transaction and identifier boundary
+
+- Inspected the contacts persistence contract, recipient-resolution tests, domain tool, CLI import path, encryption recovery, and concurrent mutation coverage.
+- `name`, aliases, email, phone, and handle remain the only recipient identifiers; relationship, connection, and free-text recall fields stay non-identifying material.
+- Fixed Apple Contacts import's stale read-merge-write sequence. `mutateContactsWithResult` now derives an importer result and replacement list from one queued, locked snapshot, so an intervening local add or removal cannot be overwritten by the final import write.
+- Added a locked-snapshot regression test. Contact status/type strings remain domain-owned literal unions rather than a global enum or constants bucket; no shared extraction was warranted beyond the existing stores API surface.
