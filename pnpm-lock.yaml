@@ -613,9 +613,6 @@ importers:
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared
-      '@muse/stores':
-        specifier: workspace:*
-        version: link:../stores
       kysely:
         specifier: ^0.29.2
         version: 0.29.2
@@ -828,6 +825,10 @@ importers:
   packages/shared: {}
 
   packages/skills:
+    dependencies:
+      '@muse/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       vitest:
         specifier: ^4.1.9
