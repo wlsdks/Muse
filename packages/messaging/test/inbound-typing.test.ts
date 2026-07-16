@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { setTimeout as sleep } from "node:timers/promises";
-
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { respondToInbound } from "../src/inbound-responder.js";
 import { MessagingProviderRegistry } from "../src/registry.js";
 
 import type { InboundMessage, MessagingProvider } from "../src/types.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function message(id: string, text: string): InboundMessage {
   return { messageId: id, providerId: "typingful", receivedAtIso: "2026-07-11T00:00:00.000Z", source: "42", text };
@@ -81,7 +83,12 @@ describe("respondToInbound typing indicator", () => {
 
 describe("respondToInbound typing keepalive", () => {
   it("re-fires typing while a slow agent thinks, so the indicator never dies", async () => {
+    vi.useFakeTimers();
     let typingCount = 0;
+    let finishRun!: (reply: string) => void;
+    const runnerResult = new Promise<string>((resolve) => {
+      finishRun = resolve;
+    });
     const provider: MessagingProvider = {
       describe: () => ({ description: "stub", displayName: "T", id: "typingful" }),
       id: "typingful",
@@ -90,23 +97,25 @@ describe("respondToInbound typing keepalive", () => {
         typingCount += 1;
       }
     };
-    const result = await respondToInbound({
+    const pending = respondToInbound({
       messages: [message("1", "hello")],
       registry: new MessagingProviderRegistry([provider]),
       runner: {
-        run: async () => {
-          await sleep(80);
-          return "slow answer";
-        }
+        run: () => runnerResult
       },
       typingIntervalMs: 20
     });
 
+    await vi.advanceTimersByTimeAsync(60);
+    finishRun("slow answer");
+    const result = await pending;
+
     expect(result.replied).toBe(1);
-    expect(typingCount).toBeGreaterThanOrEqual(3);
+    expect(typingCount).toBe(4);
   });
 
   it("stops re-firing once the reply is delivered", async () => {
+    vi.useFakeTimers();
     let typingCount = 0;
     const provider: MessagingProvider = {
       describe: () => ({ description: "stub", displayName: "T", id: "typingful" }),
@@ -123,7 +132,7 @@ describe("respondToInbound typing keepalive", () => {
       typingIntervalMs: 10
     });
     const after = typingCount;
-    await sleep(60);
+    await vi.advanceTimersByTimeAsync(60);
     expect(typingCount).toBe(after);
   });
 });
