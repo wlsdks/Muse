@@ -24,9 +24,11 @@ import {
   undoThreadReset,
   unlinkArtifact,
   type ArtifactLink,
+  type ArtifactReference,
   type ArtifactLinkValidator,
   type AttunementState,
   type ContinuityOutcome,
+  type ContinuityDelivery,
   type ContinuityPack,
   type ExactArtifactResolver,
   type PersonalThread,
@@ -239,6 +241,31 @@ export interface ContinuityStats extends ContinuityKindStats {
   readonly byKind: Readonly<Record<PersonalThreadKind, ContinuityKindStats>>;
 }
 
+export interface ContinuityReviewEvidence {
+  readonly artifact?: Awaited<ReturnType<ExactArtifactResolver>>;
+  readonly reference: ArtifactReference;
+  readonly status: "available" | "unavailable";
+}
+
+export interface ContinuityReviewItem {
+  readonly deliveryId: string;
+  readonly evidence: readonly ContinuityReviewEvidence[];
+  readonly openedAt: string;
+  readonly outcomeCommands: Readonly<Record<ContinuityOutcome, string>>;
+  readonly thread: Pick<PersonalThread, "id" | "kind" | "title">;
+}
+
+export interface ContinuityReviewQueue {
+  readonly next?: ContinuityReviewItem;
+  readonly progress: {
+    readonly eligibleDeliveries: number;
+    readonly remainingFeedback: number;
+    readonly remainingPacks: number;
+    readonly reviewedDeliveries: number;
+    readonly target: number;
+  };
+}
+
 /**
  * Deterministic per-outcome accounting over all deliveries + a "first 20 packs"
  * window — the kill-criterion instrument (used<20% or rejected>30% ⇒ fix pack
@@ -269,6 +296,88 @@ export function formatContinuityStats(stats: ContinuityStats): string {
     ...formatKindStats("life", stats.byKind.life),
     ...formatKindStats("work", stats.byKind.work)
   ];
+  return `${lines.join("\n")}\n`;
+}
+
+function compareDeliveries(left: ContinuityDelivery, right: ContinuityDelivery): number {
+  return left.openedAt.localeCompare(right.openedAt) || left.id.localeCompare(right.id);
+}
+
+function sameArtifact(left: ArtifactLink, right: ArtifactReference): boolean {
+  return left.artifactId === right.artifactId
+    && left.artifactType === right.artifactType
+    && left.providerId === right.providerId
+    && left.role === right.role;
+}
+
+/** Read-only projection of the first-20 feedback queue; never records an outcome. */
+export async function buildContinuityReviewQueue(
+  state: AttunementState,
+  resolveExactArtifact: ExactArtifactResolver
+): Promise<ContinuityReviewQueue> {
+  const eligible = [...state.deliveries]
+    .sort(compareDeliveries)
+    .slice(0, KILL_CRITERION_FIRST_PACKS);
+  const reviewedDeliveries = eligible.filter((delivery) => delivery.outcome !== undefined).length;
+  const pending = eligible.find((delivery) => delivery.outcome === undefined);
+  const progress = {
+    eligibleDeliveries: eligible.length,
+    remainingFeedback: eligible.length - reviewedDeliveries,
+    remainingPacks: KILL_CRITERION_FIRST_PACKS - eligible.length,
+    reviewedDeliveries,
+    target: KILL_CRITERION_FIRST_PACKS
+  };
+  if (!pending) return { progress };
+
+  const thread = state.threads.find((candidate) => candidate.id === pending.threadId);
+  if (!thread) return { progress };
+  const evidence: ContinuityReviewEvidence[] = [];
+  for (const reference of pending.evidenceRefs) {
+    const link = thread.links.find((candidate) => sameArtifact(candidate, reference));
+    const artifact = link ? await resolveExactArtifact(link) : undefined;
+    evidence.push({
+      ...(artifact ? { artifact, status: "available" as const } : { status: "unavailable" as const }),
+      reference
+    });
+  }
+  const outcomeCommands = Object.fromEntries(
+    OUTCOMES.map((outcome) => [outcome, `muse thread outcome ${pending.id} ${outcome}`])
+  ) as Readonly<Record<ContinuityOutcome, string>>;
+  return {
+    next: {
+      deliveryId: pending.id,
+      evidence,
+      openedAt: pending.openedAt,
+      outcomeCommands,
+      thread: { id: thread.id, kind: thread.kind, title: thread.title }
+    },
+    progress
+  };
+}
+
+export function formatContinuityReviewQueue(queue: ContinuityReviewQueue): string {
+  const { progress } = queue;
+  const lines = [
+    `First-${progress.target.toString()} Continuity review: ${progress.reviewedDeliveries.toString()}/${progress.eligibleDeliveries.toString()} opened packs have feedback; ${progress.remainingPacks.toString()} more packs still need to be opened.`
+  ];
+  if (!queue.next) {
+    lines.push(progress.remainingPacks > 0
+      ? "No opened pack is waiting for feedback. Open the next pack manually with `muse thread continue <thread-id>`."
+      : "All first-20 packs have explicit feedback. Inspect `muse thread stats` before changing any automation policy.");
+    return `${lines.join("\n")}\n`;
+  }
+  lines.push(`Next unreviewed: ${queue.next.deliveryId} (${queue.next.openedAt})`);
+  lines.push(`  ${queue.next.thread.title} [${queue.next.thread.kind}]  ${queue.next.thread.id}`);
+  lines.push("  Exact evidence:");
+  if (queue.next.evidence.length === 0) lines.push("    - none recorded for this delivery");
+  for (const evidence of queue.next.evidence) {
+    const prefix = `[${evidence.reference.providerId}:${evidence.reference.artifactType}:${evidence.reference.artifactId}]`;
+    lines.push(evidence.artifact
+      ? `    - ${prefix} ${evidence.artifact.title}`
+      : `    - ${prefix} unavailable`);
+  }
+  lines.push("Record one honest outcome after reviewing the pack:");
+  for (const outcome of OUTCOMES) lines.push(`  ${outcome}: ${queue.next.outcomeCommands[outcome]}`);
   return `${lines.join("\n")}\n`;
 }
 
@@ -516,10 +625,17 @@ Examples:
 
   thread
     .command("review")
-    .description("Review explicitly chosen threads and their currently available resume context")
-    .action(async (_options: unknown, command: Command) => {
+    .description("Review the next unscored first-20 Continuity Pack with exact evidence and outcome commands")
+    .option("--json", "Print the deterministic first-20 review queue")
+    .action(async (options: { readonly json?: boolean }, command: Command) => {
       await commandAction(command, io, "thread review", async () => {
         const state = await readAttunementState(attunementFile());
+        const queue = await buildContinuityReviewQueue(state, resolveExactArtifact);
+        if (options.json) {
+          io.stdout(`${JSON.stringify(queue, null, 2)}\n`);
+          return;
+        }
+        io.stdout(formatContinuityReviewQueue(queue));
         io.stdout(await formatThreadReview(state, resolveExactArtifact));
       });
     });

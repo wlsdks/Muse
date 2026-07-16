@@ -174,7 +174,7 @@ describe("muse thread — external MCP resource links", () => {
     expect(continued.stdout).toContain("Concurrent renders drop updates.");
   });
 
-  it("marks a resource unavailable when the MCP server is unreachable — no fabricated title", async () => {
+  it("fails closed when the only resource is unreachable — no empty delivery or fabricated title", async () => {
     const f = fixture();
     // Link while reachable, then resolve while the server is down.
     const started = await run(f, ["thread", "start", "Ship", "the", "adapter", "--kind", "work"], { mcpResourceCaller: githubFakeCaller(true) });
@@ -182,7 +182,8 @@ describe("muse thread — external MCP resource links", () => {
     await run(f, ["thread", "link", id, "resource", "github/facebook/react/issues/7", "--role", "context"], { mcpResourceCaller: githubFakeCaller(true) });
 
     const continued = await run(f, ["continue", id], { mcpResourceCaller: githubFakeCaller(false) });
-    expect(continued.stdout).toContain("[resource:facebook/react/issues/7] unavailable");
+    expect(continued.exitCode).toBe(1);
+    expect(continued.stderr).toContain("has no currently available linked evidence; no delivery was recorded");
     expect(continued.stdout).not.toContain("Fix the render loop");
   });
 
@@ -238,5 +239,55 @@ describe("muse thread stats — kill-criterion instrument", () => {
     const parsed = JSON.parse(stats.stdout) as { totalDeliveries: number; firstPacks: { considered: number } };
     expect(parsed.totalDeliveries).toBe(0);
     expect(parsed.firstPacks.considered).toBe(0);
+  });
+});
+
+describe("muse thread review — real first-20 feedback queue", () => {
+  it("shows the oldest unreviewed delivery, exact evidence, progress, and copy-ready outcome commands without writing feedback", async () => {
+    const f = fixture();
+    await writeTasks(f.taskFile, [TASK]);
+    const started = await run(f, ["thread", "start", "Ship", "the", "review", "--kind", "work"]);
+    const id = threadId(started.stdout);
+    await run(f, ["thread", "link", id, "task", TASK.id, "--role", "next-step"]);
+
+    const first = await run(f, ["continue", id]);
+    const firstDelivery = first.stdout.match(/Delivery: (delivery_[\w-]+)/u)?.[1];
+    expect(firstDelivery).toBeTruthy();
+    await run(f, ["thread", "outcome", firstDelivery!, "used"]);
+    const second = await run(f, ["continue", id]);
+    const secondDelivery = second.stdout.match(/Delivery: (delivery_[\w-]+)/u)?.[1];
+    expect(secondDelivery).toBeTruthy();
+
+    const json = await run(f, ["thread", "review", "--json"]);
+    const queue = JSON.parse(json.stdout) as {
+      next?: { deliveryId: string; evidence: Array<{ artifact?: { title?: string }; status: string }>; outcomeCommands: Record<string, string> };
+      progress: { eligibleDeliveries: number; remainingFeedback: number; remainingPacks: number; reviewedDeliveries: number; target: number };
+    };
+    expect(queue.progress).toEqual({
+      eligibleDeliveries: 2,
+      remainingFeedback: 1,
+      remainingPacks: 18,
+      reviewedDeliveries: 1,
+      target: 20
+    });
+    expect(queue.next?.deliveryId).toBe(secondDelivery);
+    expect(queue.next?.evidence).toEqual([
+      expect.objectContaining({ artifact: expect.objectContaining({ title: TASK.title }), status: "available" })
+    ]);
+    expect(queue.next?.outcomeCommands).toEqual({
+      adjusted: `muse thread outcome ${secondDelivery!} adjusted`,
+      ignored: `muse thread outcome ${secondDelivery!} ignored`,
+      rejected: `muse thread outcome ${secondDelivery!} rejected`,
+      used: `muse thread outcome ${secondDelivery!} used`
+    });
+
+    const text = await run(f, ["thread", "review"]);
+    expect(text.stdout).toContain("First-20 Continuity review: 1/2 opened packs have feedback");
+    expect(text.stdout).toContain(`Next unreviewed: ${secondDelivery!}`);
+    expect(text.stdout).toContain(`[local:task:${TASK.id}] ${TASK.title}`);
+    expect(text.stdout).toContain(`used: muse thread outcome ${secondDelivery!} used`);
+
+    const stats = JSON.parse((await run(f, ["thread", "stats", "--json"])).stdout) as { withOutcome: number };
+    expect(stats.withOutcome).toBe(1);
   });
 });
