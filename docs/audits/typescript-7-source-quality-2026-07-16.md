@@ -184,3 +184,10 @@ the TypeScript 7 announcement and release-notes links.
 
 - Audited the post-exit stream-drainer fallback after process-group cleanup.
 - A timed-out or disconnected drainer now marks its empty fallback as truncated instead of presenting unknown output as complete; callers retain the command outcome but can fail-safe on incomplete output.
+
+## Desktop notification subprocess diagnostics
+
+- **Area:** `packages/messaging` native macOS and Linux desktop notification providers.
+- **Finding:** `osascript` and `notify-send` ran through the shared subprocess helper without capture limits, allowing an untrusted diagnostic stream to consume memory. The duplicated watchdog implementations also risked diverging.
+- **Decision:** A messaging-local helper now owns the common 30-second watchdog and a 16 KiB per-stream diagnostic boundary. A successful zero exit code remains a successful delivery even when diagnostics are truncated, avoiding false failures and duplicate notifications; failed receipts explicitly mark truncated diagnostics.
+- **Evidence:** focused macOS and libnotify provider tests cover timeout behavior, UTF-8 diagnostic decoding, bounded output, and truncated-error reporting.
