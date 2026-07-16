@@ -345,6 +345,22 @@ export function fireReminder(
   return next;
 }
 
+/** Re-arm a reminder for a later delivery, clearing its prior fire receipt. */
+export function snoozeReminder(
+  reminders: readonly PersistedReminder[],
+  id: string,
+  dueAt: string
+): readonly PersistedReminder[] | undefined {
+  const index = reminders.findIndex((reminder) => reminder.id === id);
+  if (index < 0) {
+    return undefined;
+  }
+  const { firedAt: _firedAt, ...pending } = reminders[index]!;
+  const next = [...reminders];
+  next[index] = { ...pending, dueAt, status: "pending" };
+  return next;
+}
+
 /**
  * Filter helper used by both the REST list endpoint and the CLI's
  * `--local` mode. `due` returns reminders whose dueAt is at or

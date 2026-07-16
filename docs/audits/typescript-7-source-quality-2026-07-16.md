@@ -143,3 +143,9 @@ the TypeScript 7 announcement and release-notes links.
 - Malformed `expiresAt` now fails closed in the exported actionability predicate as well as the persisted-record validator; no direct or future caller can approve a draft whose expiry cannot be parsed.
 - Proposal TTLs now require a positive safe integer within the representable future range. Invalid, fractional, infinite, negative, zero, or excessive values fall back to the bounded 24-hour default rather than creating an invalid date or an effectively permanent draft.
 - Focused verification: `pnpm --filter @muse/stores exec vitest run test/proposed-action-concurrency.test.ts` (4 passed), `pnpm --filter @muse/stores build`, `pnpm --filter @muse/proactivity exec vitest run test/proposed-action.test.ts` (9 passed), and `pnpm --filter @muse/proactivity build`.
+
+## Reminder persistence and snooze lifecycle (2026-07-16)
+
+- Extracted the shared `snoozeReminder` state transition used by API and loopback reminder paths. Re-arming a fired reminder now clears its obsolete `firedAt` receipt while preserving its identity, routing, recurrence, and new due time.
+- Both consumers now resolve the updated reminder from the latest locked snapshot, so an id removed between initial reference resolution and mutation returns not-found instead of a stale success payload.
+- Focused verification: `pnpm --filter @muse/stores exec vitest run test/personal-reminders-serialize.test.ts` (16 passed), `pnpm --filter @muse/stores build`, `pnpm --filter @muse/domain-tools build`, and `pnpm --filter @muse/api build`.

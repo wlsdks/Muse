@@ -14,7 +14,7 @@ import { isErrorLike } from "@muse/shared";
 
 import { randomUUID } from "node:crypto";
 
-import { compareRemindersByDueAt, filterReminders, fireReminder, mutateReminders, parseReminderDueAt, parseReminderVia, readReminders, readReminderHistory, readReminderStatusFilter, serializeReminder, type PersistedReminder, type ReminderRecurrence } from "@muse/stores";
+import { compareRemindersByDueAt, filterReminders, fireReminder, mutateReminders, parseReminderDueAt, parseReminderVia, readReminders, readReminderHistory, readReminderStatusFilter, serializeReminder, snoozeReminder, type PersistedReminder, type ReminderRecurrence } from "@muse/stores";
 import { mirrorReminderToApple } from "@muse/macos";
 import type { FastifyInstance } from "fastify";
 
@@ -117,11 +117,9 @@ export function registerRemindersRoutes(server: FastifyInstance, gate: Reminders
     }
     let snoozed: PersistedReminder | undefined;
     await mutateReminders(remindersFile, (current) => {
-      const index = current.findIndex((reminder) => reminder.id === id);
-      if (index < 0) return current;
-      snoozed = { ...current[index]!, dueAt: nextDueAt, status: "pending" };
-      const next = [...current];
-      next[index] = snoozed;
+      const next = snoozeReminder(current, id, nextDueAt);
+      if (!next) return current;
+      snoozed = next.find((reminder) => reminder.id === id);
       return next;
     });
     if (!snoozed) {

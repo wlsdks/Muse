@@ -11,6 +11,7 @@ import {
   readReminders,
   serializeReminder,
   serializeReminderForModel,
+  snoozeReminder,
   writeReminders,
 } from "../src/personal-reminders-store.js";
 
@@ -58,6 +59,22 @@ describe("serializeReminder", () => {
   it("includes the linked eventId when present, omits it otherwise", () => {
     expect(serializeReminder({ ...base, eventId: "evt_123" }).eventId).toBe("evt_123");
     expect(serializeReminder(base)).not.toHaveProperty("eventId");
+  });
+});
+
+describe("snoozeReminder", () => {
+  it("re-arms a fired reminder without retaining its prior firing receipt", () => {
+    const next = snoozeReminder(
+      [{ ...base, firedAt: "2026-01-01T09:01:00Z", status: "fired" }],
+      base.id,
+      "2026-01-01T10:00:00Z",
+    );
+    expect(next?.[0]).toMatchObject({ dueAt: "2026-01-01T10:00:00Z", status: "pending" });
+    expect(next?.[0]).not.toHaveProperty("firedAt");
+  });
+
+  it("does not invent a reminder when the id is absent", () => {
+    expect(snoozeReminder([base], "missing", "2026-01-01T10:00:00Z")).toBeUndefined();
   });
 });
 

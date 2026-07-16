@@ -97,7 +97,7 @@ export { readFadedMemoryKeys, readRecallHits, recordRecallHits, writeFadedMemory
 export type { RecallHitRecord } from "./personal-recall-hits-store.js";
 export { appendReminderHistory, readReminderHistory } from "./personal-reminder-history-store.js";
 export type { ReminderHistoryEntry } from "./personal-reminder-history-store.js";
-export { compareRemindersByDueAt, filterReminders, fireReminder, mutateReminders, nextReminderOccurrence, normalizeReminderRecurrence, parseReminderDueAt, parseReminderVia, readReminders, readReminderStatusFilter, resolveReminderRef, serializeReminder, serializeReminderForModel, writeReminders } from "./personal-reminders-store.js";
+export { compareRemindersByDueAt, filterReminders, fireReminder, mutateReminders, nextReminderOccurrence, normalizeReminderRecurrence, parseReminderDueAt, parseReminderVia, readReminders, readReminderStatusFilter, resolveReminderRef, serializeReminder, serializeReminderForModel, snoozeReminder, writeReminders } from "./personal-reminders-store.js";
 export type { PersistedReminder, ReminderRecurrence } from "./personal-reminders-store.js";
 export { compareTasksByDueDate, mutateTasks, parseTaskDueAt, readTaskById, readTasks, readTaskStatusFilter, resolveTaskRef, resolveTasksDueLine, selectTasksDueWithin, serializeTask, serializeTaskForModel, writeTasks } from "./personal-tasks-store.js";
 export type { PersistedTask } from "./personal-tasks-store.js";
