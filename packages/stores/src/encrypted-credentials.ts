@@ -112,7 +112,15 @@ async function mutateCredentialStore(
 ): Promise<void> {
   const filePath = credentialPath(io);
   await withFileMutationQueue(filePath, () => withFileLock(filePath, async () => {
-    const current = await readCredentialStore(io, { startFreshIfUnreadable: true });
+    let current: CredentialStore;
+    try {
+      current = await readCredentialStore(io);
+    } catch (error) {
+      throw new Error(
+        `Refusing to overwrite unreadable credentials at ${filePath}; the existing file was left untouched. Recover the original credential key, or back up and explicitly remove the file before retrying.`,
+        { cause: error }
+      );
+    }
     await writeCredentialStore(io, mutation(current));
   }));
 }
@@ -130,7 +138,7 @@ export async function readStoredToken(io: CredentialStoreIO, baseUrl: string): P
     io.stderr?.(
       `(warning: credentials store unreadable: ${
         errorMessage(error)
-      }; treating as no credentials. Re-login with \`muse auth login\` to write a fresh store.)\n`
+      }; treating as no credentials. The file was left untouched: recover the original credential key, or back up and explicitly remove the file before re-running \`muse auth login\`.)\n`
     );
     return undefined;
   }
@@ -258,10 +266,7 @@ export function readEmailImapCredentialSync(io: CredentialStoreIO): ImapEmailCre
   }
 }
 
-async function readCredentialStore(
-  io: CredentialStoreIO,
-  options: { readonly startFreshIfUnreadable?: boolean } = {}
-): Promise<CredentialStore> {
+async function readCredentialStore(io: CredentialStoreIO): Promise<CredentialStore> {
   let raw: string;
   try {
     raw = await readFile(credentialPath(io), "utf8");
@@ -288,16 +293,9 @@ async function readCredentialStore(
 
     return store;
   } catch (error) {
-    // Content can't be interpreted (corrupt JSON, bad format, or — the
-    // common one — the per-host fallback key changed because the hostname
-    // changed, so AES-GCM auth fails). On a WRITE the existing ciphertext
-    // is unrecoverable anyway, so there are no tokens left to preserve:
-    // start fresh so `muse auth login` can actually recover (the warning
-    // on the read path promises exactly this). Reads still rethrow → their
-    // own catch degrades to "no credentials".
-    if (options.startFreshIfUnreadable) {
-      return { tokens: {} };
-    }
+    // An existing unreadable file can still be recovered with its original
+    // key. Never treat it as an empty store on a write path: that would
+    // replace recoverable encrypted credentials with a new ciphertext.
     throw error;
   }
 }

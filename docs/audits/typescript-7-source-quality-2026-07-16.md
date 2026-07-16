@@ -458,3 +458,12 @@ the TypeScript 7 announcement and release-notes links.
 - Added regression coverage for all three lifecycle fields, including an explicit unsafe-JavaScript input that proves the in-memory path preserves the latest execution outcome.
 - Verified with `pnpm --filter @muse/scheduler exec vitest run test/scheduler-helpers-templating.test.ts` (11 passed), `pnpm --filter @muse/scheduler build`, and `pnpm --filter @muse/api build`.
 - Independent runtime-contract review: PASS after end-to-end type propagation.
+
+### Stores: encrypted credential recovery boundary
+
+- Audited the shared encrypted credential store, its mutation queue/file lock, legacy-format compatibility tests, and credential-encryption failure semantics against MCP and OWASP fail-closed guidance.
+- Fixed a destructive recovery defect: write and delete operations previously treated an existing unreadable store as empty, allowing a wrong key or malformed file to be overwritten before it could be recovered.
+- Existing unreadable files now reject mutation without changing bytes. The normalized error and read-path warning state that the file was left untouched and describe the explicit recovery choices without promising an impossible immediate re-login.
+- Added byte-preservation regression coverage for both a wrong encryption key and malformed on-disk JSON.
+- Verified with `pnpm --filter @muse/stores exec vitest run test/encrypted-credentials.test.ts` (9 passed) and `pnpm --filter @muse/stores build`.
+- Independent runtime-contract review: PASS after recovery guidance correction.
