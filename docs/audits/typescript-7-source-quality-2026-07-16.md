@@ -118,3 +118,16 @@ the TypeScript 7 announcement and release-notes links.
 - Audited follow-up capture, lifecycle mutations, and daemon firing. Upsert, fire, cancel, and snooze already reacquire the latest persisted state under the shared nonce-owned file lock; daemon delivery has a separate firing lock, so no lost-update or duplicate-delivery change was warranted.
 - The legacy `@muse/stores` quarantine compatibility helper alone still used a timestamp-only target. It now delegates to the shared UUID-suffixed primitive, preserving every backup when repeated corruptions occur within one millisecond.
 - Focused verification: `pnpm --filter @muse/stores exec vitest run test/store-quarantine.test.ts test/followups-cross-process.test.ts test/followups-store-lifecycle.test.ts` (14 passed) and `pnpm --filter @muse/stores build`.
+
+## Standing-objective persistence audit (2026-07-16)
+
+- No change. Objective registration and patching re-read and atomically write under the shared cross-process lock; focused tests cover external-lock waiting and 50 concurrent registrations/patches.
+- The evaluator holds a separate firing lock across select, evidence-gated evaluation, act, and status commit. It retries action failures, rejects evidence-less completion, bounds options, and self-heals an unparseable `nextEvalAt` rather than freezing the objective.
+- CLI registration validates objective kinds before the typed cast, resolves terminal-transition IDs unambiguously, and user-scopes list output. Source and focused store/proactivity/CLI test suites were inspected; no evidence-backed modification was warranted.
+
+## Consent persistence and action timeout audit (2026-07-16)
+
+- Consent records preserve exact user/objective/scope matching, optional destination-host binding, expiry fail-closure, and veto precedence. Record mutations use the shared cross-process lock and malformed stores degrade to no consent after quarantine; no consent-store policy change was warranted.
+- The post-consent HTTP timeout now accepts only positive safe integer delays within Node's timer range. Invalid values (`NaN`, infinities, zero, negatives, fractions, overflow) retain the documented bounded default instead of disabling the cap or delegating to timer-specific failure behavior.
+- Timeout classification now uses Muse's own abort signal state rather than a fetch implementation's error class, so wrapped or translated abort errors still report a timeout and leave the objective loop retryable.
+- Focused verification: `pnpm --filter @muse/proactivity exec vitest run test/consented-action.test.ts` (17 passed), `pnpm --filter @muse/proactivity build`, `pnpm --filter @muse/mcp exec vitest run src/consented-action.test.ts` (7 passed), and `pnpm --filter @muse/mcp build`.
