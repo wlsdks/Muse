@@ -253,3 +253,9 @@ the TypeScript 7 announcement and release-notes links.
 - Inspected `apps/api/src/parent-watch.ts`, `graceful-shutdown.ts`, production signal wiring, and shutdown tests. Parent-watch currently validates a numeric parent PID, uses an unrefed interval, and performs only existence probes; no evidence-backed change was made in that path.
 - Fixed graceful shutdown close-failure handling: `closeServer()` rejection is logged and resolved instead of becoming an unhandled rejection from the production `void shutdown()` signal handler. The forced-exit deadline intentionally remains armed when close fails; successful close still clears it.
 - Focused API shutdown tests: 8 passed. `pnpm --filter @muse/api build`: passed. Independent review: pending.
+
+### 2026-07-16 - API tick bootstrap and shared distill queue
+
+- Inspected API tick-daemon bootstrap, quiet-hours resolver, channel-daemon supervisor, and focused lifecycle tests. Existing daemon handles are registered for Fastify `onClose`, replacement handles are stopped, and status output is bounded/redacted; no evidence-backed change was needed.
+- Inspected the shared `@muse/autoconfigure` distill consumer. `maxPerTick` now accepts only positive safe integers; malformed values fall back to the one-item cost/progress-safe default instead of relying on `slice` coercion or producing an empty batch.
+- Focused shared distill tests: 15 passed. `pnpm --filter @muse/autoconfigure build`: passed. Independent review: pending.
