@@ -25,11 +25,33 @@ export function sourceInstallCommands(root) {
   ];
 }
 
-export function defaultInstallRunner({ command, args, cwd, timeoutMs = COMMAND_TIMEOUT_MS }) {
+/** Corepack exposes pnpm as `pnpm.cmd` on Windows; execute that shim through
+ * cmd.exe explicitly because `.cmd` files are not native spawn targets. */
+export function resolveInstallSpawn(command, args, platform = process.platform, env = process.env) {
+  if (platform === "win32" && command === "pnpm") {
+    return {
+      args: ["/d", "/c", "pnpm.cmd", ...args],
+      command: env.ComSpec ?? env.COMSPEC ?? "cmd.exe"
+    };
+  }
+  return { args, command };
+}
+
+export function defaultInstallRunner({
+  command,
+  args,
+  cwd,
+  env = process.env,
+  platform = process.platform,
+  spawnImpl = spawn,
+  timeoutMs = COMMAND_TIMEOUT_MS
+}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const resolved = resolveInstallSpawn(command, args, platform, env);
+    const child = spawnImpl(resolved.command, resolved.args, {
       cwd,
-      env: process.env,
+      env,
+      shell: false,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });

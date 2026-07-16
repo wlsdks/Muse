@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 
-import { runSourceInstall, sourceInstallCommands, supportsNode } from "./install-source.mjs";
+import {
+  defaultInstallRunner,
+  resolveInstallSpawn,
+  runSourceInstall,
+  sourceInstallCommands,
+  supportsNode
+} from "./install-source.mjs";
 
 const dirs = [];
 
@@ -39,6 +46,43 @@ test("Node support starts at 22.12", () => {
   assert.equal(supportsNode("22.11.0"), false);
   assert.equal(supportsNode("22.12.0"), true);
   assert.equal(supportsNode("24.0.0"), true);
+});
+
+test("Windows executes Corepack's pnpm.cmd shim through cmd.exe without a shell", async () => {
+  const env = { ComSpec: "C:\\Windows\\System32\\cmd.exe" };
+  assert.deepEqual(resolveInstallSpawn("pnpm", ["build"], "win32", env), {
+    args: ["/d", "/c", "pnpm.cmd", "build"],
+    command: env.ComSpec
+  });
+  assert.deepEqual(resolveInstallSpawn("git", ["status"], "win32", env), {
+    args: ["status"],
+    command: "git"
+  });
+
+  let observed;
+  const spawnImpl = (command, args, options) => {
+    observed = { args, command, options };
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => true;
+    queueMicrotask(() => child.emit("close", 0));
+    return child;
+  };
+
+  const result = await defaultInstallRunner({
+    args: ["--dir", "apps/cli", "link", "--global"],
+    command: "pnpm",
+    cwd: "C:\\Muse",
+    env,
+    platform: "win32",
+    spawnImpl
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(observed.command, env.ComSpec);
+  assert.deepEqual(observed.args, ["/d", "/c", "pnpm.cmd", "--dir", "apps/cli", "link", "--global"]);
+  assert.equal(observed.options.shell, false);
 });
 
 test("dry run validates the checkout and prints the one install plan without mutations", async () => {
