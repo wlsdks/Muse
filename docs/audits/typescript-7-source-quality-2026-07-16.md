@@ -539,3 +539,13 @@ the TypeScript 7 announcement and release-notes links.
 - Added regression coverage for composed caller cancellation and for one-attempt/no-delay cancellation through `fetchReadWithRetry`.
 - Verified with `pnpm --filter @muse/messaging exec vitest run src/provider-helpers.test.ts test/provider-helpers.test.ts test/read-retry.test.ts` (42 passed) and `pnpm --filter @muse/messaging build`.
 - Independent runtime-contract review: PASS after retry cancellation handling was added.
+
+### API and messaging: LINE webhook redelivery receipts
+
+- Audited the signed raw-body LINE webhook receiver, its file-backed inbox mutation path, and focused route/store tests against LINE's current webhook-redelivery contract and established webhook idempotency practice.
+- Fixed verified persistence failure handling: a write failure now returns `503` rather than acknowledging an event that LINE may need to redeliver. Partial writes remain safe because successful events are retained as delivery receipts before the retry.
+- Added a bounded, backwards-compatible receipt ledger separate from inbox capacity. LINE's stable `webhookEventId` is used as the receipt key, while the existing provider/source/message identity remains the fallback for callers without a delivery key. `appendInbound` now reports whether it inserted so webhook responses accurately count new entries.
+- The ledger keeps 10,000 receipt keys. LINE does not disclose its retry count or interval and says they may change, so behavior beyond that bounded retention is intentionally documented as best-effort rather than overstated as an absolute guarantee.
+- Covered ordinary duplicate delivery, capacity eviction, legacy pre-receipt inbox entries that later receive an event key, `stored: 0` no-op accounting, and `503` retry signaling.
+- Verified with `pnpm --filter @muse/messaging exec vitest run test/messaging.test.ts` (97 passed), `pnpm --filter @muse/messaging build`, `pnpm --filter @muse/api exec vitest run test/messaging-webhooks.test.ts` (6 passed), and `pnpm --filter @muse/api build`.
+- Independent runtime-contract review: PASS after receipt-backfill migration coverage.
