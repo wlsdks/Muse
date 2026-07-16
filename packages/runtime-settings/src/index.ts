@@ -69,7 +69,7 @@ export class InMemoryRuntimeSettingsStore implements RuntimeSettingsStore {
       key: input.key,
       type: input.type ?? existing?.type ?? "string",
       updatedAt: input.updatedAt ?? this.now(),
-      updatedBy: input.updatedBy ?? undefined,
+      updatedBy: input.updatedBy === undefined ? existing?.updatedBy : input.updatedBy ?? undefined,
       value: input.value
     };
 

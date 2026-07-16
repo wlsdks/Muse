@@ -361,3 +361,11 @@ the TypeScript 7 announcement and release-notes links.
 - Added a Kysely query-shape test for the ordered listing and invalid numeric limits.
 - Verified with `pnpm --filter @muse/runtime-state exec vitest run test/debug-replay.test.ts test/debug-replay-kysely.test.ts` (15 passed) and `pnpm --filter @muse/runtime-state build`.
 - Independent architecture review: PASS.
+
+### Runtime settings: patch metadata parity
+
+- Inspected the runtime-settings public store contract, in-memory implementation, Kysely UPSERT builder, factory wiring, and focused tests.
+- Fixed an observed parity defect: omitted `updatedBy` now preserves the existing audit value in the in-memory store, while explicit `null` clears it, matching the Kysely conflict-update contract.
+- Retained the string-literal `RuntimeSettingType` union. No enum or global constant is warranted because this serialized value set has no shared runtime registry behavior.
+- Verified with `pnpm --filter @muse/runtime-settings exec vitest run test/runtime-settings.test.ts` (8 passed) and `pnpm --filter @muse/runtime-settings build`.
+- Independent architecture review: PASS.

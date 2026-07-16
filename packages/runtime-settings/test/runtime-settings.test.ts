@@ -136,15 +136,22 @@ describe("InMemoryRuntimeSettingsStore", () => {
     ]);
   });
 
-  it("preserves descriptions on update unless explicitly cleared", () => {
+  it("preserves optional metadata on update unless explicitly cleared", () => {
     const store = new InMemoryRuntimeSettingsStore();
 
-    store.upsert({ description: "Maximum tools per run", key: "tools.max", value: "10" });
+    store.upsert({
+      description: "Maximum tools per run",
+      key: "tools.max",
+      updatedBy: "operator",
+      value: "10"
+    });
     store.upsert({ key: "tools.max", value: "20" });
     expect(store.find("tools.max")?.description).toBe("Maximum tools per run");
+    expect(store.find("tools.max")?.updatedBy).toBe("operator");
 
-    store.upsert({ description: null, key: "tools.max", value: "30" });
+    store.upsert({ description: null, key: "tools.max", updatedBy: null, value: "30" });
     expect(store.find("tools.max")?.description).toBeUndefined();
+    expect(store.find("tools.max")?.updatedBy).toBeUndefined();
   });
 });
 
