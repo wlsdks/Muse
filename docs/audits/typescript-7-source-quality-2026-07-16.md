@@ -131,3 +131,15 @@ the TypeScript 7 announcement and release-notes links.
 - The post-consent HTTP timeout now accepts only positive safe integer delays within Node's timer range. Invalid values (`NaN`, infinities, zero, negatives, fractions, overflow) retain the documented bounded default instead of disabling the cap or delegating to timer-specific failure behavior.
 - Timeout classification now uses Muse's own abort signal state rather than a fetch implementation's error class, so wrapped or translated abort errors still report a timeout and leave the objective loop retryable.
 - Focused verification: `pnpm --filter @muse/proactivity exec vitest run test/consented-action.test.ts` (17 passed), `pnpm --filter @muse/proactivity build`, `pnpm --filter @muse/mcp exec vitest run src/consented-action.test.ts` (7 passed), and `pnpm --filter @muse/mcp build`.
+
+## Action-log persistence audit (2026-07-16)
+
+- No change. The accountability log serializes same-process appends with a per-file queue and all-process appends with the shared nonce-owned lock; each new entry seals to the locked chain tip.
+- Existing focused coverage proves append ordering, external-lock convergence, encrypted append preservation, wrong-key fail-closure, corrupt-plaintext quarantine, secret redaction, and detection of edited, removed, reordered, or sliced chain entries.
+- Undo records its veto before appending its own accountability entry; an inverse-action failure prevents both later writes, leaving the original action visible and the correction retryable.
+
+## Proposed-action approval gate (2026-07-16)
+
+- Malformed `expiresAt` now fails closed in the exported actionability predicate as well as the persisted-record validator; no direct or future caller can approve a draft whose expiry cannot be parsed.
+- Proposal TTLs now require a positive safe integer within the representable future range. Invalid, fractional, infinite, negative, zero, or excessive values fall back to the bounded 24-hour default rather than creating an invalid date or an effectively permanent draft.
+- Focused verification: `pnpm --filter @muse/stores exec vitest run test/proposed-action-concurrency.test.ts` (4 passed), `pnpm --filter @muse/stores build`, `pnpm --filter @muse/proactivity exec vitest run test/proposed-action.test.ts` (9 passed), and `pnpm --filter @muse/proactivity build`.

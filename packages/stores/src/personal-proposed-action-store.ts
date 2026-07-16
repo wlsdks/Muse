@@ -49,6 +49,7 @@ export interface ProposedAction {
 }
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_DATE_MS = 8_640_000_000_000_000;
 
 /**
  * A proposal is actionable only while it is still `pending` AND not yet
@@ -59,7 +60,18 @@ export function isProposalActionable(proposal: ProposedAction, now: Date): boole
   if (proposal.status !== "pending") return false;
   if (proposal.expiresAt === undefined) return true;
   const expiry = Date.parse(proposal.expiresAt);
-  return Number.isNaN(expiry) || now.getTime() <= expiry;
+  return Number.isFinite(expiry) && now.getTime() <= expiry;
+}
+
+function resolveProposalTtlMs(value: number | undefined, nowMs: number): number {
+  const latestValidTtlMs = Math.max(0, MAX_DATE_MS - nowMs);
+  const ttlMs = typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : DEFAULT_TTL_MS;
+  if (ttlMs > latestValidTtlMs) {
+    return Math.min(DEFAULT_TTL_MS, latestValidTtlMs);
+  }
+  return ttlMs;
 }
 
 function isProposedAction(value: unknown): value is ProposedAction {
@@ -142,9 +154,7 @@ export async function proposeMessageAction(
   const now = input.now ?? (() => new Date());
   const at = now();
   const createdAt = at.toISOString();
-  const ttlMs = typeof input.ttlMs === "number" && Number.isFinite(input.ttlMs) && input.ttlMs > 0
-    ? input.ttlMs
-    : DEFAULT_TTL_MS;
+  const ttlMs = resolveProposalTtlMs(input.ttlMs, at.getTime());
   const proposal: ProposedAction = {
     createdAt,
     destination: input.destination,
