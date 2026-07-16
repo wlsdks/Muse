@@ -14,8 +14,8 @@ export async function fetchWithVoiceTimeout(
   init: RequestInit,
   timeoutMs: number = DEFAULT_VOICE_FETCH_TIMEOUT_MS
 ): Promise<Response> {
-  const effectiveTimeoutMs = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
-    ? Math.min(Math.trunc(timeoutMs), MAX_TIMER_DELAY_MS)
+  const effectiveTimeoutMs = Number.isSafeInteger(timeoutMs) && timeoutMs > 0
+    ? Math.min(timeoutMs, MAX_TIMER_DELAY_MS)
     : DEFAULT_VOICE_FETCH_TIMEOUT_MS;
   return fetchImpl(url, { ...init, signal: AbortSignal.timeout(effectiveTimeoutMs) });
 }
