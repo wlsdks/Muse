@@ -1,6 +1,8 @@
 import type { AgentRunInput, AgentRunResult, AgentRuntime } from "@muse/agent-core";
 import type { ModelMessage } from "@muse/model";
 
+import { runCascade } from "./cascade-run.js";
+
 export interface AgentWorker {
   readonly id: string;
   readonly description: string;
@@ -41,6 +43,80 @@ export class RuntimeAgentWorker implements AgentWorker {
   }
 }
 
+export interface RuntimeAgentWorkerSpec {
+  readonly description: string;
+  readonly id: string;
+  /** Stable persisted spec id; omitted for an ad-hoc runtime worker. */
+  readonly specId?: string;
+  readonly systemPrompt?: string;
+}
+
+export interface RuntimeAgentWorkerOptions {
+  readonly model?: string;
+  readonly runtime: AgentRuntime;
+  readonly spec: RuntimeAgentWorkerSpec;
+}
+
+function prepareRuntimeWorkerInput(
+  input: AgentRunInput,
+  spec: RuntimeAgentWorkerSpec,
+  overrides: Partial<Pick<AgentRunInput, "logprobs" | "model">> = {}
+): AgentRunInput {
+  return {
+    ...input,
+    ...overrides,
+    messages: spec.systemPrompt ? prependSystem(input.messages, spec.systemPrompt) : input.messages,
+    metadata: {
+      ...(input.metadata ?? {}),
+      ...(spec.specId ? { agentSpecId: spec.specId } : {}),
+      selectedAgentId: spec.id
+    }
+  };
+}
+
+/**
+ * Build a delegation worker over Muse's ONE AgentRuntime. The worker carries a
+ * model id only as a routing hint; the orchestrator places it on
+ * `AgentRunInput.model`, and AgentRuntime's shared model registry resolves it.
+ */
+export function createRuntimeAgentWorker(options: RuntimeAgentWorkerOptions): AgentWorker {
+  const { model, runtime, spec } = options;
+  return {
+    canHandle: () => 1,
+    description: spec.description,
+    id: spec.id,
+    ...(model ? { model } : {}),
+    run: (input) => runtime.run(prepareRuntimeWorkerInput(input, spec))
+  };
+}
+
+export interface CascadeRuntimeAgentWorkerOptions extends Omit<RuntimeAgentWorkerOptions, "model"> {
+  readonly confidenceOf: (result: AgentRunResult) => number | undefined;
+  readonly fastModel: string;
+  readonly heavyModel: string;
+}
+
+/** Bounded fast → heavy delegation over the same shared AgentRuntime. */
+export function createCascadeRuntimeAgentWorker(options: CascadeRuntimeAgentWorkerOptions): AgentWorker {
+  const { confidenceOf, fastModel, heavyModel, runtime, spec } = options;
+  return {
+    canHandle: () => 1,
+    description: spec.description,
+    id: spec.id,
+    model: fastModel,
+    async run(input) {
+      const baseInput = prepareRuntimeWorkerInput(input, spec, { logprobs: true });
+      const outcome = await runCascade<AgentRunResult>({
+        confidenceOf,
+        fast: fastModel,
+        heavy: heavyModel,
+        run: (model) => runtime.run({ ...baseInput, model })
+      });
+      return outcome.result;
+    }
+  };
+}
+
 export class RuleBasedAgentWorker implements AgentWorker {
   private readonly keywords: readonly string[];
 
@@ -76,6 +152,14 @@ export class RuleBasedAgentWorker implements AgentWorker {
 
 export function joinMessages(messages: readonly ModelMessage[]): string {
   return messages.map((message) => message.content).join("\n");
+}
+
+function prependSystem(messages: readonly ModelMessage[], systemPrompt: string): readonly ModelMessage[] {
+  const [first, ...rest] = messages;
+  if (first?.role === "system") {
+    return [{ content: `${systemPrompt}\n\n${first.content}`, role: "system" }, ...rest];
+  }
+  return [{ content: systemPrompt, role: "system" }, ...messages];
 }
 
 // ASCII/Latin keywords must match on word boundaries — a raw substring

@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { EventEmitter, on as waitForEvent } from "node:events";
-import { summarizeTokenConfidence, type AgentRunInput, type AgentRunResult, type AgentRuntime } from "@muse/agent-core";
+import { summarizeTokenConfidence, type AgentRunInput, type AgentRuntime } from "@muse/agent-core";
 import type { AgentSpec, AgentSpecRegistry } from "@muse/agent-specs";
 import { errorMessage } from "@muse/shared";
 
@@ -10,10 +10,11 @@ import {
   MultiAgentOrchestrator,
   OrchestrationCancelledError,
   SubAgentRunRegistry,
+  createCascadeRuntimeAgentWorker,
+  createRuntimeAgentWorker,
   detectFanInConflicts,
   detectFanInRedundancy,
   planTieredRun,
-  runCascade,
   type AgentMessage,
   type AgentWorker,
   type MultiAgentOrchestrationResult,
@@ -21,7 +22,7 @@ import {
   type OrchestrationMode,
   type TierModels
 } from "@muse/multi-agent";
-import type { ModelMessage, ModelProvider } from "@muse/model";
+import type { ModelProvider } from "@muse/model";
 import type { JsonObject } from "@muse/shared";
 import type { FastifyInstance } from "fastify";
 import { createAnswerVerifier, createWorkerSummarizer, createWorkerSynthesizer } from "./multi-agent-workers.js";
@@ -700,42 +701,15 @@ export async function buildTieredOrchestration(
     collapsedToHeavy: plan.collapsedToHeavy,
     workers: specs.map((spec) =>
       cascade && !plan.collapsedToHeavy && tierByName.get(spec.name) === "fast"
-        ? createCascadeWorker(spec, runtime, tierModels)
+        ? createCascadeRuntimeAgentWorker({
+            confidenceOf: (result) => summarizeTokenConfidence(result.response.logprobs ?? [])?.meanLogprob,
+            fastModel: tierModels.fast,
+            heavyModel: tierModels.heavy,
+            runtime,
+            spec: { description: spec.description, id: spec.name, specId: spec.id, ...(spec.systemPrompt ? { systemPrompt: spec.systemPrompt } : {}) }
+          })
         : createSpecWorker(spec, runtime, modelByName.get(spec.name))
     )
-  };
-}
-
-/**
- * A worker that runs `runCascade` over the agent runtime: the fast
- * model answers first with logprobs, `summarizeTokenConfidence`
- * scores it, and a low / unmeasurable mean-logprob escalates ONCE to the heavy
- * model. Bounded — never a loop. Confidence drives the escalation, so a strong
- * fast answer pays only the fast model (the latency win) while a weak one still
- * gets the heavy model's quality.
- */
-function createCascadeWorker(spec: AgentSpec, runtime: AgentRuntime, tierModels: TierModels): AgentWorker {
-  return {
-    canHandle: () => 1,
-    description: spec.description,
-    id: spec.name,
-    model: tierModels.fast,
-    async run(input) {
-      const messages = spec.systemPrompt ? prependSystem(input.messages, spec.systemPrompt) : input.messages;
-      const baseInput: AgentRunInput = {
-        ...input,
-        logprobs: true,
-        messages,
-        metadata: { ...(input.metadata ?? {}), agentSpecId: spec.id, selectedAgentId: spec.name }
-      };
-      const outcome = await runCascade<AgentRunResult>({
-        confidenceOf: (result) => summarizeTokenConfidence(result.response.logprobs ?? [])?.meanLogprob,
-        fast: tierModels.fast,
-        heavy: tierModels.heavy,
-        run: (model) => runtime.run({ ...baseInput, model })
-      });
-      return outcome.result;
-    }
   };
 }
 
@@ -752,35 +726,16 @@ export function orderWorkersForPipeline(specs: readonly AgentSpec[]): readonly A
 }
 
 function createSpecWorker(spec: AgentSpec, runtime: AgentRuntime, model?: string): AgentWorker {
-  return {
-    canHandle: () => 1,
-    description: spec.description,
-    id: spec.name,
+  return createRuntimeAgentWorker({
     ...(model ? { model } : {}),
-    async run(input) {
-      const messages = spec.systemPrompt ? prependSystem(input.messages, spec.systemPrompt) : input.messages;
-
-      return runtime.run({
-        ...input,
-        messages,
-        metadata: {
-          ...(input.metadata ?? {}),
-          agentSpecId: spec.id,
-          selectedAgentId: spec.name
-        }
-      });
+    runtime,
+    spec: {
+      description: spec.description,
+      id: spec.name,
+      specId: spec.id,
+      ...(spec.systemPrompt ? { systemPrompt: spec.systemPrompt } : {})
     }
-  };
-}
-
-function prependSystem(messages: readonly ModelMessage[], systemPrompt: string): readonly ModelMessage[] {
-  const [first, ...rest] = messages;
-
-  if (first?.role === "system") {
-    return [{ content: `${systemPrompt}\n\n${first.content}`, role: "system" }, ...rest];
-  }
-
-  return [{ content: systemPrompt, role: "system" }, ...messages];
+  });
 }
 
 function parseOrchestrateBody(value: unknown): ParseResult<OrchestrateBody> {
