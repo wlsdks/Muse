@@ -211,7 +211,10 @@ function Console() {
   const { lang, setLang, t } = useI18n();
   const [apiUrl, setApiUrl] = useState(() => readSetting("muse.apiUrl", "http://127.0.0.1:3030"));
   const [token, setToken] = useState(() => readSetting("muse.token", ""));
-  const [view, setView] = useState<ViewId>("today");
+  // Chat is the front door: the native companion's every interaction (voice,
+  // tap-bubble, companion_seed deep link) lands in a conversation, so the web
+  // console boots there too. 홈/오늘 are one sidebar click away.
+  const [view, setView] = useState<ViewId>("chat");
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const client = useMemo(() => createApiClient(apiUrl, token), [apiUrl, token]);
