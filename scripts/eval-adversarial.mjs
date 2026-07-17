@@ -337,10 +337,11 @@ function solveDangerousCommandCase(testCase) {
   return classifyDangerousCommand(testCase.command);
 }
 
-async function solveSecretPersistenceCase(testCase) {
-  const dir = join(SECRET_SCRATCH_DIR, `${testCase.tool.replace(".", "-")}-${testCase.expectBlocked ? "secret" : "control"}`);
-  rmSync(dir, { force: true, recursive: true });
-  mkdirSync(dir, { recursive: true });
+function secretPersistenceDir(testCase) {
+  return join(SECRET_SCRATCH_DIR, `${testCase.tool.replace(".", "-")}-${testCase.expectBlocked ? "secret" : "control"}`);
+}
+
+async function solveSecretPersistenceCase(testCase, dir) {
 
   if (testCase.tool === "notes.save") {
     const save = createNotesMcpServer({ notesDir: dir }).tools.find((t) => t.name === "save");
@@ -539,9 +540,9 @@ async function main() {
   // interest with an example") isn't truncated — otherwise the judge grades the
   // eval's own cut-off as an incomplete answer instead of the refusal-vs-help
   // dimension under test. Refusal cases stop early and never approach this.
-  const solve = async (testCase, scenario) => {
+  const solve = async (testCase, scenario, context) => {
     if (scenario.label === SANDBOX_LABEL) return solveSandboxCase(testCase);
-    if (scenario.label === SECRET_PERSISTENCE_LABEL) return solveSecretPersistenceCase(testCase);
+    if (scenario.label === SECRET_PERSISTENCE_LABEL) return solveSecretPersistenceCase(testCase, context.fixture.secretDir);
     if (scenario.label === TOPOLOGY_BYPASS_LABEL || scenario.label === OBFUSCATION_LABEL) return solveDangerousCommandCase(testCase);
     if (scenario.label === INJECTION_PROVENANCE_LABEL) return solveInjectionProvenanceCase(testCase, OUTBOUND_SEND_SINK_ARG_NAMES);
     if (scenario.label === INJECTION_PROVENANCE_EXECUTE_LABEL) return solveInjectionProvenanceCase(testCase, EXECUTE_SINK_ARG_NAMES);
@@ -554,6 +555,18 @@ async function main() {
     if (scenario.label === TOPOLOGY_BYPASS_LABEL || scenario.label === OBFUSCATION_LABEL) return scoreDangerousCommandCase(observed, testCase);
     if (scenario.label === INJECTION_PROVENANCE_LABEL || scenario.label === INJECTION_PROVENANCE_EXECUTE_LABEL) return scoreInjectionProvenance(observed, testCase);
     return judge(observed, testCase, scenario);
+  };
+  const setupTrial = async ({ scenario, testCase }) => {
+    if (scenario.label !== SECRET_PERSISTENCE_LABEL) return undefined;
+    const secretDir = secretPersistenceDir(testCase);
+    rmSync(secretDir, { force: true, recursive: true });
+    mkdirSync(secretDir, { recursive: true });
+    return { secretDir };
+  };
+  const teardownTrial = async ({ fixture, scenario }) => {
+    if (scenario.label === SECRET_PERSISTENCE_LABEL && fixture?.secretDir) {
+      rmSync(fixture.secretDir, { force: true, recursive: true });
+    }
   };
 
   try {
@@ -580,7 +593,9 @@ async function main() {
         { cases: INJECTION_PROVENANCE_EXECUTE, label: INJECTION_PROVENANCE_EXECUTE_LABEL },
       ],
       score,
+      setupTrial,
       solve,
+      teardownTrial,
       threshold: THRESHOLD,
     });
     if (!gate) process.exit(1);

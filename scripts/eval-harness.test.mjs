@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { after, test } from "node:test";
 
 import {
   briefCotSystemSection,
@@ -29,6 +32,12 @@ import {
 const call = (name, args) => ({ arguments: args, name });
 const fakeProvider = (output) => ({ async generate() { return { output }; } });
 const silent = { err: () => {}, log: () => {} };
+const inheritedResultsDir = process.env.MUSE_EVAL_RESULTS_DIR;
+delete process.env.MUSE_EVAL_RESULTS_DIR;
+after(() => {
+  if (inheritedResultsDir === undefined) delete process.env.MUSE_EVAL_RESULTS_DIR;
+  else process.env.MUSE_EVAL_RESULTS_DIR = inheritedResultsDir;
+});
 
 test("toolScorers.noTool — passes on zero calls, fails on any call", () => {
   assert.equal(toolScorers.noTool()([]).ok, true);
@@ -526,8 +535,8 @@ test("runEvalSuite — infraRetries=0 disables the retry entirely even on an opt
 });
 
 // ---------------------------------------------------------------------------
-// Safety-critical pass^k floor (agent-testing.md: "k=3 for CI gates, k≥5 for
-// grounding/safety-critical; a single green run is not proof"). A must-refuse
+// Safety-critical pass^k floor (agent-testing.md: "k=3 for local/self-hosted
+// gates, k≥5 for grounding/safety-critical; a single green run is not proof"). A must-refuse
 // battery run at repeat=1 could pass on a single lucky run — this is the gap
 // τ-bench's pass^k (arXiv:2406.12045) exists to close. These pin that an
 // under-k safety-critical scenario FAILS the suite gate outright, even when
@@ -605,4 +614,210 @@ test("runEvalSuite — a safetyCritical scenario at repeat=1 whose cases genuine
   assert.equal(r.safetyFloorViolations.length, 2);
   assert.ok(r.safetyFloorViolations.some((v) => v.includes("below the pass^k floor") || v.includes("< floor")));
   assert.ok(r.safetyFloorViolations.some((v) => v.includes("case(s) fail")));
+});
+
+test("runEvalSuite lifecycle — every infra retry gets a fresh fixture and teardown before the next attempt", async () => {
+  const events = [];
+  const scenarios = [{ cases: [{ id: "timeout-then-pass" }], id: "routing", label: "routing" }];
+  const r = await runEvalSuite({
+    infraBackoffMs: 0,
+    name: "lifecycle",
+    scenarios,
+    setupTrial: async (context) => {
+      const fixture = { id: `fixture-${context.attemptIndex.toString()}` };
+      events.push(`setup:${fixture.id}`);
+      return fixture;
+    },
+    solve: async (_case, _scenario, context) => {
+      events.push(`solve:${context.fixture.id}`);
+      if (context.attemptIndex === 0) throw new Error("request timed out");
+      return true;
+    },
+    score: async (observed, _case, _scenario, context) => {
+      events.push(`score:${context.fixture.id}`);
+      return { detail: "ok", ok: observed === true };
+    },
+    teardownTrial: async (context) => {
+      events.push(`teardown:${context.fixture.id}:${context.outcome}`);
+    },
+    ...silent,
+  });
+
+  assert.equal(r.gate, true);
+  assert.equal(r.flakeRetries, 1);
+  assert.deepEqual(events, [
+    "setup:fixture-0",
+    "solve:fixture-0",
+    "teardown:fixture-0:infra-timeout",
+    "setup:fixture-1",
+    "solve:fixture-1",
+    "score:fixture-1",
+    "teardown:fixture-1:value",
+  ]);
+});
+
+test("runEvalSuite lifecycle — teardown covers pass, semantic fail, solver/scorer throws, and Tier-0 exclusion", async () => {
+  const tornDown = [];
+  const cases = ["pass", "semantic-fail", "solver-throw", "scorer-throw", "tier0"].map((kind) => ({ id: kind, kind }));
+  const scenarios = [{ cases, id: "cleanup", label: "cleanup" }];
+  const r = await runEvalSuite({
+    infraRetries: 0,
+    name: "cleanup-paths",
+    scenarios,
+    setupTrial: async ({ caseId }) => ({ caseId }),
+    solve: async (testCase) => {
+      if (testCase.kind === "solver-throw") throw new Error("solver boom");
+      if (testCase.kind === "tier0") return "backend error";
+      return testCase.kind;
+    },
+    score: async (observed) => {
+      if (observed === "scorer-throw") throw new Error("scorer boom");
+      return { detail: String(observed), ok: observed === "pass" };
+    },
+    teardownTrial: async ({ caseId }) => { tornDown.push(caseId); },
+    ...silent,
+  });
+
+  assert.deepEqual(tornDown, cases.map(({ id }) => id));
+  assert.equal(r.total, 4);
+  assert.equal(r.excluded, 1);
+  assert.equal(r.passed, 1);
+});
+
+test("runEvalSuite lifecycle — setup suppresses execution and teardown failure preserves the primary failure while closing the gate", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muse-eval-lifecycle-"));
+  let solveCalls = 0;
+  let scoreCalls = 0;
+  let teardownCalls = 0;
+  const scenarios = [{ cases: [{ id: "setup-fails" }, { id: "double-fails" }], id: "failure-precedence", label: "failure precedence" }];
+  try {
+    const r = await runEvalSuite({
+      artifact: { resultsDir: root },
+      infraRetries: 0,
+      name: "failure-precedence",
+      scenarios,
+      setupTrial: async ({ caseId }) => {
+        if (caseId === "setup-fails") throw new Error("setup boom");
+        return { ready: true };
+      },
+      solve: async () => { solveCalls += 1; throw new Error("solver boom"); },
+      score: async () => { scoreCalls += 1; return { detail: "must not score", ok: true }; },
+      teardownTrial: async () => { teardownCalls += 1; throw new Error("teardown boom"); },
+      ...silent,
+    });
+
+    assert.equal(r.gate, false);
+    assert.equal(solveCalls, 1, "setup failure must suppress its solve; only the second case executes");
+    assert.equal(scoreCalls, 0, "a solver throw must suppress scoring");
+    assert.equal(teardownCalls, 1, "teardown runs only after the one successful setup");
+    const records = (await readFile(r.artifactPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const trials = records.filter((record) => record.schema === "muse.eval.trial/v1");
+    assert.equal(trials[0].result.failureKind, "setup-error");
+    assert.equal(trials[0].result.cleanupFailure, false);
+    assert.equal(trials[1].result.failureKind, "solver-error");
+    assert.equal(trials[1].result.cleanupFailure, true);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("runEvalSuite artifact — emits allowlisted private JSONL with stable counts, safe trace refs, and restrictive permissions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muse-eval-artifact-"));
+  const secret = "MUSE_SENTINEL_SECRET_7a73fbc2";
+  try {
+    const scenarios = [{
+      cases: [{ id: "private-case", prompt: secret }],
+      configSecret: secret,
+      id: "private-scenario",
+      label: "private scenario",
+    }];
+    const r = await runEvalSuite({
+      artifact: {
+        getTraceRefs: () => ["trace/run-1"],
+        resultsDir: root,
+      },
+      name: "privacy-suite",
+      scenarios,
+      secretConfig: secret,
+      setupTrial: async () => ({ secret }),
+      solve: async () => ({ output: secret }),
+      score: async () => ({ detail: secret, ok: true }),
+      ...silent,
+    });
+
+    assert.equal(r.gate, true);
+    assert.equal(r.artifactErrors.length, 0);
+    const bytes = await readFile(r.artifactPath, "utf8");
+    assert.equal(bytes.includes(secret), false, "prompt/output/detail/fixture/config secrets must not enter the artifact");
+    const lines = bytes.trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(lines.length, 2, "one executed attempt plus one suite summary");
+    assert.deepEqual(Object.keys(lines[0]).sort(), [
+      "attemptIndex", "caseId", "config", "repeatIndex", "result", "scenarioId", "schema", "suiteId", "traceRefs",
+    ]);
+    assert.equal(lines[0].schema, "muse.eval.trial/v1");
+    assert.equal(lines[0].caseId, "private-case");
+    assert.deepEqual(lines[0].traceRefs, ["trace/run-1"]);
+    assert.equal(lines[1].schema, "muse.eval.summary/v1");
+    assert.equal(lines[1].counts.executedAttempts, 1);
+    assert.equal(lines[1].counts.trialRecords, 1);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(r.artifactPath)).mode & 0o777, 0o600);
+      assert.equal((await stat(dirname(r.artifactPath))).mode & 0o777, 0o700);
+    }
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("runEvalSuite artifact — rejects non-local roots and unsafe trace refs without leaking labels", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muse-eval-symlink-"));
+  try {
+    const linked = join(root, "linked");
+    const realDir = await mkdtemp(join(root, "real-"));
+    await symlink(realDir, linked, process.platform === "win32" ? "junction" : "dir");
+    const scenarios = [{ cases: [{ id: "one" }], id: "s", label: "s" }];
+    const symlinkResult = await runEvalSuite({
+      artifact: { resultsDir: linked },
+      name: "symlink",
+      scenarios,
+      solve: async () => true,
+      score: async () => ({ detail: "ok", ok: true }),
+      ...silent,
+    });
+    assert.equal(symlinkResult.gate, false);
+    assert.ok(symlinkResult.artifactErrors.some((message) => /symlink/iu.test(message)));
+
+    const traceResult = await runEvalSuite({
+      artifact: {
+        getTraceRefs: () => ["../raw-trace.txt", "https://example.invalid/trace"],
+        resultsDir: realDir,
+      },
+      name: "unsafe-trace-ref",
+      repeat: 1,
+      scenarios: [{
+        cases: [{ id: "one" }],
+        id: "safe-scenario-id",
+        label: "PRIVATE_SCENARIO_LABEL_94f2",
+        safetyCritical: true,
+      }],
+      solve: async () => true,
+      score: async () => ({ detail: "ok", ok: true }),
+      ...silent,
+    });
+    assert.equal(traceResult.gate, false);
+    const traceBytes = await readFile(traceResult.artifactPath, "utf8");
+    const traceRecords = traceBytes.trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(traceRecords[0].traceRefs, []);
+    assert.equal(traceBytes.includes("PRIVATE_SCENARIO_LABEL_94f2"), false);
+    const summary = traceRecords.at(-1);
+    assert.deepEqual(summary.result.safetyFloorViolations, [{
+      actualRepeat: 1,
+      kind: "repeat-floor",
+      requiredRepeat: 3,
+      scenarioId: "safe-scenario-id",
+    }]);
+    assert.ok(traceResult.artifactErrors.some((message) => /trace reference validation/iu.test(message)));
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
 });

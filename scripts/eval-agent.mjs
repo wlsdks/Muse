@@ -1,10 +1,11 @@
 /**
- * eval:agent — the agent-eval CI GATE (agent-eval gap H).
+ * eval:agent — the local/self-hosted live agent-eval aggregate.
  *
  * Runs every harness-based agent-eval battery as ONE pass and FAILS (exit 1) if
- * ANY regresses — so a tool-selection / argument / task / adversarial / shadow-
- * trial regression blocks the run, not just logs (Hamel: "an eval suite that
- * never gates a PR catches regressions late"). Mirrors `eval:self-improving`.
+ * ANY executed battery regresses — so a tool-selection / argument / task /
+ * adversarial / shadow-trial regression blocks the local run, not just logs.
+ * Mirrors `eval:self-improving`; `eval:agent:offline` is the deterministic CI
+ * gate.
  *
  * Each battery already gates via its own exit code (1 = regression) and SKIPS
  * cleanly (exit 0) when local Ollama is unreachable, so this aggregate is also
@@ -64,4 +65,8 @@ if (failed.length > 0) {
   );
   process.exit(1);
 }
-console.log(`eval:agent PASSED — ${passed.length} pass, ${skipped.length} skip, 0 fail across ${results.length} batteries`);
+if (skipped.length > 0) {
+  console.log(`eval:agent UNVERIFIED — ${passed.length} pass, ${skipped.length} skip, 0 fail across ${results.length} batteries`);
+} else {
+  console.log(`eval:agent PASSED — ${passed.length} pass, 0 skip, 0 fail across ${results.length} batteries`);
+}

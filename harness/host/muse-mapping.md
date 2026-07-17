@@ -3,7 +3,7 @@ title: 하네스 ↔ Muse 런타임 매핑 (Harness ↔ Muse)
 audience: [개발자, AI 에이전트]
 purpose: 추상 하네스 역할을, Muse가 이미 가진 실제 멀티에이전트 런타임 부품에 연결
 status: draft
-updated: 2026-06-13
+updated: 2026-07-17
 related: [../core/team-roles.md, ../core/role-prompts.md, ../core/handoff-template.md, ../README.md]
 ---
 
@@ -33,6 +33,7 @@ related: [../core/team-roles.md, ../core/role-prompts.md, ../core/handoff-templa
 | 큐레이터/학습자(작업에서 배움) | **실재** — 스킬 자작·정돈(보관/통합), 플레이북 보상/감쇠(통한 전략 강화·교정 전략 약화), 회고 합성이 런타임에 있다. 받은 스킬은 사람 승격 전 격리. | ✅ 런타임 존재 |
 | 핸드오프 아티팩트(컨텍스트 리셋) | 단일 양식([handoff-template](../core/handoff-template.md)) + 러너가 손상된 양식·단계 건너뛰기를 코드로 거부([runner-spec §7](../reference/runner-spec.md)). | ✅ 코드 강제 |
 | 검증 게이트(완료 훅·체크포인트) | [runner/](../runner/)의 `orchestrator.mjs`(자동 구동)·`hooks.mjs`(PreToolUse 차단)·`session.mjs`(체크포인트 재개) — 스위트 64/64. | ✅ 코드 강제 |
+| 에이전트 평가 증거 | `scripts/eval-harness.mjs`의 attempt별 setup/teardown, opt-in `muse.eval.trial/v1` 로컬 JSONL, strict `pass^k`; `pnpm eval:agent:offline`은 Linux/Windows CI, `pnpm eval:agent`는 로컬 live 모델을 담당. | ✅ 코드 강제 |
 
 ## 그래서 지금 무엇이 가능한가
 
@@ -42,6 +43,12 @@ related: [../core/team-roles.md, ../core/role-prompts.md, ../core/handoff-templa
 - **이후 채워진 것(2026-05-31~)**: 독립 평가자(쓰기 권한 없는 서브에이전트), 핸드오프 양식의
   코드 강제, 검증 게이트의 자동 실행(러너) — 한때 "마지막 간극"이던 세 가지가 전부
   [runner/](../runner/)와 `.claude/agents/`로 닫혔습니다([harness-acceptance §7.5](../reference/harness-acceptance.md)).
+- **에이전트 평가 P0(2026-07-17)**: 결정론 계약은 `eval:agent:offline`로 양 OS CI에서 실행하고,
+  live 모델 평가는 로컬/self-hosted로 분리했습니다. `MUSE_EVAL_RESULTS_DIR` 또는 `artifact.resultsDir`를
+  명시할 때만 privacy-safe JSONL을 남기며, skip이나 artifact 실패를 green으로 바꾸지 않습니다.
+  첫 실제 적용은 `eval:adversarial`의 secret-persistence 저장소 격리입니다. Ollama를 끈 결정론 실측에서
+  25 cases × strict 3 runs = 75/75 attempts가 통과했고, JSONL은 75 trial + 1 summary, 파일/디렉터리는
+  `0600`/`0700`, 종료 후 scratch 잔존은 0이었습니다.
 
 ## 정직한 간극 (남은 것)
 

@@ -3,7 +3,7 @@ title: 하네스 검증 (Harness Acceptance)
 audience: [개발자, AI 에이전트]
 purpose: 하네스가 "실제로 잘 됐는지"를 확인하는 방법 — 무엇을 측정하고 어떻게 통과를 판정하나
 status: draft
-updated: 2026-06-13
+updated: 2026-07-17
 sources_basis: [Anthropic demystifying-evals-for-ai-agents, Braintrust agent-evaluation, Atlan six-layer harness testing]
 related: [../core/verification-and-guardrails.md, failure-modes-and-observability.md, ../core/team-roles.md, ../README.md]
 ---
@@ -55,6 +55,20 @@ related: [../core/verification-and-guardrails.md, failure-modes-and-observabilit
 ## 6. 검증이 개발을 이끈다 (피드백 루프)
 
 기준선을 만들고 → **한 번에 한 변수만** 바꾸고 → 델타를 측정해 → 나아진 것만 남깁니다.
+
+### 6.1 테스트 가치 게이트 — 개수가 아니라 결함 탐지력
+
+테스트는 아래 네 질문에 답할 때만 유지합니다.
+
+1. 어떤 사용자 관찰 가능 불변식 또는 실제로 재현된 실패를 막는가?
+2. 구현을 잘못 바꾼 negative/mutation control에서 정말 RED가 되는가?
+3. 더 싼 아래 계층이 놓치는 고유 신호가 있는가?
+4. 그 신호에 필요한 가장 좁고 빠른 계층에서 실행되는가?
+
+답하지 못하거나 다른 테스트와 같은 mutation에서만 함께 실패하는 검사는 합치거나 제거합니다.
+반대로 빠르다는 이유로 안전·영속·권한의 서로 다른 실패 신호를 테스트 개수만 보고 지우지 않습니다.
+skip은 PASS가 아니라 **미검증**입니다. 에이전트 평가는 각 attempt를 격리하고, 실패/예외/재시도에도
+cleanup을 보장하며, 결과 증거에는 원문 prompt·output·detail·fixture를 기본 기록하지 않습니다.
 
 ## 7. 이 하네스 문서 자체의 검증 (지금 적용)
 

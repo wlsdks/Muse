@@ -191,7 +191,8 @@ termination*). So assert at the seam:
 - **Automate it or it rots.** An eval that runs ad-hoc but never gates catches
   regressions late. `eval:agent` / `eval:self-improving` bundle the local live
   batteries and fail if ANY executed battery regresses; a skip remains
-  unverified. The offline deterministic CI split is a P0 gap. `self-eval` is
+  unverified. `eval:agent:offline` owns the deterministic Linux/Windows CI
+  contracts without rebuilding the workspace. `self-eval` is
   the regression scoreboard (a tracked count dropping is a fail-close).
 - **Error-analysis FIRST — the ordering principle, not an afterthought.**
   Before writing a scorer, read 20–50 REAL traces and open-/axial-code the

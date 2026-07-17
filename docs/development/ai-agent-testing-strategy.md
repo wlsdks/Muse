@@ -69,17 +69,17 @@ be averaged away by many easy passes.
 | HAVE | `scripts/eval-harness.mjs` already provides dataset/scenario, solver, deterministic or model scorer, infra classification, strict repeats and all-pass safety floors | deepen it; do not replace it |
 | HAVE | `eval:agent`, `eval:tools`, `eval:adversarial`, `eval:judge`, orchestration, browser/computer and multistep batteries cover major agent surfaces | keep diff-to-battery selection and real local-model runs |
 | HAVE | OpenTelemetry, persisted run events, Browser Mode/Playwright, Testcontainers and local outcome receipts provide the raw seams for state and trace evaluation | reuse these Interfaces |
-| GAP P0 | the common harness prints aggregates but does not own a versioned, structured per-trial artifact containing case/config/result/trace references | add a local-only JSONL result contract; raw personal text stays out of Git |
-| GAP P0 | isolation/reset is implemented ad hoc by individual batteries rather than guaranteed by common per-trial setup/teardown hooks | add harness-owned trial lifecycle and prove no cross-trial state leakage |
-| GAP P0 | GitHub CI proves deterministic code but cannot run the local-Ollama `eval:agent`; exit-0 skips must not look like a quality pass | split an offline deterministic agent gate for CI from a self-hosted/local live `pass^k` gate |
+| DONE P0 | `muse.eval.trial/v1` and `muse.eval.summary/v1` provide opt-in local JSONL with allowlisted metadata and opaque trace refs | keep prompt/output/detail/fixture out of artifacts and fail closed on writer errors |
+| DONE P0 | common per-attempt setup/teardown guarantees cleanup for opted-in batteries; secret-persistence is the first migrated fixture | teardown failure overrides pass/exclusion; migrate another battery only when it owns mutable trial state |
+| DONE P0 | `eval:agent:offline` runs deterministic eval contracts after the existing build on Linux and Windows; local-Ollama `eval:agent` stays separate | a live skip remains unverified, never a CI pass |
 | GAP P1 | no standard trace-to-dataset loop or baseline experiment comparison exists across the scattered batteries | locally promote reviewed failures into versioned redacted cases and compare per-case deltas |
 | GAP P1 | paraphrase/metamorphic robustness and controlled tool/API fault matrices are present only in isolated tests | add shared perturbation and fault fixtures, beginning with provider routing and Continuity |
 | GAP P1 | Attunement has outcome receipts but not an end-to-end natural-return agent suite | build cases from real life/work returns only after explicit human labels exist |
 
 ### Implementation order
 
-1. **P0 — trustworthy evidence plumbing:** structured local result artifact,
-   per-trial isolation hooks, and a deterministic offline CI aggregate.
+1. **P0 — trustworthy evidence plumbing (done 2026-07-17):** structured local
+   result artifact, per-attempt isolation hooks, and deterministic offline CI.
 2. **P1 — real distribution:** redacted trace-to-case promotion, baseline delta
    reports, paraphrase/fault matrices, then Attunement natural-return cases.
 3. **P2 — optional tooling experiments:** only after P0/P1 reveal a concrete

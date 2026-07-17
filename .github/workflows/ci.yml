@@ -40,6 +40,10 @@ jobs:
       # 6 hands back the slow build, a `typescript` that resolves to 7 crashes lint.
       - run: pnpm check:toolchain
       - run: pnpm check
+      # Reuse `pnpm check` build artifacts: this command deliberately performs
+      # no build and exercises the deterministic agent-eval contracts omitted
+      # from the workspace package test scripts.
+      - run: pnpm eval:agent:offline
   check-windows:
     runs-on: windows-latest
     timeout-minutes: 90
@@ -52,6 +56,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - run: pnpm eval:agent:offline
   check-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
