@@ -25,10 +25,17 @@
 > for mechanism lookups (memory, continuity, voice). Fetch with the roster at
 > fire start; promote to the roster only when one meets the enrollment bar.
 > **License rule (all roster+shelf): reference-only, NO verbatim copy —
-> reimplement with attribution. AGPL repos (khoj) are read-only inspiration;
-> copying their code would impose network copyleft on Muse.**
+> reimplement with attribution.**
+> 🚨 **AGPL repos (khoj): IDEAS ONLY, ZERO code. 한 줄도, 주석 한 줄도,
+> 식별자 이름 하나도 옮기지 않는다 — 읽고 덮고, 자기 설계로 다시 쓴다.
+> Violation = the slice fails review, no exceptions (owner directive
+> 2026-07-17).**
 
-- khoj — https://github.com/khoj-ai/khoj — **AGPL-3.0 ⚠ read-and-reference ONLY, never copy code** — `/Users/jinan/ai/khoj` (36k★, personal second brain / doc+web memory)
+- khoj — https://github.com/khoj-ai/khoj — 🚨 **AGPL-3.0 — 절대 주의. 코드를 단 한 줄도,
+  주석도, 스키마·프롬프트 문구도 베끼지 않는다. 읽고 아이디어만 참조 → 완전히 자기 말로
+  재구현. 한 줄이라도 옮기면 Muse 전체가 네트워크 카피레프트 의무에 걸린다. diff에 khoj
+  유래 문자열이 보이면 그 슬라이스는 FAIL이다.** — `/Users/jinan/ai/khoj` (36k★, personal
+  second brain / doc+web memory)
 - letta — https://github.com/letta-ai/letta — Apache-2.0 — `/Users/jinan/ai/letta` (24k★, MemGPT-lineage stateful memory)
 - leon — https://github.com/leon-ai/leon — MIT — `/Users/jinan/ai/leon` (17k★, local personal assistant since 2019)
 
