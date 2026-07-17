@@ -10,6 +10,7 @@ import {
   type ScheduledJobType,
   type ScheduledJobUpdateInput
 } from "@muse/scheduler";
+import { syncWorksOnFlowDelete } from "@muse/stores";
 import type { FastifyInstance } from "fastify";
 
 import { hasOwn, isRecord, readBoolean, readJsonObject, readNullableString, readNumber, readString, readStringArray } from "./server-input-utils.js";
@@ -26,6 +27,15 @@ export interface SchedulerRouteOptions {
     reply: { status(statusCode: number): { send(payload: ApiError): void } }
   ) => boolean;
   readonly scheduler?: SchedulerRouteScheduler;
+  /**
+   * The Work store's file path (docs/design/muse-work.md). When set, a job
+   * delete triggers the lifecycle-audit prune (`syncWorksOnFlowDelete`) so no
+   * Work is left pointing at a flow that no longer exists — the
+   * calendar↔reminder lesson: linking two stores means every lifecycle op on
+   * either side must stay honest. Best-effort + fail-open: a works-store
+   * hiccup never blocks the real job delete.
+   */
+  readonly worksFile?: string;
 }
 
 interface ApiError {
@@ -136,6 +146,14 @@ export function registerSchedulerRoutes(server: FastifyInstance, options: Schedu
       }
 
       await options.scheduler.service.delete(jobId);
+      if (options.worksFile) {
+        try {
+          const remaining = await options.scheduler.service.list();
+          await syncWorksOnFlowDelete(options.worksFile, remaining.map((job) => job.id));
+        } catch {
+          // Fail-open: a works-store hiccup must never block a real job delete.
+        }
+      }
       return reply.status(204).send(undefined);
     });
 

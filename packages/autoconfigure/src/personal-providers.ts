@@ -104,6 +104,7 @@ export {
   resolveSuppressedLessonsFile,
   resolveLearningPauseFile,
   resolvePlanCacheFile,
+  resolveWorksFile,
 } from "./provider-paths.js";
 
 /**

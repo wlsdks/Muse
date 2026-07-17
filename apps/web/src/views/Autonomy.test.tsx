@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { ScheduledView } from "./Scheduled.js";
 import { AutonomyView, UpcomingSections } from "./Autonomy.js";
 import { DICTIONARIES } from "../i18n/strings.js";
 import { I18nProvider } from "../i18n/index.js";
@@ -91,8 +92,8 @@ describe("UpcomingSections — empty state", () => {
   });
 });
 
-describe("AutonomyView — upcoming is the first and default tab", () => {
-  it("renders the upcoming tab as selected on first paint (no data resolved yet — loading state)", () => {
+describe("AutonomyView — action log is the first and default tab", () => {
+  it("renders the action-log tab as selected on first paint (upcoming promoted to its own nav item)", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const client = createApiClient("http://127.0.0.1:3030", "");
     const html = renderToStaticMarkup(
@@ -102,18 +103,14 @@ describe("AutonomyView — upcoming is the first and default tab", () => {
         </I18nProvider>
       </QueryClientProvider>
     );
-    expect(html).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*>[\s\S]*?Upcoming/);
-    // The FIRST tab button in document order is "Upcoming".
-    const firstTabIndex = html.indexOf('role="tab"');
-    const upcomingIndex = html.indexOf(">Upcoming<");
-    const actionsIndex = html.indexOf(">Action log<");
-    expect(firstTabIndex).toBeGreaterThanOrEqual(0);
-    expect(upcomingIndex).toBeLessThan(actionsIndex);
+    expect(html).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*>[\s\S]*?Action log/);
+    // Upcoming was promoted to its own nav item — it must NOT render here.
+    expect(html).not.toContain(">Upcoming<");
   });
 });
 
-describe("AutonomyView — tab order after the Flows promotion to its own nav item", () => {
-  it("renders the tab order: Upcoming, Action log, Objectives, Avoidances", () => {
+describe("AutonomyView — tab order after the Flows and Scheduled promotions", () => {
+  it("renders the tab order: Action log, Objectives, Avoidances", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const client = createApiClient("http://127.0.0.1:3030", "");
     const html = renderToStaticMarkup(
@@ -123,7 +120,7 @@ describe("AutonomyView — tab order after the Flows promotion to its own nav it
         </I18nProvider>
       </QueryClientProvider>
     );
-    const order = [">Upcoming<", ">Action log<", ">Objectives<", ">Avoidances<"].map((needle) =>
+    const order = [">Action log<", ">Objectives<", ">Avoidances<"].map((needle) =>
       html.indexOf(needle)
     );
     for (const index of order) {
@@ -151,7 +148,7 @@ describe("AutonomyView — connected to an injected fetch fake, no real network"
     renderToStaticMarkup(
       <QueryClientProvider client={qc}>
         <I18nProvider>
-          <AutonomyView client={fakeClient} />
+          <ScheduledView client={fakeClient} />
         </I18nProvider>
       </QueryClientProvider>
     );

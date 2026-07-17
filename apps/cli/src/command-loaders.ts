@@ -672,6 +672,14 @@ export const COMMAND_LOADERS: readonly LazyCommandLoader[] = [
     },
   },
   {
+    id: "work",
+    names: ["work"],
+    load: async (program, io, _deps) => {
+      const m = await import("./commands-work.js");
+    m.registerWorksCommands(program, io, _deps as never);
+    },
+  },
+  {
     id: "attunement",
     names: ["thread", "continue"],
     load: async (program, io, _deps) => {

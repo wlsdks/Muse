@@ -33,6 +33,8 @@ import type { SchedulerRouteScheduler } from "./scheduler-routes.js";
 export interface ServerOptions {
   /** Owner-only Personal Continuity ledger used by the read-only evaluation route. */
   readonly attunementFile?: string;
+  /** `muse work` reference-only store (docs/design/muse-work.md). */
+  readonly worksFile?: string;
   readonly logger?: boolean;
   readonly cors?: CorsOptions;
   /**

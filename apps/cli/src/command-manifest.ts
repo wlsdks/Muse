@@ -1199,5 +1199,20 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     "argsTerm": "",
     "hasOptions": true,
     "subcommands": []
+  },
+  {
+    "name": "work",
+    "description": "A named goal binding your flows, board tasks, and continuity thread",
+    "argsTerm": "",
+    "hasOptions": false,
+    "subcommands": [
+      "delete",
+      "done",
+      "link",
+      "list",
+      "outcome",
+      "show",
+      "start"
+    ]
   }
 ];

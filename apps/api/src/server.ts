@@ -21,7 +21,8 @@ import {
   resolveAuthoredSkillsDir,
   resolveReflectionsFile,
   resolveTasksFile,
-  resolveSkillRewardsFile
+  resolveSkillRewardsFile,
+  resolveWorksFile
 } from "@muse/autoconfigure";
 import { defaultBeliefProvenanceFile } from "@muse/memory";
 import { SubAgentRunRegistry } from "@muse/multi-agent";
@@ -47,6 +48,7 @@ import { registerProactiveRoutes } from "./proactive-routes.js";
 import { registerRemindersRoutes } from "./reminders-routes.js";
 import { registerAutomationRoutes } from "./automation-routes.js";
 import { registerFlowsRoutes } from "./flows-routes.js";
+import { registerWorksRoutes } from "./works-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
 import { createFileBackedActivityTracker, createInMemoryActivityTracker } from "./proactive-tick.js";
 import {
@@ -249,7 +251,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   registerSchedulerRoutes(server, {
     requireAuthenticated: (request, reply) => requireAuthenticated(request, reply, Boolean(authService)),
-    scheduler: options.scheduler
+    scheduler: options.scheduler,
+    worksFile: options.worksFile ?? resolveWorksFile(process.env)
   });
   registerMcpRoutes(server, {
     requireAuthenticated: (request, reply) => requireAuthenticated(request, reply, Boolean(authService)),
@@ -481,6 +484,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
   registerFlowsRoutes(server, { authService, scheduler: options.scheduler });
   registerBoardRoutes(server);
+  registerWorksRoutes(server, {
+    attunementFile: options.attunementFile ?? resolveAttunementFile(process.env),
+    authService,
+    scheduler: options.scheduler,
+    worksFile: options.worksFile ?? resolveWorksFile(process.env)
+  });
   registerHistoryRoutes(server, {
     authService,
     ...(options.reminderHistoryFile ? { reminderHistoryFile: options.reminderHistoryFile } : {}),

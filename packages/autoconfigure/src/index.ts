@@ -86,7 +86,8 @@ export {
   resolvePlanCacheFile,
   resolveAuthoredSkillsDir,
   resolveReflectionsFile,
-  resolveSkillRewardsFile
+  resolveSkillRewardsFile,
+  resolveWorksFile
 } from "./personal-providers.js";
 
 export {

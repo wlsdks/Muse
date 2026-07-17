@@ -402,6 +402,32 @@ export interface FlowsResponse {
   readonly flows: readonly FlowProjection[];
 }
 
+// Mirrors `apps/api`'s `PersistedWork`/`WorkOutcome` (works-store.ts, via
+// `serializeWork`). Duplicated as a plain JSON-shape type for the same reason
+// as `FlowProjection` above — apps/web only talks to the API server.
+export interface WorkOutcomeRow {
+  readonly atIso: string;
+  readonly kind: "used" | "adjusted" | "ignored";
+  readonly note?: string;
+}
+
+export interface WorkRow {
+  readonly id: string;
+  readonly name: string;
+  readonly goal: string;
+  readonly flowIds: readonly string[];
+  readonly boardTaskIds: readonly string[];
+  readonly threadId?: string;
+  readonly status: "active" | "paused" | "done";
+  readonly outcomes: readonly WorkOutcomeRow[];
+  readonly createdAtIso: string;
+  readonly updatedAtIso: string;
+}
+
+export interface WorksResponse {
+  readonly works: readonly WorkRow[];
+}
+
 // Mirrors the fields of `@muse/scheduler`'s `ScheduledJob` /
 // `ScheduledJobInput` / `ScheduledJobUpdateInput` (packages/scheduler/src/index.ts)
 // that the Flows edit/create panels actually read or write — duplicated as

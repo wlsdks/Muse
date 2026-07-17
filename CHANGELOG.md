@@ -8,6 +8,20 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+### Added
+
+- **Muse Work — one place for one goal.** `muse work start "생일 파티 준비"
+  --goal "..."` creates a Work that binds the automations (flows), board
+  tasks, and continuity thread serving that goal, records used/adjusted/
+  ignored outcomes, and never executes anything itself — deleting a Work
+  only severs references. Short ids round-trip everywhere, and deleting a
+  scheduled job automatically prunes it from any Work. Ships with a
+  read-only 일 view and `/api/works`.
+- **The sidebar now names your automation surfaces.** New 자동화 group:
+  흐름 (build/edit automations), 예약 (what runs next + interruption
+  budget, promoted from the old 예정 tab), and 일 (Work). 자동 활동 under
+  System keeps the action log, standing objectives, and vetoes.
+
 ### Fixed
 
 - **Your saved model choice now beats a stale API key.** A dead

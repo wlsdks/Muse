@@ -64,6 +64,7 @@ describe("SidebarNav — a11y semantics for the primary navigation", () => {
         "autonomy",
         "calendar",
         "flows",
+        "scheduled",
         "chat",
         "continuity",
         "home",
@@ -73,7 +74,8 @@ describe("SidebarNav — a11y semantics for the primary navigation", () => {
         "reminders",
         "settings",
         "tasks",
-        "today"
+        "today",
+        "work"
       ].sort()
     );
 
@@ -90,7 +92,14 @@ describe("SidebarNav — a11y semantics for the primary navigation", () => {
       }
     }
     expect(groupOrder.indexOf("group.workspace")).toBeLessThan(groupOrder.indexOf("group.life"));
-    expect(groupOrder.indexOf("group.life")).toBeLessThan(groupOrder.indexOf("group.knowledge"));
+    expect(groupOrder.indexOf("group.life")).toBeLessThan(groupOrder.indexOf("group.automation"));
+    expect(groupOrder.indexOf("group.automation")).toBeLessThan(groupOrder.indexOf("group.knowledge"));
     expect(groupOrder.indexOf("group.knowledge")).toBeLessThan(groupOrder.indexOf("group.system"));
+
+    for (const id of ["flows", "scheduled", "work"] as const) {
+      const entry = NAV.find((n) => n.id === id);
+      expect(entry?.group).toBe("group.automation");
+      expect(entry?.advanced).toBeFalsy();
+    }
   });
 });

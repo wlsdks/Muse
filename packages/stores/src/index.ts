@@ -116,3 +116,39 @@ export { addToQuarantine, buildSwarmSkillDraft, listPending, readQuarantine, set
 export type { SwarmQuarantineEntry } from "./swarm-quarantine-store.js";
 export { askTimeWeaknessNudge, isMasteredWeakness, readWeaknesses, recordTimeParseWeakness, recordWeakness, recordWeaknessResolved, remediationHint, renderAskTimeNudge, selectDevFixableWeaknesses, selectRemediableWeaknesses, topicKeyFromMessage } from "./weakness-ledger.js";
 export type { AskTimeNudge, DevFixableWeakness, WeaknessEntry } from "./weakness-ledger.js";
+export {
+  addWorkOutcome,
+  createWork,
+  decryptWorksAtRest,
+  deleteWork,
+  encryptWorksAtRest,
+  getWork,
+  isWorksEncrypted,
+  linkWorkBoardTask,
+  linkWorkFlow,
+  listWorks,
+  markWorkDone,
+  mutateWorks,
+  pruneDeletedFlowRefs,
+  readWorks,
+  resolveWorkId,
+  serializeWork,
+  setWorkThread,
+  syncWorksOnFlowDelete,
+  unlinkWorkBoardTask,
+  unlinkWorkFlow,
+  unlinkWorkThread,
+  updateWork,
+  WorksStoreError,
+  writeWorks
+} from "./works-store.js";
+export type {
+  AddWorkOutcomeInput,
+  CreateWorkInput,
+  LinkValidator,
+  PersistedWork,
+  UpdateWorkInput,
+  WorkOutcome,
+  WorkOutcomeKind,
+  WorkStatus
+} from "./works-store.js";

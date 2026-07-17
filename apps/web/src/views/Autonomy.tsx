@@ -17,9 +17,8 @@ import type {
 } from "../api/types.js";
 import type { StringKey, Translate } from "../i18n/index.js";
 
-type Tab = "upcoming" | "actions" | "objectives" | "vetoes";
+type Tab = "actions" | "objectives" | "vetoes";
 const TABS: readonly { id: Tab; labelKey: StringKey }[] = [
-  { id: "upcoming", labelKey: "auto.tab.upcoming" },
   { id: "actions", labelKey: "auto.tab.actions" },
   { id: "objectives", labelKey: "auto.tab.objectives" },
   { id: "vetoes", labelKey: "auto.tab.vetoes" }
@@ -39,7 +38,7 @@ function statusTone(status: string): "ok" | "accent" | "neutral" {
 
 export function AutonomyView({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
-  const [tab, setTab] = useState<Tab>("upcoming");
+  const [tab, setTab] = useState<Tab>("actions");
 
   return (
     <div className="content-narrow">
@@ -72,7 +71,6 @@ export function AutonomyView({ client }: { client: ApiClient }) {
         ))}
       </div>
 
-      {tab === "upcoming" && <UpcomingTab client={client} />}
       {tab === "actions" && <ActionsTab client={client} locale={locale} />}
       {tab === "objectives" && <ObjectivesTab client={client} locale={locale} />}
       {tab === "vetoes" && <VetoesTab client={client} locale={locale} />}
@@ -80,7 +78,7 @@ export function AutonomyView({ client }: { client: ApiClient }) {
   );
 }
 
-function UpcomingTab({ client }: { client: ApiClient }) {
+export function UpcomingTab({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
   const q = useQuery({
     queryFn: () => client.get<AutomationUpcomingResponse>("/api/automation/upcoming"),
