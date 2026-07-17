@@ -47,6 +47,24 @@ git 공식 드라이버, rebase에도 적용, RED→GREEN 재현 검증됨). 알
 동시 작성자가 훨씬 늘면 다음 단계는 GitLab-식 **엔트리-파일 분리**(항목=파일,
 상태=디렉토리 이동; git-bug/ripissue 계열 prior art) — 지금은 과잉이라 미채택.
 
+## 기록 템플릿 (2026-07-17 진안 지시 — 분석 가능한 데이터로)
+
+backlog.md·backlog-archive.md의 모든 최상위 `- ` 줄은 이 문법을 따른다
+(`scripts/check-ledger-format.mjs`가 self-eval 게이트로 강제):
+
+```
+- [status] YYYY-MM-DD key=value ... :: 자유 서술 (제목/내용)
+  이어지는 상세는 2칸 들여쓰기 (여러 줄 허용, 자유 산문)
+```
+
+- **status** (단어만): `open` 해야할 것 · `done` 완료 · `blocked` 막힘 ·
+  `decision` 사람 결정 대기 · `rejected` 기각(재유도 금지) · `superseded` 대체됨
+- **필드** (있는 것만, 공백 구분): `commit=<sha>` `kind=<fix|feat|test|docs|guard|scout>`
+  `src=<probe|scout|owner|loop|audit>` `prio=<1-5>` `gate="before->after"`
+  `for=<improve-muse|grow-muse>`
+- **이모지·장식기호 금지** (수학 기호는 허용). 화살표는 `->`.
+- 분석 예: `grep '^- \[done\]' | ...` 로 날짜·커밋·게이트델타가 바로 뽑힌다.
+
 ## 큐레이션 규칙 (모든 장부 공통)
 
 완료는 델타 붙은 한 줄로 압축하고, 항목을 더할 때마다 낡은 줄 하나 이상 지운다
