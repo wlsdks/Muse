@@ -1,0 +1,27 @@
+---
+title: Progressive autonomy P0
+status: implemented
+updated: 2026-07-17
+---
+
+# Progressive autonomy P0
+
+P0 proves one reversible local action: `muse.tasks.complete-linked-next-step` schema v1. It may change only an exact user-authored Attunement link from a local open task to done. A standing grant is bound to the user, thread, task link instance including `linkedAt`, `open -> done`, expiry, maximum uses, policy version, executor version, and `issuedBy: user`.
+
+The policy reducer returns enforcement (`deny | confirm | allow-standing`) separately from shadow assessment (`wouldDeny | wouldConfirm | wouldAllowStanding`). Shadow mode never changes confirmation enforcement. Hard deny, veto, missing or corrupt link authority, and unsupported actions deny. Only an exact active grant can allow standing execution; all other supported requests require confirmation and cannot enter the mutation path.
+
+Grant administration is a trusted host-composition boundary. The authority-minting file adapter is deliberately absent from the general `@muse/stores` barrel and is exposed only through the explicit `@muse/stores/host-progressive-autonomy` entry point. Trusted host wiring owns its construction, user-authorization verifier, file ownership, and OS permissions; TypeScript and package exports are not a security sandbox. Model, tool, and action-executor wiring receives only the frozen narrow executor interface, without issue, revoke, or veto methods. Approval rate, silence, model confidence, Attunement outcomes, and executor output are not inputs to grant issuance or scope.
+
+Live execution persists `prepared` before claiming. One autonomy-file lock rechecks the active grant, veto, and current exact link instance, reserves one use, and persists `executing` with immutable live mode, policy/executor versions, decision, and claim time. Only a replay with that same live claim context may resume task CAS; shadow, hard-deny, and version-mismatched calls cannot inherit its mutation authority. Terminal `succeeded`, `failed`, `unknown`, and `undone` executions return their durable result without re-entering CAS. The task file lock performs an exact fingerprint CAS. Exact intended-after is replay success; any other state is `unknown` with no task write. Durable action receipts contain the before/intended/observed fingerprints, full grant, thread/link, trace, outcome, and rationale.
+
+The durable store rejects malformed records and cross-record inconsistencies, including duplicate execution/idempotency/receipt identifiers, missing or scope-mismatched grant references, inconsistent action/shadow/undo receipts, and `usedCount` disagreement with durable claims. Every public mutation validates its complete candidate state with those same strict rules before the atomic write, so invalid prepare inputs cannot poison a previously readable store. A `succeeded` receipt must include an observed fingerprint exactly equal to its intended-after fingerprint at both write and reload boundaries; `unknown` retains the actual non-matching observation when available. Undo first validates exact recorded after-state and persists an `undoing` claim under the autonomy lock. A before-state can count as crash recovery only after that durable claim exists; a user-restored before-state without the claim is refused. The task restore and undo receipt are idempotently reconciled after a crash.
+
+## Outside P0
+
+P0 has no CLI, API, web, messaging, posting, purchasing, finance, account or credential changes, calendar invitations, browser submission, generic desktop control, irreversible deletion, subagent side effects, new personal-data sources, or outcome-driven permission promotion. Cross-surface conformance and every additional action schema require separate reviewed slices.
+
+## Shadow dogfood and promotion
+
+Collect 20–50 real shadow decisions before considering live promotion. Each sample must preserve existing confirmation enforcement and retain its rationale receipt. Review exact-scope matches, false allows, false denies, user vetoes, expiry/version failures, relinks, crash replay, and undo outcomes.
+
+Promotion requires zero false `wouldAllowStanding` decisions, zero scope expansion, complete durable receipts, successful crash/replay and safe-undo review, and an explicit human decision. Any false allow, corrupt-state tolerance, unexplained receipt gap, CAS clobber, veto miss, or unsafe undo immediately demotes the action to confirmation or disables it. Sample volume, approval rate, silence, confidence, and Attunement outcomes never promote authority automatically.

@@ -331,6 +331,9 @@ importers:
 
   packages/attunement:
     dependencies:
+      '@muse/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared
@@ -861,6 +864,9 @@ importers:
       '@muse/memory':
         specifier: workspace:*
         version: link:../memory
+      '@muse/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared

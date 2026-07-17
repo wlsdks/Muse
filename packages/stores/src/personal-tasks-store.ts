@@ -94,7 +94,7 @@ export async function mutateTasks(
   return withFileLock(file, async () => {
     const current = await readTasks(file);
     const next = await fn(current);
-    await writeTasks(file, next);
+    if (next !== current) await writeTasks(file, next);
     return next;
   });
 }

@@ -27,6 +27,14 @@ export {
 } from "./evaluation.js";
 export { BASELINE_POLICY, baselinePolicy, isBaselinePolicy, policyForOutcome } from "./policy-reducer.js";
 export {
+  completeLinkedNextStep,
+  type CompleteLinkedNextStepOptions,
+  type CompleteLinkedNextStepResult,
+  undoLinkedNextStep,
+  type UndoLinkedNextStepOptions,
+  type UndoLinkedNextStepResult
+} from "./progressive-autonomy.js";
+export {
   DEFAULT_TIMING_POLICY,
   TIMING_APP_CATEGORIES,
   TIMING_DECISIONS,

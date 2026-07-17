@@ -5,11 +5,18 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./host-progressive-autonomy": {
+      "types": "./dist/progressive-autonomy-store.d.ts",
+      "import": "./dist/progressive-autonomy-store.js"
+    }
+  },
   "scripts": { "build": "tsc -b", "test": "vitest run", "typecheck": "tsc -p tsconfig.json --noEmit" },
   "dependencies": {
     "@muse/mcp-shared": "workspace:*",
     "@muse/memory": "workspace:*",
+    "@muse/policy": "workspace:*",
     "@muse/shared": "workspace:*"
   }
 }

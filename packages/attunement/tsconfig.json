@@ -9,6 +9,7 @@
   "include": ["src/**/*.ts"],
   "exclude": ["dist"],
   "references": [
+    { "path": "../policy" },
     { "path": "../shared" },
     { "path": "../stores" }
   ]
