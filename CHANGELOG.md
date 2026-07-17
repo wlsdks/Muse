@@ -8,6 +8,18 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+### Fixed
+
+- **`muse ask` semantic grounding works again on v2 note indexes.** The ask
+  path parsed `notes-index.json` directly and never hydrated the Float32
+  embedding sidecar, so every cosine ranking failed and answers silently
+  degraded to lexical-only matching with low-confidence warnings. Ask now
+  loads the index through the sidecar-aware loader (regression-tested).
+- **`muse today` shows calendar events in your local time.** The Upcoming
+  list printed the raw UTC hour of the ISO timestamp (a 10:00 KST standup
+  rendered as 01:00); it now renders the viewer's wall-clock like
+  `muse calendar tomorrow`.
+
 ### Changed
 
 - **Continuity evaluation now separates raw outcome thresholds from longitudinal evidence:**

@@ -258,6 +258,11 @@ function hasTerminalControl(s: string): boolean {
   return false;
 }
 
+const localHm = (iso: string): string => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
 describe("formatEvents terminal-injection hardening (sibling — calendar)", () => {
   it("strips control sequences from a third-party event title", () => {
     const out = formatEvents([
@@ -269,12 +274,23 @@ describe("formatEvents terminal-injection hardening (sibling — calendar)", () 
     ]);
     expect(hasTerminalControl(out)).toBe(false);
     expect(out).toContain("Hostile invite second line");
-    expect(out).toContain("15:00 —");
+    expect(out).toContain(`${localHm("2026-05-18T15:00:00.000Z")} —`);
+  });
+
+  it("renders the viewer's LOCAL wall-clock, not the raw UTC hour of the ISO string", () => {
+    const iso = "2026-05-18T01:00:00.000Z";
+    expect(formatEvents([{ id: "e", startsAtIso: iso, title: "Standup" }]))
+      .toBe(`\nUpcoming (1):\n  - ${localHm(iso)} — Standup\n`);
+  });
+
+  it("falls back to the raw slice for an unparseable startsAtIso", () => {
+    expect(formatEvents([{ id: "e", startsAtIso: "9999-99-99T99:99:00.000Z", title: "X" }])).toContain("99:99 —");
   });
 
   it("leaves a clean event untouched + preserves the empty/unconfigured states", () => {
-    expect(formatEvents([{ id: "e", startsAtIso: "2026-05-18T09:30:00.000Z", title: "Standup" }]))
-      .toBe("\nUpcoming (1):\n  - 09:30 — Standup\n");
+    const iso = "2026-05-18T09:30:00.000Z";
+    expect(formatEvents([{ id: "e", startsAtIso: iso, title: "Standup" }]))
+      .toBe(`\nUpcoming (1):\n  - ${localHm(iso)} — Standup\n`);
     expect(formatEvents([])).toBe("\nUpcoming: (no calendar events in window)\n");
   });
 

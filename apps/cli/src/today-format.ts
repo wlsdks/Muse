@@ -391,7 +391,13 @@ export function formatEvents(events: readonly { readonly id: string; readonly ti
   // like the inbox / feeds / search surfaces.
   const lines = events.map((event) => {
     const title = stripUntrustedTerminalChars(event.title).replace(/\s+/gu, " ").trim();
-    return `  - ${event.startsAtIso.slice(11, 16)} — ${title}`;
+    // Render the viewer's local wall-clock (like `muse calendar tomorrow`) —
+    // slicing the ISO string printed UTC and misstated every non-UTC user's day.
+    const at = new Date(event.startsAtIso);
+    const hm = Number.isNaN(at.getTime())
+      ? event.startsAtIso.slice(11, 16)
+      : `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+    return `  - ${hm} — ${title}`;
   });
   return `\nUpcoming (${events.length}):\n${lines.join("\n")}\n`;
 }

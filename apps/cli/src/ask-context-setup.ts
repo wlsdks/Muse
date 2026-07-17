@@ -16,7 +16,7 @@ import { corpusOnboardingHint, formatCorpusOverview, queryHasAdHocGrounding, typ
 import type { AskOptions } from "./ask-command-options.js";
 import { listNoteFiles, notesCorpusFileCount } from "./ask-corpus-helpers.js";
 import { userHasOtherPersonalData } from "./ask-user-data-presence.js";
-import { isNotesIndexStale, reindexNotes } from "./commands-notes-rag.js";
+import { isNotesIndexStale, loadIndex, reindexNotes } from "./commands-notes-rag.js";
 import { DEFAULT_EMBED_MODEL, resolveIndexModel } from "./embed-model-default.js";
 import { parseBoundedInt } from "./parse-bounded-int.js";
 import { resolvePersona } from "./program-helpers.js";
@@ -24,7 +24,7 @@ import type { ProgramIO } from "./program.js";
 import { resolveDefaultUserKey } from "./user-id.js";
 
 export interface NotesIndex {
-  readonly version: 1;
+  readonly version: number;
   readonly model: string;
   readonly files: readonly FileEntry[];
 }
@@ -115,17 +115,14 @@ export async function prepareAskContext(
     }
   }
 
-  // Load notes index — soft-fail with hint if missing
-  let index: NotesIndex | undefined;
-  try {
-    const raw = await readFile(notesIndexPath(), "utf8");
-    index = JSON.parse(raw) as NotesIndex;
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
-      io.stderr("No notes index at ~/.muse/notes-index.json. Run `muse notes reindex` first.\n");
-      return { kind: "error" };
-    }
-    throw cause;
+  // Load notes index — soft-fail with hint if missing. MUST go through
+  // loadIndex, never a raw JSON.parse: the v2 index keeps embeddings in the
+  // Float32 sidecar, so a raw parse yields embedding-less chunks and every
+  // cosine ranking throws — silently degrading `muse ask` to lexical-only.
+  let index = (await loadIndex(notesIndexPath())) as NotesIndex | undefined;
+  if (!index) {
+    io.stderr("No notes index at ~/.muse/notes-index.json. Run `muse notes reindex` first.\n");
+    return { kind: "error" };
   }
   if (index.model !== embedModel) {
     // One-time legacy migration: an index built with the OLD default
@@ -136,7 +133,8 @@ export async function prepareAskContext(
       io.stderr(`(embedding default upgraded '${index.model}' → '${embedModel}' — re-indexing your notes once)\n`);
       try {
         await reindexNotes({ dir: notesDir, indexPath: notesIndexPath(), model: embedModel, onProgress: (line) => io.stderr(`  ${line}\n`) });
-        index = JSON.parse(await readFile(notesIndexPath(), "utf8")) as NotesIndex;
+        index = (await loadIndex(notesIndexPath())) as NotesIndex | undefined;
+        if (!index) throw new Error("re-indexed notes index failed to load");
       } catch (cause) {
         io.stderr(`Re-index failed (${errorMessage(cause)}). Try: ollama pull ${embedModel}\n`);
         return { kind: "error" };
