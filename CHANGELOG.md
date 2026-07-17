@@ -34,6 +34,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Changed
 
+- **The flow canvas is now a builder.** On the 흐름 tab you can create a new
+  automation from a form with a live canvas preview, click any node to edit
+  its real settings (schedule presets or raw cron, prompt, model, notify
+  channel), toggle a retry loop and watch the loop edge appear, rename,
+  enable/disable, run a flow right now, and delete with a two-step confirm —
+  all through the same scheduler engine Muse itself uses, so flows you build
+  and flows Muse creates from a prompt stay one and the same thing.
+
 - **See your automations as a flow.** 자동 활동 gains a "흐름" (Flows) tab
   that draws every scheduled automation as a node canvas — schedule trigger,
   what the agent does, where the result goes, and a visible retry loop when

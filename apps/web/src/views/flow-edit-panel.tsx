@@ -1,0 +1,314 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { errorMessage } from "@muse/shared/browser";
+
+import { Badge, Button } from "../components/ui.js";
+import { useI18n } from "../i18n/index.js";
+import {
+  actionFormFromJob,
+  flowEditToJobPatch,
+  isValidCronShape,
+  MAX_RETRY_COUNT,
+  MIN_RETRY_COUNT,
+  outputFormFromJob,
+  SCHEDULE_PRESETS,
+  triggerFormFromJob,
+  type ActionEditForm,
+  type OutputEditForm,
+  type ScheduleKind,
+  type TriggerEditForm
+} from "./flow-edit-compile.js";
+import { KIND_LABEL_KEY } from "./flow-nodes.js";
+
+import type { ApiClient } from "../api/client.js";
+import type { FlowCanvasNode } from "./flow-canvas-mapping.js";
+import type { ScheduledJobDetail } from "../api/types.js";
+import type { StringKey } from "../i18n/index.js";
+
+export const PRESET_LABEL_KEY: Record<string, StringKey> = {
+  custom: "auto.flows.preset.custom",
+  dailyEvening6: "auto.flows.preset.dailyEvening6",
+  dailyMorning9: "auto.flows.preset.dailyMorning9",
+  hourly: "auto.flows.preset.hourly",
+  weekdays9: "auto.flows.preset.weekdays9",
+  weeklyMonday9: "auto.flows.preset.weeklyMonday9"
+};
+
+function categoryForKind(kind: FlowCanvasNode["data"]["kind"]): "trigger" | "action" | "output" {
+  if (kind === "trigger.schedule") return "trigger";
+  if (kind === "action.agent" || kind === "action.tool") return "action";
+  return "output";
+}
+
+/** A `T` local form value plus a `baseline` snapshot it's compared against
+ * for the disabled-while-unchanged Save button — `markSaved` re-baselines
+ * after a successful PATCH so the button (and the "Saved" badge) react
+ * correctly to the next edit. */
+function useSavableForm<T>(initial: T) {
+  const [form, setForm] = useState<T>(initial);
+  const [baseline, setBaseline] = useState<T>(initial);
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  return { baseline, dirty, form, markSaved: () => setBaseline(form), setForm };
+}
+
+/**
+ * Fetches the full `ScheduledJob` (not the truncated `/api/flows` projection
+ * meta — a long `agentPrompt` is truncated there, and PATCHing that back
+ * would permanently truncate the real prompt) and renders the edit form for
+ * whichever node category was clicked. `key={node.id}` at the call site
+ * forces a fresh mount (fresh initial form state) on every node selection.
+ */
+export function FlowNodeEditPanel({
+  client,
+  jobId,
+  node,
+  onSaved
+}: {
+  client: ApiClient;
+  jobId: string;
+  node: FlowCanvasNode;
+  onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const job = useQuery({
+    queryFn: () => client.get<ScheduledJobDetail>(`/api/scheduler/jobs/${encodeURIComponent(jobId)}`),
+    queryKey: ["scheduler-job-detail", client.baseUrl, jobId]
+  });
+
+  if (job.isLoading) {
+    return <p className="subtle">{t("auto.flows.detailEmpty")}</p>;
+  }
+  if (job.error || !job.data) {
+    return <div className="banner err">{errorMessage(job.error, t("auto.flows.edit.saveFailed"))}</div>;
+  }
+
+  const category = categoryForKind(node.data.kind);
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div className="row-title">{t(KIND_LABEL_KEY[node.data.kind])}</div>
+      {category === "trigger" && (
+        <TriggerEditFields key={node.id} client={client} jobId={jobId} job={job.data} onSaved={onSaved} />
+      )}
+      {category === "action" && (
+        job.data.jobType.toLowerCase() === "agent" ? (
+          <ActionEditFields key={node.id} client={client} jobId={jobId} job={job.data} onSaved={onSaved} />
+        ) : (
+          <p className="subtle">{t("auto.flows.edit.unsupportedAction")}</p>
+        )
+      )}
+      {category === "output" && (
+        <OutputEditFields key={node.id} client={client} jobId={jobId} job={job.data} onSaved={onSaved} />
+      )}
+    </div>
+  );
+}
+
+function invalidateFlowQueries(client: ApiClient, jobId: string, qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ["flows"] });
+  void qc.invalidateQueries({ queryKey: ["scheduler-job-detail", client.baseUrl, jobId] });
+}
+
+function TriggerEditFields({
+  client,
+  jobId,
+  job,
+  onSaved
+}: {
+  client: ApiClient;
+  jobId: string;
+  job: ScheduledJobDetail;
+  onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const { dirty, form, markSaved, setForm } = useSavableForm<TriggerEditForm>(triggerFormFromJob(job));
+
+  const save = useMutation({
+    mutationFn: () => client.patch(`/api/scheduler/jobs/${encodeURIComponent(jobId)}`, flowEditToJobPatch("trigger", form)),
+    onSuccess: () => {
+      markSaved();
+      invalidateFlowQueries(client, jobId, qc);
+      onSaved();
+    }
+  });
+
+  const customInvalid = form.schedule.kind === "custom" && !isValidCronShape(form.schedule.customCron);
+  const canSave = dirty && !customInvalid && !save.isPending;
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.edit.scheduleLabel")}</span>
+        <select
+          className="input"
+          value={form.schedule.kind}
+          onChange={(e) => {
+            const kind = e.target.value as ScheduleKind;
+            setForm({ schedule: { customCron: kind === "custom" ? form.schedule.customCron : "", kind } });
+          }}
+        >
+          {SCHEDULE_PRESETS.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {t(PRESET_LABEL_KEY[preset.id]!)}
+            </option>
+          ))}
+          <option value="custom">{t("auto.flows.preset.custom")}</option>
+        </select>
+      </label>
+      {form.schedule.kind === "custom" && (
+        <label style={{ display: "grid", gap: 4 }}>
+          <span className="field-label">{t("auto.flows.edit.customCronLabel")}</span>
+          <input
+            className="input"
+            type="text"
+            value={form.schedule.customCron}
+            onChange={(e) => setForm({ schedule: { customCron: e.target.value, kind: "custom" } })}
+          />
+          <span className="subtle" style={{ fontSize: 12 }}>{t("auto.flows.edit.customCronHint")}</span>
+          {customInvalid && (
+            <span className="subtle" style={{ color: "var(--err)", fontSize: 12 }}>
+              {t("auto.flows.edit.customCronInvalid")}
+            </span>
+          )}
+        </label>
+      )}
+      <div className="row-meta">{t("auto.flows.meta.timezone")}: {job.timezone}</div>
+      <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+        <Button variant="primary" size="sm" disabled={!canSave} onClick={() => save.mutate()}>
+          {save.isPending ? t("auto.flows.edit.saving") : t("auto.flows.edit.save")}
+        </Button>
+        {!dirty && save.isSuccess && <Badge tone="ok">{t("auto.flows.edit.saved")}</Badge>}
+      </div>
+      {save.error && <div className="banner err">{errorMessage(save.error, t("auto.flows.edit.saveFailed"))}</div>}
+    </div>
+  );
+}
+
+function ActionEditFields({
+  client,
+  jobId,
+  job,
+  onSaved
+}: {
+  client: ApiClient;
+  jobId: string;
+  job: ScheduledJobDetail;
+  onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const { dirty, form, markSaved, setForm } = useSavableForm<ActionEditForm>(actionFormFromJob(job));
+
+  const save = useMutation({
+    mutationFn: () => client.patch(`/api/scheduler/jobs/${encodeURIComponent(jobId)}`, flowEditToJobPatch("action", form)),
+    onSuccess: () => {
+      markSaved();
+      invalidateFlowQueries(client, jobId, qc);
+      onSaved();
+    }
+  });
+
+  const retryCountValid = !form.retryOnFailure || (form.maxRetryCount >= MIN_RETRY_COUNT && form.maxRetryCount <= MAX_RETRY_COUNT);
+  const canSave = dirty && form.agentPrompt.trim().length > 0 && retryCountValid && !save.isPending;
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.edit.promptLabel")}</span>
+        <textarea
+          className="input"
+          rows={4}
+          value={form.agentPrompt}
+          onChange={(e) => setForm({ ...form, agentPrompt: e.target.value })}
+        />
+      </label>
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.edit.modelLabel")}</span>
+        <input
+          className="input"
+          type="text"
+          placeholder={t("auto.flows.edit.modelPlaceholder")}
+          value={form.agentModel}
+          onChange={(e) => setForm({ ...form, agentModel: e.target.value })}
+        />
+      </label>
+      <label style={{ alignItems: "center", display: "flex", gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={form.retryOnFailure}
+          onChange={(e) => setForm({ ...form, retryOnFailure: e.target.checked })}
+        />
+        <span className="field-label">{t("auto.flows.edit.retryLabel")}</span>
+      </label>
+      {form.retryOnFailure && (
+        <label style={{ display: "grid", gap: 4, maxWidth: 160 }}>
+          <span className="field-label">{t("auto.flows.edit.retryCountLabel")}</span>
+          <input
+            className="input"
+            type="number"
+            min={MIN_RETRY_COUNT}
+            max={MAX_RETRY_COUNT}
+            value={form.maxRetryCount}
+            onChange={(e) => setForm({ ...form, maxRetryCount: Number(e.target.value) })}
+          />
+        </label>
+      )}
+      <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+        <Button variant="primary" size="sm" disabled={!canSave} onClick={() => save.mutate()}>
+          {save.isPending ? t("auto.flows.edit.saving") : t("auto.flows.edit.save")}
+        </Button>
+        {!dirty && save.isSuccess && <Badge tone="ok">{t("auto.flows.edit.saved")}</Badge>}
+      </div>
+      {save.error && <div className="banner err">{errorMessage(save.error, t("auto.flows.edit.saveFailed"))}</div>}
+    </div>
+  );
+}
+
+function OutputEditFields({
+  client,
+  jobId,
+  job,
+  onSaved
+}: {
+  client: ApiClient;
+  jobId: string;
+  job: ScheduledJobDetail;
+  onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const { dirty, form, markSaved, setForm } = useSavableForm<OutputEditForm>(outputFormFromJob(job));
+
+  const save = useMutation({
+    mutationFn: () => client.patch(`/api/scheduler/jobs/${encodeURIComponent(jobId)}`, flowEditToJobPatch("output", form)),
+    onSuccess: () => {
+      markSaved();
+      invalidateFlowQueries(client, jobId, qc);
+      onSaved();
+    }
+  });
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.edit.notifyLabel")}</span>
+        <input
+          className="input"
+          type="text"
+          placeholder={t("auto.flows.edit.notifyPlaceholder")}
+          value={form.notificationChannelId}
+          onChange={(e) => setForm({ notificationChannelId: e.target.value })}
+        />
+        <span className="subtle" style={{ fontSize: 12 }}>{t("auto.flows.edit.notifyHint")}</span>
+      </label>
+      <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+        <Button variant="primary" size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? t("auto.flows.edit.saving") : t("auto.flows.edit.save")}
+        </Button>
+        {!dirty && save.isSuccess && <Badge tone="ok">{t("auto.flows.edit.saved")}</Badge>}
+      </div>
+      {save.error && <div className="banner err">{errorMessage(save.error, t("auto.flows.edit.saveFailed"))}</div>}
+    </div>
+  );
+}

@@ -1,0 +1,333 @@
+import { describe, expect, it } from "vitest";
+
+import { flowToCanvas } from "./flow-canvas-mapping.js";
+import {
+  actionFormFromJob,
+  cronForPreset,
+  DEFAULT_MAX_RETRY_COUNT,
+  draftToPreviewProjection,
+  emptyFlowDraft,
+  flowDraftToJobInput,
+  flowEditToJobPatch,
+  isFlowDraftValid,
+  isValidCronShape,
+  MAX_RETRY_COUNT,
+  MIN_RETRY_COUNT,
+  outputFormFromJob,
+  presetForCron,
+  renameFlowPatch,
+  resolveScheduleCron,
+  SCHEDULE_PRESETS,
+  scheduleFormFromCron,
+  toggleEnabledPatch,
+  triggerFormFromJob,
+  type ActionEditForm,
+  type FlowDraft,
+  type OutputEditForm,
+  type SchedulePresetId,
+  type TriggerEditForm
+} from "./flow-edit-compile.js";
+
+import type { ScheduledJobDetail } from "../api/types.js";
+
+const BASE_JOB: ScheduledJobDetail = {
+  agentModel: null,
+  agentPrompt: "오늘 일정 요약해서 보내줘",
+  cronExpression: "0 9 * * *",
+  enabled: true,
+  id: "job_1",
+  jobType: "AGENT",
+  maxRetryCount: 3,
+  name: "Morning brief",
+  notificationChannelId: null,
+  retryOnFailure: false,
+  timezone: "Asia/Seoul"
+};
+
+describe("SCHEDULE_PRESETS — the deterministic preset<->cron table", () => {
+  it("has exactly the five documented presets with their exact cron strings", () => {
+    const byId = Object.fromEntries(SCHEDULE_PRESETS.map((preset) => [preset.id, preset.cronExpression]));
+    expect(byId).toEqual({
+      dailyEvening6: "0 18 * * *",
+      dailyMorning9: "0 9 * * *",
+      hourly: "0 * * * *",
+      weekdays9: "0 9 * * 1-5",
+      weeklyMonday9: "0 9 * * 1"
+    });
+  });
+
+  it("cronForPreset -> presetForCron round-trips every table entry", () => {
+    for (const preset of SCHEDULE_PRESETS) {
+      expect(cronForPreset(preset.id)).toBe(preset.cronExpression);
+      expect(presetForCron(preset.cronExpression)).toBe(preset.id);
+    }
+  });
+
+  it("presetForCron falls back to 'custom' for a cron string not in the table", () => {
+    expect(presetForCron("*/15 * * * *")).toBe("custom");
+    expect(presetForCron("")).toBe("custom");
+  });
+
+  it("presetForCron trims surrounding whitespace before matching", () => {
+    expect(presetForCron("  0 9 * * *  ")).toBe("dailyMorning9");
+  });
+
+  it("cronForPreset throws on an id outside the table (mutation-RED guard: dropping a table entry surfaces here, not a silent undefined cron)", () => {
+    expect(() => cronForPreset("nonexistent" as SchedulePresetId)).toThrow(/Unknown schedule preset/);
+  });
+});
+
+describe("isValidCronShape — 5-field shape check (server remains the real validator)", () => {
+  it("accepts every preset's cron string", () => {
+    for (const preset of SCHEDULE_PRESETS) {
+      expect(isValidCronShape(preset.cronExpression)).toBe(true);
+    }
+  });
+
+  it("accepts a well-formed custom 5-field expression", () => {
+    expect(isValidCronShape("*/15 * * * *")).toBe(true);
+    expect(isValidCronShape("30 8 1 * *")).toBe(true);
+  });
+
+  it("rejects too few or too many fields", () => {
+    expect(isValidCronShape("0 9 * *")).toBe(false);
+    expect(isValidCronShape("0 9 * * * * *")).toBe(false);
+    expect(isValidCronShape("")).toBe(false);
+  });
+
+  it("rejects a 6-field (seconds-first) expression — the client shape check is deliberately 5-field only; the server (cron-parser) is more lenient and is the final validator on save", () => {
+    expect(isValidCronShape("0 0 9 * * *")).toBe(false);
+  });
+});
+
+describe("ScheduleFormState round-trip", () => {
+  it("a preset cron resolves to that preset's kind and back to the same cron", () => {
+    for (const preset of SCHEDULE_PRESETS) {
+      const form = scheduleFormFromCron(preset.cronExpression);
+      expect(form.kind).toBe(preset.id);
+      expect(resolveScheduleCron(form)).toBe(preset.cronExpression);
+    }
+  });
+
+  it("a non-preset cron round-trips through 'custom'", () => {
+    const form = scheduleFormFromCron("*/5 * * * *");
+    expect(form).toEqual({ customCron: "*/5 * * * *", kind: "custom" });
+    expect(resolveScheduleCron(form)).toBe("*/5 * * * *");
+  });
+});
+
+describe("triggerFormFromJob / actionFormFromJob / outputFormFromJob — job -> edit form initial values", () => {
+  it("trigger form derives the preset (or custom) from the job's cron", () => {
+    expect(triggerFormFromJob(BASE_JOB)).toEqual({ schedule: { customCron: "", kind: "dailyMorning9" } });
+    expect(triggerFormFromJob({ cronExpression: "*/10 * * * *" })).toEqual({
+      schedule: { customCron: "*/10 * * * *", kind: "custom" }
+    });
+  });
+
+  it("action form carries prompt/model through, retryOnFailure false -> a default retry count (unused until toggled on)", () => {
+    expect(actionFormFromJob(BASE_JOB)).toEqual({
+      agentModel: "",
+      agentPrompt: "오늘 일정 요약해서 보내줘",
+      maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
+      retryOnFailure: false
+    });
+  });
+
+  it("action form carries a real maxRetryCount through when retryOnFailure is true", () => {
+    const job: ScheduledJobDetail = { ...BASE_JOB, agentModel: "gpt-4o", maxRetryCount: 5, retryOnFailure: true };
+    expect(actionFormFromJob(job)).toEqual({
+      agentModel: "gpt-4o",
+      agentPrompt: "오늘 일정 요약해서 보내줘",
+      maxRetryCount: 5,
+      retryOnFailure: true
+    });
+  });
+
+  it("action form clamps an out-of-range persisted maxRetryCount into the UI's 1-5 band", () => {
+    const job: ScheduledJobDetail = { ...BASE_JOB, maxRetryCount: 40, retryOnFailure: true };
+    expect(actionFormFromJob(job).maxRetryCount).toBe(MAX_RETRY_COUNT);
+  });
+
+  it("output form is empty when no notify channel is set, and carries the channel id when it is", () => {
+    expect(outputFormFromJob(BASE_JOB)).toEqual({ notificationChannelId: "" });
+    expect(outputFormFromJob({ ...BASE_JOB, notificationChannelId: "telegram:123" })).toEqual({
+      notificationChannelId: "telegram:123"
+    });
+  });
+});
+
+describe("flowEditToJobPatch — exact PATCH body per node kind (field-name fidelity against the server contract)", () => {
+  it("trigger edit patches ONLY cronExpression", () => {
+    const form: TriggerEditForm = { schedule: { customCron: "", kind: "hourly" } };
+    expect(flowEditToJobPatch("trigger", form)).toEqual({ cronExpression: "0 * * * *" });
+  });
+
+  it("trigger edit resolves a custom cron verbatim", () => {
+    const form: TriggerEditForm = { schedule: { customCron: "15 3 * * 2", kind: "custom" } };
+    expect(flowEditToJobPatch("trigger", form)).toEqual({ cronExpression: "15 3 * * 2" });
+  });
+
+  it("action edit with retry OFF sends retryOnFailure: false and a clamped maxRetryCount", () => {
+    const form: ActionEditForm = { agentModel: "", agentPrompt: "  do the thing  ", maxRetryCount: 3, retryOnFailure: false };
+    expect(flowEditToJobPatch("action", form)).toEqual({
+      agentModel: null,
+      agentPrompt: "do the thing",
+      maxRetryCount: 3,
+      retryOnFailure: false
+    });
+  });
+
+  it("action edit with retry ON sends retryOnFailure: true and the chosen count — the two directions of the retry mutation-RED case", () => {
+    const form: ActionEditForm = { agentModel: "gemma4", agentPrompt: "run it", maxRetryCount: 5, retryOnFailure: true };
+    expect(flowEditToJobPatch("action", form)).toEqual({
+      agentModel: "gemma4",
+      agentPrompt: "run it",
+      maxRetryCount: 5,
+      retryOnFailure: true
+    });
+  });
+
+  it("action edit clamps an out-of-band maxRetryCount into 1-5 before sending", () => {
+    const tooHigh: ActionEditForm = { agentModel: "", agentPrompt: "x", maxRetryCount: 99, retryOnFailure: true };
+    const tooLow: ActionEditForm = { agentModel: "", agentPrompt: "x", maxRetryCount: -1, retryOnFailure: true };
+    expect(flowEditToJobPatch("action", tooHigh).maxRetryCount).toBe(MAX_RETRY_COUNT);
+    expect(flowEditToJobPatch("action", tooLow).maxRetryCount).toBe(MIN_RETRY_COUNT);
+  });
+
+  it("output edit sends the trimmed channel id when set", () => {
+    const form: OutputEditForm = { notificationChannelId: "  telegram:456  " };
+    expect(flowEditToJobPatch("output", form)).toEqual({ notificationChannelId: "telegram:456" });
+  });
+
+  it("output edit sends null to CLEAR the channel (empty input) — never omits the key or sends an empty string", () => {
+    const form: OutputEditForm = { notificationChannelId: "   " };
+    expect(flowEditToJobPatch("output", form)).toEqual({ notificationChannelId: null });
+  });
+
+  it("renameFlowPatch / toggleEnabledPatch send exactly one field each", () => {
+    expect(renameFlowPatch("  New name  ")).toEqual({ name: "New name" });
+    expect(toggleEnabledPatch(false)).toEqual({ enabled: false });
+    expect(toggleEnabledPatch(true)).toEqual({ enabled: true });
+  });
+});
+
+describe("flowDraftToJobInput — exact POST /api/scheduler/jobs body", () => {
+  const FULL_DRAFT: FlowDraft = {
+    agentModel: "gpt-4o",
+    agentPrompt: "오늘 일정 요약해서 보내줘",
+    enabled: true,
+    maxRetryCount: 4,
+    name: "Morning brief",
+    notificationChannelId: "telegram:123",
+    retryOnFailure: true,
+    schedule: { customCron: "", kind: "dailyMorning9" }
+  };
+
+  it("compiles every field with the server's exact field names, including the mandatory jobType: 'agent'", () => {
+    expect(flowDraftToJobInput(FULL_DRAFT, "Asia/Seoul")).toEqual({
+      agentModel: "gpt-4o",
+      agentPrompt: "오늘 일정 요약해서 보내줘",
+      cronExpression: "0 9 * * *",
+      enabled: true,
+      jobType: "agent",
+      maxRetryCount: 4,
+      name: "Morning brief",
+      notificationChannelId: "telegram:123",
+      retryOnFailure: true,
+      timezone: "Asia/Seoul"
+    });
+  });
+
+  it("omits agentModel and notificationChannelId entirely (undefined, not empty string) when left blank — undefined values drop out of the JSON.stringify'd wire body, unlike an empty string", () => {
+    const draft: FlowDraft = { ...FULL_DRAFT, agentModel: "  ", notificationChannelId: "" };
+    const body = flowDraftToJobInput(draft, "UTC");
+    expect(body.agentModel).toBeUndefined();
+    expect(body.notificationChannelId).toBeUndefined();
+    const wireKeys = Object.keys(JSON.parse(JSON.stringify(body)) as Record<string, unknown>);
+    expect(wireKeys).not.toContain("agentModel");
+    expect(wireKeys).not.toContain("notificationChannelId");
+  });
+
+  it("defaults the timezone to the runtime's resolved IANA zone when not supplied", () => {
+    const body = flowDraftToJobInput(FULL_DRAFT);
+    expect(body.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it("resolves a custom raw cron verbatim into cronExpression", () => {
+    const draft: FlowDraft = { ...FULL_DRAFT, schedule: { customCron: "0 7 * * 6,0", kind: "custom" } };
+    expect(flowDraftToJobInput(draft, "UTC").cronExpression).toBe("0 7 * * 6,0");
+  });
+
+  it("carries retryOnFailure: false through untouched when the draft has retry off", () => {
+    const draft: FlowDraft = { ...FULL_DRAFT, retryOnFailure: false };
+    expect(flowDraftToJobInput(draft, "UTC").retryOnFailure).toBe(false);
+  });
+});
+
+describe("isFlowDraftValid", () => {
+  it("an empty draft is invalid (no name, no prompt)", () => {
+    expect(isFlowDraftValid(emptyFlowDraft())).toBe(false);
+  });
+
+  it("requires a non-blank name and a non-blank prompt", () => {
+    const base = { ...emptyFlowDraft(), agentPrompt: "do it", name: "My flow" };
+    expect(isFlowDraftValid(base)).toBe(true);
+    expect(isFlowDraftValid({ ...base, name: "   " })).toBe(false);
+    expect(isFlowDraftValid({ ...base, agentPrompt: "" })).toBe(false);
+  });
+
+  it("a custom schedule must pass the cron shape check to be valid", () => {
+    const base = { ...emptyFlowDraft(), agentPrompt: "do it", name: "My flow" };
+    expect(isFlowDraftValid({ ...base, schedule: { customCron: "not a cron", kind: "custom" } })).toBe(false);
+    expect(isFlowDraftValid({ ...base, schedule: { customCron: "0 9 * * *", kind: "custom" } })).toBe(true);
+  });
+});
+
+describe("draftToPreviewProjection — client-side-only preview, never sent to the server", () => {
+  const DRAFT: FlowDraft = {
+    agentModel: "",
+    agentPrompt: "매일 아침 브리핑",
+    enabled: true,
+    maxRetryCount: 3,
+    name: "New flow",
+    notificationChannelId: "",
+    retryOnFailure: false,
+    schedule: { customCron: "", kind: "dailyMorning9" }
+  };
+
+  it("produces a trigger -> action -> output linear projection with the resolved cron", () => {
+    const projection = draftToPreviewProjection(DRAFT);
+    expect(projection.nodes).toHaveLength(3);
+    expect(projection.nodes[0]).toMatchObject({ kind: "trigger.schedule", meta: { cronExpression: "0 9 * * *" } });
+    expect(projection.nodes[1]).toMatchObject({ kind: "action.agent", meta: { prompt: "매일 아침 브리핑" } });
+    expect(projection.nodes[2]).toMatchObject({ kind: "output.record" });
+    expect(projection.edges).toHaveLength(2);
+  });
+
+  it("projects output.notify when a notify channel is set on the draft", () => {
+    const projection = draftToPreviewProjection({ ...DRAFT, notificationChannelId: "telegram:1" });
+    expect(projection.nodes[2]).toMatchObject({ kind: "output.notify", meta: { channelId: "telegram:1" } });
+  });
+
+  it("adds the retry self-edge only when the draft's retryOnFailure is true", () => {
+    const withoutRetry = draftToPreviewProjection(DRAFT);
+    expect(withoutRetry.edges.some((edge) => edge.loop)).toBe(false);
+
+    const withRetry = draftToPreviewProjection({ ...DRAFT, maxRetryCount: 5, retryOnFailure: true });
+    const loopEdge = withRetry.edges.find((edge) => edge.loop);
+    expect(loopEdge).toBeDefined();
+    expect(loopEdge!.label).toContain("5");
+  });
+
+  it("an unresolvable custom cron previews an empty cronExpression rather than throwing", () => {
+    const projection = draftToPreviewProjection({ ...DRAFT, schedule: { customCron: "garbage", kind: "custom" } });
+    expect(projection.nodes[0]!.meta.cronExpression).toBe("");
+  });
+
+  it("is renderable through the real flowToCanvas mapper (same shape a real projection would produce)", () => {
+    const projection = draftToPreviewProjection({ ...DRAFT, retryOnFailure: true, maxRetryCount: 2 });
+    const canvas = flowToCanvas(projection);
+    expect(canvas.nodes).toHaveLength(3);
+    expect(canvas.edges.some((edge) => edge.data?.loop)).toBe(true);
+  });
+});

@@ -402,6 +402,59 @@ export interface FlowsResponse {
   readonly flows: readonly FlowProjection[];
 }
 
+// Mirrors the fields of `@muse/scheduler`'s `ScheduledJob` /
+// `ScheduledJobInput` / `ScheduledJobUpdateInput` (packages/scheduler/src/index.ts)
+// that the Flows edit/create panels actually read or write — duplicated as
+// plain string-literal-keyed JSON shapes (never imported: apps/web has no
+// `@muse/scheduler` dependency, only talks to the API server). Field-name
+// drift against the real server contract is caught by
+// `flow-edit-compile.test.ts` asserting these keys as string literals.
+export interface ScheduledJobDetail {
+  readonly id: string;
+  readonly name: string;
+  readonly jobType: string;
+  readonly cronExpression: string;
+  readonly timezone: string;
+  readonly agentPrompt: string | null;
+  readonly agentModel: string | null;
+  readonly notificationChannelId: string | null;
+  readonly retryOnFailure: boolean;
+  readonly maxRetryCount: number;
+  readonly enabled: boolean;
+}
+
+/** Exact `POST /api/scheduler/jobs` body this view sends to create an agent
+ * flow. A `type` alias (not `interface`): it's passed straight into
+ * `ApiClient.post`'s `Record<string, unknown>` body param, and TypeScript
+ * only structurally matches an index signature against a fresh object type,
+ * not a named `interface`. */
+export type ScheduledJobCreateBody = {
+  readonly name: string;
+  readonly cronExpression: string;
+  readonly timezone: string;
+  readonly jobType: "agent";
+  readonly agentPrompt: string;
+  readonly agentModel?: string;
+  readonly notificationChannelId?: string;
+  readonly retryOnFailure: boolean;
+  readonly maxRetryCount: number;
+  readonly enabled: boolean;
+};
+
+/** Exact `PATCH /api/scheduler/jobs/:jobId` body shape this view sends — every
+ * field is optional (partial update); `null` clears an optional field. Same
+ * `type`-alias reasoning as `ScheduledJobCreateBody` above. */
+export type ScheduledJobPatchBody = {
+  readonly name?: string;
+  readonly cronExpression?: string;
+  readonly agentPrompt?: string;
+  readonly agentModel?: string | null;
+  readonly notificationChannelId?: string | null;
+  readonly retryOnFailure?: boolean;
+  readonly maxRetryCount?: number;
+  readonly enabled?: boolean;
+};
+
 // Mirrors `@muse/scheduler`'s `CadenceSummary` (server computes it from the
 // job's persisted `cronExpression` via `summarizeCadence` — the web never
 // re-derives it). Duplicated as a plain JSON-shape type rather than an

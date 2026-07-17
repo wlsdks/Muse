@@ -94,6 +94,11 @@ describe("FlowsTab — empty state", () => {
     const html = await renderFlowsTab(EMPTY);
     expect(html).not.toContain("flow-canvas-wrap");
   });
+
+  it("still offers the create button at zero flows (first-run must not be CLI-only)", async () => {
+    const html = await renderFlowsTab(EMPTY);
+    expect(html).toContain(DICTIONARIES.en["auto.flows.create.button"]);
+  });
 });
 
 describe("FlowsTab — populated state", () => {
