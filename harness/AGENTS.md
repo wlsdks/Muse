@@ -83,7 +83,9 @@ updated: 2026-06-13
   **오케스트레이터 또는 평가자** — 플래너 자신이 자기 계획을 통과시키지 않는다.
 - **완료 게이트(뒷단)** — 평가자 PASS(+가능하면 자동 채점) 없이는 완료 거부.
 - **권한 게이트** — 도구를 위험 등급(읽기/쓰기/실행/외부전송/금지)으로 가르고, 외부 전송은
-  **자동 금지·초안 먼저·사람 확인**, 금융/결제는 영구 거부. → [permission-matrix](core/permission-matrix.md).
+  **자동 금지·초안 먼저·사람 확인**, 금융/결제는 영구 거부. 단 프로젝트 소유자가 버전 관리된
+  호스트 규약에서 목적지·검증·실패 한계를 좁혀 standing authorization한 정상 Git push만 그 범위
+  안에서 사전 승인으로 취급한다. → [permission-matrix](core/permission-matrix.md).
 - **막힘 우선** — 불확실/모호하면 통과시키지 말고 멈춰 사람에게 올립니다.
 
 게이트 정의·통과 조건은 [verification-and-guardrails](core/verification-and-guardrails.md).

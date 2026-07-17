@@ -170,8 +170,8 @@ gate that would have caught the next regression.
 - **Commit body carries the verification evidence**: what was measured/run
   and its numbers ("battery 13/13 live; agent-core 3124/3124; probe 5/5"),
   plus the WHY of any expectation change. Conventional Commits, one
-  coherent goal per commit, no push without explicit approval
-  (`.claude/rules/commits.md`).
+  coherent goal per commit, then the allowlisted verified normal push under the
+  standing authorization (`.claude/rules/commits.md`).
 - **Writeback**: when a slice resolves a backlog/journal entry, update THAT
   entry in place (✓ + commit hash + one-line resolution). Respect the
   ledger's "재제안 금지 / do NOT re-scout" markers — re-proposing a closed

@@ -68,7 +68,7 @@ dogfood friction → north-star gap → parity, D/T/N/C-scored). One slice end-t
 ## Don't
 
 - Don't make OpenAI / Anthropic / Vercel-AI-SDK / LangGraph the runtime owner.
-- Don't push, force-push, or `--no-verify` without explicit user approval.
+- Don't force-push, use `--no-verify`, publish tags/releases, delete remote refs, or target an alternate remote/refspec without explicit approval; verified normal pushes follow the standing authorization in `commits.md`.
 - Don't commit live Jira / Confluence / Bitbucket / Slack-workspace credentials.
 - Don't bloat this file past 100 lines — add to `.claude/rules/<topic>.md` instead.
 - Don't accept "passes diagnostic smoke" as proof — run `smoke:live` for any change in the request/response path.
@@ -85,7 +85,7 @@ For depth, read the matching file under `.claude/rules/`:
 - [`code-style.md`](.claude/rules/code-style.md) — ESLint gate, naming, comment policy, dead-import rule.
 - [`outbound-safety.md`](.claude/rules/outbound-safety.md) — fail-close gate for any send/act toward a third party; banking out of scope.
 - [`tool-calling.md`](.claude/rules/tool-calling.md) — the local model (gemma4:12b default) must pick the right tool in ONE shot: small tool sets, unambiguous names, rich schemas, verify selection with `smoke:live`.
-- [`agent-testing.md`](.claude/rules/agent-testing.md) — how we evaluate the AGENT (not just code): grade outcomes not paths, `pass^k` reliability, tool-calling + irrelevance, multi-agent hand-off/termination asserts, binary LLM-judge w/ meta-eval; research-grounded.
+- [`agent-testing.md`](.claude/rules/agent-testing.md) — how we evaluate the AGENT (not just code); current adoption decisions live in [`ai-agent-testing-strategy.md`](docs/development/ai-agent-testing-strategy.md).
 - [`codegraph.md`](.claude/rules/codegraph.md) — prefer the CodeGraph (`.codegraph/`) index for structural code questions; answer directly in a few calls, never a grep/read loop.
 - [`harness.md`](.claude/rules/harness.md) — for non-trivial multi-step work, operate under the portable agent harness in `harness/` (roles, fail-closed gates, handoff, pass^k verification); entrypoint `harness/AGENTS.md`.
 

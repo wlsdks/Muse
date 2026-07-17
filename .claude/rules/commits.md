@@ -17,7 +17,22 @@ Don't mix unrelated work into one commit.
 
 ## Push policy
 
-- **Don't push, force-push, or `--no-verify`** without explicit user approval.
+- **Standing authorization (Jinan, 2026-07-17):** after evaluator PASS,
+  intended/clean commit scope, tier-appropriate green gates, `git fetch` +
+  rebase, and the unskipped versioned pre-push hook, publish a normal push from
+  the current Muse task branch (or verified local `main`) to its configured
+  `origin` upstream without asking again. A verified slice is not complete
+  while this allowlisted push remains pending.
+- The standing authorization does **not** include alternate remotes or arbitrary
+  refspecs, remote deletion, tags/releases, force/force-with-lease,
+  `--no-verify`, skipped hooks, credentials, or branch-protection changes. On
+  hook, authentication, protection, or unresolved divergence failure, make at
+  most one safe fetch/rebase retry, then stop and report; never escalate to a
+  destructive bypass.
+- Scheduled/autonomous loops keep their declared Tier. A Tier that forbids push
+  stays forbidden until separately opted in. Git publication does not weaken
+  `.claude/rules/outbound-safety.md`: sending/submitting/booking/posting toward a
+  third party remains draft-first and explicitly confirmed.
 - Don't commit live Jira / Confluence / Bitbucket / Slack-workspace credentials.
 - Don't commit `.claude/scheduled_tasks.lock` or other transient session-state files.
 - **Rebase onto `origin/main` before starting a slice AND again immediately

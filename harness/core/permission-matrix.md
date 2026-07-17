@@ -3,7 +3,7 @@ title: 권한 매트릭스 (Permission Matrix)
 audience: [개발자, AI 에이전트]
 purpose: 모든 도구·행동을 위험 등급으로 분류하고, 등급별로 무엇을 통과/승인/거부할지 정한다
 status: draft
-updated: 2026-06-13
+updated: 2026-07-17
 sources_basis: [Muse ToolApprovalGate/ToolRiskLevel, Muse SYSTEM-MAP #3/#9/#12 (신뢰목록·게이트), outbound-safety rule, 2026 least-privilege agent refs]
 related: [../reference/tool-design.md, verification-and-guardrails.md, ../reference/skills-and-mcp.md, ../reference/architecture.md, ../README.md]
 ---
@@ -38,6 +38,10 @@ related: [../reference/tool-design.md, verification-and-guardrails.md, ../refere
   (Claude Code면 `/permissions`·`.claude/settings.json` allowlist 등). 목록이 비어 있으면
   **첫 실행의 사람 승인이 곧 등록** — 무조건 거부가 아니라 승인-후-기록.
 - 그 밖의 실행(패키지 설치·시스템 변경·네트워크)과 외부 전송·금지는 §2 그대로 fail-closed.
+- **소스 게시의 좁은 standing authorization:** 프로젝트 소유자가 버전 관리된 `AGENTS.md`/호스트
+  규약에 저장소·remote·ref·선행 검증·실패 상한을 명시한 경우에만 정상 Git push를 그 범위 안의
+  사전 승인으로 취급할 수 있다. force/`--no-verify`/remote 삭제/태그·릴리스/다른 remote·refspec은
+  포함되지 않으며, 메시지·제출·예약 같은 제3자 outbound에는 절대 확장되지 않는다.
 
 ## 2. 매트릭스 (등급 × 처리)
 
@@ -51,6 +55,8 @@ related: [../reference/tool-design.md, verification-and-guardrails.md, ../refere
 
 - **차단 목록**의 도구는 등급과 무관하게 **항상 거부**.
 - 모호하면(불확실) **막힘 우선** — 통과시키지 않습니다.
+- 위 표의 외부 전송 기본값보다 좁은 프로젝트별 Git 예외는 §1.5의 명시적 standing
+  authorization에만 한정됩니다.
 
 ## 3. 최소 권한 (Least Privilege)
 

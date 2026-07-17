@@ -4,7 +4,9 @@ Unit tests prove a function is correct; they do **not** prove the *agent*
 is good — that the model picks the right tool in one shot, abstains when
 it should, and reaches the real goal state *reliably*. That is
 **evaluation (evals)** — ship it with every agent-facing capability. Full
-history/evidence/sources: [Appendix](#appendix-sources--rationale).
+method and sources: [Appendix](#appendix-sources--rationale). The dated
+Muse inventory, gaps, library decisions, and implementation order live in
+[`docs/development/ai-agent-testing-strategy.md`](../../docs/development/ai-agent-testing-strategy.md).
 
 **Three principles, if you read nothing else:** (1) **Error-analysis
 FIRST, imagination never** — evals GROW from real misses. (2)
@@ -60,10 +62,11 @@ the judge first; verdicts are binary and must NAME a concrete violation
 ("seems off" is not grounds to reject); periodic fault-injection drills
 prove the judge still rejects bad work. Evidence: Appendix.
 
-**Reliability discipline:** `MUSE_EVAL_REPEAT` (k=3 CI, k≥5 grounding/
-safety-critical), strict all-pass; T=0 is a cheap gate, not a statistical
-guarantee. `eval:agent`/`eval:self-improving` CI-gate the live batteries;
-`self-eval` fails closed on regression. Error-analysis is FIRST — read
+**Reliability discipline:** `MUSE_EVAL_REPEAT` (k=3 for local/self-hosted
+reliability gates, k≥5 grounding/safety-critical), strict all-pass; T=0 is a
+cheap gate, not a statistical guarantee. `eval:agent`/`eval:self-improving`
+aggregate live local-Ollama batteries; they are not GitHub CI gates and a skip
+is unverified. `self-eval` fails closed on regression. Error-analysis is FIRST — read
 20–50 real traces before writing a scorer (Muse's "production" is n=1 dogfooding).
 
 ## Where each gate lives (Muse mapping)
@@ -77,7 +80,7 @@ guarantee. `eval:agent`/`eval:self-improving` CI-gate the live batteries;
 | Must-refuse + over-refusal controls | `pnpm eval:adversarial` |
 | Memory/playbook promotion (report-only) | `pnpm eval:shadow-trial` |
 | Self-improving LLM paths (one gate) | `pnpm eval:self-improving` |
-| All harness batteries as one CI gate | `pnpm eval:agent` |
+| All harness batteries as one local/self-hosted aggregate | `pnpm eval:agent` |
 | Real-LLM request/response round-trip | `pnpm smoke:live` |
 | Regression scoreboard | `pnpm self-eval` |
 
@@ -179,15 +182,17 @@ termination*). So assert at the seam:
 
 ### Reliability & non-determinism — in full
 
-- **Repeat, don't trust one run.** `MUSE_EVAL_REPEAT` (k=3 for CI gates,
-  k≥5 for grounding/safety-critical) with strict all-pass = `pass^k`.
+- **Repeat, don't trust one run.** `MUSE_EVAL_REPEAT` (k=3 for local or
+  self-hosted reliability gates, k≥5 for grounding/safety-critical) with
+  strict all-pass = `pass^k`.
 - **Temperature 0 is not determinism.** Even greedy decoding varies
   across GPU/batch; T=0 + repeat is a cheap gate, not a statistical
   guarantee. A flaky single case is a signal to repeat, not to delete.
-- **CI-gate it or it rots.** An eval that runs ad-hoc but never gates
-  catches regressions late. `eval:agent` / `eval:self-improving` bundle
-  the live batteries and fail if ANY regresses; `self-eval` is the
-  regression scoreboard (a tracked count dropping is a fail-close).
+- **Automate it or it rots.** An eval that runs ad-hoc but never gates catches
+  regressions late. `eval:agent` / `eval:self-improving` bundle the local live
+  batteries and fail if ANY executed battery regresses; a skip remains
+  unverified. The offline deterministic CI split is a P0 gap. `self-eval` is
+  the regression scoreboard (a tracked count dropping is a fail-close).
 - **Error-analysis FIRST — the ordering principle, not an afterthought.**
   Before writing a scorer, read 20–50 REAL traces and open-/axial-code the
   failures into categories; the categories that actually recur become the

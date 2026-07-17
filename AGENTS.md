@@ -66,6 +66,23 @@ narrow with `pnpm test:changed`; run the full cross-platform gate before merge.
 The operational rules are in [`.claude/rules/testing.md`](.claude/rules/testing.md)
 and the TS7-era stack decision and rationale are in
 [`docs/development/testing-strategy.md`](docs/development/testing-strategy.md).
+Agent behavior uses a separate outcome-first strategy: isolated trials,
+deterministic terminal-state graders, trace invariants only where ordering is a
+real contract, strict `pass^k`, adversarial/fault tests, and local trace review.
+See [`docs/development/ai-agent-testing-strategy.md`](docs/development/ai-agent-testing-strategy.md).
+
+## Repository publication
+
+The owner grants standing authorization for a verified normal Git push from the
+current Muse task branch (or verified local `main`) to its configured `origin`
+upstream. After the independent completion gate and required checks pass, fetch,
+rebase, run the unskipped versioned pre-push hook, and publish without asking for
+another approval. This does not authorize alternate remotes/refspecs, remote
+deletion, tags/releases, force/force-with-lease, `--no-verify`, credentials, or
+branch-protection changes. On hook, auth, protection, or unresolved divergence
+failure, allow at most one safe fetch/rebase retry, then stop and report.
+Autonomous scheduled loops keep their own push tiers; third-party human/action
+sends remain draft-first under the outbound policy.
 
 ## TypeScript 7 toolchain
 

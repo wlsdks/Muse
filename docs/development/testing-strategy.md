@@ -1,4 +1,4 @@
-# Testing strategy (TypeScript 7, reviewed 2026-07-16)
+# Testing strategy (TypeScript 7, reviewed 2026-07-17)
 
 This is Muse's supported testing decision, not a library wish list. The goal is
 fast evidence in the edit loop and high-confidence evidence at the merge gate.
@@ -18,6 +18,12 @@ use test count, coverage percentage, or a fashionable tool as a proxy for value.
 | PostgreSQL semantics or migrations | disposable real PostgreSQL | Testcontainers |
 | Small dependency-free `.mjs` script | built-in runner | `node:test` |
 | Stochastic agent behavior | terminal-state eval, deterministic scorer, strict `pass^k` | Muse eval harness |
+
+The agent layer has additional requirements that runner choice cannot solve:
+isolated trials, terminal world-state grading, narrow trace invariants,
+reliability repeats, injected failures, adversarial safety, and local
+trace-to-golden-case review. The research and Muse adoption decisions are in
+[`ai-agent-testing-strategy.md`](ai-agent-testing-strategy.md).
 
 Keep Vitest as the primary runner. It is Vite-native, understands ESM/TS/JSX
 without using the TypeScript compiler API, supplies mature mocks/fake timers,
