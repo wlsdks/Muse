@@ -86,6 +86,7 @@ export {
   resolveNotesIndexFile,
   resolveObjectivesFile,
   resolveProactiveHistoryFile,
+  resolveProgressiveAutonomyFile,
   resolveReminderHistoryFile,
   resolveRemindersFile,
   resolveSessionLockFile,

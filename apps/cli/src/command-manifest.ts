@@ -100,6 +100,19 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     ]
   },
   {
+    "name": "autonomy",
+    "description": "Collect local-only progressive-autonomy shadow evidence under explicit user grants",
+    "argsTerm": "",
+    "hasOptions": false,
+    "subcommands": [
+      "grant-next-step",
+      "list",
+      "report",
+      "revoke",
+      "shadow"
+    ]
+  },
+  {
     "name": "bg",
     "description": "Inspect background processes Muse has started",
     "argsTerm": "",

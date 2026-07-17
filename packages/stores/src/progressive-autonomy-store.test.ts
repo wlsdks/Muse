@@ -36,6 +36,7 @@ describe("FileProgressiveAutonomyStore", () => {
   it("keeps the authority-minting admin adapter out of the general stores barrel", async () => {
     const generalStores: Record<string, unknown> = await import("./index.js");
     expect("FileProgressiveAutonomyAdminStore" in generalStores).toBe(false);
+    expect("listGrantRecords" in generalStores).toBe(false);
   });
 
   it("durably issues, reads, and revokes an exact bounded grant", async () => {
@@ -51,12 +52,15 @@ describe("FileProgressiveAutonomyStore", () => {
     const store = new FileProgressiveAutonomyAdminStore(options);
 
     expect("issueGrant" in store.executorStore()).toBe(false);
+    expect("listGrants" in store.executorStore()).toBe(false);
+    expect("listGrantRecords" in store).toBe(true);
     await expect(store.issueGrant({}, grantInput)).rejects.toThrow("trusted user authorization");
 
     const issued = await store.issueGrant(authorization, grantInput, {
       idFactory: () => "grant-1",
       now: () => new Date("2026-07-17T00:00:00.000Z")
     });
+    expect(await store.listGrantRecords()).toEqual([{ grant: issued, usedCount: 0 }]);
     expect(await new FileProgressiveAutonomyAdminStore(options).executorStore().getGrant("grant-1")).toEqual({
       grant: issued,
       revokedAt: undefined,

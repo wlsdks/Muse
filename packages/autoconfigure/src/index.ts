@@ -68,6 +68,7 @@ export {
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
   resolveProactiveHistoryFile,
+  resolveProgressiveAutonomyFile,
   resolveReminderHistoryFile,
   resolveWeaknessesFile,
   resolveSessionLockFile,

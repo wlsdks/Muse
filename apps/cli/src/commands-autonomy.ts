@@ -1,0 +1,262 @@
+import { randomUUID } from "node:crypto";
+
+import {
+  resolveAttunementFile,
+  resolveDefaultUserId,
+  resolveProgressiveAutonomyFile,
+  resolveTasksFile
+} from "@muse/autoconfigure";
+import { completeLinkedNextStep, readAttunementState } from "@muse/attunement";
+import { readTaskById } from "@muse/stores";
+import { FileProgressiveAutonomyAdminStore } from "@muse/stores/host-progressive-autonomy";
+import type { ProgressiveAutonomyShadowReceipt } from "@muse/policy";
+import type { Command } from "commander";
+
+import type { ProgramIO } from "./program.js";
+
+type Environment = Record<string, string | undefined>;
+
+function parseBoundedInteger(value: string, name: string, minimum: number, maximum: number): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new TypeError(`${name} must be an integer from ${minimum.toString()} to ${maximum.toString()}`);
+  }
+  return parsed;
+}
+
+function fail(io: ProgramIO, cause: unknown): void {
+  io.stderr(`autonomy: ${cause instanceof Error ? cause.message : String(cause)}\n`);
+  process.exitCode = 2;
+}
+
+export function buildShadowReport(receipts: readonly ProgressiveAutonomyShadowReceipt[]) {
+  const counts = { wouldAllowStanding: 0, wouldConfirm: 0, wouldDeny: 0 };
+  const days = new Set<string>();
+  const tasks = new Set<string>();
+  const threads = new Set<string>();
+  const rationaleCounts = new Map<string, number>();
+  for (const receipt of receipts) {
+    counts[receipt.shadowAssessment] += 1;
+    days.add(receipt.recordedAt.slice(0, 10));
+    tasks.add(receipt.envelope.link.taskId);
+    threads.add(receipt.envelope.threadId);
+    rationaleCounts.set(receipt.shadowRationale, (rationaleCounts.get(receipt.shadowRationale) ?? 0) + 1);
+  }
+  const observedDecisions = receipts.length;
+  return {
+    assessments: counts,
+    observedDecisions,
+    rationales: [...rationaleCounts.entries()]
+      .map(([rationale, count]) => ({ count, rationale }))
+      .sort((left, right) => left.rationale.localeCompare(right.rationale)),
+    review: {
+      minimumRealDecisions: 20,
+      promotion: "explicit-user-decision-only" as const,
+      status: observedDecisions >= 20 ? "ready-for-human-review" as const : "collecting" as const,
+      targetRealDecisions: 50
+    },
+    schemaVersion: 1 as const,
+    unique: { days: days.size, tasks: tasks.size, threads: threads.size }
+  };
+}
+
+export function registerAutonomyCommands(program: Command, io: ProgramIO): void {
+  const autonomy = program.command("autonomy")
+    .description("Collect local-only progressive-autonomy shadow evidence under explicit user grants");
+
+  autonomy.command("grant-next-step <threadId>")
+    .description("Grant bounded shadow evaluation for this thread's exact open linked next step")
+    .option("--expires-in-hours <hours>", "Grant lifetime from 1 to 168 hours", "24")
+    .option("--max-uses <uses>", "Maximum live uses from 1 to 50 (shadow never consumes uses)", "20")
+    .option("--json", "Print machine-readable JSON")
+    .action(async (threadId: string, options: {
+      readonly expiresInHours: string;
+      readonly json?: boolean;
+      readonly maxUses: string;
+    }) => {
+      try {
+        const env = process.env as Environment;
+        const normalizedThreadId = threadId.trim();
+        const state = await readAttunementState(resolveAttunementFile(env));
+        const thread = state.threads.find((candidate) => candidate.id === normalizedThreadId);
+        if (!thread) throw new TypeError(`no personal thread with id '${normalizedThreadId}'`);
+        const link = thread.links.find((candidate) => candidate.artifactType === "task"
+          && candidate.providerId === "local" && candidate.role === "next-step"
+          && candidate.linkedBy === "user");
+        if (!link) throw new TypeError("thread has no exact user-authored local next-step task link");
+        const task = await readTaskById(resolveTasksFile(env), link.artifactId);
+        if (!task || task.status !== "open") throw new TypeError("linked next-step task is missing or closed");
+        const expiresInHours = parseBoundedInteger(options.expiresInHours, "expires-in-hours", 1, 168);
+        const maxUses = parseBoundedInteger(options.maxUses, "max-uses", 1, 50);
+        const authorization = Object.freeze({ invocation: randomUUID() });
+        const store = new FileProgressiveAutonomyAdminStore({
+          file: resolveProgressiveAutonomyFile(env),
+          verifyUserAuthorization: (candidate, userId) =>
+            candidate === authorization && userId === resolveDefaultUserId(env)
+        });
+        const now = new Date();
+        const grant = await store.issueGrant(authorization, {
+          action: "muse.tasks.complete-linked-next-step",
+          executorVersion: 1,
+          expiresAt: new Date(now.getTime() + expiresInHours * 60 * 60 * 1000).toISOString(),
+          link: {
+            artifactType: "task",
+            linkedAt: link.linkedAt,
+            providerId: "local",
+            role: "next-step",
+            taskId: task.id
+          },
+          maxUses,
+          policyVersion: 1,
+          schemaVersion: 1,
+          threadId: thread.id,
+          transition: { from: "open", to: "done" },
+          userId: resolveDefaultUserId(env)
+        });
+        if (options.json) {
+          io.stdout(`${JSON.stringify(grant, null, 2)}\n`);
+        } else {
+          io.stdout(`Granted shadow evaluation for task '${task.id}' until ${grant.expiresAt}.\n`);
+          io.stdout(`Next: muse autonomy shadow ${grant.id}\n`);
+        }
+      } catch (cause) {
+        fail(io, cause);
+      }
+    });
+
+  autonomy.command("list")
+    .description("List bounded grants from the owner-only local autonomy store")
+    .option("--json", "Print machine-readable JSON")
+    .action(async (options: { readonly json?: boolean }) => {
+      try {
+        const env = process.env as Environment;
+        const authorization = Object.freeze({ invocation: randomUUID() });
+        const store = new FileProgressiveAutonomyAdminStore({
+          file: resolveProgressiveAutonomyFile(env),
+          verifyUserAuthorization: (candidate, userId) =>
+            candidate === authorization && userId === resolveDefaultUserId(env)
+        });
+        const grants = [...await store.listGrantRecords()].sort((left, right) =>
+          left.grant.issuedAt.localeCompare(right.grant.issuedAt) || left.grant.id.localeCompare(right.grant.id)
+        );
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ grants, schemaVersion: 1 }, null, 2)}\n`);
+        } else if (grants.length === 0) {
+          io.stdout("No progressive-autonomy grants.\n");
+          io.stdout("Next: muse autonomy grant-next-step <thread-id>\n");
+        } else {
+          for (const record of grants) {
+            const state = record.revokedAt ? `revoked ${record.revokedAt}` : `active until ${record.grant.expiresAt}`;
+            io.stdout(`${record.grant.id}  task=${record.grant.link.taskId}  uses=${record.usedCount.toString()}/${record.grant.maxUses.toString()}  ${state}\n`);
+          }
+          io.stdout("Next: muse autonomy shadow <grant-id>\n");
+        }
+      } catch (cause) {
+        fail(io, cause);
+      }
+    });
+
+  autonomy.command("revoke <grantId>")
+    .description("Revoke one bounded grant from the owner-only local autonomy store")
+    .option("--json", "Print machine-readable JSON")
+    .action(async (grantId: string, options: { readonly json?: boolean }) => {
+      try {
+        const env = process.env as Environment;
+        const authorization = Object.freeze({ invocation: randomUUID() });
+        const store = new FileProgressiveAutonomyAdminStore({
+          file: resolveProgressiveAutonomyFile(env),
+          verifyUserAuthorization: (candidate, userId) =>
+            candidate === authorization && userId === resolveDefaultUserId(env)
+        });
+        const revoked = await store.revokeGrant(authorization, grantId.trim());
+        if (options.json) {
+          io.stdout(`${JSON.stringify(revoked, null, 2)}\n`);
+        } else {
+          io.stdout(`Revoked ${revoked.grant.id}; no future live claim can use it.\n`);
+          io.stdout("Next: muse autonomy report\n");
+        }
+      } catch (cause) {
+        fail(io, cause);
+      }
+    });
+
+  autonomy.command("shadow <grantId>")
+    .description("Record one local-only shadow decision for an existing exact grant")
+    .option("--json", "Print machine-readable JSON")
+    .action(async (grantId: string, options: { readonly json?: boolean }) => {
+      try {
+        const env = process.env as Environment;
+        const authorization = Object.freeze({ invocation: randomUUID() });
+        const store = new FileProgressiveAutonomyAdminStore({
+          file: resolveProgressiveAutonomyFile(env),
+          verifyUserAuthorization: (candidate, userId) =>
+            candidate === authorization && userId === resolveDefaultUserId(env)
+        });
+        const executor = store.executorStore();
+        const record = await executor.getGrant(grantId.trim());
+        if (!record) throw new TypeError(`standing grant '${grantId.trim()}' does not exist`);
+        if (record.grant.userId !== resolveDefaultUserId(env)) {
+          throw new TypeError("standing grant belongs to a different local user identity");
+        }
+        const executionId = `shadow-${randomUUID()}`;
+        await completeLinkedNextStep({
+          attunementFile: resolveAttunementFile(env),
+          autonomyStore: executor,
+          envelope: {
+            action: record.grant.action,
+            idempotencyKey: executionId,
+            link: record.grant.link,
+            schemaVersion: record.grant.schemaVersion,
+            threadId: record.grant.threadId,
+            traceId: executionId,
+            transition: record.grant.transition,
+            userId: record.grant.userId
+          },
+          executionId,
+          executorVersion: record.grant.executorVersion,
+          grantId: record.grant.id,
+          mode: "shadow",
+          policyVersion: record.grant.policyVersion,
+          tasksFile: resolveTasksFile(env)
+        });
+        const receipt = (await executor.listShadowReceipts())
+          .find((candidate) => candidate.executionId === executionId);
+        if (!receipt) throw new TypeError("shadow decision did not produce a durable receipt");
+        if (options.json) {
+          io.stdout(`${JSON.stringify(receipt, null, 2)}\n`);
+        } else {
+          io.stdout(`${receipt.shadowAssessment}: ${receipt.shadowRationale}\n`);
+          io.stdout("Task unchanged. Next: muse autonomy report\n");
+        }
+      } catch (cause) {
+        fail(io, cause);
+      }
+    });
+
+  autonomy.command("report")
+    .description("Summarize real receipts from this resolved local shadow store")
+    .option("--json", "Print machine-readable JSON")
+    .action(async (options: { readonly json?: boolean }) => {
+      try {
+        const env = process.env as Environment;
+        const authorization = Object.freeze({ invocation: randomUUID() });
+        const store = new FileProgressiveAutonomyAdminStore({
+          file: resolveProgressiveAutonomyFile(env),
+          verifyUserAuthorization: (candidate, userId) =>
+            candidate === authorization && userId === resolveDefaultUserId(env)
+        });
+        const report = buildShadowReport(await store.executorStore().listShadowReceipts());
+        if (options.json) {
+          io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+        } else {
+          io.stdout(`Observed shadow decisions: ${report.observedDecisions.toString()} (would allow ${report.assessments.wouldAllowStanding.toString()}, confirm ${report.assessments.wouldConfirm.toString()}, deny ${report.assessments.wouldDeny.toString()}).\n`);
+          io.stdout(report.review.status === "collecting"
+            ? `Collect ${(report.review.minimumRealDecisions - report.observedDecisions).toString()} more real decisions before human review.\n`
+            : "Ready for human review; this does not promote authority.\n");
+          io.stdout("Promotion always requires an explicit user decision.\n");
+        }
+      } catch (cause) {
+        fail(io, cause);
+      }
+    });
+}

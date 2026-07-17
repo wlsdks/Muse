@@ -127,6 +127,10 @@ export class FileProgressiveAutonomyAdminStore implements ProgressiveAutonomyAdm
     return structuredClone((await this.read()).receipts);
   }
 
+  async listGrantRecords(): Promise<readonly StandingGrantRecord[]> {
+    return structuredClone((await this.read()).grants);
+  }
+
   private async listShadowReceipts(): Promise<readonly ProgressiveAutonomyShadowReceipt[]> {
     return structuredClone((await this.read()).shadowReceipts);
   }

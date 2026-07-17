@@ -18,6 +18,14 @@ export interface LazyCommandLoader {
 
 export const COMMAND_LOADERS: readonly LazyCommandLoader[] = [
   {
+    id: "autonomy",
+    names: ["autonomy"],
+    load: async (program, io, _deps) => {
+      const module = await import("./commands-autonomy.js");
+      module.registerAutonomyCommands(program, io);
+    }
+  },
+  {
     id: "setup",
     names: ["setup"],
     load: async (program, io, _deps) => {

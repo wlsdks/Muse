@@ -62,6 +62,7 @@ export const COMMAND_GROUPS: ReadonlyArray<{
     heading: "Automation & agents",
     commands: [
       "proactive",
+      "autonomy",
       "daemon",
       "scheduler",
       "job",
