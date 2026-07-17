@@ -40,6 +40,26 @@ not Muse's whole identity.
 > adapters, opt-in observation, and better timing. See the
 > [product contract](docs/strategy/attunement.md) and [implementation plan](docs/goals/attunement-implementation-plan.md).
 
+<p align="center"><img src="docs/images/web-home.png" alt="Muse console home — model chip, integrations, what Muse has learned" width="860" /></p>
+
+---
+
+## 📊 Muse in numbers
+
+Every number is reproducible from this repo — the command that generates it is in the last column.
+
+| Metric | Value | How to reproduce |
+| --- | --- | --- |
+| Grounding-gate delta, self-authored corpus | **+0.94 faithfulness** at **0.00 false-refusal** (gate ON vs OFF, same gemma4:12b) | `pnpm eval:grounding-delta` → [`docs/benchmarks/RESULTS.md`](docs/benchmarks/RESULTS.md) |
+| Grounding-gate delta, SQuAD-2.0 slice | **+0.63 faithfulness** at **0.00 false-refusal** | `pnpm eval:grounding-delta:squad` → [`RESULTS-squad.md`](docs/benchmarks/RESULTS-squad.md) |
+| Test suite | **18,484 passing cases** across 1,624 test files (verified 2026-07-17) | `pnpm check` |
+| Agent eval batteries | **41 live `eval:*` batteries** (tool selection, adversarial refusal, plan quality, judge meta-eval, …) | `pnpm eval:agent` and `grep -o '"eval:[a-z-]*"' package.json \| sort -u` |
+| HTTP surface smoke | **51 endpoints** exercised with a key-free diagnostic provider | `pnpm smoke:broad` |
+| Real-LLM round-trip | model→tool→model loop asserted end-to-end on local Ollama | `pnpm smoke:live` |
+| Workspace | **37 packages + 4 apps** (CLI, API server, web console, macOS desktop), TypeScript strict | `ls packages apps` |
+| Built-in tool servers | 25 in-process `muse.*` MCP servers + external stdio/SSE/streamable-HTTP | `muse mcp list` |
+| Model providers | 7 families behind one `ModelProvider` seam — no vendor SDK in the core | [`packages/model`](packages/model) |
+
 ---
 
 ## ✨ Why Muse — five principles
@@ -77,8 +97,11 @@ Read these five and you know exactly what kind of agent this is.
 > Attunement is the product promise. Local-first ownership, grounding, correction, and
 > draft-first action are the trust floor that makes it safe to pursue.
 
-A native **macOS desktop companion** (a floating, voice-capable orb; on-device speech via
-WhisperKit + Qwen3-TTS) is the newest surface — the same provider-neutral, grounded runtime.
+A native **macOS desktop companion** is the newest surface — a floating, voice-capable
+pixel bluebird (on-device speech via WhisperKit + Qwen3-TTS) wrapping the same
+provider-neutral, grounded runtime and console:
+
+<p align="center"><img src="docs/images/desktop-orb.png" alt="The Muse desktop companion — a floating pixel bluebird" width="140" /></p>
 
 ---
 
@@ -107,16 +130,24 @@ setup diagnostic, and the Codex / Claude Desktop MCP bridge in one narrated run.
 `muse onboard` walks you — one command at a time — from a fresh install to your first
 private, cited answer.
 
-The full command surface (`muse --help`):
+`muse ask` is the trust floor in one screenshot — the answer cites its source, and the
+receipt below it is openable (screenshots captured 2026-07-17 on a clean demo home,
+local gemma4:12b, no cloud key):
 
-<p align="center"><img src="docs/images/cli-help.png" alt="muse --help command catalog" width="620" /></p>
+<p align="center"><img src="docs/images/cli-ask.png" alt="muse ask — grounded, cited answer with an openable receipt" width="860" /></p>
 
 `muse status` and `muse today` render entirely from your local stores — **no API key
-required** (they fall back to a local briefing when the API server isn't running):
+required**:
 
 | `muse today` | `muse status` |
 | --- | --- |
 | <img src="docs/images/cli-today.png" alt="muse today briefing" width="420" /> | <img src="docs/images/cli-status.png" alt="muse status dashboard" width="420" /> |
+
+The same runtime drives the web console (and the native macOS app, which bundles it) —
+chat with tool receipts, the model chip showing what's answering right now, and a home
+view for what Muse has learned:
+
+<p align="center"><img src="docs/images/web-chat.png" alt="Muse console chat — tool receipt chip and on-device model chip" width="860" /></p>
 
 ### Daily-driver flows
 
@@ -195,8 +226,8 @@ for a single call; it remembers you and shapes every future turn *and* every pro
 apps/
   api/        Fastify API server (chat, agent specs, multi-agent, MCP, scheduler, calendar, tasks)
   cli/        terminal agent (commander + Ink TUI + setup wizards)
-  web/        React UI — 13 panels (Chat, Today, Dashboard, Tasks, Reminders, Calendar,
-              Notes, Memory, Messaging, Tools, Activity, Autonomy, Settings)
+  web/        React console — chat-first shell (Home, Chat, Integrations, Notes, Memory,
+              Continuity, Settings; engine-room panels behind a developer toggle)
   desktop/    native macOS floating companion (SwiftPM)
 
 packages/
@@ -357,9 +388,10 @@ Local / Local-ICS / Google / CalDAV / macOS; OAuth + app-password flows; chmod-6
 Tests are the only form of verification. The repo ships these gates:
 
 ```bash
-pnpm check        # build + test for every workspace (thousands of tests across all 28 packages)
+pnpm check        # build + test for every workspace (18,484 cases across 37 packages + 4 apps)
 pnpm smoke:broad  # 51 HTTP endpoints, diagnostic provider (no key)
 pnpm smoke:live   # real LLM round-trip — LOCAL OLLAMA ONLY, gemma4:12b (auto-skips if unreachable)
+pnpm eval:agent   # the agent-eval gate: tool selection, adversarial refusal, judge meta-eval, plan quality
 ```
 
 `smoke:live` is **local Ollama only by deliberate policy** — it probes
