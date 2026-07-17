@@ -57,7 +57,8 @@ DELTA, never the base.
 4. **DELIVER (ledger, not essay)** —
    - `build`/`maybe` capability items → append rows to
      `capability-parity-backlog.md` in its row format, tagged `[scout
-     YYYY-MM-DD]` — this is grow-muse rung-4 fuel.
+     YYYY-MM-DD]` — `build` rows are grow-muse rung-4 fuel; `maybe` rows
+     stage the reservoir until re-judged `build`.
    - Rival hardening/reliability tricks Muse lacks → one ◦ line each in
      `docs/goals/backlog.md` tagged `→improve-muse`.
    - Update the rival-watch.md watermark (date, SHAs, roster changes,

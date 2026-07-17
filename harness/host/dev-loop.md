@@ -1,7 +1,7 @@
 ---
 title: 개발 루프 — 매일 Muse를 더 강하게 만드는 방법 (Development Loop)
 audience: [AI 에이전트, 개발자]
-purpose: "다음에 뭘 개발하지"를 매번 즉흥적으로 정하는 비효율을 없애고, 공개된 에이전트-개발 방법론에 근거한 하나의 루프로 고정한다. `improve-muse` 스킬이 활성화하는 본체.
+purpose: "다음에 뭘 개발하지"를 매번 즉흥적으로 정하는 비효율을 없애고, 공개된 에이전트-개발 방법론에 근거한 하나의 루프로 고정한다. `improve-muse`·`grow-muse` 두 스킬이 활성화하는 본체.
 format: harness layer (vendor-neutral)
 updated: 2026-06-08
 ---
@@ -14,9 +14,9 @@ updated: 2026-06-08
 
 > **이 파일은 "무엇을·어떻게 개발하는가"의 계약입니다.** [`AGENTS.md`](../AGENTS.md)가
 > *역할·핸드오프·게이트*(한 슬라이스를 어떻게 실행하나)라면, 이 파일은 *그 슬라이스를
-> 어떻게 고르고, 검증하고, 학습을 누적하나*입니다. `.claude/skills/improve-muse`가
-> 0–2단계(ORIENT+FIND)를 돌려 다음 슬라이스를 *추천*하고 — "할 게 없다"는 금지 출력 —
-> 선택된 슬라이스가 3–7단계를 따릅니다. 매번 "뭘 만들지" 프롬프트를 쓰지 않게.
+> 어떻게 고르고, 검증하고, 학습을 누적하나*입니다. `.claude/skills/improve-muse`(HARDEN)·
+> `grow-muse`(GROW) 두 스킬이 각각 0–7단계를 end-to-end로 완주합니다(pick → BUILD →
+> VERIFY → COMMIT+PUSH) — "할 게 없다"는 금지 출력. 매번 "뭘 만들지" 프롬프트를 쓰지 않게.
 
 ## 0. 이 루프가 고치는 비효율 (왜 만들었나)
 
