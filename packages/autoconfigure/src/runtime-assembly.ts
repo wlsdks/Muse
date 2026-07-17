@@ -144,12 +144,15 @@ import {
   mergeModelKeysFromFile,
   resolveEffectiveLocalOnlyOverride,
   resolveActionLogFile,
+  resolveAttunementFile,
   resolveEpisodesFile,
   resolveFollowupLlmBudgetFile,
   resolveFollowupsFile,
   resolveNotesDir,
   resolvePatternsFiredFile,
   resolveProactiveHistoryFile,
+  resolveProgressiveAutonomyFile,
+  resolveProgressiveAutonomyOpportunitiesFile,
   resolveReminderHistoryFile,
   resolveRemindersFile,
   resolveTasksFile,
@@ -195,6 +198,8 @@ import {
   resolveAnswerTemperature,
   resolveDefaultModel
 } from "./autoconfigure-model-provider.js";
+import { createProgressiveAutonomyToolOpportunityObserver } from "./progressive-autonomy-runtime-observer.js";
+import { resolveDefaultUserId } from "./user-id.js";
 
 export interface MuseEnvironment {
   readonly [key: string]: string | undefined;
@@ -1275,6 +1280,17 @@ function buildAgentRuntime(params: {
       tokenUsageSink,
       tracer,
       toolRegistry,
+      ...(parseBoolean(env.MUSE_PROGRESSIVE_AUTONOMY_SHADOW_OBSERVE, true)
+        ? {
+            toolOpportunityObserver: createProgressiveAutonomyToolOpportunityObserver({
+              attunementFile: resolveAttunementFile(env),
+              autonomyFile: resolveProgressiveAutonomyFile(env),
+              defaultUserId: resolveDefaultUserId(env),
+              opportunitiesFile: resolveProgressiveAutonomyOpportunitiesFile(env),
+              tasksFile: resolveTasksFile(env)
+            })
+          }
+        : {}),
       toolExposurePolicy: createPersonalToolExposurePolicy(env),
       userMemoryProvider: parseBoolean(env.MUSE_USER_MEMORY_INJECTION, true)
         ? userMemoryStore

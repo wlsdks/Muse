@@ -194,6 +194,8 @@ export type {
   ToolApprovalGate,
   ToolApprovalGateDecision,
   ToolApprovalGateInput,
+  ToolOpportunityObserver,
+  ToolOpportunityObserverInput,
   ToolRiskLevel
 } from "./agent-runtime-types.js";
 
@@ -326,6 +328,8 @@ export class AgentRuntime {
   private readonly skillCatalogProvider?: SkillCatalogProvider;
   private readonly telemetryAggregator?: TelemetryAggregator;
   private readonly toolApprovalGate?: ToolApprovalGate;
+  private readonly toolOpportunityObserver?: AgentRuntimeOptions["toolOpportunityObserver"];
+  private readonly toolOpportunityObserverTimeoutMs: number;
   private readonly egressAdvisorySink?: EgressAdvisorySink;
   private readonly defaults: AgentRuntimeOptions["defaults"];
   private readonly toolCapabilityCache = new Map<string, boolean>();
@@ -409,6 +413,10 @@ export class AgentRuntime {
     this.skillCatalogProvider = options.skillCatalogProvider;
     this.telemetryAggregator = options.telemetryAggregator;
     this.toolApprovalGate = options.toolApprovalGate;
+    this.toolOpportunityObserver = options.toolOpportunityObserver;
+    this.toolOpportunityObserverTimeoutMs = normalizeToolOpportunityObserverTimeout(
+      options.toolOpportunityObserverTimeoutMs
+    );
     this.egressAdvisorySink = options.egressAdvisorySink;
     this.defaults = options.defaults;
 
@@ -1275,6 +1283,34 @@ export class AgentRuntime {
 
     await this.invokeHooks("beforeTool", context, toolCall);
 
+    // Observe only canonical, schema-valid proposals. This deliberately does
+    // NOT move the existing validation failures ahead of the approval gate:
+    // invalid-call gate count/order/results remain byte-identical. The pure
+    // checks are computed early for observer eligibility, then their existing
+    // results are consumed at the historical validation point below.
+    const exposed = activeTools.find((tool) => tool.name === toolCall.name);
+    const coercedArguments = coerceEnumArguments(
+      exposed?.inputSchema,
+      coerceToolArguments(exposed?.inputSchema, toolCall.arguments)
+    );
+    const argCheck = validateRequiredToolArguments(exposed?.inputSchema, coercedArguments);
+    const enumErrors = validateEnumArguments(exposed?.inputSchema, coercedArguments);
+    if (argCheck.ok && enumErrors.length === 0 && this.toolOpportunityObserver) {
+      try {
+        const opportunityUserId = metadataString(context.input.metadata, "userId");
+        const observation = Promise.resolve(this.toolOpportunityObserver({
+          arguments: deepCloneAndFreeze(coercedArguments),
+          runId: context.runId,
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          ...(opportunityUserId ? { userId: opportunityUserId } : {})
+        })).catch(() => undefined);
+        await settleWithin(observation, this.toolOpportunityObserverTimeoutMs);
+      } catch {
+        // Fail-soft: evidence collection must never affect tool behavior.
+      }
+    }
+
     // Injection-provenance gate (outbound-send OR execute class): if this
     // actuator's sink args (a send's to/subject/body/url, or an execute tool's
     // command/code payload) carry content that traces to UNTRUSTED tool output
@@ -1416,12 +1452,6 @@ export class AgentRuntime {
     // check required. A missing required arg returns the missing list so the
     // model re-calls correctly (bounded by maxToolCalls) — never execute with
     // bad args.
-    const exposed = activeTools.find((tool) => tool.name === toolCall.name);
-    const coercedArguments = coerceEnumArguments(
-      exposed?.inputSchema,
-      coerceToolArguments(exposed?.inputSchema, toolCall.arguments)
-    );
-    const argCheck = validateRequiredToolArguments(exposed?.inputSchema, coercedArguments);
     if (!argCheck.ok) {
       const executed = blockedToolResult(
         toolCall,
@@ -1438,7 +1468,6 @@ export class AgentRuntime {
     // write/actuator running a meaningless mode). tool-calling.md #3: invalid args
     // are the 2nd-biggest failure mode — fail-close here and feed the constraint
     // back so the model's bounded retry self-corrects, never execute on a bad value.
-    const enumErrors = validateEnumArguments(exposed?.inputSchema, coercedArguments);
     if (enumErrors.length > 0) {
       const executed = blockedToolResult(
         toolCall,
@@ -1641,6 +1670,40 @@ function logprobsFromInput(
     logprobs: true,
     ...(input.topLogprobs !== undefined ? { topLogprobs: input.topLogprobs } : {})
   };
+}
+
+function deepCloneAndFreeze<T>(value: T): T {
+  const clone = structuredClone(value);
+  const freeze = (candidate: unknown): void => {
+    if (candidate === null || typeof candidate !== "object" || Object.isFrozen(candidate)) return;
+    for (const nested of Object.values(candidate)) freeze(nested);
+    Object.freeze(candidate);
+  };
+  freeze(clone);
+  return clone;
+}
+
+const DEFAULT_TOOL_OPPORTUNITY_OBSERVER_TIMEOUT_MS = 1_000;
+const MAX_TOOL_OPPORTUNITY_OBSERVER_TIMEOUT_MS = 10_000;
+
+function normalizeToolOpportunityObserverTimeout(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.min(MAX_TOOL_OPPORTUNITY_OBSERVER_TIMEOUT_MS, Math.max(1, Math.trunc(value)))
+    : DEFAULT_TOOL_OPPORTUNITY_OBSERVER_TIMEOUT_MS;
+}
+
+async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {

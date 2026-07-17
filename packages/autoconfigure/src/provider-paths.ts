@@ -196,6 +196,15 @@ export function resolveProgressiveAutonomyFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_PROGRESSIVE_AUTONOMY_FILE", "progressive-autonomy.json");
 }
 
+/** Organic, read-only runtime opportunity evidence; separate from grants and executions. */
+export function resolveProgressiveAutonomyOpportunitiesFile(env: MuseEnvironment): string {
+  return resolveDotMusePath(
+    env,
+    "MUSE_PROGRESSIVE_AUTONOMY_OPPORTUNITIES_FILE",
+    "progressive-autonomy-opportunities.json"
+  );
+}
+
 export function resolveActionLogFile(env: MuseEnvironment): string {
   return resolveDotMusePath(env, "MUSE_ACTION_LOG_FILE", "action-log.json");
 }

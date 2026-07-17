@@ -257,6 +257,20 @@ export interface AgentRuntimeOptions {
    */
   readonly toolApprovalGate?: ToolApprovalGate;
   /**
+   * Optional fire-and-record observer for schema-valid model tool proposals.
+   * It runs after canonical argument coercion + required/enum validation and
+   * before the approval gate. The canonical arguments are a detached,
+   * recursively frozen snapshot. Throws/rejections are ignored so observation
+   * can never authorize, deny, mutate, or crash the proposed call.
+   */
+  readonly toolOpportunityObserver?: ToolOpportunityObserver;
+  /**
+   * Positive-finite wall-clock budget for one observer call. Defaults to
+   * 1,000 ms and is capped at 10,000 ms so a hung evidence sink cannot stall
+   * approval or execution. Invalid values use the default.
+   */
+  readonly toolOpportunityObserverTimeoutMs?: number;
+  /**
    * Audit-only sink for a non-"allow" egress decision (S5): fired AFTER the
    * approval-gate/deny enforcement above already ran, never before or in
    * place of it. A "deny" is already hard-blocked by the runtime regardless
@@ -274,6 +288,18 @@ export interface AgentRuntimeOptions {
 }
 
 export type ToolRiskLevel = "read" | "write" | "execute";
+
+export interface ToolOpportunityObserverInput {
+  readonly arguments: ModelToolCall["arguments"];
+  readonly runId: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly userId?: string;
+}
+
+export type ToolOpportunityObserver = (
+  input: ToolOpportunityObserverInput
+) => unknown | Promise<unknown>;
 
 export interface ToolApprovalGateInput {
   readonly toolCall: ModelToolCall;

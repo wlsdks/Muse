@@ -10,6 +10,10 @@
     "./host-progressive-autonomy": {
       "types": "./dist/progressive-autonomy-store.d.ts",
       "import": "./dist/progressive-autonomy-store.js"
+    },
+    "./host-progressive-autonomy-opportunities": {
+      "types": "./dist/progressive-autonomy-opportunity-store.d.ts",
+      "import": "./dist/progressive-autonomy-opportunity-store.js"
     }
   },
   "scripts": { "build": "tsc -b", "test": "vitest run", "typecheck": "tsc -p tsconfig.json --noEmit" },

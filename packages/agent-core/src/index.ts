@@ -633,6 +633,8 @@ export {
   type ToolApprovalGate,
   type ToolApprovalGateDecision,
   type ToolApprovalGateInput,
+  type ToolOpportunityObserver,
+  type ToolOpportunityObserverInput,
   type ToolRiskLevel
 } from "./agent-runtime.js";
 

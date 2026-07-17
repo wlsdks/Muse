@@ -4,11 +4,16 @@ import {
   resolveAttunementFile,
   resolveDefaultUserId,
   resolveProgressiveAutonomyFile,
+  resolveProgressiveAutonomyOpportunitiesFile,
   resolveTasksFile
 } from "@muse/autoconfigure";
 import { completeLinkedNextStep, readAttunementState } from "@muse/attunement";
 import { readTaskById } from "@muse/stores";
 import { FileProgressiveAutonomyAdminStore } from "@muse/stores/host-progressive-autonomy";
+import {
+  FileProgressiveAutonomyOpportunityStore,
+  type ProgressiveAutonomyRuntimeOpportunityReceipt
+} from "@muse/stores/host-progressive-autonomy-opportunities";
 import type { ProgressiveAutonomyShadowReceipt } from "@muse/policy";
 import type { Command } from "commander";
 
@@ -29,7 +34,9 @@ function fail(io: ProgramIO, cause: unknown): void {
   process.exitCode = 2;
 }
 
-export function buildShadowReport(receipts: readonly ProgressiveAutonomyShadowReceipt[]) {
+type ReportReceipt = Pick<ProgressiveAutonomyShadowReceipt, "envelope" | "recordedAt" | "shadowAssessment" | "shadowRationale">;
+
+function summarizeShadowReceipts(receipts: readonly ReportReceipt[]) {
   const counts = { wouldAllowStanding: 0, wouldConfirm: 0, wouldDeny: 0 };
   const days = new Set<string>();
   const tasks = new Set<string>();
@@ -42,21 +49,44 @@ export function buildShadowReport(receipts: readonly ProgressiveAutonomyShadowRe
     threads.add(receipt.envelope.threadId);
     rationaleCounts.set(receipt.shadowRationale, (rationaleCounts.get(receipt.shadowRationale) ?? 0) + 1);
   }
-  const observedDecisions = receipts.length;
   return {
     assessments: counts,
-    observedDecisions,
+    observedDecisions: receipts.length,
     rationales: [...rationaleCounts.entries()]
       .map(([rationale, count]) => ({ count, rationale }))
       .sort((left, right) => left.rationale.localeCompare(right.rationale)),
+    unique: { days: days.size, tasks: tasks.size, threads: threads.size }
+  };
+}
+
+export function buildShadowReport(
+  manualReceipts: readonly ProgressiveAutonomyShadowReceipt[],
+  runtimeReceipts: readonly ProgressiveAutonomyRuntimeOpportunityReceipt[] = []
+) {
+  const uniqueRuntime = [...new Map(runtimeReceipts.map((receipt) => [
+    `${receipt.runId}\u0000${receipt.envelope.action}\u0000${receipt.envelope.link.taskId}`,
+    receipt
+  ])).values()];
+  const organicCount = uniqueRuntime.length;
+  return {
     review: {
       minimumRealDecisions: 20,
+      observedOrganicOpportunities: organicCount,
       promotion: "explicit-user-decision-only" as const,
-      status: observedDecisions >= 20 ? "ready-for-human-review" as const : "collecting" as const,
+      status: organicCount >= 20 ? "ready-for-human-review" as const : "collecting" as const,
       targetRealDecisions: 50
     },
-    schemaVersion: 1 as const,
-    unique: { days: days.size, tasks: tasks.size, threads: threads.size }
+    schemaVersion: 2 as const,
+    sources: {
+      manualCli: {
+        classification: "legacy-read-only" as const,
+        ...summarizeShadowReceipts(manualReceipts)
+      },
+      runtimeOpportunity: {
+        classification: "organic-runtime-opportunity" as const,
+        ...summarizeShadowReceipts(uniqueRuntime)
+      }
+    }
   };
 }
 
@@ -245,13 +275,22 @@ export function registerAutonomyCommands(program: Command, io: ProgramIO): void 
           verifyUserAuthorization: (candidate, userId) =>
             candidate === authorization && userId === resolveDefaultUserId(env)
         });
-        const report = buildShadowReport(await store.executorStore().listShadowReceipts());
+        const opportunities = new FileProgressiveAutonomyOpportunityStore({
+          file: resolveProgressiveAutonomyOpportunitiesFile(env)
+        });
+        const report = buildShadowReport(
+          await store.executorStore().listShadowReceipts(),
+          await opportunities.list()
+        );
         if (options.json) {
           io.stdout(`${JSON.stringify(report, null, 2)}\n`);
         } else {
-          io.stdout(`Observed shadow decisions: ${report.observedDecisions.toString()} (would allow ${report.assessments.wouldAllowStanding.toString()}, confirm ${report.assessments.wouldConfirm.toString()}, deny ${report.assessments.wouldDeny.toString()}).\n`);
+          const runtime = report.sources.runtimeOpportunity;
+          const manual = report.sources.manualCli;
+          io.stdout(`Organic runtime opportunities: ${runtime.observedDecisions.toString()} (would allow ${runtime.assessments.wouldAllowStanding.toString()}, confirm ${runtime.assessments.wouldConfirm.toString()}, deny ${runtime.assessments.wouldDeny.toString()}).\n`);
+          io.stdout(`Legacy manual shadow receipts: ${manual.observedDecisions.toString()} (read-only classification; not counted for readiness).\n`);
           io.stdout(report.review.status === "collecting"
-            ? `Collect ${(report.review.minimumRealDecisions - report.observedDecisions).toString()} more real decisions before human review.\n`
+            ? `Collect ${(report.review.minimumRealDecisions - report.review.observedOrganicOpportunities).toString()} more organic runtime opportunities before human review.\n`
             : "Ready for human review; this does not promote authority.\n");
           io.stdout("Promotion always requires an explicit user decision.\n");
         }

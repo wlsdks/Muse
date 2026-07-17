@@ -4,9 +4,11 @@ import { join } from "node:path";
 
 import { createPersonalThread, linkArtifact, unlinkArtifact } from "@muse/attunement";
 import { readTasks, writeTasks } from "@muse/stores";
+import { FileProgressiveAutonomyOpportunityStore } from "@muse/stores/host-progressive-autonomy-opportunities";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createProgram, type ProgramIO } from "./program.js";
+import { buildShadowReport } from "./commands-autonomy.js";
 
 describe("muse autonomy trusted shadow CLI", () => {
   const dirs: string[] = [];
@@ -16,6 +18,48 @@ describe("muse autonomy trusted shadow CLI", () => {
     process.env = { ...originalEnv };
     process.exitCode = 0;
     await Promise.all(dirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
+  });
+
+  it("dedupes organic runtime logical identities and never counts 22 legacy manual receipts toward readiness", () => {
+    const envelope = {
+      action: "muse.tasks.complete-linked-next-step",
+      idempotencyKey: "runtime-opportunity:run-1:task-next",
+      link: { artifactType: "task", linkedAt: "2026-07-17T02:00:00.000Z", providerId: "local", role: "next-step", taskId: "task-next" },
+      schemaVersion: 1,
+      threadId: "thread-life",
+      traceId: "runtime-tool:run-1:call-1",
+      transition: { from: "open", to: "done" },
+      userId: "dogfood-user"
+    } as const;
+    const manual = Array.from({ length: 22 }, (_, index) => ({
+      enforcementDecision: "confirm" as const,
+      envelope,
+      executionId: `manual-${index.toString()}`,
+      grantId: "grant-1",
+      id: `receipt-${index.toString()}`,
+      rationale: "explicit confirmation required",
+      recordedAt: "2026-07-17T03:00:00.000Z",
+      shadowAssessment: "wouldConfirm" as const,
+      shadowRationale: "no exact active standing grant"
+    }));
+    const runtime = {
+      enforcementDecision: "confirm" as const,
+      envelope,
+      id: "runtime-1",
+      origin: "runtime-opportunity" as const,
+      rationale: "explicit confirmation required",
+      recordedAt: "2026-07-17T03:00:00.000Z",
+      runId: "run-1",
+      shadowAssessment: "wouldConfirm" as const,
+      shadowRationale: "no exact active standing grant",
+      toolCallId: "call-1"
+    };
+
+    const report = buildShadowReport(manual, [runtime, { ...runtime, id: "runtime-2", toolCallId: "call-2" }]);
+
+    expect(report.sources.manualCli.observedDecisions).toBe(22);
+    expect(report.sources.runtimeOpportunity.observedDecisions).toBe(1);
+    expect(report.review).toMatchObject({ observedOrganicOpportunities: 1, status: "collecting" });
   });
 
   it("grants the exact open user-linked local next step through the public program", async () => {
@@ -99,17 +143,30 @@ describe("muse autonomy trusted shadow CLI", () => {
 
     expect(reported.errors).toEqual([]);
     expect(JSON.parse(reported.output.join(""))).toEqual({
-      assessments: { wouldAllowStanding: 1, wouldConfirm: 0, wouldDeny: 0 },
-      observedDecisions: 1,
-      rationales: [{ count: 1, rationale: "exact active standing grant" }],
       review: {
         minimumRealDecisions: 20,
+        observedOrganicOpportunities: 0,
         promotion: "explicit-user-decision-only",
         status: "collecting",
         targetRealDecisions: 50
       },
-      schemaVersion: 1,
-      unique: { days: 1, tasks: 1, threads: 1 }
+      schemaVersion: 2,
+      sources: {
+        manualCli: {
+          assessments: { wouldAllowStanding: 1, wouldConfirm: 0, wouldDeny: 0 },
+          classification: "legacy-read-only",
+          observedDecisions: 1,
+          rationales: [{ count: 1, rationale: "exact active standing grant" }],
+          unique: { days: 1, tasks: 1, threads: 1 }
+        },
+        runtimeOpportunity: {
+          assessments: { wouldAllowStanding: 0, wouldConfirm: 0, wouldDeny: 0 },
+          classification: "organic-runtime-opportunity",
+          observedDecisions: 0,
+          rationales: [],
+          unique: { days: 0, tasks: 0, threads: 0 }
+        }
+      }
     });
   });
 
@@ -123,6 +180,63 @@ describe("muse autonomy trusted shadow CLI", () => {
     expect(listed.errors.join("")).toContain("store is corrupt");
     expect(process.exitCode).toBe(2);
     expect(await readFile(fixture.autonomyFile, "utf8")).toBe(corrupt);
+  });
+
+  it("fails the v2 report on corrupt runtime opportunity persistence without overwriting it", async () => {
+    const fixture = await createFixture();
+    const corrupt = JSON.stringify({ opportunities: [], schemaVersion: 999, traces: [] });
+    await writeFile(fixture.opportunitiesFile, corrupt, "utf8");
+
+    const reported = await run(["report", "--json"]);
+
+    expect(reported.errors.join("")).toContain("opportunity store is corrupt");
+    expect(process.exitCode).toBe(2);
+    expect(await readFile(fixture.opportunitiesFile, "utf8")).toBe(corrupt);
+  });
+
+  it("fails the v2 report on a canonical-trace identity mismatch without overwriting evidence", async () => {
+    const fixture = await createFixture();
+    const envelope = {
+      action: "muse.tasks.complete-linked-next-step" as const,
+      idempotencyKey: `runtime-opportunity:run-report:${fixture.taskId}`,
+      link: {
+        artifactType: "task" as const,
+        linkedAt: "2026-07-17T02:00:00.000Z",
+        providerId: "local" as const,
+        role: "next-step" as const,
+        taskId: fixture.taskId
+      },
+      schemaVersion: 1 as const,
+      threadId: fixture.threadId,
+      traceId: "runtime-tool:run-report:call-1",
+      transition: { from: "open" as const, to: "done" as const },
+      userId: "dogfood-user"
+    };
+    await new FileProgressiveAutonomyOpportunityStore({ file: fixture.opportunitiesFile }).record({
+      enforcementDecision: "confirm",
+      envelope,
+      id: "runtime-report-1",
+      origin: "runtime-opportunity",
+      rationale: "explicit confirmation required",
+      recordedAt: "2026-07-17T03:00:00.000Z",
+      runId: "run-report",
+      shadowAssessment: "wouldConfirm",
+      shadowRationale: "no exact active standing grant",
+      toolCallId: "call-1"
+    });
+    const state = JSON.parse(await readFile(fixture.opportunitiesFile, "utf8")) as {
+      traces: Array<{ envelope: { traceId: string }; toolCallId: string }>;
+    };
+    state.traces[0]!.toolCallId = "call-2";
+    state.traces[0]!.envelope.traceId = "runtime-tool:run-report:call-2";
+    const corrupt = JSON.stringify(state);
+    await writeFile(fixture.opportunitiesFile, corrupt, "utf8");
+
+    const reported = await run(["report", "--json"]);
+
+    expect(reported.errors.join("")).toContain("opportunity store is corrupt");
+    expect(process.exitCode).toBe(2);
+    expect(await readFile(fixture.opportunitiesFile, "utf8")).toBe(corrupt);
   });
 
   it("records wouldDeny after unlink-relink without mutating the task or consuming a use", async () => {
@@ -207,7 +321,10 @@ describe("muse autonomy trusted shadow CLI", () => {
     const reported = await run(["report", "--json"]);
     const revoked = await run(["revoke", grant.id, "--json"]);
 
-    expect(JSON.parse(reported.output.join(""))).toMatchObject({ observedDecisions: 1 });
+    expect(JSON.parse(reported.output.join(""))).toMatchObject({
+      review: { observedOrganicOpportunities: 0 },
+      sources: { manualCli: { observedDecisions: 1 } }
+    });
     expect(JSON.parse(revoked.output.join(""))).toMatchObject({ revokedAt: expect.any(String), usedCount: 0 });
     expect(await readFile(fixture.tasksFile, "utf8")).toBe(taskBytes);
     expect(fixture.autonomyFile).toContain(join(".muse", "progressive-autonomy.json"));
@@ -247,6 +364,7 @@ describe("muse autonomy trusted shadow CLI", () => {
   async function createFixture(options: { readonly defaultHomePaths?: boolean } = {}): Promise<{
     readonly attunementFile: string;
     readonly autonomyFile: string;
+    readonly opportunitiesFile: string;
     readonly tasksFile: string;
     readonly taskId: string;
     readonly threadId: string;
@@ -257,6 +375,7 @@ describe("muse autonomy trusted shadow CLI", () => {
     const attunementFile = join(dataDir, "attunement.json");
     const tasksFile = join(dataDir, "tasks.json");
     const autonomyFile = join(dataDir, "progressive-autonomy.json");
+    const opportunitiesFile = join(dataDir, "progressive-autonomy-opportunities.json");
     const taskId = "task-next";
     const nextEnv: NodeJS.ProcessEnv = {
       ...originalEnv,
@@ -266,10 +385,12 @@ describe("muse autonomy trusted shadow CLI", () => {
     if (options.defaultHomePaths) {
       delete nextEnv.MUSE_ATTUNEMENT_FILE;
       delete nextEnv.MUSE_PROGRESSIVE_AUTONOMY_FILE;
+      delete nextEnv.MUSE_PROGRESSIVE_AUTONOMY_OPPORTUNITIES_FILE;
       delete nextEnv.MUSE_TASKS_FILE;
     } else {
       nextEnv.MUSE_ATTUNEMENT_FILE = attunementFile;
       nextEnv.MUSE_PROGRESSIVE_AUTONOMY_FILE = autonomyFile;
+      nextEnv.MUSE_PROGRESSIVE_AUTONOMY_OPPORTUNITIES_FILE = opportunitiesFile;
       nextEnv.MUSE_TASKS_FILE = tasksFile;
     }
     process.env = nextEnv;
@@ -295,6 +416,7 @@ describe("muse autonomy trusted shadow CLI", () => {
     return {
       attunementFile,
       autonomyFile,
+      opportunitiesFile,
       taskId,
       tasksFile,
       threadId: thread.id

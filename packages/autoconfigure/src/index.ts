@@ -69,6 +69,7 @@ export {
   resolveDiscordInboxFile,
   resolveProactiveHistoryFile,
   resolveProgressiveAutonomyFile,
+  resolveProgressiveAutonomyOpportunitiesFile,
   resolveReminderHistoryFile,
   resolveWeaknessesFile,
   resolveSessionLockFile,
@@ -116,6 +117,12 @@ export {
 export type { ExternalMcpEntryDiagnosis, ExternalMcpEntryStatus } from "./external-mcp-config.js";
 
 export { buildRuntimeToolRegistry, type RuntimeToolRegistryDeps } from "./runtime-tool-registry.js";
+
+export {
+  createProgressiveAutonomyToolOpportunityObserver,
+  observeProgressiveAutonomyToolOpportunity,
+  type ProgressiveAutonomyToolOpportunityObserverOptions
+} from "./progressive-autonomy-runtime-observer.js";
 
 export {
   activeModelEnvOverride,

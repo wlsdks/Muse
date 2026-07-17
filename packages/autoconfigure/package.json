@@ -19,6 +19,7 @@
   "dependencies": {
     "@muse/agent-core": "workspace:*",
     "@muse/agent-specs": "workspace:*",
+    "@muse/attunement": "workspace:*",
     "@muse/auth": "workspace:*",
     "@muse/cache": "workspace:*",
     "@muse/calendar": "workspace:*",

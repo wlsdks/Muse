@@ -57,6 +57,22 @@ export interface FileProgressiveAutonomyAdminStoreOptions {
   readonly verifyUserAuthorization: VerifyStandingGrantUserAuthorization;
 }
 
+/** Host-composition read capability for runtime policy assessment; exposes no authority mutations. */
+export class FileProgressiveAutonomyAuthorityReader {
+  private readonly store: FileProgressiveAutonomyAdminStore;
+
+  constructor(options: { readonly file: string }) {
+    this.store = new FileProgressiveAutonomyAdminStore({
+      file: options.file,
+      verifyUserAuthorization: () => false
+    });
+  }
+
+  listGrantRecords(): Promise<readonly StandingGrantRecord[]> {
+    return this.store.listGrantRecords();
+  }
+}
+
 export class FileProgressiveAutonomyAdminStore implements ProgressiveAutonomyAdminStore {
   private readonly file: string;
   private readonly verifyUserAuthorization: VerifyStandingGrantUserAuthorization;
