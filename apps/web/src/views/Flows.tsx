@@ -225,6 +225,7 @@ function FlowCanvasArea({
           nodeTypes={FLOW_NODE_TYPES}
           edgeTypes={FLOW_EDGE_TYPES}
           fitView
+          fitViewOptions={{ maxZoom: 1.1, padding: 0.25 }}
           panOnScroll
           nodesDraggable
           nodesConnectable={false}

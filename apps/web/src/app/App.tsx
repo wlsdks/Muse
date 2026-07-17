@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { createApiClient } from "../api/client.js";
 import { CommandPalette } from "../components/CommandPalette.js";
@@ -13,8 +13,12 @@ import { BoardView } from "../views/Board.js";
 import { CalendarView } from "../views/Calendar.js";
 import { ContinuityReviewView } from "../views/ContinuityReview.js";
 import { AutonomyView } from "../views/Autonomy.js";
-import { FlowsView } from "../views/Flows.js";
 import { ScheduledView } from "../views/Scheduled.js";
+
+// The canvas stack (@xyflow/react) is the single heaviest dependency in the
+// bundle; lazy-splitting the Flows view keeps it out of the main chunk every
+// non-builder session pays for.
+const FlowsView = lazy(async () => ({ default: (await import("../views/Flows.js")).FlowsView }));
 import { ChatView } from "../views/Chat.js";
 import { ChatsView } from "../views/Chats.js";
 import { DashboardView } from "../views/Dashboard.js";
@@ -323,7 +327,9 @@ function Console() {
             {view === "settings" ? (
               <SettingsView client={client} apiUrl={apiUrl} token={token} onSave={updateConnection} />
             ) : (
-              <ActiveComponent client={client} onNavigate={(id) => setView(id as ViewId)} />
+              <Suspense fallback={<div className="skeleton-block" aria-busy="true"><span className="skeleton" style={{ width: "40%" }} /><span className="skeleton" style={{ width: "70%" }} /></div>}>
+                <ActiveComponent client={client} onNavigate={(id) => setView(id as ViewId)} />
+              </Suspense>
             )}
           </div>
         </section>

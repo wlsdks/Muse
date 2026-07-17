@@ -57,6 +57,12 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Changed
 
+- **The console loads faster and the Flows list reads cleaner.** The canvas
+  stack now loads only when you open Flows (main bundle gzip 198→143 KB);
+  flow names and next-run times sit on separate lines with long names
+  ellipsized; the custom-cron field shows an example placeholder and the
+  canvas fits its nodes a little larger.
+
 - **Flows moved to the sidebar.** The automation builder is now its own
   Workspace item (홈 · 대화 · 오늘 · 흐름 · 연동) instead of a tab inside
   자동 활동, which keeps its 예정/액션 로그/목표/거부 tabs.

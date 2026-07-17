@@ -162,6 +162,7 @@ function TriggerEditFields({
           <input
             className="input"
             type="text"
+            placeholder="0 9 * * *"
             value={form.schedule.customCron}
             onChange={(e) => setForm({ schedule: { customCron: e.target.value, kind: "custom" } })}
           />

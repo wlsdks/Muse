@@ -2017,6 +2017,7 @@ button.status-chip {
   flex: 1;
 }
 .flow-list-item-title {
+  display: block;
   font-size: var(--text-body);
   font-weight: 560;
   overflow: hidden;
@@ -2024,6 +2025,8 @@ button.status-chip {
   white-space: nowrap;
 }
 .flow-list-item-meta {
+  display: block;
+  margin-top: 2px;
   font-size: var(--text-xs);
   color: var(--ink-subtle);
 }
