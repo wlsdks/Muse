@@ -58,3 +58,14 @@ ratchet: web SSR 550(+1) · browser 20(+1) · compile unit +1 · fabrication 0
 - 리뷰지점: runner-support 규칙 — agentSystemPrompt는 실행기가 실제 소비(확인). agentMaxToolCalls/personaId는 실행기가 무시하므로 의도적으로 미노출(유효-비실행 방지). tool 브랜치는 필드 생략. copilot 리비전은 agentModel과 동일하게 리셋(기존 패턴 일치).
 - 리스크: 없음.
 - 라이브: 실브라우저 라운드트립 — 액션 노드 시스템 프롬프트 편집→저장→GET job에 agentSystemPrompt 영속(agentPrompt 무변경).
+
+## fire 7 · 2026-07-18 · skill v2.1.1 · 06813eefc
+meta: value-class=ux-fix · pkg=@muse/web · kind=ui-legibility · verdict=PASS(opus) · firesSinceDrill=7 · consecutiveAllPASS=7
+ratchet: web SSR 550 · browser 22(+2) · fabrication 0
+- 무엇: 빌더 create+edit 패널의 검증 경고 4곳(cron 무효·툴 JSON 무효)이 `color: var(--err)`로 렌더됐는데 `--err`가 미정의 변수라 무색(muted grey)이었음. `.field-error{color:var(--danger);font-size:var(--text-xs)}` 클래스로 4곳 전부 교체.
+- 왜: 사용자가 잘못된 cron/JSON 입력해도 피드백이 중립 힌트처럼 보여 에러로 안 읽혔음(빌더 핵심 검증 UX 결함).
+- 리뷰지점: fire 5의 형제 클래스 — 안 먹는 색. `.subtle` 대신 전용 `.field-error`(specificity 경쟁 없음, edit 패널도 동일 마크업이라 빨강). `.subtle`은 색만 제공하므로 손실 없음. Opus가 edit 패널 미-라이브 컨텍스트도 오버라이드 없음 확인.
+- 리스크: 없음(폰트 12→11px 의도적).
+- lesson: 새 색 클래스는 실브라우저 computed color 측정으로 검증(SSR/DOM 테스트는 클래스 존재만 확인). undefined CSS var(`--err` 등)는 조용히 무색 폴백 — 코드베이스 색 토큰(`--danger`)만 사용.
+- **NOTE(fire 8용): consecutiveAllPASS=7. 다음 fire(8)에서 8 도달 → JUDGE-DRILL(고의 나쁜 슬라이스 주입→평가자 FAIL 확인→롤백) 실행 후 카운터 리셋.**
+- 라이브: 격리 데모 create 패널 invalid-cron → .field-error rgb(229,83,75)=danger.
