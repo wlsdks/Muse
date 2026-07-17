@@ -97,7 +97,9 @@ pushlock_acquire() {
   echo "$$" > "$lockdir/pid" 2>/dev/null || true
   # Heartbeat: refresh mtime while we hold the lock, so a waiter's stale-age
   # check (mtime-based) never false-reclaims a slow-but-ALIVE holder.
-  ( while :; do sleep 30; touch "$lockdir" 2>/dev/null || exit 0; done ) &
+  # Detach heartbeat stdio from Git/test pipes; otherwise the disowned child
+  # keeps the hook's captured descriptors open until its first 30s sleep ends.
+  ( while :; do sleep 30; touch "$lockdir" 2>/dev/null || exit 0; done ) >/dev/null 2>&1 &
   MUSE_PREPUSH_LOCK_HEARTBEAT_PID=$!
   # disown: without it, bash prints "Terminated: 15" job noise into the
   # user's push output when the EXIT trap kills the heartbeat.

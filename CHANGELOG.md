@@ -10,6 +10,12 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Changed
 
+- **Pre-push checks now match the pushed change:** docs/assets-only pushes
+  avoid package-manager work, code pushes keep fail-closed type checks and
+  lint only existing changed sources, and web checks run only for web/shared
+  impact. Unknown Git scope still falls back to the full gate, live grounding
+  is explicit opt-in, and a stale install now points to the frozen-install
+  repair command instead of looking like a browser-test defect.
 - **Continuity Pack preparation is now one shared core path:** CLI continue,
   HTTP continue, and timing-offer preview resolve canonical local artifacts and
   derive task state through `@muse/attunement`. Parseable due timestamps are

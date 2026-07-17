@@ -57,7 +57,7 @@ Hooks live in `scripts/githooks/` (checked in) instead of the unversioned
 **shared across every worktree of the repo** — setting it from any worktree
 affects all of them.
 
-`pre-push` runs three stages in order:
+`pre-push` runs four stages in order:
 
 1. **Push-window lock** (`scripts/githooks/lib/pushlock.sh`) — serializes the
    whole hook run (and the `git push` right after it) across same-machine
@@ -66,20 +66,28 @@ affects all of them.
    `flock(1)`, so the primary mechanism is a portable mkdir-spinlock (`mkdir`
    is atomic on any POSIX filesystem) with a ~10-minute stale-lock timeout so
    a crashed holder can't deadlock every future push.
-2. **Fail-CLOSED compile gate** — `pnpm -s typecheck:fast` plus a direct
-   `tsc --noEmit` for `apps/web` (outside the `tsc -b` reference graph by
-   design, see `architecture.md`). A push whose code doesn't compile, or
-   whose environment can't even resolve `pnpm`, is **blocked** — never
-   silently skipped.
-3. **Fail-OPEN grounding tripwire** — `pnpm -s precheck:grounding`, unchanged
-   from the original hook: skips itself when pnpm/Ollama aren't reachable so
-   it never hard-blocks a model-less box.
+2. **Fail-CLOSED scope classifier** — unions the changed paths from every
+   pushed ref. Docs/assets-only pushes skip deterministic gates; known code
+   paths select the relevant gates. Missing/malformed ref input, unknown Git
+   objects, diff failures, and unclassified paths all fall back to the full
+   gate rather than guessing that a push is safe.
+3. **Fail-CLOSED deterministic gates** — code/config changes run
+   `pnpm -s typecheck:fast`; web-impacting changes also run the direct
+   `apps/web` typecheck (outside the `tsc -b` reference graph by design, see
+   `architecture.md`). ESLint receives existing changed source files, while
+   lint config/dependency or fallback scope runs the full lint. A required
+   gate whose environment cannot resolve `pnpm` is blocked. If a newly added
+   dependency is missing locally, run `pnpm install --frozen-lockfile`.
+4. **Explicit live grounding tripwire** — grounding is not part of the
+   default local push latency. Set `MUSE_RUN_PREPUSH_GROUNDING=1` to run
+   `pnpm -s precheck:grounding` when the pushed paths affect grounding. It
+   remains fail-open when pnpm/Ollama cannot be reached.
 
-Two escape env vars, both documented and greppable — prefer either to
-`--no-verify`:
+The controls are documented and greppable — prefer them to `--no-verify`:
 
-- `MUSE_SKIP_PREPUSH=1` — skips stage 3 (grounding) only; the compile gate
-  still runs.
+- `MUSE_RUN_PREPUSH_GROUNDING=1` — opts into stage 4 for a relevant push.
+- `MUSE_SKIP_PREPUSH=1` — explicitly suppresses stage 4 only; deterministic
+  gates still run. Kept for compatibility with existing automation.
 - `MUSE_SKIP_PREPUSH_ALL=1` — skips every stage, including the compile gate.
   Genuine emergencies only.
 

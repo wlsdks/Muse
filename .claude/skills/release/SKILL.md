@@ -136,9 +136,10 @@ churns). Stage with **explicit paths** (other loops may have files staged).
    origin/main`), resolving the changelog if a loop touched it.
 5. **Tag** annotated: `git tag -a vX.Y.Z -m "vX.Y.Z"`.
 6. **Push** with approval (per `commits.md` never push without it — the user
-   asking for a release IS that approval): `git push origin main && git push
-   origin vX.Y.Z`. The `pre-push` grounding tripwire runs; a battery that
-   stalls SKIPs (fail-open), only a RUN+FAIL blocks. Never `--no-verify` /
+   asking for a release IS that approval):
+   `MUSE_RUN_PREPUSH_GROUNDING=1 git push origin main vX.Y.Z`. A release opts
+   into the path-scoped grounding tripwire deliberately; a battery that stalls
+   SKIPS (fail-open), only a RUN+FAIL blocks. Never `--no-verify` /
    `MUSE_SKIP_PREPUSH=1` without asking.
 
 ## Step 4 — create the GitHub Release

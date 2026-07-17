@@ -1,73 +1,168 @@
 #!/usr/bin/env bash
-# pre-push (versioned — scripts/githooks/pre-push, installed via
-# `core.hooksPath` by scripts/setup-githooks.mjs, NOT copied into
-# .git/hooks). Three stages, in order:
+# Versioned pre-push gate installed through core.hooksPath.
 #
-#   1. push-window lock (scripts/githooks/lib/pushlock.sh) — serializes the
-#      whole hook run across same-machine agents. pushlock_repo_target()
-#      derives the lock path from the repo's git-common-dir (shared by every
-#      worktree), so a push from worktree A and a push from worktree B
-#      always contend on the SAME lock instead of each resolving its own
-#      per-worktree path. This is what closes the "concurrent pushes race
-#      the 1-2min gate window" failure class: only one agent's checks (and
-#      its immediately-following `git push`) run at a time, instead of
-#      several agents passing their own stale-branch checks simultaneously
-#      and then colliding on push.
-#   2. fail-CLOSED compile+lint gate — `pnpm -s typecheck:fast` (the tsc -b
-#      project-reference graph), a direct `tsc --noEmit` for apps/web,
-#      then `pnpm -s lint` (cached eslint — typecheck-only pushes let a
-#      13-error lint batch land on 2026-07-17)
-#      (intentionally OUTSIDE that reference graph — see
-#      .claude/rules/architecture.md). Unlike the old hook, a push whose
-#      code doesn't compile — or whose environment can't even resolve pnpm
-#      — is BLOCKED, never silently skipped.
-#   3. fail-OPEN grounding tripwire, now PATH-SCOPED: `pnpm -s
-#      precheck:grounding` only runs when the pushed commits actually touch
-#      a grounding-relevant path (see GROUNDING_PATH_PATTERNS below) — the
-#      3 live-LLM batteries it runs take minutes, so paying that cost on
-#      every push (a docs fix, an unrelated package) was pure overhead. Also
-#      skips itself when pnpm/Ollama aren't reachable so it never
-#      hard-blocks a model-less box; MUSE_SKIP_PREPUSH=1 still skips ONLY
-#      this stage regardless of path-scoping.
+# 1. Serialize same-repository pushes across worktrees.
+# 2. Classify the union of paths in all pushed refs, fail-closed on any
+#    malformed/unknown Git state, and run only relevant deterministic gates.
+# 3. Run the path-scoped live grounding battery only by explicit opt-in.
 #
-# Escape hatches (documented, greppable — prefer these to --no-verify):
-#   MUSE_SKIP_PREPUSH=1     — skip stage 3 (grounding) only. Stages 1-2 still run.
-#   MUSE_SKIP_PREPUSH_ALL=1 — skip EVERYTHING (lock + compile gate + grounding).
-#                             Genuine emergencies only — this is the one knob
-#                             that can let broken code reach origin/main.
+# Environment:
+#   MUSE_RUN_PREPUSH_GROUNDING=1  opt into the live-LLM grounding battery
+#   MUSE_SKIP_PREPUSH=1           explicitly skip grounding (legacy compatible)
+#   MUSE_SKIP_PREPUSH_ALL=1       emergency-only bypass of every stage
 set -uo pipefail
 
-# Captured FIRST, before anything else in this script could touch stdin:
-# git's pre-push hook receives the ref updates being pushed as lines on
-# stdin ("<local ref> <local sha1> <remote ref> <remote sha1>"), one per
-# updated ref, and closes stdin after writing them. Stage 3 below uses this
-# to scope the grounding tripwire to pushes that actually touch a
-# grounding-relevant path.
+# Git supplies four space-delimited ref fields per line. Capture this before
+# any command can consume stdin; changed paths themselves are handled as NUL-
+# delimited data below.
 push_refs_stdin="$(cat)"
-
 hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel)"
 
 if [ "${MUSE_SKIP_PREPUSH_ALL:-0}" = "1" ]; then
-  echo "pre-push: *** ALL stages skipped (MUSE_SKIP_PREPUSH_ALL=1) *** — lock, compile gate, and grounding tripwire did NOT run. Emergency-only; unset this before your next push." >&2
+  echo "pre-push: *** ALL stages skipped (MUSE_SKIP_PREPUSH_ALL=1) *** — emergency-only" >&2
   exit 0
 fi
 
 # shellcheck source=lib/pushlock.sh
 source "$hook_dir/lib/pushlock.sh"
 lockpath="$(pushlock_repo_target)" || {
-  echo "pre-push: BLOCKED — could not resolve the shared push-lock path (git rev-parse --git-common-dir failed)" >&2
+  echo "pre-push: BLOCKED — could not resolve the shared push-lock path" >&2
   exit 1
 }
 pushlock_acquire "$lockpath" || exit 1
+cd "$repo_root" || exit 1
 
-# Git GUI / IDE clients spawn hooks with a minimal PATH where a version-manager
-# (corepack/nvm/volta) pnpm is absent. Resolve it from common install dirs.
+zero_sha="0000000000000000000000000000000000000000"
+empty_tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+scope_tmp="$(mktemp -d "${TMPDIR:-/tmp}/muse-prepush-scope.XXXXXX")" || {
+  echo "pre-push: BLOCKED — could not create a temporary scope directory" >&2
+  exit 1
+}
+seen_dir="$scope_tmp/seen"
+mkdir "$seen_dir" || exit 1
+changed_files=()
+changed_file_count=0
+scope_fallback=0
+saw_ref=0
+ref_index=0
+
+add_changed_file() {
+  local file="$1" key
+  key="$(printf '%s' "$file" | git hash-object --stdin 2>/dev/null)" || return 1
+  if [ ! -e "$seen_dir/$key" ]; then
+    : > "$seen_dir/$key"
+    changed_files[$changed_file_count]="$file"
+    changed_file_count=$((changed_file_count + 1))
+  fi
+}
+
+valid_sha() {
+  [[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
+}
+
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha extra; do
+  [ -z "${local_ref:-}${local_sha:-}${remote_ref:-}${remote_sha:-}${extra:-}" ] && continue
+  saw_ref=1
+  ref_index=$((ref_index + 1))
+  if [ -n "${extra:-}" ] || [ -z "${local_ref:-}" ] || [ -z "${local_sha:-}" ] \
+    || [ -z "${remote_ref:-}" ] || [ -z "${remote_sha:-}" ] \
+    || ! valid_sha "$local_sha" || ! valid_sha "$remote_sha"; then
+    scope_fallback=1
+    continue
+  fi
+
+  # Deleting a ref pushes no tree content.
+  [ "$local_sha" = "$zero_sha" ] && continue
+
+  local_commit="$(git rev-parse --verify "$local_sha^{commit}" 2>/dev/null)" || {
+    scope_fallback=1
+    continue
+  }
+  base="$empty_tree"
+  if [ "$remote_sha" != "$zero_sha" ]; then
+    base="$(git rev-parse --verify "$remote_sha^{commit}" 2>/dev/null)" || {
+      scope_fallback=1
+      continue
+    }
+  fi
+
+  diff_file="$scope_tmp/diff.$ref_index"
+  if ! git diff --name-only -z "$base" "$local_commit" > "$diff_file"; then
+    scope_fallback=1
+    continue
+  fi
+  while IFS= read -r -d '' file; do
+    add_changed_file "$file" || scope_fallback=1
+  done < "$diff_file"
+done <<< "$push_refs_stdin"
+
+# Direct invocation, malformed refs, missing objects, and diff failures all
+# select the complete deterministic gate. An empty valid ref deletion does not.
+[ "$saw_ref" -eq 0 ] && scope_fallback=1
+rm -rf "$scope_tmp"
+
+is_docs_or_asset_path() {
+  case "$1" in
+    docs/*|*.md|*.mdx|LICENSE|LICENSE.*|NOTICE|NOTICE.*|*.png|*.jpg|*.jpeg|*.gif|*.webp|*.svg) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_web_impact_path() {
+  case "$1" in
+    apps/web/*|packages/shared/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig.json|tsconfig.base.json|vitest.shared.ts) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_known_deterministic_path() {
+  case "$1" in
+    apps/*|packages/*|crates/*|scripts/*|harness/*|.github/workflows/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig.json|tsconfig.base.json|vitest.shared.ts|eslint.config.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_full_lint_impact_path() {
+  case "$1" in
+    eslint.config.*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_lintable_path() {
+  case "$1" in
+    *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+needs_deterministic="$scope_fallback"
+needs_web="$scope_fallback"
+needs_full_lint="$scope_fallback"
+lint_files=()
+lint_file_count=0
+for ((index = 0; index < changed_file_count; index += 1)); do
+  file="${changed_files[$index]}"
+  if ! is_docs_or_asset_path "$file"; then
+    needs_deterministic=1
+    if ! is_known_deterministic_path "$file"; then
+      needs_web=1
+      needs_full_lint=1
+    fi
+  fi
+  is_web_impact_path "$file" && needs_web=1
+  is_full_lint_impact_path "$file" && needs_full_lint=1
+  if [ -f "$file" ] && is_lintable_path "$file"; then
+    lint_files[$lint_file_count]="$file"
+    lint_file_count=$((lint_file_count + 1))
+  fi
+done
+
+# Git GUI / IDE clients often omit version-manager paths.
 resolve_pnpm() {
   command -v pnpm >/dev/null 2>&1 && return 0
-  # nvm installs live under versioned dirs — scan them too (newest first),
-  # plus volta. A GUI git client's minimal PATH misses all of these; the
-  # owner's real pnpm is nvm-managed (observed live: BLOCKED on push).
+  local nvmbin d
   for nvmbin in $(ls -dt "$HOME"/.nvm/versions/node/*/bin 2>/dev/null); do
     [ -x "$nvmbin/pnpm" ] && PATH="$nvmbin:$PATH" && break
   done
@@ -77,56 +172,55 @@ resolve_pnpm() {
   command -v pnpm >/dev/null 2>&1
 }
 
-if ! resolve_pnpm; then
-  echo "pre-push: BLOCKED — pnpm not found on PATH (checked common install dirs). The compile gate cannot run, so the push is refused rather than silently skipped. Fix your PATH, or run the checks manually: pnpm -s typecheck:fast && pnpm --filter @muse/web exec tsc -p tsconfig.json --noEmit" >&2
+if [ "$needs_deterministic" -eq 0 ]; then
+  echo "pre-push: deterministic gates skipped (docs/assets-only push)" >&2
+elif ! resolve_pnpm; then
+  echo "pre-push: BLOCKED — pnpm not found; deterministic gates are required for this push" >&2
   exit 1
-fi
+else
+  echo "pre-push: compile gate — pnpm -s typecheck:fast" >&2
+  if ! pnpm -s typecheck:fast; then
+    echo "pre-push: BLOCKED — typecheck:fast failed" >&2
+    exit 1
+  fi
 
-cd "$repo_root" || exit 1
+  if [ "$needs_web" -eq 1 ]; then
+    echo "pre-push: compile gate — apps/web typecheck (web-impacting push)" >&2
+    if ! pnpm --filter @muse/web typecheck; then
+      echo "pre-push: BLOCKED — apps/web typecheck failed. If a new test dependency is missing, run: pnpm install --frozen-lockfile" >&2
+      exit 1
+    fi
+  else
+    echo "pre-push: apps/web typecheck skipped (no web-impacting paths)" >&2
+  fi
 
-echo "pre-push: compile gate — pnpm -s typecheck:fast" >&2
-if ! pnpm -s typecheck:fast; then
-  echo "pre-push: BLOCKED — typecheck:fast failed (see errors above). Fix them before pushing, or MUSE_SKIP_PREPUSH_ALL=1 for a genuine emergency." >&2
-  exit 1
-fi
-
-echo "pre-push: compile gate — apps/web tsc --noEmit (outside the tsc -b reference graph)" >&2
-if ! pnpm --filter @muse/web exec tsc -p tsconfig.json --noEmit; then
-  echo "pre-push: BLOCKED — apps/web typecheck failed (see errors above). Fix them before pushing, or MUSE_SKIP_PREPUSH_ALL=1 for a genuine emergency." >&2
-  exit 1
-fi
-
-# Lint is part of the fail-closed gate: pushes that only typechecked let 13
-# lint errors ride in with a 170-commit batch (2026-07-17) and every next
-# fire paid the cleanup. eslint --cache makes this ~1.5s warm.
-echo "pre-push: lint gate — pnpm -s lint (cached eslint)" >&2
-if ! pnpm -s lint; then
-  echo "pre-push: BLOCKED — lint failed (see errors above). \`pnpm lint:fix\` clears most of these; or MUSE_SKIP_PREPUSH_ALL=1 for a genuine emergency." >&2
-  exit 1
+  if [ "$needs_full_lint" -eq 1 ]; then
+    echo "pre-push: lint gate — pnpm -s lint (full fallback/config scope)" >&2
+    if ! pnpm -s lint; then
+      echo "pre-push: BLOCKED — lint failed" >&2
+      exit 1
+    fi
+  elif [ "$lint_file_count" -gt 0 ]; then
+    echo "pre-push: lint gate — $lint_file_count changed file(s)" >&2
+    if ! pnpm -s exec eslint --cache --cache-location node_modules/.cache/eslint/ --cache-strategy content -- "${lint_files[@]}"; then
+      echo "pre-push: BLOCKED — changed-file lint failed" >&2
+      exit 1
+    fi
+  else
+    echo "pre-push: lint skipped (no existing changed lintable files)" >&2
+  fi
 fi
 
 if [ "${MUSE_SKIP_PREPUSH:-0}" = "1" ]; then
-  echo "pre-push: grounding tripwire skipped (MUSE_SKIP_PREPUSH=1) — the compile gate above still ran and passed." >&2
+  echo "pre-push: grounding tripwire skipped (MUSE_SKIP_PREPUSH=1); deterministic gates were not skipped" >&2
   exit 0
 fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "pre-push: pnpm not on PATH — grounding tripwire skipped (run 'pnpm precheck:grounding' manually to verify)" >&2
+if [ "${MUSE_RUN_PREPUSH_GROUNDING:-0}" != "1" ]; then
+  echo "pre-push: grounding tripwire skipped (opt in with MUSE_RUN_PREPUSH_GROUNDING=1)" >&2
   exit 0
 fi
 
-# WHY these paths: precheck:grounding (scripts/precheck-grounding.mjs) runs 3
-# live-LLM batteries — apps/cli/scripts/verify-faithfulness-rate.mjs,
-# verify-recall-citation-gate.mjs, verify-rubric-reverify.mjs — each of which
-# wires the runtime through @muse/autoconfigure's createMuseRuntimeAssembly
-# and exercises agent-core/recall/prompts/model end-to-end via the CLI's
-# ask/chat/grounding surfaces. So a change is grounding-relevant if it
-# touches: the packages those batteries construct their runtime from
-# (agent-core, recall, prompts, model, autoconfigure); the CLI source they
-# drive (apps/cli/src/*ask*, *chat*, *ground*, *embed* — embedding model
-# choice feeds retrieval/grounding directly); the battery scripts themselves
-# (apps/cli/scripts/verify-*.mjs — editing the gate must re-run the gate);
-# or the top-level eval/precheck scripts (scripts/eval-*, scripts/precheck-grounding*).
 GROUNDING_PATH_PATTERNS=(
   "packages/agent-core/*"
   "packages/recall/*"
@@ -152,45 +246,20 @@ file_matches_grounding_path() {
   return 1
 }
 
-# Union of changed files across every ref this push updates. New/unborn refs
-# (remote sha all-zero — a new branch) diff against the empty tree so every
-# file in the pushed history counts, since there is no real base to diff
-# against. If stdin had no parsable ref lines at all (hook invoked directly,
-# not through a real `git push`), fail toward RUNNING the tripwire rather
-# than silently skipping it.
-pushed_diff_touches_grounding_path() {
-  local zero="0000000000000000000000000000000000000000"
-  local empty_tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-  local local_ref local_sha remote_ref remote_sha
-  local saw_ref=0 matched=1
+grounding_relevant="$scope_fallback"
+for ((index = 0; index < changed_file_count; index += 1)); do
+  file="${changed_files[$index]}"
+  file_matches_grounding_path "$file" && grounding_relevant=1
+done
 
-  while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
-    [ -z "$local_ref" ] && continue
-    saw_ref=1
-    [ -z "$local_sha" ] || [ "$local_sha" = "$zero" ] && continue # deleting a ref — nothing pushed
-
-    local base="$remote_sha"
-    [ -z "$base" ] || [ "$base" = "$zero" ] && base="$empty_tree"
-
-    local file
-    while IFS= read -r file; do
-      [ -z "$file" ] && continue
-      if file_matches_grounding_path "$file"; then
-        matched=0
-      fi
-    done < <(git diff --name-only "$base..$local_sha" 2>/dev/null)
-  done <<< "$push_refs_stdin"
-
-  if [ "$saw_ref" -eq 0 ]; then
-    return 0
-  fi
-  return "$matched"
-}
-
-if pushed_diff_touches_grounding_path; then
-  pnpm -s precheck:grounding
-  exit $?
+if [ "$grounding_relevant" -eq 0 ]; then
+  echo "pre-push: grounding tripwire skipped (no grounding-path changes in this push)" >&2
+  exit 0
 fi
 
-echo "pre-push: grounding tripwire skipped (no grounding-path changes in this push)" >&2
-exit 0
+if ! command -v pnpm >/dev/null 2>&1 && ! resolve_pnpm; then
+  echo "pre-push: pnpm not on PATH — opt-in grounding tripwire skipped" >&2
+  exit 0
+fi
+
+pnpm -s precheck:grounding

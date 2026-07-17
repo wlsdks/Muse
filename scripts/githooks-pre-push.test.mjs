@@ -1,9 +1,3 @@
-// node --test coverage for scripts/githooks/pre-push's stage logic: the
-// fail-CLOSED compile gate (PATH stripped of pnpm -> BLOCK, never skip) and
-// the two escape-hatch env vars. Runs the real hook script as a bash
-// subprocess against a throwaway temp git repo with a logging `pnpm` shim on
-// PATH — never a real push, never a real pnpm build.
-
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -14,7 +8,8 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const prePushScript = path.join(here, "githooks", "pre-push");
-const realGitDir = path.dirname(execFileSync("which", ["git"], { encoding: "utf8" }).trim());
+const realGitPath = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+const realGitDir = path.dirname(realGitPath);
 
 function makeTempRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "muse-prepush-test-"));
@@ -24,23 +19,33 @@ function makeTempRepo() {
   return dir;
 }
 
-function makePnpmShim(logFile, exitCode) {
-  const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "muse-prepush-shim-"));
-  const shimPath = path.join(shimDir, "pnpm");
+function makePnpmShim(logFile, exitCode = 0) {
+  const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "muse-prepush-pnpm-"));
   fs.writeFileSync(
-    shimPath,
+    path.join(shimDir, "pnpm"),
     `#!/usr/bin/env bash\necho "$@" >> "${logFile}"\nexit ${exitCode}\n`,
     { mode: 0o755 }
   );
   return shimDir;
 }
 
-function runHook(repoDir, { pathDirs, env = {}, input }) {
+function makeDiffFailingGitShim() {
+  const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "muse-prepush-git-"));
+  fs.writeFileSync(
+    path.join(shimDir, "git"),
+    `#!/usr/bin/env bash\nif [ "$1" = "diff" ]; then exit 9; fi\nexec "${realGitPath}" "$@"\n`,
+    { mode: 0o755 }
+  );
+  return shimDir;
+}
+
+function runHook(repoDir, { pathDirs, env = {}, input } = { pathDirs: [] }) {
   return spawnSync("bash", [prePushScript], {
     cwd: repoDir,
     env: {
       PATH: pathDirs.join(":"),
       HOME: env.HOME ?? fs.mkdtempSync(path.join(os.tmpdir(), "muse-prepush-home-")),
+      MUSE_PREPUSH_LOCK_TIMEOUT: "2",
       ...env
     },
     input,
@@ -52,146 +57,353 @@ function writeAndCommit(repoDir, relPath, contents, message) {
   const full = path.join(repoDir, relPath);
   fs.mkdirSync(path.dirname(full), { recursive: true });
   fs.writeFileSync(full, contents);
-  execFileSync("git", ["add", relPath], { cwd: repoDir });
+  execFileSync("git", ["add", "--", relPath], { cwd: repoDir });
   execFileSync("git", ["commit", "--quiet", "-m", message], { cwd: repoDir });
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" }).trim();
 }
 
-function refUpdateStdin(localSha, remoteSha) {
-  return `refs/heads/main ${localSha} refs/heads/main ${remoteSha}\n`;
+function removeAndCommit(repoDir, relPath, message) {
+  execFileSync("git", ["rm", "--quiet", "--", relPath], { cwd: repoDir });
+  execFileSync("git", ["commit", "--quiet", "-m", message], { cwd: repoDir });
+  return execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" }).trim();
 }
 
-test("fail-CLOSED: pnpm missing from PATH blocks the push (never silently skips)", () => {
+function refUpdateStdin(localSha, remoteSha, localRef = "refs/heads/main", remoteRef = "refs/heads/main") {
+  return `${localRef} ${localSha} ${remoteRef} ${remoteSha}\n`;
+}
+
+function calls(logFile) {
+  if (!fs.existsSync(logFile)) return [];
+  const value = fs.readFileSync(logFile, "utf8").trim();
+  return value ? value.split("\n") : [];
+}
+
+test("missing pnpm blocks an unscoped/full deterministic gate", () => {
   const repoDir = makeTempRepo();
   const result = runHook(repoDir, { pathDirs: [realGitDir, "/usr/bin", "/bin"] });
 
-  assert.notEqual(result.status, 0, "must exit nonzero — a missing pnpm blocks, it does not skip");
-  assert.match(result.stderr, /BLOCKED/u);
-  assert.match(result.stderr, /pnpm not found/u);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /BLOCKED.*pnpm not found/su);
 });
 
-test("compile gate runs and grounding is skipped under MUSE_SKIP_PREPUSH=1", () => {
+test("docs-only push skips deterministic gates before pnpm resolution", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "docs/notes.md", "docs only\n", "docs");
+  const result = runHook(repoDir, {
+    pathDirs: [realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /deterministic gates skipped \(docs\/assets-only push\)/u);
+  assert.doesNotMatch(result.stderr, /pnpm not found/u);
+});
+
+test("manual/no-ref invocation falls back to root typecheck, web typecheck, and full lint", () => {
   const repoDir = makeTempRepo();
   const logFile = path.join(repoDir, "pnpm.log");
-  const shimDir = makePnpmShim(logFile, 0);
-
+  const pnpmDir = makePnpmShim(logFile);
   const result = runHook(repoDir, {
-    pathDirs: [shimDir, realGitDir, "/usr/bin", "/bin"],
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
     env: { MUSE_SKIP_PREPUSH: "1" }
   });
 
   assert.equal(result.status, 0, result.stderr);
-  const calls = fs.readFileSync(logFile, "utf8").trim().split("\n");
-  assert.ok(calls.some((c) => c.includes("typecheck:fast")), "typecheck:fast must have run");
-  assert.ok(calls.some((c) => c.includes("@muse/web")), "the apps/web tsc check must have run");
-  assert.ok(!calls.some((c) => c.includes("precheck:grounding")), "stage 3 (grounding) must be skipped — MUSE_SKIP_PREPUSH only skips stage 3");
-  assert.match(result.stderr, /grounding tripwire skipped \(MUSE_SKIP_PREPUSH=1\)/u);
+  assert.deepEqual(calls(logFile).map((call) =>
+    call.includes("typecheck:fast") ? "root" : call.includes("@muse/web") ? "web" : call.includes("-s lint") ? "lint" : call
+  ), ["root", "web", "lint"]);
 });
 
-test("all three pnpm stages run when nothing is skipped", () => {
+test("non-web code runs root typecheck and changed-file lint only", () => {
   const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "packages/db/src/example.ts", "export const value = 1;\n", "db");
   const logFile = path.join(repoDir, "pnpm.log");
-  const shimDir = makePnpmShim(logFile, 0);
-
-  const result = runHook(repoDir, { pathDirs: [shimDir, realGitDir, "/usr/bin", "/bin"] });
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
 
   assert.equal(result.status, 0, result.stderr);
-  const calls = fs.readFileSync(logFile, "utf8").trim().split("\n");
-  assert.equal(calls.length, 3);
-  assert.ok(calls[0].includes("typecheck:fast"));
-  assert.ok(calls[1].includes("@muse/web"));
-  assert.ok(calls[2].includes("precheck:grounding"));
+  const logged = calls(logFile);
+  assert.equal(logged.length, 2);
+  assert.match(logged[0], /typecheck:fast/u);
+  assert.match(logged[1], /exec eslint.* -- packages\/db\/src\/example\.ts/u);
+  assert.doesNotMatch(logged.join("\n"), /@muse\/web|precheck:grounding/u);
 });
 
-test("a failing compile-gate stage blocks before the grounding stage ever runs", () => {
+test("web code runs root typecheck, web typecheck, and changed-file lint", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "apps/web/src/example.ts", "export const value = 1;\n", "web");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const logged = calls(logFile);
+  assert.equal(logged.length, 3);
+  assert.match(logged[0], /typecheck:fast/u);
+  assert.match(logged[1], /--filter @muse\/web typecheck/u);
+  assert.match(logged[2], /-- apps\/web\/src\/example\.ts/u);
+});
+
+test("shared-package code is treated as web-impacting", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "packages/shared/src/browser.ts", "export const shared = 1;\n", "shared");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(calls(logFile).some((call) => call.includes("--filter @muse/web typecheck")));
+});
+
+test("changed-file lint preserves whitespace and option-like basenames behind --", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const file = "packages/db/src/-odd name.ts";
+  const localSha = writeAndCommit(repoDir, file, "export const odd = true;\n", "odd");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(calls(logFile)[1], / -- packages\/db\/src\/-odd name\.ts$/u);
+});
+
+test("delete-only code diff typechecks but does not pass a missing file to ESLint", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "packages/db/src/deleted.ts", "export const gone = true;\n", "base");
+  const localSha = removeAndCommit(repoDir, "packages/db/src/deleted.ts", "delete");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(calls(logFile).map((call) => call.includes("typecheck:fast") ? "root" : call), ["root"]);
+  assert.match(result.stderr, /lint skipped/u);
+});
+
+test("an unclassified path falls back to root, web, and full lint", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "config/policy.weird", "strict\n", "unknown");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(calls(logFile).map((call) =>
+    call.includes("typecheck:fast") ? "root" : call.includes("@muse/web") ? "web" : call.includes("-s lint") ? "lint" : call
+  ), ["root", "web", "lint"]);
+});
+
+test("multi-ref input unions scope and deduplicates paths", () => {
+  const repoDir = makeTempRepo();
+  const base = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const webSha = writeAndCommit(repoDir, "apps/web/src/union.ts", "export const web = 1;\n", "web");
+  execFileSync("git", ["checkout", "--quiet", "-b", "other", base], { cwd: repoDir });
+  const otherSha = writeAndCommit(repoDir, "packages/db/src/union.ts", "export const db = 1;\n", "db");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const input = refUpdateStdin(webSha, base, "refs/heads/main", "refs/heads/main")
+    + refUpdateStdin(otherSha, base, "refs/heads/other", "refs/heads/other");
+  const result = runHook(repoDir, { pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"], input });
+
+  assert.equal(result.status, 0, result.stderr);
+  const logged = calls(logFile);
+  assert.match(logged[0], /typecheck:fast/u);
+  assert.match(logged[1], /@muse\/web/u);
+  assert.equal(logged.filter((call) => call.includes("packages/db/src/union.ts")).length, 1);
+});
+
+test("the same path contributed by multiple refs appears once in the lint argv", () => {
+  const repoDir = makeTempRepo();
+  const base = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "packages/db/src/repeated.ts", "export const repeated = 1;\n", "repeat");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const input = refUpdateStdin(localSha, base, "refs/heads/main", "refs/heads/main")
+    + refUpdateStdin(localSha, base, "refs/heads/other", "refs/heads/other");
+  const result = runHook(repoDir, { pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"], input });
+
+  assert.equal(result.status, 0, result.stderr);
+  const lintCall = calls(logFile).find((call) => call.includes("exec eslint"));
+  assert.equal(lintCall.split("packages/db/src/repeated.ts").length - 1, 1);
+});
+
+test("a new ref diffs its commit against the empty tree", () => {
+  const repoDir = makeTempRepo();
+  writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "apps/web/src/new-ref.ts", "export const added = 1;\n", "new ref");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, "0".repeat(40), "refs/heads/new", "refs/heads/new")
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(calls(logFile).some((call) => call.includes("--filter @muse/web typecheck")));
+  assert.ok(calls(logFile).some((call) => call.includes("apps/web/src/new-ref.ts")));
+});
+
+test("a ref deletion carries no tree content and skips deterministic gates", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "packages/db/src/deleted-ref.ts", "export const old = 1;\n", "remote");
+  const result = runHook(repoDir, {
+    pathDirs: [realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin("0".repeat(40), remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /deterministic gates skipped/u);
+  assert.doesNotMatch(result.stderr, /pnpm not found/u);
+});
+
+test("force-update endpoints still classify their union", () => {
+  const repoDir = makeTempRepo();
+  const base = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const remoteSha = writeAndCommit(repoDir, "packages/db/src/remote.ts", "export const remote = 1;\n", "remote");
+  execFileSync("git", ["checkout", "--quiet", "-b", "replacement", base], { cwd: repoDir });
+  const localSha = writeAndCommit(repoDir, "packages/db/src/local.ts", "export const local = 1;\n", "local");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(calls(logFile)[0], /typecheck:fast/u);
+  assert.match(calls(logFile)[1], /packages\/db\/src\/local\.ts/u);
+});
+
+test("malformed ref input fails closed to the full deterministic gate", () => {
   const repoDir = makeTempRepo();
   const logFile = path.join(repoDir, "pnpm.log");
-  const shimDir = makePnpmShim(logFile, 1);
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: "refs/heads/main not-a-sha refs/heads/main also-bad\n"
+  });
 
-  const result = runHook(repoDir, { pathDirs: [shimDir, realGitDir, "/usr/bin", "/bin"] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(calls(logFile).map((call) =>
+    call.includes("typecheck:fast") ? "root" : call.includes("@muse/web") ? "web" : call.includes("-s lint") ? "lint" : call
+  ), ["root", "web", "lint"]);
+});
+
+test("unknown Git objects fail closed to the full deterministic gate", () => {
+  const repoDir = makeTempRepo();
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const fake = "1".repeat(40);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(fake, "0".repeat(40))
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(calls(logFile)[2], /-s lint/u);
+});
+
+test("git diff failure fails closed to the full deterministic gate", () => {
+  const repoDir = makeTempRepo();
+  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "docs/notes.md", "would otherwise skip\n", "docs");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const gitDir = makeDiffFailingGitShim();
+  const result = runHook(repoDir, {
+    pathDirs: [gitDir, pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    input: refUpdateStdin(localSha, remoteSha)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(calls(logFile)[2], /-s lint/u);
+});
+
+test("grounding requires both a relevant path and explicit opt-in", () => {
+  const repoDir = makeTempRepo();
+  const base = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "packages/agent-core/src/relevant.ts", "export const x = 1;\n", "agent");
+  const input = refUpdateStdin(localSha, base);
+
+  const defaultLog = path.join(repoDir, "default.log");
+  const defaultPnpm = makePnpmShim(defaultLog);
+  const defaultResult = runHook(repoDir, { pathDirs: [defaultPnpm, realGitDir, "/usr/bin", "/bin"], input });
+  assert.equal(defaultResult.status, 0, defaultResult.stderr);
+  assert.ok(!calls(defaultLog).some((call) => call.includes("precheck:grounding")));
+
+  const optLog = path.join(repoDir, "opt.log");
+  const optPnpm = makePnpmShim(optLog);
+  const optResult = runHook(repoDir, {
+    pathDirs: [optPnpm, realGitDir, "/usr/bin", "/bin"],
+    env: { MUSE_RUN_PREPUSH_GROUNDING: "1" },
+    input
+  });
+  assert.equal(optResult.status, 0, optResult.stderr);
+  assert.ok(calls(optLog).some((call) => call.includes("precheck:grounding")));
+});
+
+test("MUSE_SKIP_PREPUSH wins over grounding opt-in without skipping deterministic gates", () => {
+  const repoDir = makeTempRepo();
+  const base = writeAndCommit(repoDir, "README.md", "base\n", "base");
+  const localSha = writeAndCommit(repoDir, "packages/agent-core/src/relevant.ts", "export const x = 1;\n", "agent");
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile);
+  const result = runHook(repoDir, {
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
+    env: { MUSE_RUN_PREPUSH_GROUNDING: "1", MUSE_SKIP_PREPUSH: "1" },
+    input: refUpdateStdin(localSha, base)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(calls(logFile).some((call) => call.includes("typecheck:fast")));
+  assert.ok(!calls(logFile).some((call) => call.includes("precheck:grounding")));
+});
+
+test("a failing root typecheck blocks before web, lint, or grounding", () => {
+  const repoDir = makeTempRepo();
+  const logFile = path.join(repoDir, "pnpm.log");
+  const pnpmDir = makePnpmShim(logFile, 1);
+  const result = runHook(repoDir, { pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"] });
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /BLOCKED.*typecheck:fast/su);
-  const calls = fs.readFileSync(logFile, "utf8").trim().split("\n");
-  assert.equal(calls.length, 1, "only the first failing stage should have invoked pnpm");
+  assert.equal(calls(logFile).length, 1);
 });
 
-test("grounding tripwire is SKIPPED when the pushed diff touches no grounding-relevant path", () => {
-  const repoDir = makeTempRepo();
-  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
-  const localSha = writeAndCommit(repoDir, "docs/notes.md", "unrelated docs change\n", "docs change");
-
-  const logFile = path.join(repoDir, "pnpm.log");
-  const shimDir = makePnpmShim(logFile, 0);
-
-  const result = runHook(repoDir, {
-    pathDirs: [shimDir, realGitDir, "/usr/bin", "/bin"],
-    input: refUpdateStdin(localSha, remoteSha)
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const calls = fs.readFileSync(logFile, "utf8").trim().split("\n");
-  assert.ok(!calls.some((c) => c.includes("precheck:grounding")), "grounding tripwire must NOT run for a docs-only push");
-  assert.match(result.stderr, /grounding tripwire skipped \(no grounding-path changes in this push\)/u);
-});
-
-test("grounding tripwire RUNS when the pushed diff touches a grounding-relevant path", () => {
-  const repoDir = makeTempRepo();
-  const remoteSha = writeAndCommit(repoDir, "README.md", "base\n", "base");
-  const localSha = writeAndCommit(
-    repoDir,
-    "packages/agent-core/src/whatever.ts",
-    "export const x = 1;\n",
-    "agent-core change"
-  );
-
-  const logFile = path.join(repoDir, "pnpm.log");
-  const shimDir = makePnpmShim(logFile, 0);
-
-  const result = runHook(repoDir, {
-    pathDirs: [shimDir, realGitDir, "/usr/bin", "/bin"],
-    input: refUpdateStdin(localSha, remoteSha)
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const calls = fs.readFileSync(logFile, "utf8").trim().split("\n");
-  assert.ok(calls.some((c) => c.includes("precheck:grounding")), "grounding tripwire must run for an agent-core push");
-});
-
-test("grounding tripwire RUNS when a NEW ref (remote sha all-zero) is pushed with a grounding-relevant file", () => {
-  const repoDir = makeTempRepo();
-  const localSha = writeAndCommit(
-    repoDir,
-    "packages/recall/src/whatever.ts",
-    "export const x = 1;\n",
-    "recall change"
-  );
-  const zero = "0".repeat(40);
-
-  const logFile = path.join(repoDir, "pnpm.log");
-  const shimDir = makePnpmShim(logFile, 0);
-
-  const result = runHook(repoDir, {
-    pathDirs: [shimDir, realGitDir, "/usr/bin", "/bin"],
-    input: refUpdateStdin(localSha, zero)
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const calls = fs.readFileSync(logFile, "utf8").trim().split("\n");
-  assert.ok(calls.some((c) => c.includes("precheck:grounding")), "a brand-new ref push must diff against the empty tree and still catch a grounding-relevant file");
-});
-
-test("MUSE_SKIP_PREPUSH_ALL=1 skips every stage — no pnpm invocation at all", () => {
+test("MUSE_SKIP_PREPUSH_ALL skips every stage", () => {
   const repoDir = makeTempRepo();
   const logFile = path.join(repoDir, "pnpm.log");
-  const shimDir = makePnpmShim(logFile, 0);
-
+  const pnpmDir = makePnpmShim(logFile);
   const result = runHook(repoDir, {
-    pathDirs: [shimDir, realGitDir, "/usr/bin", "/bin"],
+    pathDirs: [pnpmDir, realGitDir, "/usr/bin", "/bin"],
     env: { MUSE_SKIP_PREPUSH_ALL: "1" }
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(fs.existsSync(logFile), false, "no pnpm command should have run");
+  assert.deepEqual(calls(logFile), []);
   assert.match(result.stderr, /ALL stages skipped/u);
 });
