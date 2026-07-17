@@ -23,9 +23,10 @@ DELTA, never the base.
    SHAs, roster). Everything below is scoped to changes AFTER the watermark.
 
 2. **SWEEP (delta only, verify-in-code)** —
-   - **Named rivals** (roster in rival-watch.md carries repo URLs + SHAs;
-     openclaw + hermes-agent are charter members): shallow-clone
-     (`--shallow-since=<watermark>`) each repo. High-velocity repos ship
+   - **Named rivals** (roster in rival-watch.md carries repo URLs, SHAs, and
+     the persistent local clones under `/Users/jinan/ai/<name>` — `git -C`
+     fetch them, never re-clone; a NEW roster member gets a blobless clone
+     there). High-velocity repos ship
      thousands of commits per window — sweep RELEASES + CHANGELOG first
      (observed fire 1: 7.8k commits in 3.5 weeks; raw log is for locating an
      implementing file, never the survey) → list genuinely NEW capabilities

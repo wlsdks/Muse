@@ -11,10 +11,12 @@
 
 - **last scout:** 2026-07-17
 - **base:** 2026-06-23 exhaustive teardown (재스카웃 금지 — delta only)
+- **local clones (persistent, owner-designated 2026-07-17):** `/Users/jinan/ai/<name>` —
+  fetch, never re-clone (`git -C /Users/jinan/ai/<name> fetch origin`).
 - **roster:**
-  - openclaw — https://github.com/openclaw/openclaw — SHA c63184ee (2026-07-17, 383k★)
-  - hermes-agent (Nous) — https://github.com/NousResearch/hermes-agent — SHA 73ad9136 (2026-07-17, 216k★)
-  - QwenPaw — https://github.com/agentscope-ai/QwenPaw — SHA HEAD@2026-07-17 (23k★/5mo, v2.0.0 2026-07-10; enrolled this scout, code spot-checked: ReMe memory + console + e2e)
+  - openclaw — https://github.com/openclaw/openclaw — clone `/Users/jinan/ai/openclaw` — SHA 8fa4867ab (2026-07-17, 383k★)
+  - hermes-agent (Nous) — https://github.com/NousResearch/hermes-agent — clone `/Users/jinan/ai/hermes-agent` — SHA 73ad9136 (2026-07-17, 216k★)
+  - QwenPaw — https://github.com/agentscope-ai/QwenPaw — clone `/Users/jinan/ai/QwenPaw` (blobless) — SHA cc179603 (2026-07-17; 23k★/5mo, v2.0.0 2026-07-10; enrolled this scout, code spot-checked: ReMe memory + console + e2e)
 - **queries run last scout:** "new open source personal AI assistant July 2026 local-first"; "personal assistant agent open source 2026 alternative openclaw hermes"
 
 ## Roster changes
