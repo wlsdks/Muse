@@ -45,6 +45,7 @@ import { registerBoardRoutes } from "./board-routes.js";
 import { registerHistoryRoutes } from "./history-routes.js";
 import { registerProactiveRoutes } from "./proactive-routes.js";
 import { registerRemindersRoutes } from "./reminders-routes.js";
+import { registerAutomationRoutes } from "./automation-routes.js";
 import { parseDiscordPollChannels, startDiscordPollTick } from "./discord-poll-tick.js";
 import { createFileBackedActivityTracker, createInMemoryActivityTracker } from "./proactive-tick.js";
 import {
@@ -470,6 +471,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     tasksFile: options.tasksFile,
     ...(options.remindersFile ? { remindersFile: options.remindersFile } : {}),
     ...(options.followupsFile ? { followupsFile: options.followupsFile } : {})
+  });
+  registerAutomationRoutes(server, {
+    authService,
+    env: process.env,
+    scheduler: options.scheduler,
+    ...(options.remindersFile ? { remindersFile: options.remindersFile } : {})
   });
   registerBoardRoutes(server);
   registerHistoryRoutes(server, {

@@ -34,6 +34,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Changed
 
+- **Automation now shows what comes NEXT.** The 자동 활동 view opens on a new
+  "예정" (Upcoming) tab: your next evening digest (and its daily hour), how
+  much unasked-interruption budget is left this hour and today, the next
+  scheduled agent jobs, and the next reminder — all read from real server
+  state via a new read-only `GET /api/automation/upcoming` endpoint that
+  degrades section-by-section instead of failing whole. The vetoes tab's
+  Korean label now reads 거부 to match its description.
+
 - **The sidebar now shows your life, not just chat.** A new "My Life" (내 삶)
   group surfaces Tasks, Calendar, and Reminders as first-class nav items,
   Today returns to the Workspace group (the Home link to it no longer points

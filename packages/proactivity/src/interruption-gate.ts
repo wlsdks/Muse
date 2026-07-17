@@ -44,7 +44,8 @@ import {
   appendLastProactiveDelivery,
   readInterruptionLedger,
   withinInterruptionBudget,
-  type InterruptionBudgetCaps
+  type InterruptionBudgetCaps,
+  type InterruptionDeliveryEntry
 } from "@muse/stores";
 
 import { isVetoed } from "./veto-key.js";
@@ -67,6 +68,53 @@ export interface InterruptionBudgetWiring {
 
 export function resolveInterruptionBudgetCaps(wiring: InterruptionBudgetWiring): InterruptionBudgetCaps {
   return { dailyCap: wiring.dailyCap ?? 0, hourlyCap: wiring.hourlyCap ?? 0 };
+}
+
+const STATUS_HOUR_MS = 60 * 60 * 1_000;
+const STATUS_DAY_MS = 24 * STATUS_HOUR_MS;
+
+export interface InterruptionBudgetStatus {
+  readonly hourUsed: number;
+  readonly hourCap: number;
+  readonly dayUsed: number;
+  readonly dayCap: number;
+}
+
+function countDeliveriesWithin(
+  entries: readonly InterruptionDeliveryEntry[],
+  nowMs: number,
+  windowMs: number
+): number {
+  const since = nowMs - windowMs;
+  let count = 0;
+  for (const entry of entries) {
+    const atMs = new Date(entry.at).getTime();
+    if (atMs > since && atMs <= nowMs) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Read-only budget snapshot for a status surface (the Automation "예정"
+ * view): how many UNASKED deliveries landed in the trailing 60 minutes /
+ * trailing 24 hours, against the configured caps — never mutates the
+ * ledger. Mirrors `@muse/stores`' `withinInterruptionBudget` windowing
+ * (`countWithin`) exactly (`atMs > since && atMs <= nowMs`, same
+ * hour/day window sizes) so the displayed numbers match what the gate
+ * itself would decide.
+ */
+export function readInterruptionBudgetStatus(
+  entries: readonly InterruptionDeliveryEntry[],
+  caps: InterruptionBudgetCaps,
+  now: Date
+): InterruptionBudgetStatus {
+  const nowMs = now.getTime();
+  return {
+    dayCap: caps.dailyCap,
+    dayUsed: countDeliveriesWithin(entries, nowMs, STATUS_DAY_MS),
+    hourCap: caps.hourlyCap,
+    hourUsed: countDeliveriesWithin(entries, nowMs, STATUS_HOUR_MS)
+  };
 }
 
 export interface ApplyInterruptionBudgetOptions {

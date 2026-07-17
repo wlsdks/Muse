@@ -333,6 +333,35 @@ export interface VetoesResponse {
   readonly total: number;
 }
 
+// Mirrors apps/api's `automation-routes.ts` GET /api/automation/upcoming.
+interface UpcomingDigest {
+  readonly enabled: boolean;
+  readonly hour: number;
+  readonly nextAtIso: string;
+}
+interface UpcomingBudget {
+  readonly hourUsed: number;
+  readonly hourCap: number;
+  readonly dayUsed: number;
+  readonly dayCap: number;
+}
+interface UpcomingScheduledJob {
+  readonly id: string;
+  readonly label: string;
+  readonly nextRunAtIso: string | null;
+}
+interface UpcomingReminder {
+  readonly id: string;
+  readonly text: string;
+  readonly dueAtIso: string;
+}
+export interface AutomationUpcomingResponse {
+  readonly digest: UpcomingDigest | null;
+  readonly budget: UpcomingBudget | null;
+  readonly scheduledJobs: readonly UpcomingScheduledJob[];
+  readonly nextReminder: UpcomingReminder | null;
+}
+
 // Mirrors `@muse/scheduler`'s `CadenceSummary` (server computes it from the
 // job's persisted `cronExpression` via `summarizeCadence` — the web never
 // re-derives it). Duplicated as a plain JSON-shape type rather than an

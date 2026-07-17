@@ -1,18 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { AsyncBlock, Badge, Card } from "../components/ui.js";
+import { AsyncBlock, Badge, Card, Empty, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { safeDateTime } from "../lib/datetime.js";
 import { actionResultLabel, objectiveStatusLabel } from "./autonomy-labels.js";
 import { nextTabIndex } from "./tabKeyNav.js";
+import { timeUntil } from "./Today.js";
 
 import type { ApiClient } from "../api/client.js";
-import type { ActionsResponse, ObjectivesResponse, VetoesResponse } from "../api/types.js";
-import type { StringKey } from "../i18n/index.js";
+import type {
+  ActionsResponse,
+  AutomationUpcomingResponse,
+  ObjectivesResponse,
+  VetoesResponse
+} from "../api/types.js";
+import type { StringKey, Translate } from "../i18n/index.js";
 
-type Tab = "actions" | "objectives" | "vetoes";
+type Tab = "upcoming" | "actions" | "objectives" | "vetoes";
 const TABS: readonly { id: Tab; labelKey: StringKey }[] = [
+  { id: "upcoming", labelKey: "auto.tab.upcoming" },
   { id: "actions", labelKey: "auto.tab.actions" },
   { id: "objectives", labelKey: "auto.tab.objectives" },
   { id: "vetoes", labelKey: "auto.tab.vetoes" }
@@ -32,7 +39,7 @@ function statusTone(status: string): "ok" | "accent" | "neutral" {
 
 export function AutonomyView({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
-  const [tab, setTab] = useState<Tab>("actions");
+  const [tab, setTab] = useState<Tab>("upcoming");
 
   return (
     <div className="content-narrow">
@@ -65,10 +72,144 @@ export function AutonomyView({ client }: { client: ApiClient }) {
         ))}
       </div>
 
+      {tab === "upcoming" && <UpcomingTab client={client} />}
       {tab === "actions" && <ActionsTab client={client} locale={locale} />}
       {tab === "objectives" && <ObjectivesTab client={client} locale={locale} />}
       {tab === "vetoes" && <VetoesTab client={client} locale={locale} />}
     </div>
+  );
+}
+
+function UpcomingTab({ client }: { client: ApiClient }) {
+  const { locale, t } = useI18n();
+  const q = useQuery({
+    queryFn: () => client.get<AutomationUpcomingResponse>("/api/automation/upcoming"),
+    queryKey: ["automation-upcoming", client.baseUrl]
+  });
+  return (
+    <AsyncBlock loading={q.isLoading} error={q.error} empty={false}>
+      {q.data && <UpcomingSections data={q.data} t={t} locale={locale} />}
+    </AsyncBlock>
+  );
+}
+
+/**
+ * Pure presentational render of the four upcoming-automation sections —
+ * kept separate from `UpcomingTab` so it's directly testable with a
+ * constructed `AutomationUpcomingResponse`, no query resolution needed.
+ * Each section renders only when its data is non-null/non-empty; the
+ * overall empty state fires only when all four are absent.
+ */
+export function UpcomingSections({
+  data,
+  t,
+  locale
+}: {
+  data: AutomationUpcomingResponse;
+  t: Translate;
+  locale: string;
+}) {
+  const hasDigest = data.digest !== null;
+  const hasBudget = data.budget !== null;
+  const hasJobs = data.scheduledJobs.length > 0;
+  const hasReminder = data.nextReminder !== null;
+
+  if (!hasDigest && !hasBudget && !hasJobs && !hasReminder) {
+    return (
+      <Empty icon={<Icon.clock />} hint={t("auto.upcoming.emptyHint")}>
+        {t("auto.upcoming.emptyTitle")}
+      </Empty>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {data.digest && <DigestCard digest={data.digest} t={t} locale={locale} />}
+      {data.budget && <BudgetCard budget={data.budget} t={t} />}
+      {data.scheduledJobs.length > 0 && <JobsCard jobs={data.scheduledJobs} t={t} locale={locale} />}
+      {data.nextReminder && <ReminderCard reminder={data.nextReminder} t={t} locale={locale} />}
+    </div>
+  );
+}
+
+function DigestCard({
+  digest,
+  t,
+  locale
+}: {
+  digest: NonNullable<AutomationUpcomingResponse["digest"]>;
+  t: Translate;
+  locale: string;
+}) {
+  const when = timeUntil(digest.nextAtIso, t) || safeDateTime(digest.nextAtIso, locale);
+  return (
+    <Card title={t("auto.upcoming.digestTitle")}>
+      <div className="row">
+        <div className="row-main">
+          <div className="row-title">{t("auto.upcoming.digestLine", { hour: digest.hour, when })}</div>
+        </div>
+        {!digest.enabled && <Badge tone="neutral">{t("auto.upcoming.digestOff")}</Badge>}
+      </div>
+    </Card>
+  );
+}
+
+function BudgetCard({ budget, t }: { budget: NonNullable<AutomationUpcomingResponse["budget"]>; t: Translate }) {
+  const hourLeft = Math.max(0, budget.hourCap - budget.hourUsed);
+  const dayLeft = Math.max(0, budget.dayCap - budget.dayUsed);
+  return (
+    <Card title={t("auto.upcoming.budgetTitle")}>
+      <div className="row-title">
+        {t("auto.upcoming.budgetLine", { dayCap: budget.dayCap, dayLeft, hourCap: budget.hourCap, hourLeft })}
+      </div>
+      <p className="subtle" style={{ fontSize: 12, marginTop: 4 }}>
+        {t("auto.upcoming.budgetExplainer")}
+      </p>
+    </Card>
+  );
+}
+
+function JobsCard({
+  jobs,
+  t,
+  locale
+}: {
+  jobs: AutomationUpcomingResponse["scheduledJobs"];
+  t: Translate;
+  locale: string;
+}) {
+  return (
+    <Card title={t("auto.upcoming.jobsTitle")} count={jobs.length}>
+      {jobs.map((job) => (
+        <div className="row" key={job.id}>
+          <div className="row-main">
+            <div className="row-title">{job.label}</div>
+            {job.nextRunAtIso && <div className="row-meta">{safeDateTime(job.nextRunAtIso, locale)}</div>}
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+function ReminderCard({
+  reminder,
+  t,
+  locale
+}: {
+  reminder: NonNullable<AutomationUpcomingResponse["nextReminder"]>;
+  t: Translate;
+  locale: string;
+}) {
+  return (
+    <Card title={t("auto.upcoming.reminderTitle")}>
+      <div className="row">
+        <div className="row-main">
+          <div className="row-title">{reminder.text}</div>
+          <div className="row-meta">{safeDateTime(reminder.dueAtIso, locale)}</div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
