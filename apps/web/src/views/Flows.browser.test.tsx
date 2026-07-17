@@ -9,7 +9,7 @@ import { FlowsTab } from "./Flows.js";
 import { I18nProvider } from "../i18n/index.js";
 
 import type { ApiClient } from "../api/client.js";
-import type { FlowDraftResponse, FlowsResponse, ScheduledJobDetail } from "../api/types.js";
+import type { FlowDraftResponse, FlowsResponse, LoopbackCatalogResponse, ScheduledJobDetail } from "../api/types.js";
 
 // No global setup file registers `cleanup()` for this project's browser
 // config yet, so each test must unmount its own tree — several tests in
@@ -78,6 +78,21 @@ const JOB_DETAIL: ScheduledJobDetail = {
   timezone: "UTC"
 };
 
+const LOOPBACK_CATALOG: LoopbackCatalogResponse = {
+  servers: [
+    {
+      description: "Built-in clock and date utilities.",
+      name: "muse.time",
+      optIn: false,
+      tools: [
+        { description: "Returns the current ISO timestamp.", name: "now", risk: "read" },
+        { description: "Create a reminder.", name: "create_reminder", risk: "write" }
+      ]
+    }
+  ],
+  total: 1
+};
+
 function fakeClient(): ApiClient {
   return {
     baseUrl: "http://fake.invalid",
@@ -85,6 +100,7 @@ function fakeClient(): ApiClient {
     get: vi.fn(async (path: string) => {
       if (path === "/api/flows") return FLOWS_RESPONSE;
       if (path === "/api/scheduler/jobs/job_1") return JOB_DETAIL;
+      if (path === "/api/muse/loopback") return LOOPBACK_CATALOG;
       throw new Error(`unexpected GET ${path}`);
     }) as unknown as ApiClient["get"],
     patch: vi.fn(async () => ({})) as unknown as ApiClient["patch"],
@@ -222,6 +238,55 @@ test("새 흐름 만들기 (New flow) POSTs the exact compiled create body", asy
     retryOnFailure: false,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
+});
+
+test("도구 실행 (Run a tool) flow: New flow -> Run a tool -> pick server+tool -> Create POSTs jobType 'mcp_tool', write tools never offered", async () => {
+  const client = fakeClient();
+  const screen = await renderFlows(client);
+
+  await screen.getByRole("button", { name: "New flow" }).click();
+  await screen.getByRole("textbox", { name: "Name" }).fill("Time check");
+  await screen.getByRole("radio", { name: "Run a tool" }).click();
+
+  const serverSelect = screen.getByRole("combobox", { name: "Tool server" });
+  await expect.element(serverSelect).toBeVisible();
+  await serverSelect.selectOptions("muse.time");
+
+  const toolSelect = screen.getByRole("combobox", { exact: true, name: "Tool" });
+  await toolSelect.selectOptions("now");
+
+  // The write-risk tool in the fixture (create_reminder) must never appear —
+  // the picker is fail-closed to risk: "read" only.
+  const toolOptionValues = [...document.querySelectorAll<HTMLOptionElement>("select[aria-label='Tool'] option")].map(
+    (option) => option.value
+  );
+  expect(toolOptionValues).not.toContain("create_reminder");
+
+  await screen.getByRole("button", { name: "Create" }).click();
+
+  expect(client.post).toHaveBeenCalledWith("/api/scheduler/jobs", {
+    cronExpression: "0 9 * * *",
+    enabled: true,
+    jobType: "mcp_tool",
+    maxRetryCount: 3,
+    mcpServerName: "muse.time",
+    name: "Time check",
+    retryOnFailure: false,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    toolArguments: {},
+    toolName: "now"
+  });
+});
+
+test("도구 실행 (Run a tool) mode disables the copilot composer with an honest note instead of a chat box", async () => {
+  const client = fakeClient();
+  const screen = await renderFlows(client);
+
+  await screen.getByRole("button", { name: "New flow" }).click();
+  await screen.getByRole("radio", { name: "Run a tool" }).click();
+
+  await expect.element(screen.getByText("Draft chat only builds an agent flow for now", { exact: false })).toBeVisible();
+  expect(document.querySelector("[aria-label='Describe an automation']")).toBeNull();
 });
 
 test("'Test run' POSTs to the job's dry-run endpoint with no body", async () => {

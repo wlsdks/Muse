@@ -11,11 +11,14 @@ import {
   MAX_RETRY_COUNT,
   MIN_RETRY_COUNT,
   outputFormFromJob,
+  parseToolArgumentsText,
   SCHEDULE_PRESETS,
+  toolActionFormFromJob,
   triggerFormFromJob,
   type ActionEditForm,
   type OutputEditForm,
   type ScheduleKind,
+  type ToolActionEditForm,
   type TriggerEditForm
 } from "./flow-edit-compile.js";
 import { KIND_LABEL_KEY } from "./flow-nodes.js";
@@ -94,7 +97,7 @@ export function FlowNodeEditPanel({
         job.data.jobType.toLowerCase() === "agent" ? (
           <ActionEditFields key={node.id} client={client} jobId={jobId} job={job.data} onSaved={onSaved} />
         ) : (
-          <p className="subtle">{t("auto.flows.edit.unsupportedAction")}</p>
+          <ToolActionEditFields key={node.id} client={client} jobId={jobId} job={job.data} onSaved={onSaved} />
         )
       )}
       {category === "output" && (
@@ -255,6 +258,68 @@ function ActionEditFields({
           />
         </label>
       )}
+      <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+        <Button variant="primary" size="sm" disabled={!canSave} onClick={() => save.mutate()}>
+          {save.isPending ? t("auto.flows.edit.saving") : t("auto.flows.edit.save")}
+        </Button>
+        {!dirty && save.isSuccess && <Badge tone="ok">{t("auto.flows.edit.saved")}</Badge>}
+      </div>
+      {save.error && <div className="banner err">{errorMessage(save.error, t("auto.flows.edit.saveFailed"))}</div>}
+    </div>
+  );
+}
+
+/**
+ * Editing an `action.tool` node — server/tool stay READ-ONLY text in v1
+ * (changing which tool a live flow calls is a v2 concern); only the JSON
+ * arguments textarea is editable, PATCHed as `{ toolArguments }`.
+ */
+function ToolActionEditFields({
+  client,
+  jobId,
+  job,
+  onSaved
+}: {
+  client: ApiClient;
+  jobId: string;
+  job: ScheduledJobDetail;
+  onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const { dirty, form, markSaved, setForm } = useSavableForm<ToolActionEditForm>(toolActionFormFromJob(job));
+
+  const save = useMutation({
+    mutationFn: () => client.patch(`/api/scheduler/jobs/${encodeURIComponent(jobId)}`, flowEditToJobPatch("tool", form)),
+    onSuccess: () => {
+      markSaved();
+      invalidateFlowQueries(client, jobId, qc);
+      onSaved();
+    }
+  });
+
+  const argsInvalid = !parseToolArgumentsText(form.toolArgumentsText).ok;
+  const canSave = dirty && !argsInvalid && !save.isPending;
+
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div className="row-meta">{t("auto.flows.meta.server")}: {job.mcpServerName ?? ""}</div>
+      <div className="row-meta">{t("auto.flows.meta.tool")}: {job.toolName ?? ""}</div>
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.edit.toolArgsLabel")}</span>
+        <textarea
+          className="input"
+          rows={4}
+          value={form.toolArgumentsText}
+          onChange={(e) => setForm({ toolArgumentsText: e.target.value })}
+        />
+        {argsInvalid && (
+          <span className="subtle" style={{ color: "var(--err)", fontSize: 12 }}>
+            {t("auto.flows.edit.toolArgsInvalid")}
+          </span>
+        )}
+      </label>
+      <span className="subtle" style={{ fontSize: 12 }}>{t("auto.flows.edit.toolChangeHint")}</span>
       <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
         <Button variant="primary" size="sm" disabled={!canSave} onClick={() => save.mutate()}>
           {save.isPending ? t("auto.flows.edit.saving") : t("auto.flows.edit.save")}

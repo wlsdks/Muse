@@ -248,6 +248,7 @@ export {
   ScheduledMcpToolInvoker,
   SchedulerMessaging
 } from "./scheduler-runtime.js";
+export type { ScheduledMcpToolInvokerOptions } from "./scheduler-runtime.js";
 
 // Distributed scheduler lock primitives live in
 // packages/scheduler/src/scheduler-locks.ts.

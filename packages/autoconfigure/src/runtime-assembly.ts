@@ -538,7 +538,13 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const schedulerService = new DynamicScheduler({
     dispatcher: new ScheduledJobDispatcher({
       agentExecutor: createScheduledAgentExecutor(() => agentRuntime, defaultModel),
-      mcpInvoker: new ScheduledMcpToolInvoker(mcp.manager)
+      // Muse's built-in loopback tools (muse.time.now, muse.text.stats, ...)
+      // are never registered as an McpManager connection — they're injected
+      // straight into the agent tool registry (`loopbackMcpTools` above,
+      // already-built, not reconstructed here) — so a scheduled `mcp_tool`
+      // job targeting one resolves through this extra-tools seam instead of
+      // McpManager's connection dance.
+      mcpInvoker: new ScheduledMcpToolInvoker(mcp.manager, { extraTools: () => loopbackMcpTools })
     }),
     cronScheduler: schedulerCronEnabled ? new NodeCronScheduler() : undefined,
     executionStore: schedulerExecutionStore,

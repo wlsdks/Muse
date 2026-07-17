@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import { useEffect, useState } from "react";
 import { errorMessage } from "@muse/shared/browser";
@@ -16,15 +16,20 @@ import {
   isValidCronShape,
   MAX_RETRY_COUNT,
   MIN_RETRY_COUNT,
+  parseToolArgumentsText,
   SCHEDULE_PRESETS,
+  type ActionKind,
   type FlowDraft,
   type ScheduleKind
 } from "./flow-edit-compile.js";
 import { FLOW_NODE_TYPES } from "./flow-nodes.js";
 import { PRESET_LABEL_KEY } from "./flow-edit-panel.js";
+import { readRiskToolOptions, toolsForServer, uniqueServerNames } from "./flow-tool-catalog.js";
 
 import type { ApiClient } from "../api/client.js";
-import type { FlowDraftPayloadRow, ScheduledJobDetail } from "../api/types.js";
+import type { FlowDraftPayloadRow, LoopbackCatalogResponse, ScheduledJobDetail } from "../api/types.js";
+
+const LOOPBACK_CATALOG_URL = "/api/muse/loopback";
 
 /**
  * 새 흐름 만들기: a form + a live READ-ONLY preview canvas built client-side
@@ -124,26 +129,58 @@ export function FlowCreatePanel({
           </label>
         )}
 
-        <label style={{ display: "grid", gap: 4 }}>
-          <span className="field-label">{t("auto.flows.edit.promptLabel")}</span>
-          <textarea
-            className="input"
-            rows={3}
-            value={draft.agentPrompt}
-            onChange={(e) => setDraft({ ...draft, agentPrompt: e.target.value })}
-          />
-        </label>
+        <div style={{ display: "grid", gap: 4 }}>
+          <span className="field-label">{t("auto.flows.create.actionKindLabel")}</span>
+          <div role="radiogroup" style={{ display: "flex", gap: 12 }}>
+            <label style={{ alignItems: "center", display: "flex", gap: 6 }}>
+              <input
+                type="radio"
+                name="flow-action-kind"
+                value="agent"
+                checked={draft.actionKind === "agent"}
+                onChange={() => setDraft({ ...draft, actionKind: "agent" as ActionKind })}
+              />
+              {t("auto.flows.create.actionKindAgent")}
+            </label>
+            <label style={{ alignItems: "center", display: "flex", gap: 6 }}>
+              <input
+                type="radio"
+                name="flow-action-kind"
+                value="tool"
+                checked={draft.actionKind === "tool"}
+                onChange={() => setDraft({ ...draft, actionKind: "tool" as ActionKind })}
+              />
+              {t("auto.flows.create.actionKindTool")}
+            </label>
+          </div>
+        </div>
 
-        <label style={{ display: "grid", gap: 4 }}>
-          <span className="field-label">{t("auto.flows.edit.modelLabel")}</span>
-          <input
-            className="input"
-            type="text"
-            placeholder={t("auto.flows.edit.modelPlaceholder")}
-            value={draft.agentModel}
-            onChange={(e) => setDraft({ ...draft, agentModel: e.target.value })}
-          />
-        </label>
+        {draft.actionKind === "tool" ? (
+          <ToolActionFields client={client} draft={draft} setDraft={setDraft} />
+        ) : (
+          <>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="field-label">{t("auto.flows.edit.promptLabel")}</span>
+              <textarea
+                className="input"
+                rows={3}
+                value={draft.agentPrompt}
+                onChange={(e) => setDraft({ ...draft, agentPrompt: e.target.value })}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="field-label">{t("auto.flows.edit.modelLabel")}</span>
+              <input
+                className="input"
+                type="text"
+                placeholder={t("auto.flows.edit.modelPlaceholder")}
+                value={draft.agentModel}
+                onChange={(e) => setDraft({ ...draft, agentModel: e.target.value })}
+              />
+            </label>
+          </>
+        )}
 
         <label style={{ display: "grid", gap: 4 }}>
           <span className="field-label">{t("auto.flows.edit.notifyLabel")}</span>
@@ -209,5 +246,94 @@ export function FlowCreatePanel({
         {create.error && <div className="banner err">{errorMessage(create.error, t("auto.flows.create.createFailed"))}</div>}
       </div>
     </Card>
+  );
+}
+
+/** The tool-action half of the create form: cascading server->tool selects
+ * populated from `GET /api/muse/loopback`, restricted to `risk: "read"` tools
+ * only (`readRiskToolOptions` — a scheduled job runs unattended, so a
+ * write/execute tool is never offered here), plus an optional JSON arguments
+ * textarea with client-side validation. */
+function ToolActionFields({
+  client,
+  draft,
+  setDraft
+}: {
+  client: ApiClient;
+  draft: FlowDraft;
+  setDraft: (draft: FlowDraft) => void;
+}) {
+  const { t } = useI18n();
+  const catalog = useQuery({
+    queryFn: () => client.get<LoopbackCatalogResponse>(LOOPBACK_CATALOG_URL),
+    queryKey: ["loopback-catalog", client.baseUrl]
+  });
+
+  if (catalog.isLoading) {
+    return <p className="subtle">{t("auto.flows.create.toolCatalogLoading")}</p>;
+  }
+  if (catalog.error || !catalog.data) {
+    return <div className="banner err">{t("auto.flows.create.toolCatalogFailed")}</div>;
+  }
+
+  const options = readRiskToolOptions(catalog.data);
+  if (options.length === 0) {
+    return <p className="subtle">{t("auto.flows.create.toolCatalogEmpty")}</p>;
+  }
+
+  const serverNames = uniqueServerNames(options);
+  const toolOptions = toolsForServer(options, draft.toolServerName);
+  const argsResult = parseToolArgumentsText(draft.toolArgumentsText);
+  const argsInvalid = !argsResult.ok;
+
+  return (
+    <>
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.create.toolServerLabel")}</span>
+        <select
+          aria-label={t("auto.flows.create.toolServerLabel")}
+          className="input"
+          value={draft.toolServerName}
+          onChange={(e) => setDraft({ ...draft, toolName: "", toolServerName: e.target.value })}
+        >
+          <option value="">{t("auto.flows.create.toolServerPlaceholder")}</option>
+          {serverNames.map((serverName) => (
+            <option key={serverName} value={serverName}>{serverName}</option>
+          ))}
+        </select>
+      </label>
+
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.create.toolNameLabel")}</span>
+        <select
+          aria-label={t("auto.flows.create.toolNameLabel")}
+          className="input"
+          value={draft.toolName}
+          disabled={draft.toolServerName.trim().length === 0}
+          onChange={(e) => setDraft({ ...draft, toolName: e.target.value })}
+        >
+          <option value="">{t("auto.flows.create.toolNamePlaceholder")}</option>
+          {toolOptions.map((tool) => (
+            <option key={tool.toolName} value={tool.toolName}>{tool.toolName}</option>
+          ))}
+        </select>
+      </label>
+
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.create.toolArgsLabel")}</span>
+        <textarea
+          className="input"
+          rows={3}
+          value={draft.toolArgumentsText}
+          onChange={(e) => setDraft({ ...draft, toolArgumentsText: e.target.value })}
+        />
+        <span className="subtle" style={{ fontSize: 12 }}>{t("auto.flows.create.toolArgsHint")}</span>
+        {argsInvalid && (
+          <span className="subtle" style={{ color: "var(--err)", fontSize: 12 }}>
+            {t("auto.flows.create.toolArgsInvalid")}
+          </span>
+        )}
+      </label>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
-import { isErrorLike } from "@muse/shared";
+import { errorMessage } from "@muse/shared";
 
 import { ActiveRunTracker } from "./active-run-tracker.js";
 import { NoOpDistributedSchedulerLock } from "./scheduler-locks.js";
@@ -235,7 +235,7 @@ export class DynamicScheduler {
       await this.handleSuccess(job, result, startedAt, dryRun);
       return result;
     } catch (error) {
-      const message = `Job '${job.name}' failed: ${isErrorLike(error) ? error.name : "unknown"}`;
+      const message = `Job '${job.name}' failed: ${errorMessage(error, "unknown")}`;
       await this.handleFailure(job, message, startedAt, dryRun);
       return message;
     } finally {

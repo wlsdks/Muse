@@ -447,25 +447,37 @@ export interface ScheduledJobDetail {
   readonly retryOnFailure: boolean;
   readonly maxRetryCount: number;
   readonly enabled: boolean;
+  /** Present on every job (agent or tool), defaulting to `{}` server-side —
+   * only meaningful (non-empty) on a `jobType: "mcp_tool"` action. */
+  readonly mcpServerName?: string | null;
+  readonly toolName?: string | null;
+  readonly toolArguments?: Record<string, unknown>;
 }
 
-/** Exact `POST /api/scheduler/jobs` body this view sends to create an agent
- * flow. A `type` alias (not `interface`): it's passed straight into
+/** Exact `POST /api/scheduler/jobs` body this view sends to create a flow. A
+ * `type` alias (not `interface`): it's passed straight into
  * `ApiClient.post`'s `Record<string, unknown>` body param, and TypeScript
  * only structurally matches an index signature against a fresh object type,
- * not a named `interface`. */
+ * not a named `interface`. The action is either an agent prompt OR a
+ * scheduled MCP tool call — never both — so the two shapes are a
+ * discriminated union on `jobType`. */
 export type ScheduledJobCreateBody = {
   readonly name: string;
   readonly cronExpression: string;
   readonly timezone: string;
-  readonly jobType: "agent";
-  readonly agentPrompt: string;
-  readonly agentModel?: string;
   readonly notificationChannelId?: string;
   readonly retryOnFailure: boolean;
   readonly maxRetryCount: number;
   readonly enabled: boolean;
-};
+} & (
+  | { readonly jobType: "agent"; readonly agentPrompt: string; readonly agentModel?: string }
+  | {
+      readonly jobType: "mcp_tool";
+      readonly mcpServerName: string;
+      readonly toolName: string;
+      readonly toolArguments: Record<string, unknown>;
+    }
+);
 
 /** Exact `PATCH /api/scheduler/jobs/:jobId` body shape this view sends — every
  * field is optional (partial update); `null` clears an optional field. Same
@@ -479,7 +491,30 @@ export type ScheduledJobPatchBody = {
   readonly retryOnFailure?: boolean;
   readonly maxRetryCount?: number;
   readonly enabled?: boolean;
+  readonly toolArguments?: Record<string, unknown>;
 };
+
+// Mirrors `apps/api`'s `GET /api/muse/loopback` response (registerToolsRoutes
+// in routes-agent-tools.ts) — the builtin loopback MCP server/tool catalog
+// the Builder's tool-flow picker reads. `risk` is omitted on the wire (not
+// `null`) when a tool declares none, so it is optional here too.
+export interface LoopbackToolRow {
+  readonly name: string;
+  readonly description: string;
+  readonly risk?: "read" | "write" | "execute";
+}
+
+export interface LoopbackServerRow {
+  readonly name: string;
+  readonly description: string;
+  readonly optIn: boolean;
+  readonly tools: readonly LoopbackToolRow[];
+}
+
+export interface LoopbackCatalogResponse {
+  readonly servers: readonly LoopbackServerRow[];
+  readonly total: number;
+}
 
 // Mirrors `@muse/scheduler`'s `CadenceSummary` (server computes it from the
 // job's persisted `cronExpression` via `summarizeCadence` — the web never

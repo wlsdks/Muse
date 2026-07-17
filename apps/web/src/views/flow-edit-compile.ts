@@ -100,6 +100,41 @@ export interface ActionEditForm {
   readonly maxRetryCount: number;
 }
 
+/** Editing an existing `action.tool` node's arguments — v1 leaves server/tool
+ * read-only (changing which tool a live flow calls is a v2 concern), so this
+ * form carries only the args textarea. */
+export interface ToolActionEditForm {
+  readonly toolArgumentsText: string;
+}
+
+export type ToolArgumentsParseResult =
+  | { readonly ok: true; readonly value: Record<string, unknown> }
+  | { readonly ok: false };
+
+/** Client-side JSON validation for the tool-arguments textarea (create AND
+ * edit forms) — blank text is valid and means "no arguments" ({}); anything
+ * else must parse to a JSON OBJECT (not an array/primitive). The server
+ * (`readJsonObject`) remains the final authority on save. */
+export function parseToolArgumentsText(text: string): ToolArgumentsParseResult {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return { ok: true, value: {} };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { ok: false };
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false };
+  }
+
+  return { ok: true, value: parsed as Record<string, unknown> };
+}
+
 export interface OutputEditForm {
   readonly notificationChannelId: string;
 }
@@ -123,12 +158,17 @@ export function outputFormFromJob(job: Pick<ScheduledJobDetail, "notificationCha
   return { notificationChannelId: job.notificationChannelId ?? "" };
 }
 
+export function toolActionFormFromJob(job: Pick<ScheduledJobDetail, "toolArguments">): ToolActionEditForm {
+  return { toolArgumentsText: JSON.stringify(job.toolArguments ?? {}, null, 2) };
+}
+
 export function flowEditToJobPatch(kind: "trigger", form: TriggerEditForm): ScheduledJobPatchBody;
 export function flowEditToJobPatch(kind: "action", form: ActionEditForm): ScheduledJobPatchBody;
 export function flowEditToJobPatch(kind: "output", form: OutputEditForm): ScheduledJobPatchBody;
+export function flowEditToJobPatch(kind: "tool", form: ToolActionEditForm): ScheduledJobPatchBody;
 export function flowEditToJobPatch(
-  kind: "trigger" | "action" | "output",
-  form: TriggerEditForm | ActionEditForm | OutputEditForm
+  kind: "trigger" | "action" | "output" | "tool",
+  form: TriggerEditForm | ActionEditForm | OutputEditForm | ToolActionEditForm
 ): ScheduledJobPatchBody {
   if (kind === "trigger") {
     return { cronExpression: resolveScheduleCron((form as TriggerEditForm).schedule) };
@@ -141,6 +181,11 @@ export function flowEditToJobPatch(
       maxRetryCount: clampRetryCount(actionForm.maxRetryCount),
       retryOnFailure: actionForm.retryOnFailure
     };
+  }
+  if (kind === "tool") {
+    const toolForm = form as ToolActionEditForm;
+    const parsed = parseToolArgumentsText(toolForm.toolArgumentsText);
+    return { toolArguments: parsed.ok ? parsed.value : {} };
   }
   const outputForm = form as OutputEditForm;
   return {
@@ -156,11 +201,24 @@ export function toggleEnabledPatch(enabled: boolean): ScheduledJobPatchBody {
   return { enabled };
 }
 
+export type ActionKind = "agent" | "tool";
+
 export interface FlowDraft {
   readonly name: string;
   readonly schedule: ScheduleFormState;
+  /** Which action the create form compiles: an agent prompt run, or a
+   * scheduled MCP tool call. The copilot draft composer only ever produces
+   * "agent" drafts today — a tool-mode draft is authored directly in the
+   * form (see `FlowCreatePanel`). */
+  readonly actionKind: ActionKind;
   readonly agentPrompt: string;
   readonly agentModel: string;
+  readonly toolServerName: string;
+  readonly toolName: string;
+  /** Raw JSON textarea value — parsed on submit via `parseToolArgumentsText`
+   * (blank -> `{}`), never pre-parsed into the draft so the textarea can
+   * hold invalid-but-in-progress JSON without losing keystrokes. */
+  readonly toolArgumentsText: string;
   readonly notificationChannelId: string;
   readonly retryOnFailure: boolean;
   readonly maxRetryCount: number;
@@ -169,6 +227,7 @@ export interface FlowDraft {
 
 export function emptyFlowDraft(): FlowDraft {
   return {
+    actionKind: "agent",
     agentModel: "",
     agentPrompt: "",
     enabled: true,
@@ -176,30 +235,57 @@ export function emptyFlowDraft(): FlowDraft {
     name: "",
     notificationChannelId: "",
     retryOnFailure: false,
-    schedule: { customCron: "", kind: "dailyMorning9" }
+    schedule: { customCron: "", kind: "dailyMorning9" },
+    toolArgumentsText: "",
+    toolName: "",
+    toolServerName: ""
   };
 }
 
 export function isFlowDraftValid(draft: FlowDraft): boolean {
   const scheduleValid = draft.schedule.kind !== "custom" || isValidCronShape(draft.schedule.customCron);
-  return draft.name.trim().length > 0 && draft.agentPrompt.trim().length > 0 && scheduleValid;
+  if (!scheduleValid || draft.name.trim().length === 0) {
+    return false;
+  }
+  if (draft.actionKind === "tool") {
+    return draft.toolServerName.trim().length > 0
+      && draft.toolName.trim().length > 0
+      && parseToolArgumentsText(draft.toolArgumentsText).ok;
+  }
+  return draft.agentPrompt.trim().length > 0;
 }
 
-/** Exact `POST /api/scheduler/jobs` body for a new agent flow. */
+/** Exact `POST /api/scheduler/jobs` body for a new flow — an agent-prompt
+ * action or a scheduled MCP tool call, never both. */
 export function flowDraftToJobInput(draft: FlowDraft, timezone: string = defaultTimezone()): ScheduledJobCreateBody {
-  const agentModel = draft.agentModel.trim();
   const notificationChannelId = draft.notificationChannelId.trim();
-  return {
-    agentModel: agentModel.length > 0 ? agentModel : undefined,
-    agentPrompt: draft.agentPrompt.trim(),
+  const shared = {
     cronExpression: resolveScheduleCron(draft.schedule),
     enabled: draft.enabled,
-    jobType: "agent",
     maxRetryCount: clampRetryCount(draft.maxRetryCount),
     name: draft.name.trim(),
     notificationChannelId: notificationChannelId.length > 0 ? notificationChannelId : undefined,
     retryOnFailure: draft.retryOnFailure,
     timezone
+  };
+
+  if (draft.actionKind === "tool") {
+    const parsedArguments = parseToolArgumentsText(draft.toolArgumentsText);
+    return {
+      ...shared,
+      jobType: "mcp_tool",
+      mcpServerName: draft.toolServerName.trim(),
+      toolArguments: parsedArguments.ok ? parsedArguments.value : {},
+      toolName: draft.toolName.trim()
+    };
+  }
+
+  const agentModel = draft.agentModel.trim();
+  return {
+    ...shared,
+    agentModel: agentModel.length > 0 ? agentModel : undefined,
+    agentPrompt: draft.agentPrompt.trim(),
+    jobType: "agent"
   };
 }
 
@@ -207,9 +293,11 @@ export function flowDraftToJobInput(draft: FlowDraft, timezone: string = default
  * the create form edits — the copilot draft is never auto-created, it just
  * pre-fills this form so the user still reviews + clicks 만들기. A cron the
  * model returned that matches a known preset resolves to that preset
- * (`scheduleFormFromCron`); otherwise it lands in the custom-cron field. */
+ * (`scheduleFormFromCron`); otherwise it lands in the custom-cron field. The
+ * copilot only ever produces an agent-prompt draft. */
 export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
   return {
+    actionKind: "agent",
     agentModel: "",
     agentPrompt: payload.prompt,
     enabled: true,
@@ -217,7 +305,10 @@ export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
     name: payload.name,
     notificationChannelId: payload.notifyChannel ?? "",
     retryOnFailure: payload.retry,
-    schedule: scheduleFormFromCron(payload.cronExpression)
+    schedule: scheduleFormFromCron(payload.cronExpression),
+    toolArgumentsText: "",
+    toolName: "",
+    toolServerName: ""
   };
 }
 
@@ -251,6 +342,22 @@ export function draftToPreviewProjection(draft: FlowDraft): FlowProjection {
     : resolveScheduleCron(draft.schedule);
   const notificationChannelId = draft.notificationChannelId.trim();
   const agentModel = draft.agentModel.trim();
+  const actionNode: FlowNode = draft.actionKind === "tool"
+    ? {
+      id: actionId,
+      kind: "action.tool",
+      label: "action.tool",
+      meta: {
+        server: draft.toolServerName.trim().length > 0 ? draft.toolServerName.trim() : null,
+        tool: draft.toolName.trim().length > 0 ? draft.toolName.trim() : null
+      }
+    }
+    : {
+      id: actionId,
+      kind: "action.agent",
+      label: "action.agent",
+      meta: { maxToolCalls: null, model: agentModel.length > 0 ? agentModel : null, prompt: draft.agentPrompt.trim() }
+    };
 
   const nodes: FlowNode[] = [
     {
@@ -259,12 +366,7 @@ export function draftToPreviewProjection(draft: FlowDraft): FlowProjection {
       label: "trigger.schedule",
       meta: { cronExpression, nextRunAtIso: null, timezone: defaultTimezone() }
     },
-    {
-      id: actionId,
-      kind: "action.agent",
-      label: "action.agent",
-      meta: { maxToolCalls: null, model: agentModel.length > 0 ? agentModel : null, prompt: draft.agentPrompt.trim() }
-    },
+    actionNode,
     notificationChannelId.length > 0
       ? { id: outputId, kind: "output.notify", label: "output.notify", meta: { channelId: notificationChannelId } }
       : { id: outputId, kind: "output.record", label: "output.record", meta: {} }

@@ -69,6 +69,20 @@ describe("projectFlow — action node variants", () => {
     expect(action.kind).toBe("action.tool");
     expect(action.meta).toEqual({ server: "notion", tool: "create_page" });
   });
+
+  it("NEVER projects toolArguments, even when they carry a sensitive value — the Builder's tool-flow arg edit surface must not leak them via /api/flows", () => {
+    const job: ScheduledJob = {
+      ...BASE_JOB,
+      jobType: "mcp_tool",
+      mcpServerName: "notion",
+      toolArguments: { apiKey: "SECRET_TOKEN_123", pageId: "abc" },
+      toolName: "create_page"
+    };
+    const flow = projectFlow(job, NOW);
+    const action = flow.nodes[1]!;
+    expect(Object.keys(action.meta)).toEqual(["server", "tool"]);
+    expect(JSON.stringify(action.meta)).not.toContain("SECRET_TOKEN_123");
+  });
 });
 
 describe("projectFlow — output node variants", () => {

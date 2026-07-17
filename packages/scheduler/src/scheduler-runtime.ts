@@ -49,8 +49,26 @@ export class ScheduledJobValidator {
   }
 }
 
+export interface ScheduledMcpToolInvokerOptions {
+  /**
+   * Additional `MuseTool`s resolvable by exact `${server}.${tool}` name,
+   * checked BEFORE `McpManager` — Muse's built-in loopback tools
+   * (`muse.time.now`, `muse.text.stats`, ...) live in the host's agent tool
+   * registry and are never registered as an `McpManager` connection, so a
+   * scheduled `mcp_tool` job targeting one would otherwise always fail the
+   * connection check below. Kept as an injected function (not a direct
+   * import) so this package stays provider-agnostic — the caller (the API
+   * process) decides what "extra tools" means. Absent -> unchanged McpManager-only
+   * resolution.
+   */
+  readonly extraTools?: () => readonly MuseTool[];
+}
+
 export class ScheduledMcpToolInvoker {
-  constructor(private readonly mcpManager: McpManager) {}
+  constructor(
+    private readonly mcpManager: McpManager,
+    private readonly options: ScheduledMcpToolInvokerOptions = {}
+  ) {}
 
   async invoke(job: ScheduledJob): Promise<string> {
     if (job.jobType !== "mcp_tool") {
@@ -59,16 +77,9 @@ export class ScheduledMcpToolInvoker {
 
     const serverName = requireText(job.mcpServerName, `MCP job '${job.name}' requires mcpServerName`);
     const toolName = requireText(job.toolName, `MCP job '${job.name}' requires toolName`);
+    const fullName = `${serverName}.${toolName}`;
 
-    if (this.mcpManager.getStatus(serverName) !== "connected") {
-      const connected = await this.mcpManager.connect(serverName);
-
-      if (!connected) {
-        throw new SchedulerExecutionError(`MCP server '${serverName}' is not connected`);
-      }
-    }
-
-    const tool = this.findTool(serverName, toolName);
+    const tool = this.findExtraTool(fullName) ?? await this.resolveMcpManagerTool(serverName, fullName);
     const args = resolveTemplateJson(job.toolArguments, job);
     const output = await tool.execute(args, {
       runId: `scheduler_${job.id}_${Date.now()}`,
@@ -78,8 +89,19 @@ export class ScheduledMcpToolInvoker {
     return typeof output === "string" ? output : JSON.stringify(output, null, 2);
   }
 
-  private findTool(serverName: string, toolName: string): MuseTool {
-    const fullName = `${serverName}.${toolName}`;
+  private findExtraTool(fullName: string): MuseTool | undefined {
+    return this.options.extraTools?.().find((candidate) => candidate.definition.name === fullName);
+  }
+
+  private async resolveMcpManagerTool(serverName: string, fullName: string): Promise<MuseTool> {
+    if (this.mcpManager.getStatus(serverName) !== "connected") {
+      const connected = await this.mcpManager.connect(serverName);
+
+      if (!connected) {
+        throw new SchedulerExecutionError(`MCP server '${serverName}' is not connected`);
+      }
+    }
+
     const tool = this.mcpManager.toMuseTools().find((candidate) => candidate.definition.name === fullName);
 
     if (!tool) {

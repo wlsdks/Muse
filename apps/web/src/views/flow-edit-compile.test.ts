@@ -16,6 +16,7 @@ import {
   MAX_RETRY_COUNT,
   MIN_RETRY_COUNT,
   outputFormFromJob,
+  parseToolArgumentsText,
   presetForCron,
   renameFlowPatch,
   resolveScheduleCron,
@@ -215,6 +216,7 @@ describe("flowEditToJobPatch — exact PATCH body per node kind (field-name fide
 
 describe("flowDraftToJobInput — exact POST /api/scheduler/jobs body", () => {
   const FULL_DRAFT: FlowDraft = {
+    actionKind: "agent",
     agentModel: "gpt-4o",
     agentPrompt: "오늘 일정 요약해서 보내줘",
     enabled: true,
@@ -222,7 +224,10 @@ describe("flowDraftToJobInput — exact POST /api/scheduler/jobs body", () => {
     name: "Morning brief",
     notificationChannelId: "telegram:123",
     retryOnFailure: true,
-    schedule: { customCron: "", kind: "dailyMorning9" }
+    schedule: { customCron: "", kind: "dailyMorning9" },
+    toolArgumentsText: "",
+    toolName: "",
+    toolServerName: ""
   };
 
   it("compiles every field with the server's exact field names, including the mandatory jobType: 'agent'", () => {
@@ -243,7 +248,8 @@ describe("flowDraftToJobInput — exact POST /api/scheduler/jobs body", () => {
   it("omits agentModel and notificationChannelId entirely (undefined, not empty string) when left blank — undefined values drop out of the JSON.stringify'd wire body, unlike an empty string", () => {
     const draft: FlowDraft = { ...FULL_DRAFT, agentModel: "  ", notificationChannelId: "" };
     const body = flowDraftToJobInput(draft, "UTC");
-    expect(body.agentModel).toBeUndefined();
+    expect(body.jobType).toBe("agent");
+    expect(body.jobType === "agent" ? body.agentModel : undefined).toBeUndefined();
     expect(body.notificationChannelId).toBeUndefined();
     const wireKeys = Object.keys(JSON.parse(JSON.stringify(body)) as Record<string, unknown>);
     expect(wireKeys).not.toContain("agentModel");
@@ -266,6 +272,81 @@ describe("flowDraftToJobInput — exact POST /api/scheduler/jobs body", () => {
   });
 });
 
+describe("flowDraftToJobInput — tool-flow (jobType: 'mcp_tool') compile seam", () => {
+  const TOOL_DRAFT: FlowDraft = {
+    actionKind: "tool",
+    agentModel: "",
+    agentPrompt: "",
+    enabled: true,
+    maxRetryCount: 3,
+    name: "Time check",
+    notificationChannelId: "",
+    retryOnFailure: false,
+    schedule: { customCron: "", kind: "hourly" },
+    toolArgumentsText: '{"timezone":"Asia/Seoul"}',
+    toolName: "now",
+    toolServerName: "muse.time"
+  };
+
+  it("compiles jobType: 'mcp_tool' with mcpServerName/toolName/toolArguments — NO agentPrompt key on the wire", () => {
+    const body = flowDraftToJobInput(TOOL_DRAFT, "UTC");
+    expect(body).toEqual({
+      cronExpression: "0 * * * *",
+      enabled: true,
+      jobType: "mcp_tool",
+      maxRetryCount: 3,
+      mcpServerName: "muse.time",
+      name: "Time check",
+      retryOnFailure: false,
+      timezone: "UTC",
+      toolArguments: { timezone: "Asia/Seoul" },
+      toolName: "now"
+    } as unknown as ReturnType<typeof flowDraftToJobInput>);
+    const wireKeys = Object.keys(JSON.parse(JSON.stringify(body)) as Record<string, unknown>);
+    expect(wireKeys).not.toContain("agentPrompt");
+    expect(wireKeys).not.toContain("agentModel");
+  });
+
+  it("MUTATION-RED: dropping jobType from the compiled body would silently create an agent job instead of a tool job — this is the field the server discriminates on", () => {
+    const body = flowDraftToJobInput(TOOL_DRAFT, "UTC");
+    expect(body.jobType).toBe("mcp_tool");
+  });
+
+  it("blank tool-arguments text compiles to an empty object, never omitted", () => {
+    const draft: FlowDraft = { ...TOOL_DRAFT, toolArgumentsText: "" };
+    const body = flowDraftToJobInput(draft, "UTC");
+    expect(body.jobType === "mcp_tool" ? body.toolArguments : undefined).toEqual({});
+  });
+
+  it("invalid JSON in the arguments textarea compiles to an empty object rather than throwing — the form gates Create on isFlowDraftValid, this is the defensive fallback", () => {
+    const draft: FlowDraft = { ...TOOL_DRAFT, toolArgumentsText: "not json" };
+    const body = flowDraftToJobInput(draft, "UTC");
+    expect(body.jobType === "mcp_tool" ? body.toolArguments : undefined).toEqual({});
+  });
+});
+
+describe("parseToolArgumentsText", () => {
+  it("blank text parses to an empty object", () => {
+    expect(parseToolArgumentsText("")).toEqual({ ok: true, value: {} });
+    expect(parseToolArgumentsText("   ")).toEqual({ ok: true, value: {} });
+  });
+
+  it("a well-formed JSON object parses through", () => {
+    expect(parseToolArgumentsText('{"a": 1, "b": "two"}')).toEqual({ ok: true, value: { a: 1, b: "two" } });
+  });
+
+  it("rejects malformed JSON", () => {
+    expect(parseToolArgumentsText("{not json")).toEqual({ ok: false });
+  });
+
+  it("MUTATION-RED: rejects a JSON array and a JSON primitive — must be an OBJECT, not just 'valid JSON'", () => {
+    expect(parseToolArgumentsText("[1,2,3]")).toEqual({ ok: false });
+    expect(parseToolArgumentsText("42")).toEqual({ ok: false });
+    expect(parseToolArgumentsText('"a string"')).toEqual({ ok: false });
+    expect(parseToolArgumentsText("null")).toEqual({ ok: false });
+  });
+});
+
 describe("isFlowDraftValid", () => {
   it("an empty draft is invalid (no name, no prompt)", () => {
     expect(isFlowDraftValid(emptyFlowDraft())).toBe(false);
@@ -283,10 +364,26 @@ describe("isFlowDraftValid", () => {
     expect(isFlowDraftValid({ ...base, schedule: { customCron: "not a cron", kind: "custom" } })).toBe(false);
     expect(isFlowDraftValid({ ...base, schedule: { customCron: "0 9 * * *", kind: "custom" } })).toBe(true);
   });
+
+  it("actionKind 'tool' requires a non-blank server AND tool name, ignoring agentPrompt", () => {
+    const base = { ...emptyFlowDraft(), actionKind: "tool" as const, name: "My tool flow" };
+    expect(isFlowDraftValid(base)).toBe(false);
+    expect(isFlowDraftValid({ ...base, toolServerName: "muse.time" })).toBe(false);
+    expect(isFlowDraftValid({ ...base, toolName: "now" })).toBe(false);
+    expect(isFlowDraftValid({ ...base, toolName: "now", toolServerName: "muse.time" })).toBe(true);
+  });
+
+  it("actionKind 'tool' with invalid JSON in the arguments textarea is invalid", () => {
+    const base = { ...emptyFlowDraft(), actionKind: "tool" as const, name: "My tool flow", toolName: "now", toolServerName: "muse.time" };
+    expect(isFlowDraftValid({ ...base, toolArgumentsText: "not json" })).toBe(false);
+    expect(isFlowDraftValid({ ...base, toolArgumentsText: '{"a":1}' })).toBe(true);
+    expect(isFlowDraftValid({ ...base, toolArgumentsText: "" })).toBe(true);
+  });
 });
 
 describe("draftToPreviewProjection — client-side-only preview, never sent to the server", () => {
   const DRAFT: FlowDraft = {
+    actionKind: "agent",
     agentModel: "",
     agentPrompt: "매일 아침 브리핑",
     enabled: true,
@@ -294,7 +391,10 @@ describe("draftToPreviewProjection — client-side-only preview, never sent to t
     name: "New flow",
     notificationChannelId: "",
     retryOnFailure: false,
-    schedule: { customCron: "", kind: "dailyMorning9" }
+    schedule: { customCron: "", kind: "dailyMorning9" },
+    toolArgumentsText: "",
+    toolName: "",
+    toolServerName: ""
   };
 
   it("produces a trigger -> action -> output linear projection with the resolved cron", () => {
@@ -332,6 +432,18 @@ describe("draftToPreviewProjection — client-side-only preview, never sent to t
     expect(canvas.nodes).toHaveLength(3);
     expect(canvas.edges.some((edge) => edge.data?.loop)).toBe(true);
   });
+
+  it("projects an action.tool node (never action.agent) when actionKind is 'tool'", () => {
+    const toolDraft: FlowDraft = { ...DRAFT, actionKind: "tool", toolName: "now", toolServerName: "muse.time" };
+    const projection = draftToPreviewProjection(toolDraft);
+    expect(projection.nodes[1]).toMatchObject({ kind: "action.tool", meta: { server: "muse.time", tool: "now" } });
+  });
+
+  it("previews null server/tool meta before either is chosen yet, rather than empty strings", () => {
+    const toolDraft: FlowDraft = { ...DRAFT, actionKind: "tool" };
+    const projection = draftToPreviewProjection(toolDraft);
+    expect(projection.nodes[1]).toMatchObject({ kind: "action.tool", meta: { server: null, tool: null } });
+  });
 });
 
 describe("flowDraftToCopilotPayload — the create panel's LIVE form values, projected into the copilot's 5-field shape", () => {
@@ -349,6 +461,7 @@ describe("flowDraftToCopilotPayload — the create panel's LIVE form values, pro
 
   it("resolves a preset schedule back to its raw cron expression", () => {
     const draft: FlowDraft = {
+      actionKind: "agent",
       agentModel: "",
       agentPrompt: "일정 요약",
       enabled: true,
@@ -356,7 +469,10 @@ describe("flowDraftToCopilotPayload — the create panel's LIVE form values, pro
       name: "아침 브리핑",
       notificationChannelId: "",
       retryOnFailure: false,
-      schedule: { customCron: "", kind: "dailyMorning9" }
+      schedule: { customCron: "", kind: "dailyMorning9" },
+      toolArgumentsText: "",
+      toolName: "",
+      toolServerName: ""
     };
     expect(flowDraftToCopilotPayload(draft)).toEqual({
       cronExpression: "0 9 * * *",
@@ -369,6 +485,7 @@ describe("flowDraftToCopilotPayload — the create panel's LIVE form values, pro
 
   it("normalizes a blank notify channel to null and trims whitespace off name/prompt", () => {
     const draft: FlowDraft = {
+      actionKind: "agent",
       agentModel: "",
       agentPrompt: "  일정 요약  ",
       enabled: true,
@@ -376,7 +493,10 @@ describe("flowDraftToCopilotPayload — the create panel's LIVE form values, pro
       name: "  아침 브리핑  ",
       notificationChannelId: "   ",
       retryOnFailure: false,
-      schedule: { customCron: "", kind: "hourly" }
+      schedule: { customCron: "", kind: "hourly" },
+      toolArgumentsText: "",
+      toolName: "",
+      toolServerName: ""
     };
     const payload = flowDraftToCopilotPayload(draft);
     expect(payload.name).toBe("아침 브리핑");

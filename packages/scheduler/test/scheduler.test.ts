@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { InMemoryMcpServerStore, McpManager, type McpConnection } from "@muse/mcp";
+import type { MuseTool } from "@muse/tools";
 import {
   DynamicScheduler,
   InMemoryDistributedSchedulerLock,
@@ -385,6 +386,88 @@ describe("ScheduledMcpToolInvoker", () => {
   });
 });
 
+describe("ScheduledMcpToolInvoker — extraTools seam (built-in loopback tools bypassing McpManager)", () => {
+  const fakeLoopbackTool: MuseTool = {
+    definition: {
+      description: "Returns the current ISO timestamp.",
+      inputSchema: {},
+      name: "muse.time.now",
+      risk: "read"
+    },
+    execute: () => ({ iso: "2026-07-18T00:00:00.000Z" })
+  };
+
+  function noOpMcpManager(): McpManager {
+    return new McpManager(new InMemoryMcpServerStore(), {
+      connector: { connect: async (): Promise<McpConnection> => ({ listTools: async () => [] }) }
+    });
+  }
+
+  it("resolves and executes an injected extra tool WITHOUT ever registering/connecting an McpManager server", async () => {
+    const invoker = new ScheduledMcpToolInvoker(noOpMcpManager(), { extraTools: () => [fakeLoopbackTool] });
+    const job = normalizeScheduledJob(
+      {
+        cronExpression: "0 * * * * *",
+        id: "job-2",
+        jobType: "mcp_tool",
+        mcpServerName: "muse.time",
+        name: "Time check",
+        toolArguments: {},
+        toolName: "now"
+      },
+      { id: "job-2", now: () => new Date("2026-05-05T00:00:00.000Z") }
+    );
+
+    await expect(invoker.invoke(job)).resolves.toBe(JSON.stringify({ iso: "2026-07-18T00:00:00.000Z" }, null, 2));
+  });
+
+  it("falls through to the McpManager path when the requested name isn't among the extra tools (no regression on external MCP jobs)", async () => {
+    const invoker = new ScheduledMcpToolInvoker(noOpMcpManager(), { extraTools: () => [fakeLoopbackTool] });
+    const job = normalizeScheduledJob(
+      {
+        cronExpression: "0 * * * * *",
+        id: "job-3",
+        jobType: "mcp_tool",
+        mcpServerName: "unregistered-server",
+        name: "Nope",
+        toolArguments: {},
+        toolName: "whatever"
+      },
+      { id: "job-3", now: () => new Date("2026-05-05T00:00:00.000Z") }
+    );
+
+    await expect(invoker.invoke(job)).rejects.toThrow("MCP server 'unregistered-server' is not connected");
+  });
+
+  it("an absent extraTools option preserves the original McpManager-only behavior (no regression when the seam is unused)", async () => {
+    const manager = new McpManager(new InMemoryMcpServerStore(), {
+      connector: {
+        connect: async (): Promise<McpConnection> => ({
+          callTool: async (_toolName, args) => `received:${args.message}`,
+          listTools: async () => [
+            { description: "Read synthetic status", inputSchema: {}, name: "read_status", risk: "read" }
+          ]
+        })
+      }
+    });
+    await manager.register({ config: { command: "node" }, name: "local", transportType: "stdio" });
+    const invoker = new ScheduledMcpToolInvoker(manager);
+    const job = normalizeScheduledJob(
+      {
+        cronExpression: "0 * * * * *",
+        id: "job-4",
+        mcpServerName: "local",
+        name: "Status",
+        toolArguments: { message: "{{job_name}}" },
+        toolName: "read_status"
+      },
+      { id: "job-4", now: () => new Date("2026-05-05T00:00:00.000Z") }
+    );
+
+    await expect(invoker.invoke(job)).resolves.toBe("received:Status");
+  });
+});
+
 describe("DynamicScheduler", () => {
   it("rejects invalid distributed lock TTL buffers", () => {
     for (const lockTtlBufferMs of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
@@ -468,6 +551,32 @@ describe("DynamicScheduler", () => {
 
     await expect(service.trigger(saved.id)).resolves.toContain("skipped");
     expect(store.findById(saved.id)?.lastStatus).toBe("skipped");
+  });
+
+  it("a failed trigger's recorded result carries the REAL error message, not just the error's class name", async () => {
+    const store = new InMemoryScheduledJobStore({ idFactory: () => "job-1" });
+    const service = new DynamicScheduler({
+      dispatcher: new ScheduledJobDispatcher({
+        agentExecutor: {
+          execute: async () => {
+            throw new Error("MCP server 'muse.time' is not connected");
+          }
+        },
+        mcpInvoker: createUnusedMcpInvoker()
+      }),
+      store
+    });
+    const saved = await service.create({
+      agentPrompt: "Run",
+      cronExpression: "0 * * * * *",
+      jobType: "agent",
+      name: "Time check"
+    });
+
+    const result = await service.trigger(saved.id);
+    expect(result).toContain("MCP server 'muse.time' is not connected");
+    expect(result).not.toContain("SchedulerExecutionError");
+    expect(store.findById(saved.id)?.lastResult).toContain("MCP server 'muse.time' is not connected");
   });
 
   it("dry run records history but does not mutate last status", async () => {
