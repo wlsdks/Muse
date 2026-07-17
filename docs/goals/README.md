@@ -37,6 +37,15 @@ rival-watch가 다음 정찰의 시작점을 기억한다.**
 - `attunement-implementation-plan.md`, `attunement-slice-b-safety-contract.md`,
   `LEARNING-LOOP-PLAN.md`, `general-tools-design.md` — 사람-지시 설계/계획 문서
 
+## 동시성 (2026-07-17, 공개연구 기반)
+
+세 장부(backlog·growth-backlog·rival-watch)는 `.gitattributes`의 **`merge=union`**으로
+병렬 append 충돌을 자동 해소한다 (여러 루프/워크트리가 동시에 쓰는 게 일상이라 —
+git 공식 드라이버, rebase에도 적용, RED→GREEN 재현 검증됨). 알려진 트레이드오프:
+같은 줄을 동시에 고치면 충돌 대신 **중복 줄**이 생길 수 있다 → 큐레이션 규칙이 잡는다.
+동시 작성자가 훨씬 늘면 다음 단계는 GitLab-식 **엔트리-파일 분리**(항목=파일,
+상태=디렉토리 이동; git-bug/ripissue 계열 prior art) — 지금은 과잉이라 미채택.
+
 ## 큐레이션 규칙 (모든 장부 공통)
 
 완료는 델타 붙은 한 줄로 압축하고, 항목을 더할 때마다 낡은 줄 하나 이상 지운다
