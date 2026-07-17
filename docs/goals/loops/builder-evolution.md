@@ -29,3 +29,13 @@ ratchet: web SSR 542(+7) · browser 18(+1) · unit +7 · fabrication 0
 - 리뷰지점: registered:false(저장됐지만 non-live)·unpaired는 send 시 실패하므로 절대 미노출(false-positive 0); schedulerDeliveryValue가 matrix double-prefix 처리; 에러/localOnly 403은 null로 우아하게 강등(텍스트필드 유지).
 - 리스크: 없음(피커는 편의 레이어, 텍스트필드가 source of truth). 라이브 POSITIVE는 실 Telegram 등록 필요라 vitest 실Chromium으로 증명, 라이브는 무회귀 케이스 측정.
 - 참고: 인터랙티브로 랜딩된 빌더 슬라이스 2건(fire 2 이후) — tool-execution flows(f2e539321, scheduler+web+api/wiring)·fullscreen+LNB(b2f9652ec, web/ui-affordance) — 다양성(pkg,kind) 카운트에 포함.
+
+## fire 4 · 2026-07-18 · skill v2.1.1 · 4642f1cc8
+meta: value-class=new-capability · pkg=@muse/scheduler+@muse/api+@muse/web · kind=capability · verdict=PASS(opus, 2차) · firesSinceDrill=4
+ratchet: scheduler 177(+8) · api scheduler-routes 12(+4) · web browser 19(+1) · fabrication 0
+- 무엇: 흐름 복제 — POST /api/scheduler/jobs/:id/duplicate + FlowHeaderActions "복제" 버튼. buildDuplicateJobInput(순수)이 20개 config 필드 전부 복사, id·실행 lifecycle·타임스탬프 제외, enabled:false(draft-first), name 접미사(" (copy)"/" (사본)").
+- 왜: n8n/Zapier에 다 있는 기본 빌더 역량 부재 — 기존 흐름을 출발점으로 재사용 불가였음. 실행 러너가 이미 지원하는 create 경로 재사용이라 runner-지원·결정론.
+- 리뷰지점: 복제본 enabled:false로 복제된 스케줄이 몰래 발화 안 함; notificationChannelId+webhookUrl 둘 다 복사해 `channelId ?? webhookUrl` 배달 해석 그대로 보존; 404-before-create로 부분 부작용 0.
+- 리스크: 이름 유니크 제약 없음(중복 "X (copy)" 허용) — 의도된 동작.
+- lesson: config-복사 매퍼는 필드-바이-필드 감사 필수 — Opus 1차가 webhookUrl 누락(green 스위트가 못 잡은 silent divergence, 배달 타깃 소실) 검출; 원본 인터페이스 열거→매퍼 대조로 20/20 확인 후 PASS. 이후 이런 매퍼엔 "모든 config 필드" 테스트를 처음부터.
+- 라이브: 실브라우저 e2e(격리 데모) 복제 클릭→새 흐름 "Daily brief (사본)" 별 id·enabled=false·원본 무변경, API list 2건 확인.
