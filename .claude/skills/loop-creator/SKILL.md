@@ -1,6 +1,6 @@
 ---
 name: loop-creator
-version: 2.1.0
+version: 2.1.1
 description: Use when 진안 wants to start (register) an autonomous improvement loop on the Muse repo — "루프 돌려줘", "loop 등록", "X를 계속 강화하는 루프", or just a theme to iterate on. Generates a principle-compliant recurring loop prompt from its bundled loop-engineering.md contract AND registers the cron itself, then reports the prompt + cron id + how to stop. The autonomous successor to hand-written ad-hoc loop prompts.
 ---
 
@@ -61,6 +61,11 @@ description: Use when 진안 wants to start (register) an autonomous improvement
 1. **기준선 먼저.** `pnpm self-eval` non-zero면 **등록하지 않고** 회귀를 보고한다(아래 상세 불릿)
    — 깨진 기준선 위엔 루프를 안 띄운다. (루프가 *돌 때* 회귀를 만나면 그건 그 fire의 일.)
 2. **테마가 정해졌고 backlog에 그 항목이 있으면** → 가치 우선 top [open] 레코드(§2). 끝.
+   **오너-강조 우선(2026-07-18 교정).** 진안이 테마를 줄 때 강조한 주(主) 트랙을 ②의 1순위로
+   *그대로* 프롬프트에 박고, 보조 범주(인프라·신뢰성·주변 결함)는 "주 트랙을 직접 막거나
+   self-eval 회귀일 때만"으로 **명시적으로 격하**한다. 실측 미스: builder-evolution fire 1이
+   '오늘 3번 문 결함'이라는 이유로 서버 수퍼비전을 골라 오너가 "원래 builder 고도화 아니었나"
+   교정 — 가치 휴리스틱이 오너의 명시 강조를 이기면 안 된다.
 3. **테마가 없거나 / backlog가 얇거나(≤2) / stale / 부재면 → 지금 알아낸다** (gap-scout, 순서대로):
    - **(a) 신호 먼저** — `node scripts/scout-signals.mjs`: `.muse/runs/`의 *실패* 트레이스
      (ungrounded/failed)를 빈도순 클러스터링 → 진짜 반복 실패가 일감(2026 주류 triage 패턴).
@@ -142,6 +147,7 @@ grounding floor(fabrication=0)·IMMUTABLE-CORE 절대 약화 금지. 하드 floo
       `pnpm <script>`(package.json에 있는)가 들어갔나? placeholder가 안 치환됐거나
       "느낌상 됐다"면 FAIL — 띄우지 않고 블로커 보고.
 - [ ] 프롬프트의 ④ eval이 테마와 맞나(브라우저인데 eval:browser-agent 빠지지 않았나)?
+- [ ] **②의 1순위가 오너가 강조한 주 트랙 그대로인가** — 보조 범주가 '주 트랙을 막을 때만'으로 격하돼 있나? (fire-1 mispick 교정)
 - [ ] push 금지·fabrication=0·IMMUTABLE-CORE·**예산 캡** 문구가 프롬프트에 살아있나?
 - [ ] 모델 티어링 라인이 테마에 맞나(정형 위주면 Sonnet 위임이 실제로 토큰을 아끼나) — **Fable-5 참조가 0인가(scout/judge=Opus 4.8)**, judge가 빌더와 별개 독립 서브에이전트로 박혔나?
 - [ ] **다양성 RATCHET**(②)가 프롬프트에 살아있나 — 최근 8 fire ≥6 같은 (pkg, kind)면 다른 패키지/kind 강제, ④b judge가 위반을 FAIL, ⑤b RATCHET에 pkg·kind·value-class 카운트?
