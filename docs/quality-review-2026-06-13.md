@@ -1,5 +1,8 @@
 # Muse source-quality review — 2026-06-13
 
+> **Status: SUPERSEDED (2026-07-17)** — this role now lives in `docs/audits/`
+> (see `docs/audits/INDEX.md`). Kept as the June baseline snapshot.
+
 Scope: source-tree structure, module composition, package management, build/test
 wiring. Method: codegraph (worktree-local index) + static metrics + knip. Read-only
 review — no code changed. Branch `quality-review`, worktree `/tmp/muse-quality-review`.

@@ -1,5 +1,8 @@
 # @muse/windows Phase 2 Implementation Plan
 
+> **Status: historical plan — checkboxes below are not live progress tracking
+> (2026-07-17 census note). Verify shipped state against `packages/windows` + git log.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `@muse/windows` — 7 stock-PowerShell native tools + a Windows active-window ambient source, registered dark-by-default behind `MUSE_WINDOWS_ACTUATORS`, contract-tested with REAL PowerShell on the windows-latest CI runner.

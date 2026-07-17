@@ -59,6 +59,7 @@ The one remaining FRONTIER (open, hard, high-value): full **source VERACITY** (G
 realistic partial hedge. Deeper veracity needs a human/product call, not an autonomous slice.
 
 - [open] 2026-07-02 :: chat REPL(Ink) ESC->AbortController 배선 — DS-1(8ccf4b92) 잔여 (상세: backlog-archive.md delta-scout 2026-07-02)
+- [open] 2026-07-17 kind=test src=audit prio=3 for=improve-muse :: eval:knows-me 배터리 미구현 — LEARNING-LOOP-PLAN.md §D의 유일한 미출하 항목(knowsMeRepeatFree/Delta/Prospective; "Muse가 나를 배웠나"를 측정하는 게이트). 레포 전체에 심볼 0건, 이 레코드가 유일한 추적점 (2026-07-17 md 전수조사에서 발굴).
 
 ## Open — [scout 2026-07-17] rival hardening tricks (->improve-muse)
 

@@ -1,5 +1,9 @@
 # Muse differentiation ledger — where we win vs hermes / openclaw
 
+> **Status: CLOSED ledger (2026-07-17).** The differentiation loop stopped after L1–L7
+> (last substantive entry 2026-06-13); no new L-entries are being appended. Rival deltas
+> now flow through the scout-rivals skill into `docs/goals/rival-watch.md`.
+
 > **Current product direction (2026-07-13): Attunement.** Muse is being built to learn
 > how to fit help into one person's daily life and work. The first vertical is Personal
 > Continuity: restore a user-chosen unfinished thread from explicitly linked context,

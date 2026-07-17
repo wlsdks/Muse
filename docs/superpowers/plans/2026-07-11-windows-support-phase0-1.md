@@ -1,5 +1,8 @@
 # Windows Support Phase 0+1 Implementation Plan
 
+> **Status: SHIPPED (PR #52) — checkboxes below were never ticked; treat this as a
+> historical plan, not live progress tracking (2026-07-17 census note).**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Muse core (CLI + API + local Ollama) works on Windows via boot-time platform resolution, proven by a permanent `windows-latest` CI job.

@@ -2,6 +2,11 @@
 
 > 2026-07-13. 논문·커뮤니티·경쟁 제품·코드베이스를 10개 에이전트로 전수조사한 결과와,
 > 거기서 나온 실행 계획. 근거 없는 항목은 넣지 않았다.
+>
+> **진행 대조 (2026-07-17 전수조사):** §B(behavioural-rule-budget)와 §E-2(`muse vetoes`)는
+> 이 문서 갱신 없이 코드로 출하됨(`packages/agent-core/src/behavioural-rule-budget.ts`,
+> command-manifest). §A는 `apps/api/tick-daemons.ts`(osIdleMs)로 부분 출하. **§D
+> (`eval:knows-me`)만 미구현** — `docs/goals/backlog.md`의 [open] 레코드로 추적한다.
 
 ---
 

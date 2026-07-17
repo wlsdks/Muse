@@ -7,6 +7,10 @@ updated: 2026-06-13
 
 # 평가자 보정 (Judge Calibration)
 
+> 참고: Muse 프로젝트에서는 이 주제의 더 상세한 최신판이
+> [`.claude/rules/agent-testing.md`](../../.claude/rules/agent-testing.md)(메타-평가·fault-injection
+> 드릴·보정 근거)에 있다 — 이 파일은 하네스의 이식용(portable) 축약본.
+
 > **왜 필요한가(2026 발견):** 일반적인 LLM 판정자는 **유효한 출력은 잘 통과(TPR>96%)시키지만 무효한
 > 출력을 잡아내는 능력이 형편없습니다(TNR<25%)** — "그럴듯하면 통과" 편향. 그래서 판정자를
 > **사람 라벨이 붙은 보정셋**으로 측정해야 합니다(혼동행렬 역산·Rogan–Gladen). 우리 하네스의 강점은

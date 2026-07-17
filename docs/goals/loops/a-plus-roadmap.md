@@ -2,6 +2,9 @@
 
 테마: Muse A+ 로드맵 집행. 큐 = `docs/strategy/competitor-analysis-and-a-plus-roadmap.md` §10.3 (self-scout 금지). cron `964ac861` (30m, session-only), Tier1 no-push, /tmp worktree. 중단: `CronDelete 964ac861`.
 
+> 주의: A+ 감사 3갭(injection-provenance S1-S3 · gap② user-model) 작업은 이 저널이 아니라
+> [prompt-system.md](prompt-system.md) fires 20-22에 기록된다 — A+ 진행을 감사할 때 두 저널을 함께 볼 것.
+
 ## fire 1 · 2026-07-11 · skill v2.x · f5a360393
 meta: slice=D2-S1d · wave=W1 · pkg=scripts(eval-adversarial) · kind=eval-ratchet · verdict=PASS · firesSinceDrill=1
 ratchet: 로드맵 잔여 [ ] = 30/31 · self-eval pass · fabrication 0 · adversarialCases 16→19

@@ -34,9 +34,27 @@ rival-watch가 다음 정찰의 시작점을 기억한다.**
 ## 아카이브 / 설계 문서 — 스킬이 쓰지 않는다
 
 - `competitor-teardown.md` — 2026-06-23 경쟁사 전수분해 (재스카웃 금지, 읽기 전용 근거 문서)
-- `loops/` + `loop-digest.md` — 과거 자율 루프들의 fire 저널 (역사)
+- `loops/` + `loop-digest.md` — 자율 루프들의 fire 저널. **`loops/INDEX.md`가 전 저널의
+  단일 지도**(활성/은퇴 포함 — 저널을 새로 만들면 반드시 행 추가). `prompt-system.md`는
+  루프 종료 후에도 진안-직접 모드로 계속 쓰이는 활성 저널이다.
 - `attunement-implementation-plan.md`, `attunement-slice-b-safety-contract.md`,
   `LEARNING-LOOP-PLAN.md`, `general-tools-design.md` — 사람-지시 설계/계획 문서
+
+## goals 밖의 기록성(축적형) 문서 — 지도 완결용 (2026-07-17 전수조사)
+
+이 디렉토리 밖에도 기록이 축적되는 문서가 있다. 전부 **자체 형식이며 레코드 문법·체커
+대상이 아니다** (growth-backlog와 같은 명시적 예외):
+
+| 파일 | 성격 |
+|---|---|
+| `docs/strategy/competitor-analysis-and-a-plus-roadmap.md` | **활성** — §10.3 실행 체크리스트 + §11 append-only 검증 큐 (a-plus-roadmap 스레드의 원장) |
+| `docs/audits/typescript-7-source-quality-2026-07-16.md` | **활성** — TS7 소스품질 프로그램의 증거 원장 (경계별 날짜 엔트리) |
+| `docs/strategy/assistant-value-master-plan.md` | 활성 상태판 (T2-③/④ open) |
+| `docs/strategy/agent-research-findings-2026.md` | 연구 원장 (in-place 편집) |
+| `docs/strategy/differentiation.md` · `security-sweep-2-plan.md` | 마감된 원장 (상단 상태 스탬프 참조) |
+| `CHANGELOG.md` (루트) | 릴리스 로그 — Keep-a-Changelog, release 스킬이 큐레이션 |
+| `.claude/skills/loop-creator/CHANGELOG.md` | 스킬 버전 원장 (loop-digest와 교차검증) |
+| `handoffs/archive/` | 동결 — 핸드오프 인스턴스는 2026-07-18부터 커밋하지 않음 (영구 기록 = 커밋 바디) |
 
 ## 동시성 (2026-07-17, 공개연구 기반)
 

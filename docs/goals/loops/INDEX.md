@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|---|
 | `recall-spine` | 개인 기억/회상 비서 golden path 강화 | [recall-spine.md](recall-spine.md) | 9 | `aa224dceb` | v2.1.0 | RETIRED — 9 fires merged to main (FF), worktree+branch removed, cron `ffe5773d` deleted (진안 directive) |
 | `tool-hardening` | TOOL expansion & hardening (main worktree) | [tool-hardening.md](tool-hardening.md) | 148 | `177a6c9b` | v1.14.0 | active (cron, session-only) |
-| `a-plus-roadmap` | A+ 로드맵 §10.3 집행 (main worktree) | [a-plus-roadmap.md](a-plus-roadmap.md) | 58 | `9303c0397` | v2.x | session-driven (cron `964ac861` deleted; 진안 세션 계속; fire 58=calendar 암호화-전 plaintext 백업(키분실 복구); 잔여 5/65; 액션가능 큐 소진=D-E1b/c 공유훅·D6-S2/D7-S4 attended·D-KO-S3 저가치만; ⚠다음 fire JUDGE-DRILL; CI slice N/A) |
+| `a-plus-roadmap` | A+ 로드맵 §10.3 집행 (main worktree) | [a-plus-roadmap.md](a-plus-roadmap.md) | 59 | `9303c0397` | v2.x | session-driven (cron `964ac861` deleted; 진안 세션 계속; fire 59=AUDIT-PASS 검수; 잔여 5/65; 액션가능 큐 소진=D-E1b/c 공유훅·D6-S2/D7-S4 attended·D-KO-S3 저가치만; ⚠다음 fire JUDGE-DRILL; CI slice N/A). A+ 3갭(S1-S3·gap②) 작업은 [prompt-system.md](prompt-system.md) fires 20-22에 기록 — 여기 아님 |
 | `cognition` | agent-core 인지 강화 (worktree `agent-core-enhance`) | [cognition.md](cognition.md) | 39 | — | — | superseded → re-registered as `agent-core-cognition` (v1.14.0, cron 42e5d7ba) |
 | `agent-core-cognition` | agent-core 인지 코어 강화 (worktree `agent-core-enhance`) | [agent-core-cognition.md](agent-core-cognition.md) | 63 | `dad16a57` | v1.14.0 | STOPPED fire 63 (Jinan directive; cron 42e5d7ba deleted) |
 | `differentiation` | 경쟁 차별점 발굴 → edge 확장 vs hermes/openclaw (worktree `/tmp/muse-differentiation`) | [differentiation.md](differentiation.md) | 16 | `1f4b4b1d` | v1.14.0 | active (cron `291e935d`, session-only) |
@@ -27,12 +27,19 @@
 | `local-speed` | 로컬모델 속도/효율 라우팅(KV-quant·cascade·spec-decode) — 정확성 보존 (worktree `/tmp/muse-local-speed`, branch `loop/local-speed`, Tier2 push + 3-fire main merge) | [local-speed.md](local-speed.md) | 14 | `4a2c4587` | v2.0.0 | active (cron `481d865a`, session-only) |
 | `multi-agent` | lead-worker 오케스트레이션 · 서브에이전트 핸드오프 신뢰성 (MAST coordination 가드 · 핸드오프 스키마 검증 · termination) (worktree `/tmp/muse-multi-agent`, branch `loop/multi-agent`, Tier2 push, merge-to-main ea 3 fires) | [multi-agent.md](multi-agent.md) | 15 | `d08bb006` (f15 PASS: completed human stderr signals) | v2.0.0 | active (cron `972211ed`, session-only) |
 | `learning-surfacing` | 정체성 "Learns you, not the world." 체감화 — 학습 기계(user-model/Playbook/correction-decay)를 결정론+근거인용으로 surface (worktree `/tmp/muse-learning-surfacing`, branch `loop/learning-surfacing`, Tier2 push + 3-fire main FF-merge) | [learning-surfacing.md](learning-surfacing.md) | 22 | `6cd0603a` | v2.1.0 | active (cron `e8138ee2`, session-only 20m) |
-
 | `cli-excellence` | 최고급 CLI — 첫 화면 완성도 · 표시 정보(상태/근거/학습/안내) 품질 · CLI 성능 (여신 아트 불가침) (worktree `/tmp/muse-cli-excellence`, branch `loop/cli-excellence`, Tier2 push + PR) | [cli-excellence.md](cli-excellence.md) | 23 | `bce22a366` | v2.1.0 | active (cron `e5696b6a`, session-only 20m) |
-
 | `desktop-enhance` | macOS desktop app 강화 + 뮤즈 캐릭터 상호작용 (번들 web 포함; ④c 브라우저 실측 검증) (worktree `/tmp/muse-desktop-enhance`, branch `loop/desktop-enhance`, Tier2 push + draft PR) | [desktop-enhance.md](desktop-enhance.md) | 14 | (pending) | v2.1.0 | active (cron `d7012104`, session-only 20m) |
 | `capability-parity` | hermes/openclaw 급 순수 에이전트 역량 parity — 4 갭(history-search · skill curator · dreaming/inert 배선 · sub-agent 오케스트레이션 내구성) 결정론-우선 (worktree `/tmp/muse-capability-parity`, branch `loop/capability-parity`, Tier1 local-commit only) | [capability-parity.md](capability-parity.md) | 9 | `e49e9e99c` | v2.0.0 | active (cron, session-only 20m) |
-
 | `response-experience` | 어시스턴트 응답 경험 지속 개선 (worktree `/tmp/muse-response-loop`, branch `response-loop`, verified-fire → main FF push opt-in) | [response-experience.md](response-experience.md) | 19 | `bb66d864e` | v2.x | RETIRED — 19 fires (17 shipped + 2 drills) merged to main (FF each fire), cron 513db0d4 deleted (진안 directive 2026-07-12) |
+| `prompt-system` | 시스템프롬프트/정체성 하드닝 → post-loop 직접 모드로 A+ 3갭(injection-provenance S1-S3 · gap② user-model) 계속 | [prompt-system.md](prompt-system.md) | 22 | — | v2.x | **active (direct-mode)** — cron `d012652c` 삭제 후 진안-직접 fires 20-22 진행 중; a-plus-roadmap의 D-시리즈와 별개 스레드(상호참조 필수) |
+| `code-quality` | CLI 5대 파일 분해 등 코드 구조 품질 41-fire 순회 | [code-quality.md](code-quality.md) | 41 | — | v2.x | RETIRED — 41 fires, PR 4회 main 안착(마지막 #57), cron/워크트리/브랜치 정리 완료 (2026-07-12) |
+| `agent-reliability` | egress advisory · consent-TTL · pass^k floor · sycophancy · whetstone 게이트 | [agent-reliability.md](agent-reliability.md) | 7 | `4a8eab682` | v2.x | RETIRED — 7 fires merged to origin/main (2026-07-14), cron `a1382000` deleted |
+| `capability-boost` | measure-first capability boost | [capability-boost.md](capability-boost.md) | 6 | — | v1.x | STOPPED — cron `7d79e9c9` deleted; fire 6 rolled back (dead judge), session-cron 구조 한계 (2026-06-16) |
+| `competitor-convergence` | openclaw/hermes 수렴 스카우팅 | [competitor-convergence.md](competitor-convergence.md) | 2 | — | v1.x | DONE — "convergence vein EXHAUSTED" 3차 독립 확인, 재스카웃 금지 (2026-07-01) |
+| `competitor-grounding` | grounding-floor 하드닝 vs 경쟁사 | [competitor-grounding.md](competitor-grounding.md) | — | — | v1.x | closed (2026-06-21) — 후속 루프들이 prior art로 참조 |
+| `competitor-parity` | hermes/openclaw parity 버그픽스 (이후 아키텍처-비교로 교정됨) | [competitor-parity.md](competitor-parity.md) | — | — | v1.x | closed (2026-06-30) |
+| `grounded-vision` | vision/multimodal grounding 하드닝 | [grounded-vision.md](grounded-vision.md) | 7 | — | v1.x | closed (2026-06-21) |
+| `programmatic-tool-calling` | PTC (programmatic tool calling) | [programmatic-tool-calling.md](programmatic-tool-calling.md) | 7 | — | v1.x | DONE — "WIND-DOWN, PTC complete + documented", cron `71f46b2d` deleted (2026-06-30) |
+| `secret-source` | SecretSource redaction/masking 하드닝 | [secret-source.md](secret-source.md) | — | — | v1.x | closed (2026-06-30) — red-team 2라운드 PASS |
 
 <!-- New loops: add a row here on first registration; update your own row's last-fire/commit each fire. -->

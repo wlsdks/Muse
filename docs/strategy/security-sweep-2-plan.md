@@ -1,5 +1,9 @@
 # Security sweep 2 — findings & remediation plan
 
+> **Status: CLOSED (2026-07-17).** 12 of 13 findings fixed and verified; #11 remains
+> open as an accepted risk. No new findings are tracked here — a future sweep starts
+> its own document.
+
 2026-07-12. Second fable5-driven security investigation (5 deep scouts on surfaces
 the first sweep did not cover), each finding independently verified by trace +
 live repro. 13 findings. This is the **plan** — not all fixed yet; the P0 items

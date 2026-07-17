@@ -1,5 +1,9 @@
 # Splitting `@muse/mcp` — migration plan
 
+> **Status: EXECUTED (verified 2026-07-17).** The target packages (`packages/stores`,
+> `packages/proactivity`, `packages/domain-tools`) all exist on main. Historical
+> execution spec — do not re-run.
+
 `@muse/mcp` accreted into a 29k-LOC god-package: the MCP-protocol core
 (`McpManager`, transport, validators, allowlist) is only ~1k LOC; the rest is
 unrelated domain logic — personal stores, proactive daemons, and domain tools

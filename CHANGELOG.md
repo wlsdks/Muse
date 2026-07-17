@@ -57,12 +57,14 @@ Continuity path in the CLI.
 
 ### Added
 
-- **첫 Personal Continuity 경로가 이제 로컬 CLI에서 동작합니다.** `muse thread start`로 life/work
-  주제를 명시해 만들고, 정확한 local task·note만 연결한 뒤 `muse continue`로 근거와 한 다음 단계를
-  다시 엽니다. `used|adjusted|ignored|rejected` 결과는 한 번만 기록되며, 다음 pack의 표시 방식만
-  바꿉니다. 모델 호출, 자동 주제 추측, Observe, 외부 행동은 이 첫 slice에 없습니다. 데이터는
-  `~/.muse/attunement.json`에 owner-only 원자 저장되고 reset/undo와 inspect가 가능합니다.
-  Continuity threads can also link external GitHub issues/PRs through MCP.
+- **The first Personal Continuity path now works in the local CLI.** `muse thread
+  start` creates an explicit life/work thread, you link only the exact local
+  tasks/notes that belong to it, and `muse continue` reopens it with evidence and
+  one next step. The `used|adjusted|ignored|rejected` outcome is recorded once and
+  only changes how the next pack is presented. No model calls, no automatic thread
+  guessing, no Observe, and no outbound actions in this first slice. Data is stored
+  owner-only and atomically in `~/.muse/attunement.json` with reset/undo and
+  inspect. Continuity threads can also link external GitHub issues/PRs through MCP.
 - **Email connects in two minutes — or forever.** A new App Password path
   (IMAP/SMTP) needs no Google Cloud project at all; the Gmail OAuth path now
   refreshes tokens indefinitely instead of dying after an hour; and a

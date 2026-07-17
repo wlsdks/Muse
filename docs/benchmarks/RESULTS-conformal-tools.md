@@ -1,5 +1,9 @@
 # KnowNo conformal tool selection — offline report (gemma4:12b, α=0.1, LOO over 14 cases)
 
+> **Archival — not regeneratable.** Generator `scripts/eval-conformal-tools.mjs` was
+> deleted 2026-07-14 ("delete five eval batteries that cannot fail"). This report is a
+> frozen historical record; re-running requires restoring the script from git history.
+
 | prompt | true | prediction set | covered |
 |---|---|---|---|
 | What time is it now? | time_now | {time_now} | ✓ |

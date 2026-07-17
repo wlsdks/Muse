@@ -1,5 +1,10 @@
 # Discrete semantic entropy — offline report (gemma4:12b, k=4, 8+8 cases)
 
+> **Archival — not regeneratable.** Generator `scripts/eval-semantic-entropy.mjs` was
+> deleted 2026-07-14 ("delete five eval batteries that cannot fail"). Any in-document
+> mention of "battery kept for re-runs" is obsolete; re-running requires restoring the
+> script from git history.
+
 | kind | query | entropy | retrieval |
 |---|---|---|---|
 | answerable | when does my home insurance renew? | 0.562 | ambiguous |

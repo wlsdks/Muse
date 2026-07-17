@@ -1,5 +1,9 @@
 # Identity & System-Prompt Master Plan (2026-07-11)
 
+> **Status: SUPERSEDED (2026-07-17)** by [`prompt-architecture.md`](prompt-architecture.md),
+> the maintained architecture doc that absorbed this one-shot plan. Kept as the measured
+> baseline record (MODEL_LEAK 10/17 etc.).
+
 **Problem (measured).** The live chat surface answers identity questions as the
 base model, not as Muse: baseline probe battery 17 ran → **10 MODEL_LEAK**
 ("저는 구글에서 만든 대규모 언어 모델입니다", one answer even claimed OpenAI),
