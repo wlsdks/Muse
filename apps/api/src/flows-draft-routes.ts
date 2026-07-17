@@ -21,6 +21,9 @@ import type { FastifyInstance } from "fastify";
 import {
   buildFlowDraftPrompt,
   buildFlowDraftRepairPrompt,
+  buildFlowDraftRevisionPrompt,
+  buildFlowDraftRevisionRepairPrompt,
+  parseCurrentDraftInput,
   parseFlowDraftResponse,
   type FlowDraftPayload,
   type FlowDraftPrompt
@@ -39,6 +42,11 @@ export interface FlowDraftRoutesOptions {
 
 interface FlowDraftBody {
   readonly text?: unknown;
+  /** The SAME 5-field draft shape the create form currently holds — present
+   * only on a REVISION turn ("아니 8시 반으로 바꿔줘" after an earlier draft).
+   * Untrusted client input: validated (`parseCurrentDraftInput`) before it
+   * ever reaches the model. */
+  readonly currentDraft?: unknown;
 }
 
 const MAX_TEXT_LENGTH = 500;
@@ -51,12 +59,11 @@ type DraftAttempt =
 
 async function attemptDraft(
   generateDraft: GenerateFlowDraft,
-  text: string,
+  buildPrompt: (repairFrom?: { readonly raw: string; readonly error: string }) => FlowDraftPrompt,
+  requireAllFields: boolean,
   repairFrom?: { readonly raw: string; readonly error: string }
 ): Promise<DraftAttempt> {
-  const prompt = repairFrom
-    ? buildFlowDraftRepairPrompt(text, repairFrom.raw, repairFrom.error)
-    : buildFlowDraftPrompt(text);
+  const prompt = buildPrompt(repairFrom);
 
   let raw: string;
   try {
@@ -65,7 +72,7 @@ async function attemptDraft(
     return { kind: "provider-error", message: errorMessage(error, "model provider failed") };
   }
 
-  const parsed = parseFlowDraftResponse(raw);
+  const parsed = parseFlowDraftResponse(raw, { requireAllFields });
   return parsed.ok ? { kind: "ok", value: parsed.value } : { error: parsed.error, kind: "invalid", raw };
 }
 
@@ -86,7 +93,28 @@ export function registerFlowDraftRoutes(server: FastifyInstance, options: FlowDr
       return reply.status(400).send({ error: `body.text must be a non-empty string up to ${MAX_TEXT_LENGTH.toString()} characters` });
     }
 
-    const first = await attemptDraft(options.generateDraft, text);
+    let currentDraft: FlowDraftPayload | undefined;
+    if (body.currentDraft !== undefined) {
+      const parsedCurrentDraft = parseCurrentDraftInput(body.currentDraft);
+      if (!parsedCurrentDraft.ok) {
+        return reply.status(400).send({ error: `body.currentDraft is invalid: ${parsedCurrentDraft.error}` });
+      }
+      currentDraft = parsedCurrentDraft.value;
+    }
+
+    const isRevision = currentDraft !== undefined;
+    const buildPrompt = (repairFrom?: { readonly raw: string; readonly error: string }): FlowDraftPrompt => {
+      if (currentDraft) {
+        return repairFrom
+          ? buildFlowDraftRevisionRepairPrompt(text, currentDraft, repairFrom.raw, repairFrom.error)
+          : buildFlowDraftRevisionPrompt(text, currentDraft);
+      }
+      return repairFrom
+        ? buildFlowDraftRepairPrompt(text, repairFrom.raw, repairFrom.error)
+        : buildFlowDraftPrompt(text);
+    };
+
+    const first = await attemptDraft(options.generateDraft, buildPrompt, isRevision);
     if (first.kind === "provider-error") {
       return reply.status(502).send({ error: first.message });
     }
@@ -94,7 +122,7 @@ export function registerFlowDraftRoutes(server: FastifyInstance, options: FlowDr
       return { draft: first.value };
     }
 
-    const second = await attemptDraft(options.generateDraft, text, { error: first.error, raw: first.raw });
+    const second = await attemptDraft(options.generateDraft, buildPrompt, isRevision, { error: first.error, raw: first.raw });
     if (second.kind === "provider-error") {
       return reply.status(502).send({ error: second.message });
     }

@@ -36,6 +36,26 @@ function contentType(path: string): string {
   return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 
+// The SPA cache contract. Without ANY Cache-Control, WKWebView (the desktop
+// shell) heuristically kept a stale index.html across app restarts, so a
+// freshly deployed UI stayed invisible until the OS felt like revalidating —
+// the recurring "재시작했는데 옛 화면" incident class. index.html must always
+// revalidate; Vite's content-hashed /assets/* are immutable by construction.
+const HTML_CACHE = "no-cache";
+const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
+const DEFAULT_CACHE = "public, max-age=3600";
+
+/** Exported for direct unit tests. */
+export function cacheControlFor(urlPath: string): string {
+  if (urlPath.endsWith(".html") || urlPath === "/" || urlPath === "") {
+    return HTML_CACHE;
+  }
+  if (urlPath.startsWith("/assets/")) {
+    return IMMUTABLE_CACHE;
+  }
+  return DEFAULT_CACHE;
+}
+
 export function registerStaticWeb(server: FastifyInstance, webDir = process.env.MUSE_WEB_DIR): void {
   if (!webDir) return;
   const root = normalize(webDir);
@@ -53,12 +73,12 @@ export function registerStaticWeb(server: FastifyInstance, webDir = process.env.
 
     const file = await readableFile(candidate);
     if (file) {
-      return reply.type(contentType(file)).send(await readFile(file));
+      return reply.type(contentType(file)).header("cache-control", cacheControlFor(urlPath)).send(await readFile(file));
     }
     // SPA fallback — hand client-side routes the app shell.
     const index = join(root, "index.html");
     if (await readableFile(index)) {
-      return reply.type("text/html; charset=utf-8").send(await readFile(index));
+      return reply.type("text/html; charset=utf-8").header("cache-control", HTML_CACHE).send(await readFile(index));
     }
     return reply.status(404).send({ error: "Web UI not built", timestamp: new Date().toISOString() });
   });

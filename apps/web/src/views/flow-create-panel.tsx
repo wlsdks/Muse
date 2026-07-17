@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReactFlow, ReactFlowProvider } from "@xyflow/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { errorMessage } from "@muse/shared/browser";
 
 import { Button, Card } from "../components/ui.js";
@@ -38,7 +38,8 @@ export function FlowCreatePanel({
   client,
   onCreated,
   onCancel,
-  initialDraft
+  initialDraft,
+  onDraftChange
 }: {
   client: ApiClient;
   onCreated: (jobId: string) => void;
@@ -46,10 +47,19 @@ export function FlowCreatePanel({
   /** A 코파일럿 초안 (copilot draft) to prefill the form with — the user still
    * reviews every field and clicks 만들기; nothing is created automatically. */
   initialDraft?: FlowDraftPayloadRow;
+  /** Mirrors the LIVE form state up to the parent on every change — the
+   * conversational draft composer (rendered as this panel's sibling) reads
+   * this to build `currentDraft` for its next revision turn, so a manual
+   * form edit between turns is never silently discarded. */
+  onDraftChange?: (draft: FlowDraft) => void;
 }) {
   const { t } = useI18n();
   const qc = useQueryClient();
   const [draft, setDraft] = useState<FlowDraft>(() => (initialDraft ? flowDraftFromCopilot(initialDraft) : emptyFlowDraft()));
+
+  useEffect(() => {
+    onDraftChange?.(draft);
+  }, [draft, onDraftChange]);
 
   const create = useMutation({
     mutationFn: () => client.post<ScheduledJobDetail>("/api/scheduler/jobs", flowDraftToJobInput(draft)),

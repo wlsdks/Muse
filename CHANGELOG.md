@@ -10,6 +10,17 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Talk the Builder into shape.** After Muse drafts a flow you can keep
+  talking — "8시 반으로 바꾸고 텔레그램 123으로 보내줘" updates the same
+  draft in place (canvas and form follow), Muse replies naming exactly
+  what changed, and your manual edits between turns are respected.
+  Nothing is created until you click 만들기. The Flows nav item is now
+  called Builder.
+- **Fresh UI actually shows up after updates.** The server now sends the
+  standard SPA cache contract (index always revalidates, hashed assets
+  cached forever) — the desktop app can no longer hold a stale interface
+  across restarts.
+
 - **Describe it, and Muse drafts the flow.** Type "평일 아침 8시 반에 오늘
   첫 일정 알려줘" above the Flows list and Muse sketches the automation —
   correct cron, cleaned-up prompt, live canvas preview — as a DRAFT you

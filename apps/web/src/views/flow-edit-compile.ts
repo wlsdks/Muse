@@ -221,6 +221,22 @@ export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
   };
 }
 
+/** The inverse of `flowDraftFromCopilot` — the LIVE create-panel form state,
+ * projected back into the copilot's 5-field shape. This is what a
+ * conversational revision turn sends as `currentDraft`: the user's manual
+ * form edits between turns must be reflected, so this reads the actual form
+ * values, never the last server-returned draft. */
+export function flowDraftToCopilotPayload(draft: FlowDraft): FlowDraftPayloadRow {
+  const notifyChannel = draft.notificationChannelId.trim();
+  return {
+    cronExpression: resolveScheduleCron(draft.schedule),
+    name: draft.name.trim(),
+    notifyChannel: notifyChannel.length > 0 ? notifyChannel : null,
+    prompt: draft.agentPrompt.trim(),
+    retry: draft.retryOnFailure
+  };
+}
+
 const PREVIEW_FLOW_ID = "preview";
 
 /** Client-side-only synthetic `FlowProjection` for the "새 흐름 만들기" live

@@ -262,6 +262,71 @@ test("초안 그리기 (Draft it) opens the create panel PREFILLED from the pars
   expect(post).not.toHaveBeenCalledWith("/api/scheduler/jobs", expect.anything());
 });
 
+test("multi-turn: after drafting, a manual form edit + a follow-up revision turn sends currentDraft reflecting the EDITED form (not the server's last draft), and an ack names the changed field", async () => {
+  const firstDraft: FlowDraftResponse = {
+    draft: {
+      cronExpression: "0 9 * * *",
+      name: "Morning wrap",
+      notifyChannel: null,
+      prompt: "오늘 하루 요약해줘",
+      retry: false
+    }
+  };
+  const revisedDraft: FlowDraftResponse = {
+    draft: {
+      cronExpression: "30 8 * * *",
+      name: "Evening wrap",
+      notifyChannel: null,
+      prompt: "오늘 하루 요약해줘",
+      retry: false
+    }
+  };
+  const post = vi.fn(async (path: string, body?: unknown) => {
+    if (path === "/api/flows/draft") {
+      // The FIRST call has no currentDraft; the SECOND (revision) call must
+      // carry the manually-edited form values, not the first draft's name.
+      return (body as { currentDraft?: unknown } | undefined)?.currentDraft ? revisedDraft : firstDraft;
+    }
+    return {};
+  }) as unknown as ApiClient["post"];
+  const client = fakeClientWithPost(post);
+  const screen = await renderFlows(client);
+
+  await screen.getByRole("textbox", { name: "Describe an automation" }).fill("매일 아침 9시에 하루 요약해줘");
+  await screen.getByRole("button", { name: "Draft it" }).click();
+
+  await expect.element(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Morning wrap");
+
+  // A manual edit to the form BETWEEN turns — the next revision must reflect
+  // this, not the server's original draft.
+  await screen.getByRole("textbox", { name: "Name" }).fill("Evening wrap");
+
+  await expect.element(screen.getByPlaceholder("Keep talking — e.g. change it to 8:30")).toBeVisible();
+  await screen.getByRole("textbox", { name: "Describe an automation" }).fill("8시 반으로 바꿔줘");
+  await screen.getByRole("button", { name: "Send" }).click();
+
+  await expect.element(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Evening wrap");
+
+  expect(post).toHaveBeenCalledWith("/api/flows/draft", {
+    currentDraft: {
+      cronExpression: "0 9 * * *",
+      name: "Evening wrap",
+      notifyChannel: null,
+      prompt: "오늘 하루 요약해줘",
+      retry: false
+    },
+    text: "8시 반으로 바꿔줘"
+  });
+
+  // The ack names the field that actually changed (Schedule/cron), not name
+  // (the manual edit) since the model's revision didn't touch it again.
+  await expect.element(screen.getByText("Draft updated", { exact: false })).toBeVisible();
+  await expect.element(screen.getByText(/Schedule:.*30 8 \* \* \*/)).toBeVisible();
+
+  // Draft-first still holds across every turn: no job is ever auto-created.
+  expect(post).not.toHaveBeenCalledWith("/api/scheduler/jobs", expect.anything());
+});
+
 test("a 422 draft failure shows the reason verbatim and keeps the typed text", async () => {
   const post = vi.fn(async (path: string) => {
     if (path === "/api/flows/draft") {

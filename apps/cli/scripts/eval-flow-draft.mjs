@@ -8,14 +8,17 @@
  * gate, not just a unit test of the parser.
  *
  * LOCAL OLLAMA ONLY (gemma4:12b default); skips (exit 0) when unreachable —
- * a skip is not a pass. 3 golden cases (KO daily-morning, EN weekly,
- * KO-with-notify), each scored field-level (cron EXACT, prompt keyword,
- * notifyChannel presence) — a deterministic scorer, not an LLM judge, since
- * every field here is checkable in code.
+ * a skip is not a pass. 4 golden cases (KO daily-morning, EN weekly,
+ * KO-with-notify, + a REVISION case), each scored field-level (cron EXACT,
+ * prompt keyword, notifyChannel presence) — a deterministic scorer, not an
+ * LLM judge, since every field here is checkable in code. The revision case
+ * scores FIELD-PRESERVATION: only the requested field may change.
  */
 import {
   buildFlowDraftPrompt,
   buildFlowDraftRepairPrompt,
+  buildFlowDraftRevisionPrompt,
+  buildFlowDraftRevisionRepairPrompt,
   parseFlowDraftResponse
 } from "../../api/dist/flows-draft-compile.js";
 import { OllamaProvider } from "../../../packages/model/dist/index.js";
@@ -86,6 +89,34 @@ async function draftFor(text) {
   return parseFlowDraftResponse(await generate(buildFlowDraftRepairPrompt(text, "(previous attempt)", first.error)));
 }
 
+async function revisionDraftFor(text, currentDraft) {
+  const options = { requireAllFields: true };
+  const first = parseFlowDraftResponse(await generate(buildFlowDraftRevisionPrompt(text, currentDraft)), options);
+  if (first.ok) {
+    return first;
+  }
+  return parseFlowDraftResponse(
+    await generate(buildFlowDraftRevisionRepairPrompt(text, currentDraft, "(previous attempt)", first.error)),
+    options
+  );
+}
+
+// The 4th case: given an existing draft, a conversational follow-up
+// ("8시 반으로 바꿔줘") must change ONLY the requested field — field
+// preservation is the scored property, not just a valid draft.
+const REVISION_CASE = {
+  currentDraft: {
+    cronExpression: "0 9 * * *",
+    name: "아침 브리핑",
+    notifyChannel: null,
+    prompt: "일정 요약해줘",
+    retry: false
+  },
+  expectedCron: "30 8 * * *",
+  label: "KO revision (time-change, field-preservation)",
+  text: "8시 반으로 바꿔줘"
+};
+
 let passed = 0;
 for (const testCase of CASES) {
   const parsed = await draftFor(testCase.text);
@@ -109,6 +140,26 @@ for (const testCase of CASES) {
   );
 }
 
-const rate = passed / CASES.length;
-console.log(`\neval:flow-draft — ${passed}/${CASES.length} cases passed on ${MODEL} (threshold ${THRESHOLD})`);
+const revisionParsed = await revisionDraftFor(REVISION_CASE.text, REVISION_CASE.currentDraft);
+if (!revisionParsed.ok) {
+  console.log(`FAIL [${REVISION_CASE.label}] — model never returned a valid revision: ${revisionParsed.error}`);
+} else {
+  const cronOk = revisionParsed.value.cronExpression === REVISION_CASE.expectedCron;
+  const promptPreserved = revisionParsed.value.prompt === REVISION_CASE.currentDraft.prompt;
+  const notifyPreserved = revisionParsed.value.notifyChannel === REVISION_CASE.currentDraft.notifyChannel;
+  const ok = cronOk && promptPreserved && notifyPreserved;
+
+  if (ok) {
+    passed += 1;
+  }
+  console.log(
+    `${ok ? "PASS" : "FAIL"} [${REVISION_CASE.label}] cron=${cronOk ? "ok" : `WRONG (${revisionParsed.value.cronExpression})`} `
+      + `prompt-preserved=${promptPreserved ? "ok" : `CHANGED (${revisionParsed.value.prompt})`} `
+      + `notify-preserved=${notifyPreserved ? "ok" : `CHANGED (${String(revisionParsed.value.notifyChannel)})`}`
+  );
+}
+
+const totalCases = CASES.length + 1;
+const rate = passed / totalCases;
+console.log(`\neval:flow-draft — ${passed}/${totalCases} cases passed on ${MODEL} (threshold ${THRESHOLD})`);
 process.exit(rate >= THRESHOLD ? 0 : 1);

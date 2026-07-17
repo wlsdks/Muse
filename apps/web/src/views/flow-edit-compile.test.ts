@@ -7,6 +7,8 @@ import {
   DEFAULT_MAX_RETRY_COUNT,
   draftToPreviewProjection,
   emptyFlowDraft,
+  flowDraftFromCopilot,
+  flowDraftToCopilotPayload,
   flowDraftToJobInput,
   flowEditToJobPatch,
   isFlowDraftValid,
@@ -28,7 +30,7 @@ import {
   type TriggerEditForm
 } from "./flow-edit-compile.js";
 
-import type { ScheduledJobDetail } from "../api/types.js";
+import type { FlowDraftPayloadRow, ScheduledJobDetail } from "../api/types.js";
 
 const BASE_JOB: ScheduledJobDetail = {
   agentModel: null,
@@ -329,5 +331,56 @@ describe("draftToPreviewProjection — client-side-only preview, never sent to t
     const canvas = flowToCanvas(projection);
     expect(canvas.nodes).toHaveLength(3);
     expect(canvas.edges.some((edge) => edge.data?.loop)).toBe(true);
+  });
+});
+
+describe("flowDraftToCopilotPayload — the create panel's LIVE form values, projected into the copilot's 5-field shape", () => {
+  it("round-trips through flowDraftFromCopilot for a full draft (custom cron, notify, retry)", () => {
+    const payload: FlowDraftPayloadRow = {
+      cronExpression: "15 7 * * 2",
+      name: "화요일 리마인더",
+      notifyChannel: "telegram:999",
+      prompt: "이번 주 할 일 알려줘",
+      retry: true
+    };
+    const draft = flowDraftFromCopilot(payload);
+    expect(flowDraftToCopilotPayload(draft)).toEqual(payload);
+  });
+
+  it("resolves a preset schedule back to its raw cron expression", () => {
+    const draft: FlowDraft = {
+      agentModel: "",
+      agentPrompt: "일정 요약",
+      enabled: true,
+      maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
+      name: "아침 브리핑",
+      notificationChannelId: "",
+      retryOnFailure: false,
+      schedule: { customCron: "", kind: "dailyMorning9" }
+    };
+    expect(flowDraftToCopilotPayload(draft)).toEqual({
+      cronExpression: "0 9 * * *",
+      name: "아침 브리핑",
+      notifyChannel: null,
+      prompt: "일정 요약",
+      retry: false
+    });
+  });
+
+  it("normalizes a blank notify channel to null and trims whitespace off name/prompt", () => {
+    const draft: FlowDraft = {
+      agentModel: "",
+      agentPrompt: "  일정 요약  ",
+      enabled: true,
+      maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
+      name: "  아침 브리핑  ",
+      notificationChannelId: "   ",
+      retryOnFailure: false,
+      schedule: { customCron: "", kind: "hourly" }
+    };
+    const payload = flowDraftToCopilotPayload(draft);
+    expect(payload.name).toBe("아침 브리핑");
+    expect(payload.prompt).toBe("일정 요약");
+    expect(payload.notifyChannel).toBeNull();
   });
 });

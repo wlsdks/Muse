@@ -107,3 +107,132 @@ describe("POST /api/flows/draft", () => {
     await server.close();
   });
 });
+
+const CURRENT_DRAFT = {
+  cronExpression: "0 9 * * *",
+  name: "아침 브리핑",
+  notifyChannel: null,
+  prompt: "오늘 일정을 요약해서 알려줘",
+  retry: false
+};
+
+describe("POST /api/flows/draft — revision mode (currentDraft present)", () => {
+  it("returns the FULL revised draft, calling the model exactly once when the revision echoes correctly", async () => {
+    const revised = '{"name": "아침 브리핑", "cronExpression": "30 8 * * *", "prompt": "오늘 일정을 요약해서 알려줘", "notifyChannel": null, "retry": false}';
+    const generateDraft = vi.fn(async (prompt: FlowDraftPrompt) => {
+      expect(prompt.system).toContain("FULL updated JSON");
+      expect(prompt.user).toContain(JSON.stringify(CURRENT_DRAFT));
+      expect(prompt.user).toContain("8시 반으로 바꿔줘");
+      return revised;
+    });
+    const server = serverWith(generateDraft);
+    const res = await server.inject({
+      method: "POST",
+      payload: { currentDraft: CURRENT_DRAFT, text: "8시 반으로 바꿔줘" },
+      url: "/api/flows/draft"
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      draft: { cronExpression: "30 8 * * *", name: "아침 브리핑", notifyChannel: null, prompt: "오늘 일정을 요약해서 알려줘", retry: false }
+    });
+    expect(generateDraft).toHaveBeenCalledTimes(1);
+    await server.close();
+  });
+
+  it("field-preservation: changing ONLY the cron leaves prompt/notifyChannel exactly as the currentDraft had them", async () => {
+    const priorDraft = { ...CURRENT_DRAFT, notifyChannel: "telegram:123", retry: true };
+    const revised = JSON.stringify({ ...priorDraft, cronExpression: "0 20 * * *" });
+    const generateDraft = vi.fn(async () => revised);
+    const server = serverWith(generateDraft);
+    const res = await server.inject({
+      method: "POST",
+      payload: { currentDraft: priorDraft, text: "저녁 8시로 바꿔줘" },
+      url: "/api/flows/draft"
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { draft: typeof priorDraft };
+    expect(body.draft.cronExpression).toBe("0 20 * * *");
+    expect(body.draft.prompt).toBe(priorDraft.prompt);
+    expect(body.draft.notifyChannel).toBe("telegram:123");
+    expect(body.draft.retry).toBe(true);
+    await server.close();
+  });
+
+  it("a fake provider that DROPS a field on both attempts fails honestly with 422 — the revision schema requires all 5 keys present", async () => {
+    // Drops `retry` entirely (not even `null`) on every attempt — a revision
+    // response must echo back the full shape, never rely on a silent default.
+    const droppedField = '{"name": "아침 브리핑", "cronExpression": "0 9 * * *", "prompt": "오늘 일정을 요약해서 알려줘", "notifyChannel": null}';
+    const generateDraft = vi.fn(async () => droppedField);
+    const server = serverWith(generateDraft);
+    const res = await server.inject({
+      method: "POST",
+      payload: { currentDraft: CURRENT_DRAFT, text: "재시도 붙여줘" },
+      url: "/api/flows/draft"
+    });
+    expect(res.statusCode).toBe(422);
+    const body = JSON.parse(res.body) as { error: string };
+    expect(body.error).toContain("retry");
+    expect(generateDraft).toHaveBeenCalledTimes(2);
+    await server.close();
+  });
+
+  it("repairs once on a revision that drops a field, then succeeds when the repaired answer carries all 5", async () => {
+    let call = 0;
+    const generateDraft = vi.fn(async (prompt: FlowDraftPrompt) => {
+      call += 1;
+      if (call === 1) {
+        expect(prompt.user).not.toContain("invalid");
+        return '{"name": "아침 브리핑", "cronExpression": "0 9 * * *", "prompt": "오늘 일정을 요약해서 알려줘"}';
+      }
+      expect(prompt.user).toContain("missing required field");
+      expect(prompt.user).toContain(JSON.stringify(CURRENT_DRAFT));
+      return '{"name": "아침 브리핑", "cronExpression": "0 9 * * *", "prompt": "오늘 일정을 요약해서 알려줘", "notifyChannel": null, "retry": true}';
+    });
+    const server = serverWith(generateDraft);
+    const res = await server.inject({
+      method: "POST",
+      payload: { currentDraft: CURRENT_DRAFT, text: "재시도 붙여줘" },
+      url: "/api/flows/draft"
+    });
+    expect(res.statusCode).toBe(200);
+    expect(generateDraft).toHaveBeenCalledTimes(2);
+    await server.close();
+  });
+
+  it("rejects an invalid currentDraft with 400 BEFORE ever calling the model", async () => {
+    const generateDraft = vi.fn(async () => VALID_JSON);
+    const server = serverWith(generateDraft);
+
+    const missingField = await server.inject({
+      method: "POST",
+      payload: { currentDraft: { ...CURRENT_DRAFT, retry: undefined }, text: "8시 반으로 바꿔줘" },
+      url: "/api/flows/draft"
+    });
+    expect(missingField.statusCode).toBe(400);
+
+    const unknownField = await server.inject({
+      method: "POST",
+      payload: { currentDraft: { ...CURRENT_DRAFT, sneaky: true }, text: "8시 반으로 바꿔줘" },
+      url: "/api/flows/draft"
+    });
+    expect(unknownField.statusCode).toBe(400);
+    expect(JSON.parse(unknownField.body).error).toContain("sneaky");
+
+    const wrongType = await server.inject({
+      method: "POST",
+      payload: { currentDraft: { ...CURRENT_DRAFT, retry: "yes" }, text: "8시 반으로 바꿔줘" },
+      url: "/api/flows/draft"
+    });
+    expect(wrongType.statusCode).toBe(400);
+
+    const notAnObject = await server.inject({
+      method: "POST",
+      payload: { currentDraft: "not-an-object", text: "8시 반으로 바꿔줘" },
+      url: "/api/flows/draft"
+    });
+    expect(notAnObject.statusCode).toBe(400);
+
+    expect(generateDraft).not.toHaveBeenCalled();
+    await server.close();
+  });
+});

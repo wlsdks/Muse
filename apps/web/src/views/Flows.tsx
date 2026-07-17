@@ -9,7 +9,7 @@ import { AsyncBlock, Button, Card, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { flowToCanvas } from "./flow-canvas-mapping.js";
 import { FLOW_EDGE_TYPES } from "./flow-edges.js";
-import { renameFlowPatch, toggleEnabledPatch } from "./flow-edit-compile.js";
+import { flowDraftToCopilotPayload, renameFlowPatch, toggleEnabledPatch } from "./flow-edit-compile.js";
 import { FlowCreatePanel } from "./flow-create-panel.js";
 import { FlowDraftComposer } from "./flow-draft-composer.js";
 import { FlowNodeEditPanel } from "./flow-edit-panel.js";
@@ -18,6 +18,7 @@ import { ExecutionsCard, executionsQueryKey } from "./flow-executions.js";
 import { formatMetaValue, FLOW_NODE_TYPES } from "./flow-nodes.js";
 
 import type { FlowCanvasEdge, FlowCanvasNode } from "./flow-canvas-mapping.js";
+import type { FlowDraft } from "./flow-edit-compile.js";
 import type { ApiClient } from "../api/client.js";
 import type { FlowDraftPayloadRow, FlowProjection, FlowsResponse } from "../api/types.js";
 
@@ -56,6 +57,11 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
   const [creating, setCreating] = useState(false);
   const [initialDraft, setInitialDraft] = useState<FlowDraftPayloadRow | undefined>(undefined);
   const [draftVersion, setDraftVersion] = useState(0);
+  // The create panel's LIVE form values, mirrored up via `onDraftChange` —
+  // this (not the last server-returned draft) is what a follow-up
+  // conversational revision turn sends as `currentDraft`, so a manual form
+  // edit between turns is respected.
+  const [liveDraft, setLiveDraft] = useState<FlowDraft | undefined>(undefined);
 
   const selectedFlow = flows.find((flow) => flow.id === selectedFlowId) ?? flows[0];
 
@@ -65,6 +71,7 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
 
   const openCreatePanel = () => {
     setInitialDraft(undefined);
+    setLiveDraft(undefined);
     setCreating(true);
   };
   const handleDrafted = (draft: FlowDraftPayloadRow) => {
@@ -72,6 +79,11 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
     setDraftVersion((version) => version + 1);
     setCreating(true);
   };
+  const closeCreatePanel = () => {
+    setCreating(false);
+    setLiveDraft(undefined);
+  };
+  const currentDraft = creating && liveDraft ? flowDraftToCopilotPayload(liveDraft) : undefined;
 
   if (creating) {
     return (
@@ -80,10 +92,11 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
           client={client}
           flows={flows}
           onDrafted={handleDrafted}
+          currentDraft={currentDraft}
           selectedId={selectedFlow?.id}
           onSelect={(id) => {
             setSelectedFlowId(id);
-            setCreating(false);
+            closeCreatePanel();
           }}
           onCreate={openCreatePanel}
         />
@@ -91,9 +104,10 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
           key={initialDraft ? `draft-${draftVersion.toString()}` : "empty"}
           client={client}
           initialDraft={initialDraft}
-          onCancel={() => setCreating(false)}
+          onDraftChange={setLiveDraft}
+          onCancel={closeCreatePanel}
           onCreated={(jobId) => {
-            setCreating(false);
+            closeCreatePanel();
             setSelectedFlowId(jobId);
           }}
         />
@@ -170,7 +184,8 @@ function FlowListCard({
   selectedId,
   onSelect,
   onCreate,
-  onDrafted
+  onDrafted,
+  currentDraft
 }: {
   client: ApiClient;
   flows: readonly FlowProjection[];
@@ -178,6 +193,9 @@ function FlowListCard({
   onSelect: (id: string) => void;
   onCreate: () => void;
   onDrafted: (draft: FlowDraftPayloadRow) => void;
+  /** Present only while the create panel is open — turns the composer into
+   * a revision turn against the panel's LIVE form values. */
+  currentDraft?: FlowDraftPayloadRow;
 }) {
   const { t, locale } = useI18n();
   return (
@@ -190,7 +208,7 @@ function FlowListCard({
         </Button>
       }
     >
-      <FlowDraftComposer client={client} onDrafted={onDrafted} />
+      <FlowDraftComposer client={client} onDrafted={onDrafted} currentDraft={currentDraft} />
       <div className="flow-list">
         {flows.map((flow) => (
           <button
