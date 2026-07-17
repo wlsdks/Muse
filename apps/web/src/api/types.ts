@@ -443,6 +443,7 @@ export interface ScheduledJobDetail {
   readonly timezone: string;
   readonly agentPrompt: string | null;
   readonly agentModel: string | null;
+  readonly agentSystemPrompt: string | null;
   readonly notificationChannelId: string | null;
   readonly retryOnFailure: boolean;
   readonly maxRetryCount: number;
@@ -470,7 +471,7 @@ export type ScheduledJobCreateBody = {
   readonly maxRetryCount: number;
   readonly enabled: boolean;
 } & (
-  | { readonly jobType: "agent"; readonly agentPrompt: string; readonly agentModel?: string }
+  | { readonly jobType: "agent"; readonly agentPrompt: string; readonly agentModel?: string; readonly agentSystemPrompt?: string }
   | {
       readonly jobType: "mcp_tool";
       readonly mcpServerName: string;
@@ -487,6 +488,7 @@ export type ScheduledJobPatchBody = {
   readonly cronExpression?: string;
   readonly agentPrompt?: string;
   readonly agentModel?: string | null;
+  readonly agentSystemPrompt?: string | null;
   readonly notificationChannelId?: string | null;
   readonly retryOnFailure?: boolean;
   readonly maxRetryCount?: number;

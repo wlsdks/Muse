@@ -180,6 +180,18 @@ export function FlowCreatePanel({
                 onChange={(e) => setDraft({ ...draft, agentModel: e.target.value })}
               />
             </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="field-label">{t("auto.flows.edit.systemPromptLabel")}</span>
+              <textarea
+                className="input"
+                rows={3}
+                placeholder={t("auto.flows.edit.systemPromptPlaceholder")}
+                value={draft.agentSystemPrompt}
+                onChange={(e) => setDraft({ ...draft, agentSystemPrompt: e.target.value })}
+              />
+              <span className="subtle" style={{ fontSize: 12 }}>{t("auto.flows.edit.systemPromptHint")}</span>
+            </label>
           </>
         )}
 

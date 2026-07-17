@@ -35,6 +35,7 @@ import type { FlowDraftPayloadRow, ScheduledJobDetail } from "../api/types.js";
 
 const BASE_JOB: ScheduledJobDetail = {
   agentModel: null,
+  agentSystemPrompt: null,
   agentPrompt: "오늘 일정 요약해서 보내줘",
   cronExpression: "0 9 * * *",
   enabled: true,
@@ -130,6 +131,7 @@ describe("triggerFormFromJob / actionFormFromJob / outputFormFromJob — job -> 
   it("action form carries prompt/model through, retryOnFailure false -> a default retry count (unused until toggled on)", () => {
     expect(actionFormFromJob(BASE_JOB)).toEqual({
       agentModel: "",
+      agentSystemPrompt: "",
       agentPrompt: "오늘 일정 요약해서 보내줘",
       maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
       retryOnFailure: false
@@ -140,6 +142,7 @@ describe("triggerFormFromJob / actionFormFromJob / outputFormFromJob — job -> 
     const job: ScheduledJobDetail = { ...BASE_JOB, agentModel: "gpt-4o", maxRetryCount: 5, retryOnFailure: true };
     expect(actionFormFromJob(job)).toEqual({
       agentModel: "gpt-4o",
+      agentSystemPrompt: "",
       agentPrompt: "오늘 일정 요약해서 보내줘",
       maxRetryCount: 5,
       retryOnFailure: true
@@ -171,9 +174,10 @@ describe("flowEditToJobPatch — exact PATCH body per node kind (field-name fide
   });
 
   it("action edit with retry OFF sends retryOnFailure: false and a clamped maxRetryCount", () => {
-    const form: ActionEditForm = { agentModel: "", agentPrompt: "  do the thing  ", maxRetryCount: 3, retryOnFailure: false };
+    const form: ActionEditForm = { agentModel: "", agentSystemPrompt: "", agentPrompt: "  do the thing  ", maxRetryCount: 3, retryOnFailure: false };
     expect(flowEditToJobPatch("action", form)).toEqual({
       agentModel: null,
+      agentSystemPrompt: null,
       agentPrompt: "do the thing",
       maxRetryCount: 3,
       retryOnFailure: false
@@ -181,18 +185,26 @@ describe("flowEditToJobPatch — exact PATCH body per node kind (field-name fide
   });
 
   it("action edit with retry ON sends retryOnFailure: true and the chosen count — the two directions of the retry mutation-RED case", () => {
-    const form: ActionEditForm = { agentModel: "gemma4", agentPrompt: "run it", maxRetryCount: 5, retryOnFailure: true };
+    const form: ActionEditForm = { agentModel: "gemma4", agentSystemPrompt: "", agentPrompt: "run it", maxRetryCount: 5, retryOnFailure: true };
     expect(flowEditToJobPatch("action", form)).toEqual({
       agentModel: "gemma4",
+      agentSystemPrompt: null,
       agentPrompt: "run it",
       maxRetryCount: 5,
       retryOnFailure: true
     });
   });
 
+  it("action edit sends the trimmed agentSystemPrompt when set, null when blank", () => {
+    const withSystem: ActionEditForm = { agentModel: "", agentSystemPrompt: "  Answer in Korean.  ", agentPrompt: "hi", maxRetryCount: 3, retryOnFailure: false };
+    expect(flowEditToJobPatch("action", withSystem).agentSystemPrompt).toBe("Answer in Korean.");
+    const blank: ActionEditForm = { agentModel: "", agentSystemPrompt: "   ", agentPrompt: "hi", maxRetryCount: 3, retryOnFailure: false };
+    expect(flowEditToJobPatch("action", blank).agentSystemPrompt).toBeNull();
+  });
+
   it("action edit clamps an out-of-band maxRetryCount into 1-5 before sending", () => {
-    const tooHigh: ActionEditForm = { agentModel: "", agentPrompt: "x", maxRetryCount: 99, retryOnFailure: true };
-    const tooLow: ActionEditForm = { agentModel: "", agentPrompt: "x", maxRetryCount: -1, retryOnFailure: true };
+    const tooHigh: ActionEditForm = { agentModel: "", agentSystemPrompt: "", agentPrompt: "x", maxRetryCount: 99, retryOnFailure: true };
+    const tooLow: ActionEditForm = { agentModel: "", agentSystemPrompt: "", agentPrompt: "x", maxRetryCount: -1, retryOnFailure: true };
     expect(flowEditToJobPatch("action", tooHigh).maxRetryCount).toBe(MAX_RETRY_COUNT);
     expect(flowEditToJobPatch("action", tooLow).maxRetryCount).toBe(MIN_RETRY_COUNT);
   });
@@ -218,6 +230,7 @@ describe("flowDraftToJobInput — exact POST /api/scheduler/jobs body", () => {
   const FULL_DRAFT: FlowDraft = {
     actionKind: "agent",
     agentModel: "gpt-4o",
+    agentSystemPrompt: "",
     agentPrompt: "오늘 일정 요약해서 보내줘",
     enabled: true,
     maxRetryCount: 4,
@@ -276,6 +289,7 @@ describe("flowDraftToJobInput — tool-flow (jobType: 'mcp_tool') compile seam",
   const TOOL_DRAFT: FlowDraft = {
     actionKind: "tool",
     agentModel: "",
+    agentSystemPrompt: "",
     agentPrompt: "",
     enabled: true,
     maxRetryCount: 3,
@@ -385,6 +399,7 @@ describe("draftToPreviewProjection — client-side-only preview, never sent to t
   const DRAFT: FlowDraft = {
     actionKind: "agent",
     agentModel: "",
+    agentSystemPrompt: "",
     agentPrompt: "매일 아침 브리핑",
     enabled: true,
     maxRetryCount: 3,
@@ -463,6 +478,7 @@ describe("flowDraftToCopilotPayload — the create panel's LIVE form values, pro
     const draft: FlowDraft = {
       actionKind: "agent",
       agentModel: "",
+      agentSystemPrompt: "",
       agentPrompt: "일정 요약",
       enabled: true,
       maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
@@ -487,6 +503,7 @@ describe("flowDraftToCopilotPayload — the create panel's LIVE form values, pro
     const draft: FlowDraft = {
       actionKind: "agent",
       agentModel: "",
+      agentSystemPrompt: "",
       agentPrompt: "  일정 요약  ",
       enabled: true,
       maxRetryCount: DEFAULT_MAX_RETRY_COUNT,

@@ -96,6 +96,7 @@ export interface TriggerEditForm {
 export interface ActionEditForm {
   readonly agentPrompt: string;
   readonly agentModel: string;
+  readonly agentSystemPrompt: string;
   readonly retryOnFailure: boolean;
   readonly maxRetryCount: number;
 }
@@ -144,11 +145,12 @@ export function triggerFormFromJob(job: Pick<ScheduledJobDetail, "cronExpression
 }
 
 export function actionFormFromJob(
-  job: Pick<ScheduledJobDetail, "agentPrompt" | "agentModel" | "retryOnFailure" | "maxRetryCount">
+  job: Pick<ScheduledJobDetail, "agentPrompt" | "agentModel" | "agentSystemPrompt" | "retryOnFailure" | "maxRetryCount">
 ): ActionEditForm {
   return {
     agentModel: job.agentModel ?? "",
     agentPrompt: job.agentPrompt ?? "",
+    agentSystemPrompt: job.agentSystemPrompt ?? "",
     maxRetryCount: job.retryOnFailure ? clampRetryCount(job.maxRetryCount) : DEFAULT_MAX_RETRY_COUNT,
     retryOnFailure: job.retryOnFailure
   };
@@ -178,6 +180,7 @@ export function flowEditToJobPatch(
     return {
       agentModel: actionForm.agentModel.trim().length > 0 ? actionForm.agentModel.trim() : null,
       agentPrompt: actionForm.agentPrompt.trim(),
+      agentSystemPrompt: actionForm.agentSystemPrompt.trim().length > 0 ? actionForm.agentSystemPrompt.trim() : null,
       maxRetryCount: clampRetryCount(actionForm.maxRetryCount),
       retryOnFailure: actionForm.retryOnFailure
     };
@@ -213,6 +216,7 @@ export interface FlowDraft {
   readonly actionKind: ActionKind;
   readonly agentPrompt: string;
   readonly agentModel: string;
+  readonly agentSystemPrompt: string;
   readonly toolServerName: string;
   readonly toolName: string;
   /** Raw JSON textarea value — parsed on submit via `parseToolArgumentsText`
@@ -230,6 +234,7 @@ export function emptyFlowDraft(): FlowDraft {
     actionKind: "agent",
     agentModel: "",
     agentPrompt: "",
+    agentSystemPrompt: "",
     enabled: true,
     maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
     name: "",
@@ -281,10 +286,12 @@ export function flowDraftToJobInput(draft: FlowDraft, timezone: string = default
   }
 
   const agentModel = draft.agentModel.trim();
+  const agentSystemPrompt = draft.agentSystemPrompt.trim();
   return {
     ...shared,
     agentModel: agentModel.length > 0 ? agentModel : undefined,
     agentPrompt: draft.agentPrompt.trim(),
+    agentSystemPrompt: agentSystemPrompt.length > 0 ? agentSystemPrompt : undefined,
     jobType: "agent"
   };
 }
@@ -300,6 +307,7 @@ export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
     actionKind: "agent",
     agentModel: "",
     agentPrompt: payload.prompt,
+    agentSystemPrompt: "",
     enabled: true,
     maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
     name: payload.name,

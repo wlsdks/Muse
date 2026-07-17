@@ -238,6 +238,17 @@ function ActionEditFields({
           onChange={(e) => setForm({ ...form, agentModel: e.target.value })}
         />
       </label>
+      <label style={{ display: "grid", gap: 4 }}>
+        <span className="field-label">{t("auto.flows.edit.systemPromptLabel")}</span>
+        <textarea
+          className="input"
+          rows={3}
+          placeholder={t("auto.flows.edit.systemPromptPlaceholder")}
+          value={form.agentSystemPrompt}
+          onChange={(e) => setForm({ ...form, agentSystemPrompt: e.target.value })}
+        />
+        <span className="subtle" style={{ fontSize: 12 }}>{t("auto.flows.edit.systemPromptHint")}</span>
+      </label>
       <label style={{ alignItems: "center", display: "flex", gap: 8 }}>
         <input
           type="checkbox"

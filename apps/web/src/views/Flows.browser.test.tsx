@@ -66,6 +66,7 @@ const FLOWS_RESPONSE: FlowsResponse = {
 
 const JOB_DETAIL: ScheduledJobDetail = {
   agentModel: null,
+  agentSystemPrompt: null,
   agentPrompt: "오늘 일정 요약해서 보내줘",
   cronExpression: "0 9 * * *",
   enabled: true,
@@ -210,9 +211,30 @@ test("toggling retry on the action node PATCHes retryOnFailure + a real maxRetry
 
   expect(client.patch).toHaveBeenCalledWith("/api/scheduler/jobs/job_1", {
     agentModel: null,
+    agentSystemPrompt: null,
     agentPrompt: "오늘 일정 요약해서 보내줘",
     maxRetryCount: 3,
     retryOnFailure: true
+  });
+});
+
+test("editing the action node's system prompt PATCHes the trimmed agentSystemPrompt", async () => {
+  const client = fakeClient();
+  const screen = await renderFlows(client);
+
+  await screen.getByText("Agent run", { exact: true }).click();
+  const systemPromptField = screen.getByPlaceholder("e.g. You are terse. Always answer in Korean.");
+  await expect.element(systemPromptField).toBeVisible();
+  await systemPromptField.fill("  You are a terse assistant.  ");
+
+  await screen.getByRole("button", { name: "Save" }).click();
+
+  expect(client.patch).toHaveBeenCalledWith("/api/scheduler/jobs/job_1", {
+    agentModel: null,
+    agentSystemPrompt: "You are a terse assistant.",
+    agentPrompt: "오늘 일정 요약해서 보내줘",
+    maxRetryCount: 3,
+    retryOnFailure: false
   });
 });
 
@@ -259,7 +281,7 @@ test("새 흐름 만들기 (New flow) POSTs the exact compiled create body", asy
 
   await screen.getByRole("button", { name: "New flow" }).click();
   await screen.getByRole("textbox", { name: "Name" }).fill("Evening wrap-up");
-  await screen.getByRole("textbox", { name: "Prompt" }).fill("오늘 하루 마무리 정리해줘");
+  await screen.getByRole("textbox", { name: "Prompt", exact: true }).fill("오늘 하루 마무리 정리해줘");
 
   await screen.getByRole("button", { name: "Create" }).click();
 
@@ -353,7 +375,7 @@ test("초안 그리기 (Draft it) opens the create panel PREFILLED from the pars
   expect(post).toHaveBeenCalledWith("/api/flows/draft", { text: "매일 아침 9시에 하루 요약해줘" });
 
   await expect.element(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Morning wrap");
-  await expect.element(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("오늘 하루 요약해줘");
+  await expect.element(screen.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue("오늘 하루 요약해줘");
   await expect.element(screen.getByPlaceholder("e.g. telegram:123456")).toHaveValue("telegram:777");
   await expect.element(screen.getByText("Muse's draft", { exact: false })).toBeVisible();
 
