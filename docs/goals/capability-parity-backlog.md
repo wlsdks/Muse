@@ -2082,3 +2082,30 @@ _7 opportunities_
 - Muse status: none **133** · partial **98**
 - Effort: S **58** · M **140** · L **33**
 - Tiers: ★★★★★ **32** · ★★★★ **49** · ★★★ **65** · ★★ **62** · ★ **23**
+
+## 22. [scout 2026-07-17] delta — first scout-rivals fire (post-2026-06-23 upstream)
+
+> Delta findings only (base = §1–21). Upstream SHAs at scout: openclaw c63184ee, hermes 73ad9136.
+
+### `BKP-1` Personal-store backup: create|list|verify|restore  ★★★★★ · M · none  [scout 2026-07-17]
+
+- **Based on (openclaw):** `src/commands/backup-sqlite.ts` + `src/snapshot/local-repository.ts` (verified in code) — manifest-based snapshots of the state DBs with `create|list|verify|restore`, fresh-target-only restore so a restore can never clobber live data.
+- **Muse today:** none — no `muse backup` verb exists (grep 2026-07-17). Encryption-at-rest exists per store, but recovery is manual file surgery: the 2026-07-17 user-memory incident (hostname-키 변경으로 복호화 불가 → 수동 .plaintext-backup 복원) is the live D-anchor.
+- **Proposal:** `muse backup create|list|verify|restore` over the personal stores (user-memory, notes index, tasks, calendar, playbook, contacts, action-log) — manifest + checksum verify + fresh-target-only restore; local directory repository (`~/.muse/backups` or user path). Draft-first: restore prompts before touching an existing store.
+- **Value:** the confided life is the product; today a wrong MUSE_MEMORY_KEY or disk mishap = data loss with no supported recovery. Trust-floor (fit=core, edge=strengthens).
+- **Verify:** create→verify→restore round-trip on temp stores; tamper a byte ⇒ verify fails; restore onto existing store refuses without explicit fresh-target.
+
+### `OBS-LOG-1` Logbook-class private timeline (Observe first vertical)  ★★★★ · L · none · verdict=maybe ⏳  [scout 2026-07-17]
+
+- **Based on (openclaw):** `extensions/logbook/` (verified dir in code) — disabled-by-default plugin: paired-node screen snapshots → private timeline, daily standup, timeline-grounded Q&A.
+- **Muse today:** Observe is ROADMAP by contract (visible·pausable·inspectable·forgettable; no continuous capture by default). No timeline surface.
+- **Judgment:** fit=core (personal continuity), edge=strengthens legibility — but building it is a **⏳ privacy-posture owner call** (screen capture cadence/retention). Ledger-staged, not build fuel until 진안 decides the posture.
+
+### `GOAL-CT-1` Standing-goal completion contracts (done = evidence-judged)  ⚠ unverified  [scout 2026-07-17]
+
+- **Claim (hermes v0.18.0 release notes, PR #50501/#52285):** `/goal` completion contracts — the standing-goal loop judges completion against stated evidence, with a `pre_verify` hook. Code NOT yet read ⇒ per scout contract this stays ⚠ unverified, never judged build from prose. Next sweep: read `agent/` goal loop, then judge (Muse has honesty-backstop/false-done machinery in CHAT; standing objectives lack a per-goal completion contract).
+
+### `JRN-2` In-view memory edit/prune (journey → curation surface)  ★★★ · M · partial · verdict=maybe  [scout 2026-07-17]
+
+- **Claim (hermes v0.18.0, PR #55555/#55226; release-verified, code unread):** `/journey` timeline + desktop radial memory graph with edit/delete from the view. Muse today: Journey feed + 배움 view with chat-routed 잊기 (b3725ad01 lineage) — partial. Delta = direct in-view curation UX. Maybe until code-read + weighed against Muse's chat-routed-curation contract.
+
