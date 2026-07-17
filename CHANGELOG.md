@@ -47,6 +47,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Fixed
 
+- **Approved channel actions cannot replay after a crash.** API and CLI
+  approval completion now share one durable claim state machine and one
+  conservative tool-outcome classifier. An approval is claimed before any
+  effect, every CAS loser reports the state that actually won, contradictory
+  or hostile output becomes `unknown`, and durable tombstones prevent the same
+  id from running again. The unused inbound auto-run bypass was removed; a
+  channel reply now points to the explicit CLI approval by id.
+
 - **Your saved model choice now beats a stale API key.** A dead
   `GEMINI_API_KEY` sitting in the shell used to hijack `muse ask`, briefs,
   and background jobs into a failing cloud provider even when
