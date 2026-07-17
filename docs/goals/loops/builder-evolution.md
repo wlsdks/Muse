@@ -49,3 +49,12 @@ ratchet: web SSR 549(+7) · compile unit +6 · component +1 · fabrication 0
 - 리스크: 없음(순수 표시 로직).
 - lesson: 실브라우저 측정이 CSS specificity 버그 검출 — bare `.exec-error`(0,1,0)가 `.row .row-meta`(0,2,0)에 짐→grey. SSR 테스트는 클래스 존재만 확인(계산 색상 못 봄). 2-class `.row-meta.exec-error`로 수정. 교훈: 기존 색을 오버라이드하는 새 클래스는 대상 셀렉터의 specificity를 매칭+뒤 순서, 그리고 실브라우저로 computed color 측정 필수.
 - 라이브: 격리 데모 실패 tool run — .exec-error가 "MCP server ... not connected" (접두 없음) rgb(229,83,75)=danger로 렌더.
+
+## fire 6 · 2026-07-18 · skill v2.1.1 · 715c2be2f
+meta: value-class=new-capability · pkg=@muse/web · kind=ui-capability · verdict=PASS(opus) · firesSinceDrill=6 · consecutiveAllPASS=6
+ratchet: web SSR 550(+1) · browser 20(+1) · compile unit +1 · fabrication 0
+- 무엇: 빌더 에이전트 액션 노드에 "시스템 프롬프트" textarea(create+edit 양 패널). ActionEditForm/FlowDraft/바디 타입에 agentSystemPrompt 배선, patch=trim→null(비우면 clear), create=trim→undefined(생략).
+- 왜: 스케줄 실행 러너(runtime-wiring.ts:70-72)가 이미 agentSystemPrompt를 system 메시지로 주입하는데 빌더는 prompt+model만 노출 — runner-지원 노브가 도달 불가였음.
+- 리뷰지점: runner-support 규칙 — agentSystemPrompt는 실행기가 실제 소비(확인). agentMaxToolCalls/personaId는 실행기가 무시하므로 의도적으로 미노출(유효-비실행 방지). tool 브랜치는 필드 생략. copilot 리비전은 agentModel과 동일하게 리셋(기존 패턴 일치).
+- 리스크: 없음.
+- 라이브: 실브라우저 라운드트립 — 액션 노드 시스템 프롬프트 편집→저장→GET job에 agentSystemPrompt 영속(agentPrompt 무변경).
