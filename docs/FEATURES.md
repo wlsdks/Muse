@@ -18,7 +18,7 @@ related: [strategy/attunement.md, design/attunement.md, SYSTEM-MAP.md, README.md
 >
 > 상태 표기: ✅ 바로 사용 가능 · ⚙️ 외부 연동/설정 필요 · ⚠️ 알려진 갭(아직 신뢰도 부족)
 >
-> **관련 문서:** 제품 방향은 [`strategy/attunement.md`](strategy/attunement.md) · 확장 작업은 [`EXPANSION-PLAYBOOK.md`](EXPANSION-PLAYBOOK.md)(자율 세션 브리프) · **검증된 전체 기능 인벤토리(증거 포함)는 [`feature-catalog/INDEX.md`](feature-catalog/INDEX.md)**(2026-06-14 전수 검증).
+> **관련 문서:** 제품 방향은 [`strategy/attunement.md`](strategy/attunement.md) · **검증된 전체 기능 인벤토리(증거 포함)는 [`feature-catalog/INDEX.md`](feature-catalog/INDEX.md)**(2026-06-14 전수 검증).
 >
 > ⚠️ 이 문서는 상위 narrative이며 모든 CLI 명령을 1:1로 나열하지 않습니다. `anomaly`·`recap`·`week`·`daemon`·`watch-folder`·`webhook`·`feeds`·`routine`·`history`/`open`·`propose`/`approvals` 등 추가 명령 표면과 명령별 증거는 위 feature-catalog를 보세요.
 

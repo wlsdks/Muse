@@ -56,8 +56,9 @@ fire and pollutes the "skill-version ↔ fire-outcome" correlation. This convent
 - `tool-hardening.md`, `cognition.md`, … — per-loop journals (this is the source of truth for a
   loop's history).
 - `INDEX.md` — aggregator.
-- `../loop-digest.md` — **legacy tombstone**; loops still pointing there are pre-v1.14.0 and must be
-  re-registered.
+- `../loop-digest.md` — deleted 2026-07-18 (legacy shared journal; git history preserves it).
+  Never create a shared journal file; per-loop journals only. Retired loops' journals are also
+  deleted — their INDEX.md row is the surviving record.
 
 ## Optional machine-readable arm
 

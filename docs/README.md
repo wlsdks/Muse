@@ -21,7 +21,7 @@ Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처
 5. [`SYSTEM-MAP.md`](SYSTEM-MAP.md) — 기능 구조 한 장
 6. [`grounding-gate.md`](grounding-gate.md) — 신뢰 바닥선(그라운딩 게이트)을 한 흐름으로
 7. [`FEATURES.md`](FEATURES.md) → [`feature-catalog/INDEX.md`](feature-catalog/INDEX.md) — 기능 상세 + 전수 검증 증거
-8. 그다음 깊이: [`design/attunement.md`](design/attunement.md) · [`goals/attunement-implementation-plan.md`](goals/attunement-implementation-plan.md) · [`design/`](design/) · [`strategy/`](strategy/) · [`audits/INDEX.md`](audits/INDEX.md) · [`../.claude/rules/`](../.claude/rules/) · [`../harness/`](../harness/README.md)
+8. 그다음 깊이: [`design/attunement.md`](design/attunement.md) · [`goals/attunement-implementation-plan.md`](goals/attunement-implementation-plan.md) · [`design/`](design/) · [`strategy/`](strategy/) · [`../.claude/rules/`](../.claude/rules/) · [`../harness/`](../harness/README.md)
 
 ## 제품을 이해하려면
 
@@ -62,8 +62,7 @@ Muse 문서는 "필요한 것만, 짧게, 잘 분리해서" 유지합니다. 처
 
 이 문서들은 Muse를 스스로 확장하는 자율 루프의 운영 장치입니다(제품 기능 설명이 아님):
 
-- [`EXPANSION-PLAYBOOK.md`](EXPANSION-PLAYBOOK.md) — 자율 세션 브리프
-- [`goals/`](goals/) — 능력 배송 원장(CAPABILITIES)·확장 목표(OUTWARD-TARGETS)·백로그·과거 기록(archive)
+- [`goals/`](goals/) — 작업 장부(backlog·growth-backlog·rival-watch)와 활성 루프 저널 — 지도는 [`goals/README.md`](goals/README.md)
 
 ---
 

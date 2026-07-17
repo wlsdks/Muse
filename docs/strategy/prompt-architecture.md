@@ -2,8 +2,9 @@
 
 Given: `packages/prompts/src/identity-core.ts` is Layer 0 — the ONE identity
 source. This doc fixes how everything composes around it so the 14
-hand-assembled prompt paths collapse into one seam. Companion:
-`identity-prompt-plan.md` (the identity fix + battery).
+hand-assembled prompt paths collapse into one seam. (The one-shot companion
+plan `identity-prompt-plan.md` shipped and was deleted 2026-07-18 — its
+measured baseline, MODEL_LEAK 10/17, lives in git history.)
 
 ## Canonical layer stack (every user-facing turn)
 

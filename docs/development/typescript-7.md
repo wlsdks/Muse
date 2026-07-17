@@ -67,6 +67,13 @@ performance, not type-safety semantics. `--singleThreaded` is reserved for
 diagnosing a native-compiler concurrency issue; it is not a compatibility
 fallback.
 
+## Audit evidence policy
+
+Source-quality / configuration audit evidence goes in the **commit body** of the
+change it verifies — do not create or revive a separate evidence-ledger md
+(`docs/audits/` was deleted 2026-07-18 for exactly that reason: an actively
+appended ledger nobody read).
+
 ## Official references
 
 - [Announcing TypeScript 7.0](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)

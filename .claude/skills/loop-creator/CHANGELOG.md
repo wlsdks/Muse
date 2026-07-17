@@ -1,8 +1,9 @@
 # loop-creator — CHANGELOG
 
 스킬 + 번들된 `references/loop-engineering.md` 계약의 버전별 기록. 루프를 많이 돌린
-뒤 이 이력 ↔ `docs/goals/loop-digest.md`의 fire 결과(각 항목에 `(skill vX.Y.Z)` 스탬프)를
-대조해 무엇이 산출을 좋게/나쁘게 했는지 보고 개선한다.
+뒤 이 이력 ↔ per-loop 저널(`docs/goals/loops/<slug>.md`)의 fire 결과(각 엔트리에
+`skill vX.Y.Z` 스탬프)를 대조해 무엇이 산출을 좋게/나쁘게 했는지 보고 개선한다.
+(구 공유 `loop-digest.md`는 2026-07-18 삭제 — git history.)
 
 > SemVer 느슨하게: **major**=설계 골격 변경, **minor**=새 가드/행동, **patch**=문구/리팩터.
 > 변경 시 SKILL.md `version` 올리고 여기 한 항목 추가.

@@ -41,7 +41,7 @@
 - [done] :: digest-lock EACCES 코너 — response-experience fire 19 (stat-프로브: exists->contended[win32 보존], ENOENT/stat-err->fail-open; 드릴 스펙 1:1)
 - [done] :: ack 카피/톤 개선 — response-experience fire 16 (관측-진단 기반 프롬프트 재작성: 격식 preamble 금지·동일언어 마무리 약속, 판별력 검증된 token-set 스코어러 pin)
 
-- [open] 2026-06-29 :: COMPETITOR-PARITY loop (2026-06-29, Jinan: study openclaw + hermes, fill Muse's gaps in BIG chunks). Journal: docs/goals/loops/competitor-parity.md. Candidate · gaps (each fire VERIFIES vs Muse first — freshness guard — then reimplements the pattern, MIT/Apache-attributed, NO verbatim copy): plugin-SDK/extension-contract (openclaw plugin-sdk) · context-compression depth (hermes context_engine.py) · A2A/ACP interop depth (openclaw acp-core). Big-chunk units (a capability + tests + wiring + docs together), not single slices.
+- [open] 2026-06-29 :: COMPETITOR-PARITY loop (2026-06-29, Jinan: study openclaw + hermes, fill Muse's gaps in BIG chunks). Journal deleted 2026-07-18 (loop closed; git history). Candidate · gaps (each fire VERIFIES vs Muse first — freshness guard — then reimplements the pattern, MIT/Apache-attributed, NO verbatim copy): plugin-SDK/extension-contract (openclaw plugin-sdk) · context-compression depth (hermes context_engine.py) · A2A/ACP interop depth (openclaw acp-core). Big-chunk units (a capability + tests + wiring + docs together), not single slices.
 
 - [rejected] :: **B3** multi-agent on a single GPU is a *phantom* (no true parallelism) — a hardware
  limit; the value is context-isolation+decomposition, already built. Not code-fixable.
@@ -59,7 +59,7 @@ The one remaining FRONTIER (open, hard, high-value): full **source VERACITY** (G
 realistic partial hedge. Deeper veracity needs a human/product call, not an autonomous slice.
 
 - [open] 2026-07-02 :: chat REPL(Ink) ESC->AbortController 배선 — DS-1(8ccf4b92) 잔여 (상세: backlog-archive.md delta-scout 2026-07-02)
-- [open] 2026-07-17 kind=test src=audit prio=3 for=improve-muse :: eval:knows-me 배터리 미구현 — LEARNING-LOOP-PLAN.md §D의 유일한 미출하 항목(knowsMeRepeatFree/Delta/Prospective; "Muse가 나를 배웠나"를 측정하는 게이트). 레포 전체에 심볼 0건, 이 레코드가 유일한 추적점 (2026-07-17 md 전수조사에서 발굴).
+- [open] 2026-07-17 kind=test src=audit prio=3 for=improve-muse :: eval:knows-me 배터리 미구현 — 구 LEARNING-LOOP-PLAN.md(2026-07-18 삭제, git history) §D의 유일한 미출하 항목(knowsMeRepeatFree/Delta/Prospective; "Muse가 나를 배웠나"를 측정하는 게이트). 레포 전체에 심볼 0건, 이 레코드가 유일한 추적점 (2026-07-17 md 전수조사에서 발굴).
 
 ## Open — [scout 2026-07-17] rival hardening tricks (->improve-muse)
 

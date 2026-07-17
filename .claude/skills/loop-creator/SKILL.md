@@ -64,7 +64,8 @@ description: Use when 진안 wants to start (register) an autonomous improvement
 3. **테마가 없거나 / backlog가 얇거나(≤2) / stale / 부재면 → 지금 알아낸다** (gap-scout, 순서대로):
    - **(a) 신호 먼저** — `node scripts/scout-signals.mjs`: `.muse/runs/`의 *실패* 트레이스
      (ungrounded/failed)를 빈도순 클러스터링 → 진짜 반복 실패가 일감(2026 주류 triage 패턴).
-   - **(b) 신호 깨끗하면** → 코드 확장 gap-scout(EXPANSION-PLAYBOOK) — 새 역량/하드닝 발굴.
+   - **(b) 신호 깨끗하면** → 코드 확장 gap-scout — codegraph/커버리지로 inert·thin 표면과
+     새 역량/하드닝을 직접 발굴 (구 EXPANSION-PLAYBOOK.md는 2026-07-18 삭제 — improve/grow-muse가 승계).
    - **(c) 둘 다 마르면** → **진안에게 정직히 보고하고 멈춘다**(가짜 일감 금지).
    발굴 결과를 **backlog.md에 써넣고** 그걸로 테마/슬라이스를 정한다. **"할 게 없다"는 금지** —
    모르면 멈추는 게 아니라 *스카웃*, 그래도 없으면 *멈추되 솔직히*(억지로 지어내지 않음).
