@@ -334,5 +334,10 @@ export const Icon = {
         <circle cx="12" cy="12" r="9" />
         <path d="M12 7v5l4 2" />
       </>
-    )
+    ),
+  menu: (p: IconProps) => base(p, <path d="M4 6h16M4 12h16M4 18h16" />),
+  expand: (p: IconProps) =>
+    base(p, <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />),
+  shrink: (p: IconProps) =>
+    base(p, <path d="M8 3v3a2 2 0 0 1-2 2H5M16 3v3a2 2 0 0 0 2 2h3M8 21v-3a2 2 0 0 0-2-2H5M16 21v-3a2 2 0 0 1 2-2h3" />)
 };

@@ -257,9 +257,26 @@ function FlowCanvasArea({
   onSelectNode: (id: string) => void;
   onDeselectNode: () => void;
 }) {
+  const { t } = useI18n();
   const canvas = flowToCanvas(flow);
   const [nodes, setNodes] = useState<FlowCanvasNode[]>(() => canvas.nodes.map((node) => ({ ...node, draggable: true })));
   const [edges, setEdges] = useState<readonly FlowCanvasEdge[]>(canvas.edges);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Escape leaves the n8n-style full-screen canvas — a fixed overlay has no
+  // visible chrome to click away from, so the keyboard exit is the contract.
+  useEffect(() => {
+    if (!fullscreen) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
 
   // Re-render on a fresh `/api/flows` fetch (a save/toggle/trigger changed
   // the job): merge the NEW kind/label/meta/flowEnabled per node id but keep
@@ -281,7 +298,17 @@ function FlowCanvasArea({
   };
 
   return (
-    <div className="flow-canvas-wrap">
+    <div className={`flow-canvas-wrap${fullscreen ? " flow-canvas-fullscreen" : ""}`}>
+      <button
+        type="button"
+        className="flow-canvas-fs-btn"
+        onClick={() => setFullscreen((on) => !on)}
+        aria-pressed={fullscreen}
+        aria-label={t(fullscreen ? "auto.flows.canvas.exitFullscreen" : "auto.flows.canvas.fullscreen")}
+        title={t(fullscreen ? "auto.flows.canvas.exitFullscreen" : "auto.flows.canvas.fullscreen")}
+      >
+        {fullscreen ? <Icon.shrink /> : <Icon.expand />}
+      </button>
       <ReactFlowProvider>
         <ReactFlow
           key={flow.id}

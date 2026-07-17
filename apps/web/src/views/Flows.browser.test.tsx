@@ -408,3 +408,26 @@ test("a 422 draft failure shows the reason verbatim and keeps the typed text", a
   await expect.element(screen.getByText(/cronExpression must be a 5-field cron expression/)).toBeVisible();
   await expect.element(screen.getByRole("textbox", { name: "Describe an automation" })).toHaveValue("아무말이나 던져봐");
 });
+
+test("the canvas full-screen toggle adds the overlay class, and Escape exits it", async () => {
+  const client = fakeClient();
+  const screen = await renderFlows(client);
+  await expect.element(screen.getByRole("heading", { name: "Morning brief" })).toBeVisible();
+
+  const wrap = document.querySelector(".flow-canvas-wrap");
+  expect(wrap).not.toBeNull();
+  expect(wrap!.classList.contains("flow-canvas-fullscreen")).toBe(false);
+
+  // Enter full screen — the button carries the enter label; the wrap becomes
+  // the fixed overlay.
+  await screen.getByRole("button", { name: "Full screen" }).click();
+  await expect.poll(() => wrap!.classList.contains("flow-canvas-fullscreen")).toBe(true);
+
+  // The same control now offers the exit affordance...
+  await expect.element(screen.getByRole("button", { name: "Exit full screen" })).toBeVisible();
+
+  // ...and Escape leaves full screen without any click (the handler listens
+  // on window, which is where a real keypress with no focused input lands).
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await expect.poll(() => wrap!.classList.contains("flow-canvas-fullscreen")).toBe(false);
+});

@@ -7,6 +7,7 @@ import { NoticeToaster } from "../components/NoticeToaster.js";
 import { Badge, Icon } from "../components/ui.js";
 import { I18nProvider, useI18n } from "../i18n/index.js";
 import { onDeveloperModeChange, readDeveloperMode } from "../lib/developer-mode.js";
+import { readSidebarCollapsed, shellClassName, writeSidebarCollapsed } from "../lib/sidebar-collapse.js";
 import { ActivityView } from "../views/Activity.js";
 import { AgentsView } from "../views/Agents.js";
 import { BoardView } from "../views/Board.js";
@@ -241,6 +242,16 @@ function Console() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [devMode, setDevMode] = useState(() => readDeveloperMode());
   useEffect(() => onDeveloperModeChange(setDevMode), []);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    readSidebarCollapsed(typeof window === "undefined" ? undefined : window.localStorage)
+  );
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed;
+      writeSidebarCollapsed(typeof window === "undefined" ? undefined : window.localStorage, next);
+      return next;
+    });
+  }, []);
 
   const client = useMemo(() => createApiClient(apiUrl, token), [apiUrl, token]);
 
@@ -301,7 +312,7 @@ function Console() {
   const connected = health.data?.status === "ok";
 
   return (
-    <div className="shell">
+    <div className={shellClassName(sidebarCollapsed)}>
       <aside className="sidebar">
         <Brand tagline={tagline.data?.tagline} t={t} />
 
@@ -315,6 +326,16 @@ function Console() {
 
       <main className="main">
         <header className="topbar">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggleSidebar}
+            aria-expanded={!sidebarCollapsed}
+            aria-label={t(sidebarCollapsed ? "nav.expandSidebar" : "nav.collapseSidebar")}
+            title={t(sidebarCollapsed ? "nav.expandSidebar" : "nav.collapseSidebar")}
+          >
+            <Icon.menu />
+          </button>
           <h2>{t(active.labelKey)}</h2>
           <span className="spacer" />
           <button className="cmd-trigger" onClick={() => setPaletteOpen(true)} title={t("cmd.open")}>

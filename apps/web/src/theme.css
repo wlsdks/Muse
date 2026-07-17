@@ -611,6 +611,59 @@ button {
   }
 }
 
+/* User-collapsed sidebar (여닫이) — the same icon-rail look as the ≤860px
+   breakpoint, but driven by the topbar toggle at ANY viewport width so the
+   main view (the Builder canvas above all) gets more room on demand. */
+.shell.sidebar-collapsed {
+  grid-template-columns: 56px 1fr;
+}
+.shell.sidebar-collapsed .sidebar {
+  padding: var(--s-sm) var(--s-xs);
+}
+.shell.sidebar-collapsed .brand-name,
+.shell.sidebar-collapsed .brand-sub,
+.shell.sidebar-collapsed .nav-group-label,
+.shell.sidebar-collapsed .nav-item span,
+.shell.sidebar-collapsed .nav-badge,
+.shell.sidebar-collapsed .lang-toggle {
+  display: none;
+}
+.shell.sidebar-collapsed .brand {
+  justify-content: center;
+  padding: var(--s-xs) 0 var(--s-md);
+}
+.shell.sidebar-collapsed .nav-item {
+  justify-content: center;
+  padding: 9px 0;
+}
+.shell.sidebar-collapsed .sidebar-foot {
+  justify-content: center;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: 2px;
+  flex: none;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-subtle);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+.sidebar-toggle:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+.sidebar-toggle:active {
+  transform: scale(0.94);
+}
+
 /* ── Cards & layout primitives ───────────────────────────── */
 
 .card {
@@ -2032,11 +2085,51 @@ button.status-chip {
 }
 
 .flow-canvas-wrap {
+  position: relative;
   height: 480px;
   border-radius: var(--r-card);
   border: 1px solid var(--hairline);
   background: var(--surface-1);
   overflow: hidden;
+}
+
+/* n8n-style full-screen canvas: a fixed overlay covering the whole shell
+   (sidebar + topbar included) so the flow gets the entire viewport. */
+.flow-canvas-wrap.flow-canvas-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: var(--canvas);
+}
+
+.flow-canvas-fs-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  backdrop-filter: saturate(140%) blur(6px);
+  color: var(--ink-subtle);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+.flow-canvas-fs-btn:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--hairline-strong);
+}
+.flow-canvas-fs-btn:active {
+  transform: scale(0.94);
 }
 
 :root {
