@@ -156,6 +156,13 @@ receipt. The receipt never becomes `used`, feedback, permission, readiness, or
 promotion evidence by itself. Legacy, relinked, ambiguous, unreadable, and
 pre-delivery sources remain explicitly unavailable or uncorrelated.
 
+The shared interaction report is a read-only factual view over that ledger. It
+reports `exact | none | unavailable` counts and ratios for all deliveries and
+separately for `life` and `work`. Completion latency uses only exact receipt
+`completedAt - openedAt` values; zero samples remain explicit null statistics.
+CLI and HTTP return the same core report. The report does not feed the outcome
+reducer, longitudinal readiness, promotion, permission, or autonomy grants.
+
 Slice A adaptation may change only:
 
 - detail (`standard` or `compact`);

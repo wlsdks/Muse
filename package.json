@@ -79,6 +79,7 @@
     "demo": "pnpm --filter @muse/autoconfigure build && pnpm --filter @muse/mcp build && pnpm --filter @muse/messaging build && node scripts/demo.mjs",
     "dogfood:auto-extract": "pnpm --filter @muse/api build && pnpm --filter @muse/autoconfigure build && node scripts/dogfood-auto-extract.mjs",
     "dogfood:phase-d": "pnpm --filter @muse/mcp build && pnpm --filter @muse/autoconfigure build && node scripts/dogfood-phase-d.mjs",
+    "dogfood:continuity-interactions": "pnpm --filter @muse/attunement build && pnpm --filter @muse/cli build && node scripts/dogfood-continuity-interactions.mjs --dogfood-run",
     "test:e2e": "pnpm build && pnpm --filter @muse/web test:e2e",
     "test:e2e:live": "pnpm build && pnpm --filter @muse/web test:e2e -- live-api.spec.ts",
     "test": "node --test scripts/install-source.test.mjs && pnpm -r --sort --if-present test",

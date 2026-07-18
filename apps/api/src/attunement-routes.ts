@@ -1,4 +1,4 @@
-import { ARTIFACT_ROLES, ARTIFACT_TYPES, AttunementStoreError, buildContinuityInteractionProjection, computeContinuityEvaluation, ContinuityEvaluationError, createLocalArtifactValidator, createLocalContinuityTaskInteractionSourceResolver, createLocalExactArtifactResolver, createPersonalThread, deletePersonalThread, evaluateTimingSession, forgetTimingSession, inspectTimingSession, linkArtifact, openPreparedContinuityPack, OUTCOMES, pauseTimingSession, prepareContinuityReview, readAttunementState, readPreparedContinuityPack, readTimingState, recordContinuityOutcome, recordTimingFeedback, recordTimingObservation, resetThreadPolicy, resumeTimingSession, startTimingSession, THREAD_KINDS, TIMING_APP_CATEGORIES, undoThreadReset, unlinkArtifact } from "@muse/attunement";
+import { ARTIFACT_ROLES, ARTIFACT_TYPES, AttunementStoreError, buildContinuityInteractionReport, computeContinuityEvaluation, ContinuityEvaluationError, createLocalArtifactValidator, createLocalContinuityTaskInteractionSourceResolver, createLocalExactArtifactResolver, createPersonalThread, deletePersonalThread, evaluateTimingSession, forgetTimingSession, inspectTimingSession, linkArtifact, openPreparedContinuityPack, OUTCOMES, pauseTimingSession, prepareContinuityReview, readAttunementState, readPreparedContinuityPack, readTimingState, recordContinuityOutcome, recordTimingFeedback, recordTimingObservation, resetThreadPolicy, resumeTimingSession, startTimingSession, THREAD_KINDS, TIMING_APP_CATEGORIES, undoThreadReset, unlinkArtifact } from "@muse/attunement";
 import type { ContinuityOutcome, OpenPreparedContinuityPack } from "@muse/attunement";
 import type { FastifyInstance } from "fastify";
 
@@ -104,11 +104,10 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
 
   server.get("/api/attunement/interactions", async (request, reply) => {
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
-    const interactions = await buildContinuityInteractionProjection(
+    return buildContinuityInteractionReport(
       await readAttunementState(gate.attunementFile),
       createLocalContinuityTaskInteractionSourceResolver(gate.tasksFile)
     );
-    return { interactions, schemaVersion: 1 };
   });
 
   server.get("/api/attunement/review", async (request, reply) => {

@@ -10,7 +10,7 @@ import {
   AttunementStoreError,
   CONTINUITY_IMPROVEMENT_COHORT_SIZE,
   CONTINUITY_KILL_CRITERION_FIRST_PACKS,
-  buildContinuityInteractionProjection,
+  buildContinuityInteractionReport,
   computeContinuityEvaluation,
   createLocalArtifactValidator,
   createLocalContinuityTaskInteractionSourceResolver,
@@ -546,22 +546,31 @@ Examples:
   thread
     .command("interactions")
     .description("Inspect factual Continuity task interactions without inferring usefulness")
-    .option("--json", "Print the canonical interaction projection")
+    .option("--json", "Print the canonical interaction report and digest")
     .action(async (options: { readonly json?: boolean }, command: Command) => {
       await commandAction(command, io, "thread interactions", async () => {
-        const projection = await buildContinuityInteractionProjection(
+        const report = await buildContinuityInteractionReport(
           await readAttunementState(attunementFile()),
           createLocalContinuityTaskInteractionSourceResolver(tasksFile())
         );
         if (options.json) {
-          io.stdout(`${JSON.stringify({ interactions: projection, schemaVersion: 1 }, null, 2)}\n`);
+          io.stdout(`${JSON.stringify(report, null, 2)}\n`);
           return;
         }
-        if (projection.length === 0) {
+        const formatSlice = (label: string, slice: typeof report.digest.overall): string => {
+          const latency = slice.completionLatencyMs.sampleSize === 0
+            ? "latency n=0"
+            : `latency n=${slice.completionLatencyMs.sampleSize.toString()} median=${slice.completionLatencyMs.medianMs!.toString()}ms p95=${slice.completionLatencyMs.p95Ms!.toString()}ms`;
+          return `${label}: ${slice.totalDeliveries.toString()} ${slice.totalDeliveries === 1 ? "delivery" : "deliveries"}; exact=${slice.states.exact.count.toString()} none=${slice.states.none.count.toString()} unavailable=${slice.states.unavailable.count.toString()}; ${latency}`;
+        };
+        io.stdout(`${formatSlice("Interaction digest", report.digest.overall)}\n`);
+        io.stdout(`  ${formatSlice("life", report.digest.byThreadKind.life)}\n`);
+        io.stdout(`  ${formatSlice("work", report.digest.byThreadKind.work)}\n`);
+        if (report.interactions.length === 0) {
           io.stdout("No Continuity deliveries have interaction evidence yet.\n");
           return;
         }
-        for (const item of projection) {
+        for (const item of report.interactions) {
           io.stdout(`${item.deliveryId}  interaction=${item.interaction.state}  outcome=${item.explicitOutcome ?? "unscored"}\n`);
         }
       });

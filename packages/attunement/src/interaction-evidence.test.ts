@@ -10,15 +10,200 @@ import {
   createLocalContinuityTaskInteractionSourceResolver,
   createLocalExactArtifactResolver,
   createPersonalThread,
+  buildContinuityInteractionDigest,
+  buildContinuityInteractionReport,
   buildContinuityInteractionProjection,
   linkArtifact,
   openPreparedContinuityPack,
   readAttunementState,
   recordContinuityTaskCompletionInteraction,
-  unlinkArtifact
+  unlinkArtifact,
+  type ContinuityInteractionProjectionItem,
+  type PersonalThreadKind
 } from "./index.js";
 
+function projectionItem(input: {
+  readonly completedAt?: string;
+  readonly deliveryId: string;
+  readonly openedAt: string;
+  readonly state: "exact" | "none" | "unavailable";
+  readonly threadKind: PersonalThreadKind;
+}): ContinuityInteractionProjectionItem {
+  return {
+    deliveryId: input.deliveryId,
+    interaction: input.state === "exact"
+      ? {
+          receipt: {
+            artifactId: `task_${input.deliveryId}`,
+            completedAt: input.completedAt!,
+            deliveryId: input.deliveryId,
+            doneStateFingerprint: "a".repeat(64),
+            eventId: `event_${input.deliveryId}`,
+            id: `receipt_${input.deliveryId}`,
+            linkedAt: input.openedAt,
+            openStateFingerprint: "b".repeat(64),
+            providerId: "local",
+            recordedAt: input.completedAt!,
+            role: "next-step",
+            runId: `run_${input.deliveryId}`,
+            threadId: `thread_${input.deliveryId}`,
+            transition: "open-to-done"
+          },
+          state: "exact"
+        }
+      : input.state === "unavailable"
+        ? { reason: "controlled unavailable case", state: "unavailable" }
+        : { state: "none" },
+    openedAt: input.openedAt,
+    ...(input.state === "exact" ? { runId: `run_${input.deliveryId}` } : {}),
+    threadId: `thread_${input.deliveryId}`,
+    threadKind: input.threadKind
+  };
+}
+
 describe("Continuity interaction evidence", () => {
+  it("builds a finite empty digest with explicit zero-sample latency", () => {
+    expect(buildContinuityInteractionDigest([])).toEqual({
+      byThreadKind: {
+        life: {
+          completionLatencyMs: { maxMs: null, medianMs: null, minMs: null, p95Ms: null, sampleSize: 0 },
+          states: {
+            exact: { count: 0, ratio: 0 },
+            none: { count: 0, ratio: 0 },
+            unavailable: { count: 0, ratio: 0 }
+          },
+          totalDeliveries: 0
+        },
+        work: {
+          completionLatencyMs: { maxMs: null, medianMs: null, minMs: null, p95Ms: null, sampleSize: 0 },
+          states: {
+            exact: { count: 0, ratio: 0 },
+            none: { count: 0, ratio: 0 },
+            unavailable: { count: 0, ratio: 0 }
+          },
+          totalDeliveries: 0
+        }
+      },
+      overall: {
+        completionLatencyMs: { maxMs: null, medianMs: null, minMs: null, p95Ms: null, sampleSize: 0 },
+        states: {
+          exact: { count: 0, ratio: 0 },
+          none: { count: 0, ratio: 0 },
+          unavailable: { count: 0, ratio: 0 }
+        },
+        totalDeliveries: 0
+      }
+    });
+  });
+
+  it("reports the fixed 24-case life/work shadow matrix with nearest-rank latency", () => {
+    const openedAt = "2026-07-18T00:00:00.000Z";
+    const entries: ContinuityInteractionProjectionItem[] = [];
+    for (const [kind, offset] of [["life", 0], ["work", 40]] as const) {
+      for (let index = 1; index <= 4; index += 1) {
+        entries.push(projectionItem({
+          completedAt: `2026-07-18T00:00:00.${String(offset + index * 10).padStart(3, "0")}Z`,
+          deliveryId: `${kind}_exact_${index.toString()}`,
+          openedAt,
+          state: "exact",
+          threadKind: kind
+        }));
+        entries.push(projectionItem({ deliveryId: `${kind}_none_${index.toString()}`, openedAt, state: "none", threadKind: kind }));
+        entries.push(projectionItem({ deliveryId: `${kind}_unavailable_${index.toString()}`, openedAt, state: "unavailable", threadKind: kind }));
+      }
+    }
+
+    const digest = buildContinuityInteractionDigest(entries);
+
+    expect(digest.overall).toEqual({
+      completionLatencyMs: { maxMs: 80, medianMs: 40, minMs: 10, p95Ms: 80, sampleSize: 8 },
+      states: {
+        exact: { count: 8, ratio: 1 / 3 },
+        none: { count: 8, ratio: 1 / 3 },
+        unavailable: { count: 8, ratio: 1 / 3 }
+      },
+      totalDeliveries: 24
+    });
+    expect(digest.byThreadKind.life).toEqual({
+      completionLatencyMs: { maxMs: 40, medianMs: 20, minMs: 10, p95Ms: 40, sampleSize: 4 },
+      states: {
+        exact: { count: 4, ratio: 1 / 3 },
+        none: { count: 4, ratio: 1 / 3 },
+        unavailable: { count: 4, ratio: 1 / 3 }
+      },
+      totalDeliveries: 12
+    });
+    expect(buildContinuityInteractionDigest(entries.map((entry, index) => ({
+      ...entry,
+      explicitOutcome: (["used", "adjusted", "ignored", "rejected"] as const)[index % 4]
+    })))).toEqual(digest);
+  });
+
+  it("fails closed instead of publishing a complete-looking digest for invalid exact evidence", () => {
+    expect(() => buildContinuityInteractionDigest([projectionItem({
+      completedAt: "2026-07-18T00:00:00.000Z",
+      deliveryId: "negative",
+      openedAt: "2026-07-18T00:00:00.001Z",
+      state: "exact",
+      threadKind: "work"
+    })])).toThrow(/chronology/iu);
+    expect(() => buildContinuityInteractionDigest([{
+      ...projectionItem({
+        completedAt: "2026-07-18T00:00:00.001Z",
+        deliveryId: "missing-receipt",
+        openedAt: "2026-07-18T00:00:00.000Z",
+        state: "exact",
+        threadKind: "life"
+      }),
+      interaction: { state: "exact" }
+    }])).toThrow(/receipt/iu);
+    expect(() => buildContinuityInteractionDigest([
+      projectionItem({ deliveryId: "duplicate", openedAt: "2026-07-18T00:00:00.000Z", state: "none", threadKind: "life" }),
+      projectionItem({ deliveryId: "duplicate", openedAt: "2026-07-18T00:00:00.000Z", state: "none", threadKind: "life" })
+    ])).toThrow(/duplicate/iu);
+    expect(() => buildContinuityInteractionDigest([projectionItem({
+      deliveryId: "bad-date",
+      openedAt: "not-a-date",
+      state: "none",
+      threadKind: "work"
+    })])).toThrow(/chronology/iu);
+
+    const first = projectionItem({
+      completedAt: "2026-07-18T00:00:00.010Z",
+      deliveryId: "receipt-a",
+      openedAt: "2026-07-18T00:00:00.000Z",
+      state: "exact",
+      threadKind: "life"
+    });
+    const second = projectionItem({
+      completedAt: "2026-07-18T00:00:00.020Z",
+      deliveryId: "receipt-b",
+      openedAt: "2026-07-18T00:00:00.000Z",
+      state: "exact",
+      threadKind: "work"
+    });
+    expect(() => buildContinuityInteractionDigest([first, {
+      ...second,
+      interaction: {
+        ...second.interaction,
+        receipt: { ...second.interaction.receipt!, eventId: first.interaction.receipt!.eventId, id: first.interaction.receipt!.id }
+      }
+    }])).toThrow(/receipt.*(id|identity|duplicate)/iu);
+
+    expect(() => buildContinuityInteractionDigest([{
+      ...first,
+      runId: "run_other",
+      threadId: "thread_other"
+    }])).toThrow(/binding/iu);
+    expect(() => buildContinuityInteractionDigest([{
+      ...first,
+      interaction: {
+        ...first.interaction,
+        receipt: { ...first.interaction.receipt!, recordedAt: "2026-07-18T00:00:00.005Z" }
+      }
+    }])).toThrow(/chronology/iu);
+  });
+
   it("records one immutable factual receipt for an anchored task completion", async () => {
     const dir = await mkdtemp(join(tmpdir(), "muse-continuity-interaction-"));
     const attunementFile = join(dir, "attunement.json");
@@ -38,7 +223,10 @@ describe("Continuity interaction evidence", () => {
       artifactType: "task",
       role: "next-step",
       threadId: thread.id
-    }, { validateArtifact: createLocalArtifactValidator({ notesDir, tasksFile }) });
+    }, {
+      now: () => new Date("2026-07-18T00:30:00.000Z"),
+      validateArtifact: createLocalArtifactValidator({ notesDir, tasksFile })
+    });
     const opened = await openPreparedContinuityPack(
       attunementFile,
       thread.id,
@@ -72,6 +260,19 @@ describe("Continuity interaction evidence", () => {
       transition: "open-to-done"
     });
     expect(state.deliveries[0]?.outcome).toBeUndefined();
+
+    const report = await buildContinuityInteractionReport(
+      state,
+      createLocalContinuityTaskInteractionSourceResolver(tasksFile)
+    );
+    expect(report).toMatchObject({
+      digest: {
+        byThreadKind: { work: { completionLatencyMs: { sampleSize: 1 }, totalDeliveries: 1 } },
+        overall: { completionLatencyMs: { sampleSize: 1 }, states: { exact: { count: 1 } }, totalDeliveries: 1 }
+      },
+      interactions: [expect.objectContaining({ threadKind: "work" })],
+      schemaVersion: 1
+    });
 
     const beforeReplay = await readFile(attunementFile, "utf8");
     const replay = await recordContinuityTaskCompletionInteraction(attunementFile, tasksFile, "task_exact");

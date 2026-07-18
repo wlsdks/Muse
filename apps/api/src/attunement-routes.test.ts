@@ -119,12 +119,18 @@ describe("POST /api/attunement/threads/:threadId/continue", () => {
       role: "next-step"
     });
     expect((await readAttunementState(attunementFile)).deliveries).toHaveLength(1);
+    const beforeInteractions = await readFile(attunementFile, "utf8");
     const interactions = await server().inject({ method: "GET", url: "/api/attunement/interactions" });
     expect(interactions.statusCode).toBe(200);
+    expect(interactions.json().digest).toMatchObject({
+      byThreadKind: { life: { totalDeliveries: 1 }, work: { totalDeliveries: 0 } },
+      overall: { states: { none: { count: 1 } }, totalDeliveries: 1 }
+    });
     expect(interactions.json().interactions).toContainEqual(expect.objectContaining({
       deliveryId: body.delivery.id,
       interaction: expect.objectContaining({ state: "none" })
     }));
+    expect(await readFile(attunementFile, "utf8")).toBe(beforeInteractions);
   });
 
   it("maps unavailable preparation to a structured 409 without a delivery", async () => {

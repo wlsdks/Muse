@@ -17,6 +17,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   projection show `exact`, `none`, or `unavailable` without inventing `used`,
   changing Attunement policy, or widening autonomy.
 
+- **Continuity interaction evidence now has one shared read-only digest.** CLI
+  and authenticated HTTP report exact/none/unavailable coverage overall and by
+  life/work thread, plus exact-receipt completion latency. A reproducible
+  24-delivery controlled dogfood runner verifies public CLI composition roots,
+  byte-stable reads/replays, owner-only state, zero outcomes, and zero permission
+  expansion without presenting same-session data as natural product evidence.
+
 - **Talk the Builder into shape.** After Muse drafts a flow you can keep
   talking — "8시 반으로 바꾸고 텔레그램 123으로 보내줘" updates the same
   draft in place (canvas and form follow), Muse replies naming exactly

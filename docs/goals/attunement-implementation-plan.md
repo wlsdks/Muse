@@ -57,8 +57,10 @@ pack. It does not require desktop observation.
   short `muse continue` entry point are available.
 - ✅ New deliveries can anchor one exact open local next-step and trusted local
   task completion paths record an immutable factual interaction receipt. CLI
-  and authenticated HTTP expose the same mutation-free projection; explicit
-  outcomes remain a separate ledger and legacy deliveries remain unavailable.
+  and authenticated HTTP expose the same mutation-free projection and digest,
+  including life/work-separated state coverage and exact-only completion
+  latency; explicit outcomes remain a separate ledger and legacy deliveries
+  remain unavailable.
 - ✅ Slice A supports only local tasks and local notes. Reminders, calendar events, contacts,
   run logs/checkpoints, and browser history are later adapters.
 - ✅ Only the user binds an item to a `threadId`; no deterministic auto-link or LLM summary is
@@ -120,6 +122,14 @@ Interaction receipts improve that future audit without filling the four-outcome
 gap: they can prove an exact linked task changed after a Pack, but never infer
 whether the Pack was useful. The next life episodes still need distinct natural
 return moments and explicit calibration feedback.
+
+A 24-delivery controlled shadow run now covers `{life, work} × {exact, none,
+unavailable}` with four cases per cell through supported CLI commands. It
+recorded eight exact receipts, zero explicit outcomes, no permission/grant
+fields, byte-stable report reads, and receipt-stable replays. This passes the
+implementation shadow gate only; the same-session timing distribution is not
+natural resumption evidence and cannot release Slice B or autonomy. Details:
+[`../evaluations/continuity-interaction-shadow-24-2026-07-18.md`](../evaluations/continuity-interaction-shadow-24-2026-07-18.md).
 
 ## Slice B — safe observation and better timing
 

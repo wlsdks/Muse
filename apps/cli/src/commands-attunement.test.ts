@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -101,13 +101,24 @@ describe("muse thread / continue — Personal Continuity", () => {
     const deliveryId = continued.stdout.match(/Delivery: (delivery_[\w-]+)/u)?.[1];
     expect(deliveryId).toBeTruthy();
 
+    const beforeInteractions = readFileSync(f.attunementFile, "utf8");
     const interactions = JSON.parse((await run(f, ["thread", "interactions", "--json"])).stdout) as {
+      readonly digest: { readonly byThreadKind: { readonly life: { readonly totalDeliveries: number } }; readonly overall: { readonly states: { readonly none: { readonly count: number } }; readonly totalDeliveries: number } };
       readonly interactions: readonly { readonly deliveryId: string; readonly interaction: { readonly state: string } }[];
     };
+    expect(interactions.digest).toMatchObject({
+      byThreadKind: { life: { totalDeliveries: 1 } },
+      overall: { states: { none: { count: 1 } }, totalDeliveries: 1 }
+    });
     expect(interactions.interactions).toContainEqual(expect.objectContaining({
       deliveryId,
       interaction: expect.objectContaining({ state: "none" })
     }));
+    expect(readFileSync(f.attunementFile, "utf8")).toBe(beforeInteractions);
+
+    const interactionText = await run(f, ["thread", "interactions"]);
+    expect(interactionText.stdout).toContain("Interaction digest: 1 delivery; exact=0 none=1 unavailable=0");
+    expect(interactionText.stdout).toContain("life: 1 delivery; exact=0 none=1 unavailable=0");
 
     const outcome = await run(f, ["thread", "outcome", deliveryId!, "ignored"]);
     expect(outcome.stdout).toContain("Recorded ignored");

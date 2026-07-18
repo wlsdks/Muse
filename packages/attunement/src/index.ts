@@ -1,8 +1,14 @@
 export { prepareContinuityPack, type ContinuityPreparationOptions } from "./continuity-pack.js";
 export {
+  buildContinuityInteractionDigest,
+  buildContinuityInteractionReport,
   buildContinuityInteractionProjection,
   fingerprintContinuityTaskState,
+  type ContinuityInteractionDigest,
+  type ContinuityInteractionDigestSlice,
+  type ContinuityInteractionLatencyDigest,
   type ContinuityInteractionProjectionItem,
+  type ContinuityInteractionReport,
   type ContinuityTaskInteractionSource,
   type ContinuityTaskInteractionSourceResolver
 } from "./interaction-evidence.js";
