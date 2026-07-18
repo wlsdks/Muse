@@ -9,7 +9,7 @@ import { FlowsTab } from "./Flows.js";
 import { I18nProvider } from "../i18n/index.js";
 
 import type { ApiClient } from "../api/client.js";
-import type { FlowDraftResponse, FlowsResponse, LoopbackCatalogResponse, MessagingSetupResponse, ScheduledJobDetail } from "../api/types.js";
+import type { FlowDraftResponse, FlowProjection, FlowsResponse, LoopbackCatalogResponse, MessagingSetupResponse, ScheduledJobDetail } from "../api/types.js";
 
 // No global setup file registers `cleanup()` for this project's browser
 // config yet, so each test must unmount its own tree — several tests in
@@ -672,4 +672,38 @@ test("full-workspace (zen) mode sets the root attribute the chrome CSS keys on, 
 
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   await expect.poll(() => document.documentElement.getAttribute("data-builder-zen")).toBeNull();
+});
+
+test("the Builder consumes Scheduled's one-shot focus hint and opens THAT flow (not the first)", async () => {
+  const second: FlowProjection = {
+    ...FLOWS_RESPONSE.flows[0]!,
+    edges: [],
+    id: "job_9",
+    name: "Second flow",
+    nodes: [
+      { id: "job_9::trigger", kind: "trigger.schedule", label: "trigger.schedule", meta: { cronExpression: "0 8 * * *" } },
+      { id: "job_9::action", kind: "action.agent", label: "action.agent", meta: { prompt: "second" } },
+      { id: "job_9::output", kind: "output.record", label: "output.record", meta: {} }
+    ]
+  };
+  const twoFlows: FlowsResponse = { flows: [FLOWS_RESPONSE.flows[0]!, second] };
+  const client = fakeClient();
+  (client.get as ReturnType<typeof vi.fn>).mockImplementation(async (path: string) => {
+    if (path === "/api/flows") return twoFlows;
+    if (path === "/api/scheduler/jobs/job_9") return { ...JOB_DETAIL, id: "job_9", name: "Second flow" };
+    if (path === "/api/scheduler/jobs/job_1") return JOB_DETAIL;
+    if (path === "/api/muse/loopback") return LOOPBACK_CATALOG;
+    if (path === "/api/messaging/setup") return { providers: [] };
+    throw new Error(`unexpected GET ${path}`);
+  });
+
+  window.sessionStorage.setItem("muse.builderFocusFlow", "job_9");
+  try {
+    await renderFlows(client);
+    await expect.poll(() => document.querySelector(".flowpick-name")?.textContent).toBe("Second flow");
+    // one-shot: consumed on mount
+    expect(window.sessionStorage.getItem("muse.builderFocusFlow")).toBeNull();
+  } finally {
+    window.sessionStorage.removeItem("muse.builderFocusFlow");
+  }
 });

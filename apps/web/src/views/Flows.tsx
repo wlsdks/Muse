@@ -9,6 +9,7 @@ import { AsyncBlock, Button, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { flowToCanvas } from "./flow-canvas-mapping.js";
 import { readNodePositions, writeNodePosition } from "./flow-node-positions.js";
+import { consumeBuilderFocusHint } from "./scheduled-logic.js";
 import { FLOW_EDGE_TYPES } from "./flow-edges.js";
 import { flowDraftToCopilotPayload, renameFlowPatch, toggleEnabledPatch } from "./flow-edit-compile.js";
 import { FlowCreatePanel } from "./flow-create-panel.js";
@@ -51,7 +52,11 @@ type SideTab = "chat" | "node" | "exec";
 function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowProjection[] }) {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const [selectedFlowId, setSelectedFlowId] = useState<string | undefined>(flows[0]?.id);
+  const [selectedFlowId, setSelectedFlowId] = useState<string | undefined>(() =>
+    // A one-shot handoff from Scheduled's "open in Builder" — consumed (and
+    // cleared) here so a later manual visit doesn't snap back to it.
+    consumeBuilderFocusHint(typeof window === "undefined" ? undefined : window.sessionStorage) ?? flows[0]?.id
+  );
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [initialDraft, setInitialDraft] = useState<FlowDraftPayloadRow | undefined>(undefined);
