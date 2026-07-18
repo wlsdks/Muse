@@ -5,7 +5,60 @@ import { render } from "vitest-browser-react";
 
 import type { ApiClient } from "../api/client.js";
 import { I18nProvider } from "../i18n/index.js";
-import { ContinuityReviewView, OpenedPackCard, type OpenedPack } from "./ContinuityReview.js";
+import {
+  ContinuityReviewView,
+  InteractionEvidenceCard,
+  OpenedPackCard,
+  type InteractionReport,
+  type OpenedPack
+} from "./ContinuityReview.js";
+
+function interactionReport(input: {
+  readonly exact?: number;
+  readonly includeDelivery?: boolean;
+  readonly interactionState?: "exact" | "none" | "unavailable";
+  readonly status?: "audit-required" | "collecting";
+} = {}): InteractionReport {
+  const exact = input.exact ?? 0;
+  const hasDelivery = input.includeDelivery !== false;
+  const interactionState = input.interactionState ?? "none";
+  const status = input.status ?? "collecting";
+  const lifeCoverage = {
+    distinctUtcOpenedDates: exact > 0 ? 1 : 0,
+    distinctUtcOpenedDatesTarget: 2,
+    exactInteractions: exact,
+    exactInteractionsTarget: 10,
+    remainingDates: exact > 0 ? 1 : 2,
+    remainingExactInteractions: 10 - exact
+  };
+  const workCoverage = {
+    distinctUtcOpenedDates: 0,
+    distinctUtcOpenedDatesTarget: 2,
+    exactInteractions: 0,
+    exactInteractionsTarget: 10,
+    remainingDates: 2,
+    remainingExactInteractions: 10
+  };
+  const states = {
+    exact: { count: hasDelivery ? exact : 0 },
+    none: { count: hasDelivery && exact === 0 ? 1 : 0 },
+    unavailable: { count: 0 }
+  };
+  return {
+    audit: { byThreadKind: { life: lifeCoverage, work: workCoverage }, reason: "numeric gap", status },
+    digest: {
+      byThreadKind: {
+        life: { states, totalDeliveries: hasDelivery ? 1 : 0 },
+        work: { states: { exact: { count: 0 }, none: { count: 0 }, unavailable: { count: 0 } }, totalDeliveries: 0 }
+      },
+      overall: { states, totalDeliveries: hasDelivery ? 1 : 0 }
+    },
+    interactions: input.includeDelivery === false
+      ? []
+      : [{ deliveryId: "delivery_browser", interaction: { state: interactionState }, threadKind: "life" }],
+    schemaVersion: 1
+  };
+}
 
 function opened(nextStep: "direct" | "hidden"): OpenedPack {
   const artifact = {
@@ -66,6 +119,236 @@ test("a hidden next step exposes only its safe type:id marker", async () => {
   }
 });
 
+test("task completion stays fail-closed outside an available open task with current none interaction", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  const done = opened("direct");
+  const doneNextStep = { ...done.pack.nextStep!, taskStatus: "done" as const };
+  const donePack: OpenedPack = {
+    ...done,
+    pack: {
+      ...done.pack,
+      evidence: done.pack.evidence.map((entry) => ({ ...entry, artifact: doneNextStep })),
+      nextStep: doneNextStep
+    }
+  };
+  const unavailable = opened("direct");
+  const unavailablePack: OpenedPack = {
+    ...unavailable,
+    pack: {
+      ...unavailable.pack,
+      evidence: unavailable.pack.evidence.map((entry) => ({ ...entry, artifact: undefined, status: "unavailable" as const }))
+    }
+  };
+  const screen = await render(<I18nProvider><>
+    <OpenedPackCard currentInteractionState="exact" onComplete={() => undefined} openedPack={opened("direct")} />
+    <OpenedPackCard currentInteractionState="unavailable" onComplete={() => undefined} openedPack={opened("direct")} />
+    <OpenedPackCard currentInteractionState="none" onComplete={() => undefined} openedPack={opened("hidden")} />
+    <OpenedPackCard currentInteractionState="none" onComplete={() => undefined} openedPack={donePack} />
+    <OpenedPackCard currentInteractionState="none" onComplete={() => undefined} openedPack={unavailablePack} />
+    <OpenedPackCard onComplete={() => undefined} openedPack={opened("direct")} />
+  </></I18nProvider>);
+
+  await expect.element(screen.getByRole("button", { name: "Mark next step done" })).not.toBeInTheDocument();
+});
+
+test("factual interaction coverage renders separately from outcome evidence", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  const screen = await render(
+    <I18nProvider><InteractionEvidenceCard report={interactionReport()} /></I18nProvider>
+  );
+
+  await expect.element(screen.getByText("Factual task interactions", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Collecting", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Life: 0/10 exact · 0/2 opened UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Work: 0/10 exact · 0/2 opened UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("All deliveries: 0 exact · 1 none · 0 unavailable", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText(
+    "Numeric interaction coverage does not certify natural timing, usefulness, outcomes, causality, permission, or promotion.",
+    { exact: true }
+  )).toBeVisible();
+});
+
+test("a completed task does not claim a receipt when refreshed interaction coverage stays unchanged", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  const current = opened("direct");
+  const completedNextStep = { ...current.pack.nextStep!, taskStatus: "done" as const };
+  const completed: OpenedPack = {
+    ...current,
+    pack: {
+      ...current.pack,
+      evidence: current.pack.evidence.map((entry) => ({ ...entry, artifact: completedNextStep })),
+      nextStep: completedNextStep
+    }
+  };
+  const screen = await render(<I18nProvider><>
+    <InteractionEvidenceCard report={interactionReport()} />
+    <OpenedPackCard
+      completionSucceeded
+      currentInteractionState="none"
+      onComplete={() => undefined}
+      openedPack={completed}
+    />
+  </></I18nProvider>);
+
+  await expect.element(screen.getByText("Task completed. Interaction coverage refreshed.", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Life: 0/10 exact · 0/2 opened UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Mark next step done" })).not.toBeInTheDocument();
+});
+
+test("opening a Pack then completing its canonical current next step refreshes exact coverage without scoring an outcome", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  let packOpened = false;
+  let taskDone = false;
+  let completionAttempts = 0;
+  const evaluation = {
+    automationGate: { reasons: ["manual"], status: "hold" },
+    firstPacks: { considered: 0, rejected: 0, used: 0 },
+    improvementGate: { reason: "need natural evidence", status: "awaiting-feedback" },
+    outcomes: { adjusted: 0, ignored: 0, rejected: 0, used: 0 },
+    totalDeliveries: packOpened ? 1 : 0,
+    withOutcome: 0
+  } as const;
+  const review = () => ({
+    deliveries: packOpened
+      ? [{ evidenceRefs: [], id: "delivery_browser", openedAt: "2026-07-18T05:00:00.000Z", thread: { id: "thread_life", kind: "life", title: "Prepare birthday" } }]
+      : [],
+    evaluation: {
+      ...evaluation,
+      byKind: { life: evaluation, work: { ...evaluation, totalDeliveries: 0 } },
+      longitudinalGate: {
+        byKind: {
+          life: { distinctUtcDates: 0, distinctUtcDatesTarget: 2, explicitFeedback: 0, explicitFeedbackTarget: 10, remainingDates: 2, remainingFeedback: 10 },
+          work: { distinctUtcDates: 0, distinctUtcDatesTarget: 2, explicitFeedback: 0, explicitFeedbackTarget: 10, remainingDates: 2, remainingFeedback: 10 }
+        },
+        reasons: ["needs natural feedback"],
+        status: "collecting"
+      }
+    },
+    resetReceipts: [],
+    reviewQueue: { progress: { eligibleDeliveries: 0, remainingFeedback: 0, remainingPacks: 20, reviewedDeliveries: 0, target: 20 } },
+    threads: [{
+      id: "thread_life",
+      kind: "life",
+      linkCount: 1,
+      links: [{ artifactId: "task_prepare", artifactType: "task", providerId: "local", role: "next-step" }],
+      policy: { detail: "standard", nextStep: "direct", suppression: "none", version: 1 },
+      title: "Prepare birthday"
+    }]
+  });
+  const get = vi.fn(async (path: string) => {
+    if (path === "/api/attunement/interactions") {
+      if (!packOpened) return interactionReport({ includeDelivery: false });
+      return interactionReport({ exact: taskDone ? 1 : 0, interactionState: taskDone ? "exact" : "none" });
+    }
+    return review();
+  });
+  const post = vi.fn(async (path: string) => {
+    if (path === "/api/attunement/threads/thread_life/continue") {
+      packOpened = true;
+      return opened("direct");
+    }
+    if (path === "/api/tasks/task_prepare/complete") {
+      completionAttempts += 1;
+      if (completionAttempts === 1) throw new Error("task completion failed");
+      taskDone = true;
+      return { completedAt: "2026-07-18T05:30:00.000Z", createdAt: "2026-07-18T00:00:00.000Z", id: "task_prepare", status: "done", title: "Send flower options" };
+    }
+    throw new Error(`unexpected POST ${path}`);
+  });
+  const client = { baseUrl: "http://continuity-loop.test", get, post } as unknown as ApiClient;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(["tasks", client.baseUrl, "open"], { tasks: [], status: "open", total: 0 });
+  queryClient.setQueryData(["tasks-count", client.baseUrl], { tasks: [], status: "open", total: 0 });
+  const screen = await render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider><ContinuityReviewView client={client} /></I18nProvider>
+    </QueryClientProvider>
+  );
+
+  await screen.getByRole("button", { name: "Open pack" }).click();
+  await expect.element(screen.getByRole("button", { name: "Mark next step done" })).toBeVisible();
+  await screen.getByRole("button", { name: "Mark next step done" }).click();
+  await expect.element(screen.getByText(
+    "The task was not completed. The Pack remains open; try again after checking the task.",
+    { exact: true }
+  )).toBeVisible();
+  await expect.element(screen.getByText("Open", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Life: 0/10 exact · 0/2 opened UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Mark next step done" })).toBeVisible();
+  await screen.getByRole("button", { name: "Mark next step done" }).click();
+  await expect.element(screen.getByText("Done", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Life: 1/10 exact · 1/2 opened UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Task completed. Interaction coverage refreshed.", { exact: true })).toBeVisible();
+  expect(post.mock.calls.some(([path]) => String(path).includes("/outcome"))).toBe(false);
+  expect(get.mock.calls.filter(([path]) => path === "/api/attunement/interactions").length).toBeGreaterThanOrEqual(3);
+  expect(get.mock.calls.filter(([path]) => path === "/api/attunement/review").length).toBeGreaterThanOrEqual(3);
+  expect(queryClient.getQueryState(["tasks", client.baseUrl, "open"])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(["tasks-count", client.baseUrl])?.isInvalidated).toBe(true);
+});
+
+test("an interaction query failure stays scoped and fail-closes task completion without blocking the Pack", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  const emptyEvaluation = {
+    automationGate: { reasons: ["manual"], status: "hold" },
+    firstPacks: { considered: 0, rejected: 0, used: 0 },
+    improvementGate: { reason: "need evidence", status: "awaiting-feedback" },
+    outcomes: { adjusted: 0, ignored: 0, rejected: 0, used: 0 },
+    totalDeliveries: 0,
+    withOutcome: 0
+  } as const;
+  const review = {
+    deliveries: [],
+    evaluation: {
+      ...emptyEvaluation,
+      byKind: { life: emptyEvaluation, work: emptyEvaluation },
+      longitudinalGate: {
+        byKind: {
+          life: { distinctUtcDates: 0, distinctUtcDatesTarget: 2, explicitFeedback: 0, explicitFeedbackTarget: 10, remainingDates: 2, remainingFeedback: 10 },
+          work: { distinctUtcDates: 0, distinctUtcDatesTarget: 2, explicitFeedback: 0, explicitFeedbackTarget: 10, remainingDates: 2, remainingFeedback: 10 }
+        },
+        reasons: ["needs evidence"],
+        status: "collecting"
+      }
+    },
+    resetReceipts: [],
+    reviewQueue: { progress: { eligibleDeliveries: 0, remainingFeedback: 0, remainingPacks: 20, reviewedDeliveries: 0, target: 20 } },
+    threads: [{
+      id: "thread_life",
+      kind: "life",
+      linkCount: 1,
+      links: [{ artifactId: "task_prepare", artifactType: "task", providerId: "local", role: "next-step" }],
+      policy: { detail: "standard", nextStep: "direct", suppression: "none", version: 1 },
+      title: "Prepare birthday"
+    }]
+  };
+  const client = {
+    baseUrl: "http://continuity-error.test",
+    get: vi.fn(async (path: string) => {
+      if (path === "/api/attunement/interactions") throw new Error("interaction unavailable");
+      return review;
+    }),
+    post: vi.fn(async (path: string) => {
+      if (path === "/api/attunement/threads/thread_life/continue") return opened("direct");
+      throw new Error(`unexpected POST ${path}`);
+    })
+  } as unknown as ApiClient;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const screen = await render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider><ContinuityReviewView client={client} /></I18nProvider>
+    </QueryClientProvider>
+  );
+
+  await expect.element(screen.getByText("Prepare birthday", { exact: true })).toBeVisible();
+  await screen.getByRole("button", { name: "Open pack" }).click();
+  await expect.element(screen.getByText("Continuity Pack: Prepare birthday", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText(
+    "Interaction evidence could not be loaded. Continuity review remains available.",
+    { exact: true }
+  )).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Mark next step done" })).not.toBeInTheDocument();
+});
+
 test("explicit feedback advances the shared oldest-pending review to the next delivery", async () => {
   window.localStorage.setItem("muse.lang", "en");
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -112,11 +395,11 @@ test("explicit feedback advances the shared oldest-pending review to the next de
       byKind: { life: { ...evaluation, totalDeliveries: 0 }, work: evaluation },
       longitudinalGate: {
         byKind: {
-          life: { distinctUtcDates: 0, distinctUtcDatesTarget: 2, explicitFeedback: 0, explicitFeedbackTarget: 10, remainingDates: 2, remainingFeedback: 10 },
-          work: { distinctUtcDates: advanced ? 1 : 0, distinctUtcDatesTarget: 2, explicitFeedback: advanced ? 1 : 0, explicitFeedbackTarget: 10, remainingDates: advanced ? 1 : 2, remainingFeedback: advanced ? 9 : 10 }
+          life: { distinctUtcDates: 2, distinctUtcDatesTarget: 2, explicitFeedback: 10, explicitFeedbackTarget: 10, remainingDates: 0, remainingFeedback: 0 },
+          work: { distinctUtcDates: 2, distinctUtcDatesTarget: 2, explicitFeedback: 10, explicitFeedbackTarget: 10, remainingDates: 0, remainingFeedback: 0 }
         },
-        reasons: ["life needs more explicit feedback", "work needs more explicit feedback"],
-        status: "collecting"
+        reasons: ["numeric outcome coverage requires human audit"],
+        status: "audit-required"
       }
     },
     resetReceipts: [],
@@ -125,7 +408,7 @@ test("explicit feedback advances the shared oldest-pending review to the next de
   });
   const client = {
     baseUrl: "http://continuity.test",
-    get: vi.fn(async () => response()),
+    get: vi.fn(async (path: string) => path === "/api/attunement/interactions" ? interactionReport() : response()),
     post: vi.fn(async (path: string) => {
       if (path === "/api/attunement/deliveries/delivery_first/outcome") advanced = true;
       return {};
@@ -141,10 +424,13 @@ test("explicit feedback advances the shared oldest-pending review to the next de
   await expect.element(screen.getByText("Next review: First review", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("First exact task · task:task_first", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("Longitudinal evidence", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Human audit required", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Work: 10/10 feedback · 2/2 UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Factual task interactions", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("Collecting", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("Work: 0/10 feedback · 0/2 UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Work: 0/10 exact · 0/2 opened UTC dates", { exact: true })).toBeVisible();
   await screen.getByRole("button", { name: "Record used for delivery_first" }).click();
   await expect.element(screen.getByText("Next review: Second review", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("Second exact task · task:task_second", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("Work: 1/10 feedback · 1/2 UTC dates", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Work: 10/10 feedback · 2/2 UTC dates", { exact: true })).toBeVisible();
 });

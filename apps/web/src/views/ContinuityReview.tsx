@@ -5,6 +5,7 @@ import { AsyncBlock, Badge, Button, Card, Stat } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 
 import type { ApiClient } from "../api/client.js";
+import type { TaskRow } from "../api/types.js";
 
 type Outcome = "used" | "adjusted" | "ignored" | "rejected";
 type Kind = "life" | "work";
@@ -30,6 +31,38 @@ interface LongitudinalGate {
   }>>;
   readonly reasons: readonly string[];
   readonly status: "audit-required" | "collecting";
+}
+
+interface InteractionCoverage {
+  readonly distinctUtcOpenedDates: number;
+  readonly distinctUtcOpenedDatesTarget: number;
+  readonly exactInteractions: number;
+  readonly exactInteractionsTarget: number;
+  readonly remainingDates: number;
+  readonly remainingExactInteractions: number;
+}
+
+interface InteractionDigestSlice {
+  readonly states: Readonly<Record<"exact" | "none" | "unavailable", { readonly count: number }>>;
+  readonly totalDeliveries: number;
+}
+
+export interface InteractionReport {
+  readonly audit: {
+    readonly byThreadKind: Readonly<Record<Kind, InteractionCoverage>>;
+    readonly reason: string;
+    readonly status: "audit-required" | "collecting";
+  };
+  readonly digest: {
+    readonly byThreadKind: Readonly<Record<Kind, InteractionDigestSlice>>;
+    readonly overall: InteractionDigestSlice;
+  };
+  readonly interactions: readonly {
+    readonly deliveryId: string;
+    readonly interaction: { readonly state: "exact" | "none" | "unavailable" };
+    readonly threadKind: Kind;
+  }[];
+  readonly schemaVersion: 1;
 }
 
 interface ReviewResponse {
@@ -175,6 +208,34 @@ export function LongitudinalEvidenceCard({ gate }: { readonly gate: Longitudinal
   </Card>;
 }
 
+export function InteractionEvidenceCard({ report }: { readonly report: InteractionReport }) {
+  const { t } = useI18n();
+  return <Card>
+    <div style={{ alignItems: "flex-start", display: "flex", gap: 12, justifyContent: "space-between" }}>
+      <div className="row-title">{t("continuity.interactionTitle")}</div>
+      <Badge tone="warn">{t(`continuity.interactionStatus.${report.audit.status}`)}</Badge>
+    </div>
+    <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
+      {(["life", "work"] as const).map((kind) => {
+        const coverage = report.audit.byThreadKind[kind];
+        return <div className="row-meta" key={kind}>{t("continuity.interactionCoverage", {
+          dateTarget: coverage.distinctUtcOpenedDatesTarget,
+          dates: coverage.distinctUtcOpenedDates,
+          exact: coverage.exactInteractions,
+          exactTarget: coverage.exactInteractionsTarget,
+          kind: kindLabel(kind)
+        })}</div>;
+      })}
+    </div>
+    <p className="row-meta" style={{ marginBottom: 0 }}>{t("continuity.interactionTotals", {
+      exact: report.digest.overall.states.exact.count,
+      none: report.digest.overall.states.none.count,
+      unavailable: report.digest.overall.states.unavailable.count
+    })}</p>
+    <p className="row-meta" style={{ marginBottom: 0 }}>{t("continuity.interactionNeverPromotes")}</p>
+  </Card>;
+}
+
 function rate(part: number, total: number): string {
   return total === 0 ? "-" : `${Math.round((part / total) * 100)}%`;
 }
@@ -217,8 +278,38 @@ function artifactMarker(reference: OpenedPack["pack"]["evidence"][number]["refer
 }
 
 /** Policy-aware Pack surface: hidden next-step artifacts expose only their exact safe marker. */
-export function OpenedPackCard({ openedPack }: { readonly openedPack: OpenedPack }) {
+export function OpenedPackCard({
+  completionFailed = false,
+  completionPending = false,
+  completionSucceeded = false,
+  currentInteractionState,
+  onComplete,
+  openedPack
+}: {
+  readonly completionFailed?: boolean;
+  readonly completionPending?: boolean;
+  readonly completionSucceeded?: boolean;
+  readonly currentInteractionState?: "exact" | "none" | "unavailable";
+  readonly onComplete?: (taskId: string) => void;
+  readonly openedPack: OpenedPack;
+}) {
   const { t } = useI18n();
+  const nextStep = openedPack.pack.nextStep;
+  const nextStepAvailable = nextStep !== undefined && openedPack.pack.evidence.some((entry) =>
+    entry.status === "available"
+    && entry.artifact?.artifactId === nextStep.artifactId
+    && entry.reference.artifactId === nextStep.artifactId
+    && entry.reference.artifactType === "task"
+    && entry.reference.providerId === "local"
+    && entry.reference.role === "next-step");
+  const completable = currentInteractionState === "none"
+    && nextStepAvailable
+    && openedPack.pack.policy.nextStep !== "hidden"
+    && nextStep?.artifactType === "task"
+    && nextStep.providerId === "local"
+    && nextStep.role === "next-step"
+    && nextStep.taskStatus === "open"
+    && onComplete !== undefined;
   return <Card>
     <div className="row-title">{t("continuity.packTitle", { title: openedPack.pack.thread.title })}</div>
     <div className="row-meta">{kindLabel(openedPack.pack.thread.kind)} · {t("continuity.delivery", { id: openedPack.delivery.id })}</div>
@@ -247,10 +338,38 @@ export function OpenedPackCard({ openedPack }: { readonly openedPack: OpenedPack
         </div>;
       })}
     </div>
-    {openedPack.pack.policy.nextStep !== "hidden" && openedPack.pack.nextStep
-      ? <div className="row-meta" style={{ marginTop: 12 }}>{t("continuity.nextStep", { title: openedPack.pack.nextStep.title })}</div>
+    {openedPack.pack.policy.nextStep !== "hidden" && nextStep
+      ? <div className="row-meta" style={{ marginTop: 12 }}>{t("continuity.nextStep", { title: nextStep.title })}</div>
       : null}
+    {completable ? <Button
+      ariaLabel={t("continuity.completeNextStep")}
+      disabled={completionPending}
+      size="sm"
+      variant="primary"
+      onClick={() => onComplete(nextStep.artifactId)}
+    >{t("continuity.completeNextStep")}</Button> : null}
+    {completionSucceeded ? <p className="banner ok" style={{ marginBottom: 0 }}>{t("continuity.taskCompleted")}</p> : null}
+    {completionFailed ? <p className="banner err" style={{ marginBottom: 0 }}>{t("continuity.completeTaskError")}</p> : null}
   </Card>;
+}
+
+function taskDoneInOpenedPack(openedPack: OpenedPack, taskId: string): OpenedPack {
+  const markDone = (artifact: OpenedPackArtifact | undefined): OpenedPackArtifact | undefined =>
+    artifact?.artifactId === taskId
+      && artifact.artifactType === "task"
+      && artifact.providerId === "local"
+      && artifact.role === "next-step"
+      && artifact.taskStatus === "open"
+      ? { ...artifact, taskStatus: "done" }
+      : artifact;
+  return {
+    ...openedPack,
+    pack: {
+      ...openedPack.pack,
+      evidence: openedPack.pack.evidence.map((entry) => ({ ...entry, artifact: markDone(entry.artifact) })),
+      ...(openedPack.pack.nextStep ? { nextStep: markDone(openedPack.pack.nextStep) } : {})
+    }
+  };
 }
 
 function LinkForm({ disabled, onLink }: { readonly disabled: boolean; readonly onLink: (input: { artifactId: string; artifactType: "task" | "note"; role: "context" | "next-step" }) => void }) {
@@ -284,10 +403,19 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
   const [newThreadKind, setNewThreadKind] = useState<Kind | undefined>();
   const [newThreadTitle, setNewThreadTitle] = useState("");
   const [openedPack, setOpenedPack] = useState<OpenedPack | undefined>();
+  const [completedTaskId, setCompletedTaskId] = useState<string | undefined>();
   const review = useQuery({
     queryFn: () => client.get<ReviewResponse>("/api/attunement/review"),
     queryKey: ["attunement-review", client.baseUrl]
   });
+  const interactions = useQuery({
+    queryFn: () => client.get<InteractionReport>("/api/attunement/interactions"),
+    queryKey: ["attunement-interactions", client.baseUrl]
+  });
+  const invalidateContinuity = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["attunement-interactions", client.baseUrl] }),
+    queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
+  ]);
   const outcome = useMutation({
     mutationFn: ({ deliveryId, value }: { readonly deliveryId: string; readonly value: Outcome }) =>
       client.post(`/api/attunement/deliveries/${encodeURIComponent(deliveryId)}/outcome`, { outcome: value }),
@@ -314,28 +442,45 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
   const link = useMutation({
     mutationFn: ({ artifactId, artifactType, role, threadId }: { readonly artifactId: string; readonly artifactType: "task" | "note"; readonly role: "context" | "next-step"; readonly threadId: string }) =>
       client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/links`, { artifactId, artifactType, role }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
+    onSuccess: invalidateContinuity
   });
   const continueThread = useMutation({
     mutationFn: (threadId: string) => client.post<OpenedPack>(`/api/attunement/threads/${encodeURIComponent(threadId)}/continue`),
     onSuccess: (result) => {
       setOpenedPack(result);
-      return queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] });
+      setCompletedTaskId(undefined);
+      return invalidateContinuity();
+    }
+  });
+  const completeTask = useMutation({
+    mutationFn: (taskId: string) => client.post<TaskRow>(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {}),
+    onSuccess: (task) => {
+      setOpenedPack((current) => current ? taskDoneInOpenedPack(current, task.id) : current);
+      setCompletedTaskId(task.id);
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["attunement-interactions", client.baseUrl] }),
+        queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] }),
+        queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+        queryClient.invalidateQueries({ queryKey: ["tasks-count"] })
+      ]);
     }
   });
   const unlink = useMutation({
     mutationFn: ({ artifactId, artifactType, threadId }: { readonly artifactId: string; readonly artifactType: "task" | "note"; readonly threadId: string }) =>
       client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/links/unlink`, { artifactId, artifactType }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] })
+    onSuccess: invalidateContinuity
   });
   const deleteThread = useMutation({
     mutationFn: (threadId: string) => client.post(`/api/attunement/threads/${encodeURIComponent(threadId)}/delete`),
     onSuccess: () => {
       setOpenedPack(undefined);
-      return queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] });
+      return invalidateContinuity();
     }
   });
   const data = review.data;
+  const openedPackInteraction = !interactions.isFetching && !interactions.isError && openedPack
+    ? interactions.data?.interactions.find((item) => item.deliveryId === openedPack.delivery.id)
+    : undefined;
 
   return (
     <div className="content-narrow">
@@ -351,7 +496,20 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
               <KindSummary kind="work" evaluation={data.evaluation.byKind.work} />
             </div>
             <LongitudinalEvidenceCard gate={data.evaluation.longitudinalGate} />
-            {openedPack ? <OpenedPackCard openedPack={openedPack} /> : null}
+            {interactions.error ? <Card>
+              <div className="row-title">{t("continuity.interactionTitle")}</div>
+              <p className="banner err" style={{ marginBottom: 0 }}>{t("continuity.interactionLoadError")}</p>
+            </Card> : <AsyncBlock loading={interactions.isLoading} empty={false}>
+              {interactions.data ? <InteractionEvidenceCard report={interactions.data} /> : null}
+            </AsyncBlock>}
+            {openedPack ? <OpenedPackCard
+              completionFailed={completeTask.isError && completeTask.variables === openedPack.pack.nextStep?.artifactId}
+              completionPending={completeTask.isPending && completeTask.variables === openedPack.pack.nextStep?.artifactId}
+              completionSucceeded={completedTaskId === openedPack.pack.nextStep?.artifactId}
+              currentInteractionState={openedPackInteraction?.interaction.state}
+              onComplete={(taskId) => completeTask.mutate(taskId)}
+              openedPack={openedPack}
+            /> : null}
             <PendingReviewCard
               disabled={outcome.isPending}
               onOutcome={(deliveryId, value) => {

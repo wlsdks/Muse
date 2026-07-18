@@ -10,6 +10,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Continuity now turns a real next-step completion into visible evidence.**
+  The web review starts its interaction audit independently, shows life/work
+  exact coverage without mixing it with outcomes, and lets the user complete
+  only the current Pack's exact available local open task. The existing task
+  API records the factual receipt; the UI then refreshes review, interaction,
+  and task caches without claiming usefulness or widening permission.
+
 - **Continuity now keeps factual progress evidence separate from feedback.**
   New user-opened Packs anchor an exact local next-step while it is open; trusted
   CLI, HTTP, and loopback task-completion paths can then record one immutable

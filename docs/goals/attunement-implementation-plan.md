@@ -141,6 +141,17 @@ is still life `0/10`, work `0/10`, and `0/2` dates for both, so no usefulness,
 naturalness, permission, or automation claim is released. Evidence:
 [`../evaluations/continuity-interaction-longitudinal-audit-2026-07-18.md`](../evaluations/continuity-interaction-longitudinal-audit-2026-07-18.md).
 
+The web review now closes the natural collection path without fabricating any
+evidence: it renders that shared audit separately from outcome readiness and
+offers completion only for the opened delivery's current canonical `none`, exact
+available local open next-step task. It reuses the authenticated task endpoint
+and refetches the authoritative reports; task success is not presented as proof
+that a receipt persisted. Chromium interaction tests cover the success, retry,
+recorder-failure, divergent-gate, and fail-closed cases. The actual read-only
+audit remains life `0/10`, work `0/10`, and `0/2` dates for both, so the next
+evidence must come from ordinary use rather than fixtures. Evidence:
+[`../evaluations/continuity-natural-evidence-loop-2026-07-18.md`](../evaluations/continuity-natural-evidence-loop-2026-07-18.md).
+
 ## Slice B — safe observation and better timing
 
 **User experience:** after the user explicitly starts a personal thread, Muse can notice a

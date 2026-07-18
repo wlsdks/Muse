@@ -170,6 +170,17 @@ status is `collecting`; numeric completion can only produce `audit-required`.
 `none`, `unavailable`, and explicit outcomes do not count. This audit is a gap
 tracker, not proof of natural timing, usefulness, causality, or permission.
 
+The web review makes that factual loop usable without adding another scoring or
+approval step. It displays the interaction audit independently from outcome
+readiness. For the currently opened delivery, an inline completion action is
+available only when the canonical report still says `none` and the Pack contains
+the exact available `local/task/next-step` artifact in `open` state. The action
+uses the existing authenticated task-completion route, then refetches both
+reports. Task HTTP success proves the task effect, not receipt persistence: if
+the refreshed report remains unchanged, the UI does not claim an exact receipt.
+Loading, missing, errored, unavailable, exact, hidden, relinked, and completed
+states all fail closed. This path never writes an outcome or expands permission.
+
 Slice A adaptation may change only:
 
 - detail (`standard` or `compact`);
