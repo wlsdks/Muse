@@ -1008,3 +1008,4 @@ Design: docs/strategy/secret-source.md · convergence pick (openclaw+hermes both
 Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ Muse-lacks, freshness-checked).
 - [done] :: CONVERGENCE EXHAUSTED (3 independent scouts) — PTC · SecretSource · MCP supply-chain audit shipped; surface closed vs both rivals. Re-point to a frontier axis or stop = Jinan's call.
 - [done] 2026-07-18 commit=1491e3199 :: ask 표면 언어 미러링 배선 완료 — composeDefaultRecallSystemPrompt가 buildLanguageMirrorLayer(query)를 volatile zone에 주입(override 경로 무주입, 캐시경계 뒤 배치). recall 751/751 + 라이브 EN 3/3, KO 3/3, Opus 게이트 PASS.
+- [done] 2026-07-18 commit=527faf18b :: 채팅 자동화 거짓 약속(false-done) 해소 — 결정론 honesty 모듈(의도 감지+거짓주장 검출+정정/안내 어펜드, 인용게이트 뒤 배선)+빌더 핸드오프 버튼(원문 시드). 28/28+뮤테이션-RED, browser 61/61, 라이브 재현 프로브 통과, Opus PASS.
