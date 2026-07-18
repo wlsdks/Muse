@@ -69,3 +69,14 @@ ratchet: web SSR 550 · browser 22(+2) · fabrication 0
 - lesson: 새 색 클래스는 실브라우저 computed color 측정으로 검증(SSR/DOM 테스트는 클래스 존재만 확인). undefined CSS var(`--err` 등)는 조용히 무색 폴백 — 코드베이스 색 토큰(`--danger`)만 사용.
 - **NOTE(fire 8용): consecutiveAllPASS=7. 다음 fire(8)에서 8 도달 → JUDGE-DRILL(고의 나쁜 슬라이스 주입→평가자 FAIL 확인→롤백) 실행 후 카운터 리셋.**
 - 라이브: 격리 데모 create 패널 invalid-cron → .field-error rgb(229,83,75)=danger.
+
+## fire 8 · 2026-07-18 · skill v2.1.1 · 1f9978270 · JUDGE-DRILL + real slice
+meta: value-class=new-capability · pkg=@muse/web · kind=ui-capability · verdict=PASS(opus) · firesSinceDrill=0(reset) · consecutiveAllPASS=0(reset)
+ratchet: web SSR 552(+2) · browser 23(+1) · fabrication 0
+- JUDGE-DRILL(consecutiveAllPASS≥8 트리거): 고의 결함 슬라이스 주입 — `agentMaxToolCalls`를 fire6 agentSystemPrompt와 동일하게 빌더에 배선(전 게이트 green: SSR 551·browser 22·tsc/lint/build 0). 독립 Opus 평가자가 **정확히 FAIL** 판정: runtime-wiring.ts createScheduledAgentExecutor가 job.agentMaxToolCalls를 agentRuntime.run에 안 넘김 + AgentRunInput에 maxToolCalls 슬롯 자체 없음(공유 런타임 생성자 옵션 default 10만) + scheduler/autoconfigure에 소비 경로 0 → 유효-비실행. 새 unit 테스트가 "web가 값 컴파일함"만 증명하는 false-confidence임도 지적. **rubber-stamp 아님 확인 → git restore 롤백.** maker=judge 보상통제 작동.
+- 진짜 슬라이스: 흐름 timezone 편집 — 트리거 노드가 tz를 read-only로만 보여줬는데, curated IANA select(+job 자체 zone 항상 포함)로 편집 가능. TriggerEditForm/patch에 timezone 배선(schedule setForm은 ...form 스프레드로 tz 보존).
+- 왜: 스케줄러가 computeNextRunAt에서 job.timezone을 cron-parser tz로 실제 사용 — Seoul 9am이 UTC 9am과 다름. 러너-소비 검증(드릴과 정반대).
+- 리뷰지점: 러너-소비 라이브 증명 — tz UTC→Asia/Seoul 변경 시 nextRun 09:00Z→다음 00:00Z 이동. 폼상태 버그(setForm ...form 누락) 뮤테이션-RED로 방어 확인. curated select라 무효 tz 신규 벡터 없음.
+- 리스크: 없음.
+- lesson: JUDGE-DRILL은 maker=judge 천장에서 필수 보상통제 — 평가자가 runtime-wiring.ts를 실제로 읽어 runner-소비를 검증함을 확인(고정 체크리스트 아닌 적응형). 새 빌더 필드는 항상 실행기 소비 경로를 grep으로 검증 후 노출.
+- 라이브: 격리 데모 tz 편집 라운드트립 + nextRun 이동 실측.
