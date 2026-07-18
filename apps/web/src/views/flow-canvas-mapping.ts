@@ -10,7 +10,10 @@ import type { Edge, Node } from "@xyflow/react";
 import type { FlowEdge, FlowNode, FlowNodeKind, FlowProjection } from "../api/types.js";
 
 const COLUMN_X: Record<0 | 1 | 2, number> = { 0: 0, 1: 340, 2: 680 };
-const ROW_Y = 0;
+/** Staggered rows (trigger mid, action high, output low): with vertical
+ * separation ≥ a node's rendered height, nodes can never visually overlap
+ * even when fitView zooms a narrow canvas — an all-in-one-row layout did. */
+const ROW_Y: Record<0 | 1 | 2, number> = { 0: 120, 1: 0, 2: 220 };
 
 export interface FlowCanvasNodeData extends Record<string, unknown> {
   readonly kind: FlowNodeKind;
@@ -57,7 +60,7 @@ function toCanvasNode(node: FlowNode, index: number, flowEnabled: boolean): Flow
     },
     draggable: false,
     id: node.id,
-    position: { x: COLUMN_X[column], y: ROW_Y },
+    position: { x: COLUMN_X[column], y: ROW_Y[column] },
     type: nodeTypeForKind(node.kind)
   };
 }

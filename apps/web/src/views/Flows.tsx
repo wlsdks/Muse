@@ -8,6 +8,7 @@ import "@xyflow/react/dist/style.css";
 import { AsyncBlock, Button, Card, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { flowToCanvas } from "./flow-canvas-mapping.js";
+import { readNodePositions, writeNodePosition } from "./flow-node-positions.js";
 import { FLOW_EDGE_TYPES } from "./flow-edges.js";
 import { flowDraftToCopilotPayload, renameFlowPatch, toggleEnabledPatch } from "./flow-edit-compile.js";
 import { FlowCreatePanel } from "./flow-create-panel.js";
@@ -252,7 +253,11 @@ function FlowCanvasArea({
 }) {
   const { t } = useI18n();
   const canvas = flowToCanvas(flow);
-  const [nodes, setNodes] = useState<FlowCanvasNode[]>(() => canvas.nodes.map((node) => ({ ...node, draggable: true })));
+  const storage = typeof window === "undefined" ? undefined : window.localStorage;
+  const [nodes, setNodes] = useState<FlowCanvasNode[]>(() => {
+    const saved = readNodePositions(storage, flow.id);
+    return canvas.nodes.map((node) => ({ ...node, draggable: true, position: saved[node.id] ?? node.position }));
+  });
   const [edges, setEdges] = useState<readonly FlowCanvasEdge[]>(canvas.edges);
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -273,14 +278,15 @@ function FlowCanvasArea({
 
   // Re-render on a fresh `/api/flows` fetch (a save/toggle/trigger changed
   // the job): merge the NEW kind/label/meta/flowEnabled per node id but keep
-  // whatever position the user dragged it to — positions are ephemeral UI
-  // state, never sent to the server.
+  // whatever position the user dragged it to (in-memory first, then the
+  // persisted layout) — positions are UI state, never sent to the server.
   useEffect(() => {
     setNodes((previous) => {
       const freshCanvas = flowToCanvas(flow);
+      const saved = readNodePositions(storage, flow.id);
       return freshCanvas.nodes.map((node) => {
         const existing = previous.find((candidate) => candidate.id === node.id);
-        return { ...node, draggable: true, position: existing?.position ?? node.position };
+        return { ...node, draggable: true, position: existing?.position ?? saved[node.id] ?? node.position };
       });
     });
     setEdges(flowToCanvas(flow).edges);
@@ -288,6 +294,13 @@ function FlowCanvasArea({
 
   const onNodesChange = (changes: NodeChange[]) => {
     setNodes((current) => applyNodeChanges(changes, current) as FlowCanvasNode[]);
+    // Persist only a FINISHED drag (dragging: false) — not every intermediate
+    // frame, and never a programmatic dimension change.
+    for (const change of changes) {
+      if (change.type === "position" && change.dragging === false && change.position) {
+        writeNodePosition(storage, flow.id, change.id, change.position);
+      }
+    }
   };
 
   return (

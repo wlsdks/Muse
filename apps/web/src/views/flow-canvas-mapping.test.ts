@@ -32,12 +32,16 @@ const BASE_FLOW: FlowProjection = {
 };
 
 describe("flowToCanvas — node positions + ids", () => {
-  it("places trigger/action/output at deterministic x positions on the same row", () => {
+  it("places trigger/action/output at deterministic STAGGERED positions (vertical separation prevents overlap at any zoom)", () => {
     const canvas = flowToCanvas(BASE_FLOW);
     expect(canvas.nodes).toHaveLength(3);
-    expect(canvas.nodes[0]).toMatchObject({ id: "job_1::trigger", position: { x: 0, y: 0 } });
+    expect(canvas.nodes[0]).toMatchObject({ id: "job_1::trigger", position: { x: 0, y: 120 } });
     expect(canvas.nodes[1]).toMatchObject({ id: "job_1::action", position: { x: 340, y: 0 } });
-    expect(canvas.nodes[2]).toMatchObject({ id: "job_1::output", position: { x: 680, y: 0 } });
+    expect(canvas.nodes[2]).toMatchObject({ id: "job_1::output", position: { x: 680, y: 220 } });
+    // Overlap guard: adjacent columns differ vertically by at least ~a node's height.
+    const ys = canvas.nodes.map((n) => n.position.y);
+    expect(Math.abs(ys[0]! - ys[1]!)).toBeGreaterThanOrEqual(110);
+    expect(Math.abs(ys[1]! - ys[2]!)).toBeGreaterThanOrEqual(110);
   });
 
   it("assigns the node type by category (trigger/action/output), regardless of the underlying kind", () => {

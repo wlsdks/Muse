@@ -629,3 +629,22 @@ test("a TOOL draft from the copilot prefills the create panel in tool mode (serv
   // Draft-first still holds — no job auto-created.
   expect(post).not.toHaveBeenCalledWith("/api/scheduler/jobs", expect.anything());
 });
+
+test("a persisted node layout is applied on mount (dragged positions survive reload)", async () => {
+  window.localStorage.setItem("muse.flowNodePositions.job_1", JSON.stringify({ "job_1::action": { x: 512, y: 64 } }));
+  try {
+    const client = fakeClient();
+    await renderFlows(client);
+
+    const actionNode = document.querySelector<HTMLElement>('[data-id="job_1::action"]');
+    expect(actionNode).not.toBeNull();
+    await expect.poll(() => actionNode!.style.transform).toContain("512");
+    expect(actionNode!.style.transform).toContain("64");
+
+    // A node with no saved position keeps the default staggered layout.
+    const triggerNode = document.querySelector<HTMLElement>('[data-id="job_1::trigger"]');
+    await expect.poll(() => triggerNode!.style.transform).toContain("120");
+  } finally {
+    window.localStorage.removeItem("muse.flowNodePositions.job_1");
+  }
+});
