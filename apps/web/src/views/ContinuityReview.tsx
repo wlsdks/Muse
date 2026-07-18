@@ -7,9 +7,9 @@ import { useI18n } from "../i18n/index.js";
 import type { ApiClient } from "../api/client.js";
 import type { TaskRow } from "../api/types.js";
 
-type Outcome = "used" | "adjusted" | "ignored" | "rejected";
-type Kind = "life" | "work";
-const OUTCOMES: readonly Outcome[] = ["used", "adjusted", "ignored", "rejected"];
+export type Outcome = "used" | "adjusted" | "ignored" | "rejected";
+export type Kind = "life" | "work";
+export const OUTCOMES: readonly Outcome[] = ["used", "adjusted", "ignored", "rejected"];
 
 interface KindEvaluation {
   readonly automationGate: { readonly reasons: readonly string[]; readonly status: "hold" | "manual-only" };

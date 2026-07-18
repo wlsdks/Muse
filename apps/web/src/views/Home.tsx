@@ -1,10 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import { Badge, Button, Card, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
+import { safeSessionStorage } from "../lib/safe-storage.js";
 import { modelChip } from "../lib/model-chip.js";
 import { factLabel } from "../lib/memory-labels.js";
-import { dayRhythmCardState, homeCapabilities, seedChat } from "./home-logic.js";
+import { isThreadResumable, OutcomeButtons } from "./continuity-shared.js";
+import { OpenedPackCard } from "./ContinuityReview.js";
+import { consumeAutoContinueThread, dayRhythmCardState, homeCapabilities, seedChat } from "./home-logic.js";
 import { greetingKey, TodaySections } from "./Today.js";
 
 import type { ApiClient } from "../api/client.js";
@@ -17,11 +21,13 @@ import type {
   ModelsResponse,
   UserMemoryResponse
 } from "../api/types.js";
+import type { OpenedPack, Outcome } from "./continuity-shared.js";
+import type { ReviewThreadSummary } from "./continuity-shared.js";
 import type { Translate } from "../i18n/index.js";
 import type { ReactNode } from "react";
 
 interface ReviewThreadsResponse {
-  readonly threads?: readonly { readonly id: string; readonly kind: "life" | "work"; readonly linkCount: number; readonly title: string }[];
+  readonly threads?: readonly ReviewThreadSummary[];
 }
 
 /** One status chip: green dot when ok, amber when attention. Pure (no hooks). */
@@ -155,6 +161,10 @@ export function DayRhythmCard({
 export function HomeView({ client, onNavigate }: { client: ApiClient; onNavigate?: (view: string) => void }) {
   const { lang, t } = useI18n();
   const navigate = (view: string) => onNavigate?.(view);
+  const queryClient = useQueryClient();
+  const [expandedThreadId, setExpandedThreadId] = useState<string | undefined>();
+  const [openedPack, setOpenedPack] = useState<OpenedPack | undefined>();
+  const [confirmation, setConfirmation] = useState<{ readonly outcome: Outcome; readonly threadId: string } | undefined>();
 
   const health = useQuery({
     queryFn: () => client.get<HealthResponse>("/api/health"),
@@ -191,10 +201,52 @@ export function HomeView({ client, onNavigate }: { client: ApiClient; onNavigate
     },
     queryKey: ["memory", client.baseUrl, "default"]
   });
+  const continueThread = useMutation({
+    mutationFn: (threadId: string) => client.post<OpenedPack>(`/api/attunement/threads/${encodeURIComponent(threadId)}/continue`),
+    onSuccess: (result, threadId) => {
+      setOpenedPack(result);
+      setExpandedThreadId(threadId);
+      setConfirmation(undefined);
+      return queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] });
+    }
+  });
+  const outcome = useMutation({
+    mutationFn: ({ deliveryId, value }: { readonly deliveryId: string; readonly threadId: string; readonly value: Outcome }) =>
+      client.post(`/api/attunement/deliveries/${encodeURIComponent(deliveryId)}/outcome`, { outcome: value }),
+    onSuccess: (_result, variables) => {
+      setExpandedThreadId(undefined);
+      setOpenedPack(undefined);
+      setConfirmation({ outcome: variables.value, threadId: variables.threadId });
+      return queryClient.invalidateQueries({ queryKey: ["attunement-review", client.baseUrl] });
+    }
+  });
+  // One-shot handoff from Chat's continuity nudge ("이어서 하기"): open the
+  // named thread's Pack inline on mount — the explicit click already
+  // happened in Chat, this is its direct continuation, not a fresh
+  // autonomous trigger.
+  useEffect(() => {
+    const threadId = consumeAutoContinueThread(safeSessionStorage());
+    if (threadId) {
+      continueThread.mutate(threadId);
+    }
+  }, []);
   const chip = modelChip(models.data?.defaultModel ?? models.data?.active);
   const telegram = messaging.data?.providers.find((p) => p.id === "telegram");
   const replyDaemon = daemons.data?.flags?.find((f) => f.key === "MUSE_INBOUND_REPLY_ENABLED");
-  const threads = (review.data?.threads ?? []).slice(0, 2);
+  const allThreads = review.data?.threads ?? [];
+  // The expanded thread must ALWAYS be among the rendered rows — the chat
+  // nudge can hand off a resumable thread that sits below the top-2 slice,
+  // and a /continue whose pack renders nowhere would orphan its delivery.
+  const threads = (() => {
+    const top = allThreads.slice(0, 2);
+    if (expandedThreadId && !top.some((thread) => thread.id === expandedThreadId)) {
+      const expanded = allThreads.find((thread) => thread.id === expandedThreadId);
+      if (expanded) {
+        return [expanded, ...top.slice(0, 1)];
+      }
+    }
+    return top;
+  })();
   const facts = Object.entries(memory.data?.facts ?? {}).slice(-3).reverse();
   const caps = homeCapabilities({
     emailConfigured: email.data?.configured === true,
@@ -263,20 +315,62 @@ export function HomeView({ client, onNavigate }: { client: ApiClient; onNavigate
             </div>
           ) : (
             <>
-              {threads.map((thread) => (
-                <div className="row" key={thread.id}>
-                  <div className="row-main">
-                    <div className="row-title">{thread.title}</div>
-                    <div className="row-meta">
-                      <Badge tone="neutral">{thread.kind === "life" ? "Life" : "Work"}</Badge>{" "}
-                      {t("home.threads.links", { n: thread.linkCount })}
+              {threads.map((thread) => {
+                const resumable = isThreadResumable(thread);
+                const expanded = expandedThreadId === thread.id;
+                const opening = continueThread.isPending && continueThread.variables === thread.id;
+                const openError = continueThread.isError && continueThread.variables === thread.id;
+                const confirmed = confirmation?.threadId === thread.id ? confirmation : undefined;
+                return (
+                  <div key={thread.id}>
+                    <div className="row">
+                      <div className="row-main">
+                        <div className="row-title">{thread.title}</div>
+                        <div className="row-meta">
+                          <Badge tone="neutral">{thread.kind === "life" ? "Life" : "Work"}</Badge>{" "}
+                          {t("home.threads.links", { n: thread.linkCount })}
+                        </div>
+                      </div>
+                      <div className="row-actions">
+                        {resumable ? (
+                          <Button variant="ghost" size="sm" disabled={opening} onClick={() => continueThread.mutate(thread.id)}>
+                            {t("home.threads.nextStep")}
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" onClick={() => navigate("continuity")}>
+                            {t("home.threads.resume")}
+                          </Button>
+                        )}
+                      </div>
                     </div>
+                    {openError ? <p className="banner err" style={{ marginTop: 8 }}>{t("continuity.packError")}</p> : null}
+                    {confirmed ? (
+                      <p className="row-meta" style={{ marginTop: 4 }}>{t("home.threads.outcomeConfirmed", { outcome: confirmed.outcome })}</p>
+                    ) : null}
+                    {expanded && openedPack ? (
+                      <div style={{ marginTop: 8 }}>
+                        <OpenedPackCard openedPack={openedPack} />
+                        <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                          <OutcomeButtons
+                            deliveryId={openedPack.delivery.id}
+                            disabled={outcome.isPending}
+                            onOutcome={(value) => {
+                              if (window.confirm(t("continuity.outcomeConfirm", { outcome: value }))) {
+                                outcome.mutate({ deliveryId: openedPack.delivery.id, threadId: thread.id, value });
+                              }
+                            }}
+                            t={t}
+                          />
+                          <Button variant="ghost" size="sm" onClick={() => navigate("continuity")}>
+                            {t("home.threads.detail")}
+                          </Button>
+                        </div>
+                        {outcome.isError ? <p className="banner err" style={{ marginTop: 8 }}>{t("continuity.outcomeError")}</p> : null}
+                      </div>
+                    ) : null}
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => navigate("continuity")}>
-                    {t("home.threads.resume")}
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
               <div style={{ marginTop: 8 }}>
                 <Button variant="ghost" size="sm" onClick={() => navigate("continuity")}>
                   {t("home.threads.all")}

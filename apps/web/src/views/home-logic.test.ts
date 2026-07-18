@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { dayRhythmCardState, homeCapabilities } from "./home-logic.js";
+import { consumeAutoContinueThread, dayRhythmCardState, homeCapabilities, writeAutoContinueThread } from "./home-logic.js";
 import { factLabel, groupFactsByValue } from "../lib/memory-labels.js";
 import type { DayRhythmStateResponse } from "../api/types.js";
+
+function memoryStorage(): Storage {
+  const data = new Map<string, string>();
+  return {
+    clear: () => data.clear(),
+    getItem: (key: string) => (data.has(key) ? data.get(key)! : null),
+    key: (index: number) => Array.from(data.keys())[index] ?? null,
+    get length() {
+      return data.size;
+    },
+    removeItem: (key: string) => {
+      data.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      data.set(key, value);
+    }
+  };
+}
 
 describe("homeCapabilities — entries appear only when actually available", () => {
   it("always offers the local-store capabilities", () => {
@@ -82,5 +100,46 @@ describe("groupFactsByValue — one entity, one row, nothing hidden", () => {
 
   it("handles empty facts", () => {
     expect(groupFactsByValue({})).toEqual([]);
+  });
+});
+
+describe("writeAutoContinueThread / consumeAutoContinueThread — one-shot Chat→Home Pack handoff", () => {
+  it("consuming before any write returns undefined", () => {
+    expect(consumeAutoContinueThread(memoryStorage())).toBeUndefined();
+  });
+
+  it("round-trips the written thread id", () => {
+    const storage = memoryStorage();
+    writeAutoContinueThread(storage, "thread_life");
+    expect(consumeAutoContinueThread(storage)).toBe("thread_life");
+  });
+
+  it("is one-shot: a second consume after the first returns undefined (no repeat auto-continue on remount)", () => {
+    const storage = memoryStorage();
+    writeAutoContinueThread(storage, "thread_life");
+    expect(consumeAutoContinueThread(storage)).toBe("thread_life");
+    expect(consumeAutoContinueThread(storage)).toBeUndefined();
+  });
+
+  it("is a no-op / returns undefined for an undefined storage, never throwing", () => {
+    expect(() => writeAutoContinueThread(undefined, "thread_life")).not.toThrow();
+    expect(consumeAutoContinueThread(undefined)).toBeUndefined();
+  });
+
+  it("swallows a throwing storage instead of crashing the caller", () => {
+    const throwing: Storage = {
+      clear: () => undefined,
+      getItem: () => {
+        throw new Error("denied");
+      },
+      key: () => null,
+      length: 0,
+      removeItem: () => undefined,
+      setItem: () => {
+        throw new Error("denied");
+      }
+    };
+    expect(() => writeAutoContinueThread(throwing, "thread_life")).not.toThrow();
+    expect(consumeAutoContinueThread(throwing)).toBeUndefined();
   });
 });

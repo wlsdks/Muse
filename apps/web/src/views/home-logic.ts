@@ -87,3 +87,39 @@ export function seedChat(prompt: string, navigate: (view: string) => void): void
   }
   navigate("chat");
 }
+
+const AUTO_CONTINUE_KEY = "muse.homeAutoContinueThreadId";
+
+/** One-shot handoff from Chat's continuity nudge: "이어서 하기" writes the
+ * resumable thread's id here before navigating to Home, so Home can open
+ * that exact Pack inline on mount — the same explicit click that triggered
+ * the navigation, never a second implicit trigger. Wrapped for the same
+ * reason as `seedChat`: storage access can throw. */
+export function writeAutoContinueThread(storage: Storage | undefined, threadId: string): void {
+  if (!storage) {
+    return;
+  }
+  try {
+    storage.setItem(AUTO_CONTINUE_KEY, threadId);
+  } catch {
+    /* storage unavailable — Home falls back to a normal (unexpanded) render */
+  }
+}
+
+/** Reads AND clears the handoff in one step so a later remount of Home
+ * (e.g. switching tabs and back) does not re-trigger the same continue
+ * call a second time. */
+export function consumeAutoContinueThread(storage: Storage | undefined): string | undefined {
+  if (!storage) {
+    return undefined;
+  }
+  try {
+    const value = storage.getItem(AUTO_CONTINUE_KEY);
+    if (value !== null) {
+      storage.removeItem(AUTO_CONTINUE_KEY);
+    }
+    return value ?? undefined;
+  } catch {
+    return undefined;
+  }
+}

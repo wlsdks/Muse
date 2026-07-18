@@ -13,11 +13,14 @@ import { readToken } from "../lib/token-storage.js";
 import { safeSessionStorage } from "../lib/safe-storage.js";
 import { shouldStickToBottom } from "./chat-autoscroll.js";
 import { ChatsView } from "./Chats.js";
+import { continuityNudgeFor, dismissNudge, isNudgeDismissed } from "./continuity-nudge.js";
+import { writeAutoContinueThread } from "./home-logic.js";
 import { writeBuilderCopilotSeed } from "./scheduled-logic.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { ModelsResponse } from "../api/types.js";
 import type { PendingApproval } from "../api/useChatStream.js";
+import type { ContinuityNudge, ReviewThreadsPayload } from "./continuity-nudge.js";
 import type { StringKey, Translate } from "../i18n/index.js";
 import type { RefObject } from "react";
 
@@ -175,6 +178,87 @@ export function ChatEmptyState({
       <div className="empty-hint">{t("chat.askSub")}</div>
       <StarterChips onPick={onPickStarter} t={t} />
     </div>
+  );
+}
+
+/** The session-open continuity nudge: a single dismissible line naming the
+ * one resumable thread `continuityNudgeFor` found, shown above the composer
+ * only for a brand-new (empty) session. Read-only by construction — it
+ * takes no client and calls no API itself; `onContinue` / `onDismiss` are
+ * the only actions, and both fire only from an explicit click. Takes `t` as
+ * a prop (no hooks) so it renders directly in a test, mirroring
+ * `StarterChips`. */
+export function ChatContinuityNudge({
+  nudge,
+  onContinue,
+  onDismiss,
+  t
+}: {
+  nudge: ContinuityNudge;
+  onContinue: () => void;
+  onDismiss: () => void;
+  t: Translate;
+}) {
+  return (
+    <div className="chat-continuity-nudge" role="group" aria-label={t("chat.continuityNudge.line", { title: nudge.title })}>
+      <span className="row-meta">{t("chat.continuityNudge.line", { title: nudge.title })}</span>
+      <div style={{ display: "flex", gap: 6 }}>
+        <Button size="sm" variant="secondary" onClick={onContinue}>{t("chat.continuityNudge.continue")}</Button>
+        <Button size="sm" variant="ghost" onClick={onDismiss}>
+          {t("chat.continuityNudge.later")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Owns the nudge's read-only fetch + one-shot dismissal state, kept as its
+ * own component (rather than inlined in `ChatSession`) so it is testable
+ * without mounting the full session's `useChatStream` SSE hook — the same
+ * reason `ChatEmptyState` and `StarterChips` take plain props instead of
+ * reaching into the session. `isEmptySession` is the ONLY session state it
+ * needs; it renders nothing (and, once dismissed or once a turn lands,
+ * stops fetching) rather than surface a review-API error.
+ */
+export function ChatContinuitySection({
+  client,
+  isEmptySession,
+  onNavigate
+}: {
+  client: ApiClient;
+  isEmptySession: boolean;
+  onNavigate?: (view: string) => void;
+}) {
+  const { t } = useI18n();
+  const [dismissed, setDismissed] = useState(() => isNudgeDismissed(safeSessionStorage()));
+  // Fetching stops (via `enabled`) the moment the first turn lands or the
+  // nudge is dismissed, so the read-only GET never repeats mid-conversation.
+  const review = useQuery({
+    enabled: isEmptySession && !dismissed,
+    queryFn: () => client.get<ReviewThreadsPayload>("/api/attunement/review"),
+    queryKey: ["attunement-review", client.baseUrl]
+  });
+  if (!isEmptySession || dismissed) {
+    return null;
+  }
+  const nudge = continuityNudgeFor(review.data);
+  if (!nudge) {
+    return null;
+  }
+  return (
+    <ChatContinuityNudge
+      nudge={nudge}
+      onContinue={() => {
+        writeAutoContinueThread(safeSessionStorage(), nudge.threadId);
+        onNavigate?.("home");
+      }}
+      onDismiss={() => {
+        dismissNudge(safeSessionStorage());
+        setDismissed(true);
+      }}
+      t={t}
+    />
   );
 }
 
@@ -411,6 +495,8 @@ export function ChatSession({ client, onNavigate }: { client: ApiClient; onNavig
           )}
         </div>
       </div>
+
+      <ChatContinuitySection client={client} isEmptySession={turns.length === 0} onNavigate={onNavigate} />
 
       <div className="chat-composer">
         {voice.error && <div className="banner err" style={{ maxWidth: 760, margin: "0 auto 8px" }}>{voice.error}</div>}
