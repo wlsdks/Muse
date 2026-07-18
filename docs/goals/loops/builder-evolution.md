@@ -161,7 +161,7 @@ ratchet: api compile 40(+8) · routes 15 · web flow-edit-compile 59(+3) · brow
 - 라이브: 격리 데모(3806) 전 사이클 — HTTP 초안(args 포함)→실브라우저 코파일럿→create 패널 프리필({"url":...}, muse.url/parse, 이름)→만들기→MCP_TOOL 잡에 toolArguments 영속→수동 트리거→lastStatus SUCCESS.
 - lesson: 미커밋 편집 위 뮤테이션 원복에 `git checkout --` 사용 금지(작업 소실, 컨텍스트에서 전량 재구성으로 복구) — cp 백업 원칙 재확인([[project_main_worktree_git_hazards]]).
 
-## fire 17 · 2026-07-18 · skill v2.1.1 · (this commit) (인터랙티브 "전부다" 지시 — 큐 마지막 항목)
+## fire 17 · 2026-07-18 · skill v2.1.1 · ec0343dad (인터랙티브 "전부다" 지시 — 큐 마지막 항목)
 meta: value-class=new-capability · pkg=@muse/web · kind=ui-capability · verdict=PASS(opus) · firesSinceDrill=1 · consecutiveAllPASS=2
 ratchet: unit flow-connection-logic 6(신규) · browser 40(+2) · fabrication 0
 - 무엇: 캔버스 연결 시맨틱 — 러너가 소비하는 유일한 의미-연결(action→output.notify=notificationChannelId)에 제스처 쌍 부여: 채널 없는 흐름엔 점선 고스트 "알림 연결하기"(클릭→채널 팝오버→연결=PATCH), 실제 알림 엣지 더블클릭=해제(PATCH null). 구조 엣지는 불활성(classifyEdgeRemoval). 고스트 위치는 출력 컬럼 최하단+140px(겹침 금지 룰 — browser 스위트가 개발 중 실제 겹침을 검출해 수정).
