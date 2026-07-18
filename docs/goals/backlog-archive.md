@@ -1007,4 +1007,4 @@ Design: docs/strategy/secret-source.md · convergence pick (openclaw+hermes both
 ## COMPETITOR-CONVERGENCE — EXHAUSTED (loop/competitor-convergence)
 Each fire analyzed openclaw+hermes for the next convergence gap (both-have ∩ Muse-lacks, freshness-checked).
 - [done] :: CONVERGENCE EXHAUSTED (3 independent scouts) — PTC · SecretSource · MCP supply-chain audit shipped; surface closed vs both rivals. Re-point to a frontier axis or stop = Jinan's call.
-
+- [done] 2026-07-18 commit=1491e3199 :: ask 표면 언어 미러링 배선 완료 — composeDefaultRecallSystemPrompt가 buildLanguageMirrorLayer(query)를 volatile zone에 주입(override 경로 무주입, 캐시경계 뒤 배치). recall 751/751 + 라이브 EN 3/3, KO 3/3, Opus 게이트 PASS.
