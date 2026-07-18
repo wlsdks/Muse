@@ -29,8 +29,15 @@ export function isNotifyGhostId(nodeId: string): boolean {
  * server, id stable per flow so dragged positions persist.
  */
 export function canvasWithNotifyGhost(flow: FlowProjection): FlowCanvas {
-  const canvas = flowToCanvas(flow);
-  if (canvas.nodes.some((node) => node.data.kind === "output.notify")) {
+  const base = flowToCanvas(flow);
+  const notifyIds = new Set(base.nodes.filter((node) => node.data.kind === "output.notify").map((node) => node.id));
+  // Mark the detachable notify edge so the renderer can carry the
+  // double-click affordance (SVG title) — the gesture must be discoverable.
+  const canvas: FlowCanvas = {
+    edges: base.edges.map((edge) => (notifyIds.has(edge.target) ? { ...edge, data: { ...edge.data!, detachable: true } } : edge)),
+    nodes: base.nodes
+  };
+  if (notifyIds.size > 0) {
     return canvas;
   }
   // Never overlap a real node (the no-overlap canvas rule): drop the ghost

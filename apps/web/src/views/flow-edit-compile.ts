@@ -348,16 +348,18 @@ export function flowDraftToJobInput(draft: FlowDraft, timezone: string = default
  * the create form edits — the copilot draft is never auto-created, it just
  * pre-fills this form so the user still reviews + clicks 만들기. A cron the
  * model returned that matches a known preset resolves to that preset
- * (`scheduleFormFromCron`); otherwise it lands in the custom-cron field. The
- * copilot only ever produces an agent-prompt draft. */
-export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
+ * (`scheduleFormFromCron`); otherwise it lands in the custom-cron field.
+ * `base` (the live form on a REVISION turn) carries the fields the copilot's
+ * payload cannot express — model, system prompt, retry count, enabled — so a
+ * follow-up chat turn never silently wipes a manual form edit. */
+export function flowDraftFromCopilot(payload: FlowDraftPayloadRow, base?: FlowDraft): FlowDraft {
   return {
     actionKind: payload.action === "tool" ? "tool" : "agent",
-    agentModel: "",
+    agentModel: base?.agentModel ?? "",
     agentPrompt: payload.prompt,
-    agentSystemPrompt: "",
-    enabled: true,
-    maxRetryCount: DEFAULT_MAX_RETRY_COUNT,
+    agentSystemPrompt: base?.agentSystemPrompt ?? "",
+    enabled: base?.enabled ?? true,
+    maxRetryCount: base?.maxRetryCount ?? DEFAULT_MAX_RETRY_COUNT,
     name: payload.name,
     notificationChannelId: payload.notifyChannel ?? "",
     retryOnFailure: payload.retry,

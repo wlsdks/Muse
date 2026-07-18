@@ -12,7 +12,7 @@ import { flowToCanvas } from "./flow-canvas-mapping.js";
 import { readNodePositions, writeNodePosition } from "./flow-node-positions.js";
 import { consumeBuilderCreateForWorkHint, consumeBuilderFocusHint } from "./scheduled-logic.js";
 import { FLOW_EDGE_TYPES } from "./flow-edges.js";
-import { flowDraftToCopilotPayload, flowEditToJobPatch, renameFlowPatch, toggleEnabledPatch } from "./flow-edit-compile.js";
+import { flowDraftToCopilotPayload, flowEditToJobPatch, isFlowDraftValid, renameFlowPatch, toggleEnabledPatch } from "./flow-edit-compile.js";
 import { FlowCreatePanel } from "./flow-create-panel.js";
 import { FlowDraftComposer } from "./flow-draft-composer.js";
 import { NotifyChannelQuickPick } from "./flow-notify-picker.js";
@@ -62,6 +62,7 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [initialDraft, setInitialDraft] = useState<FlowDraftPayloadRow | undefined>(undefined);
+  const [initialBase, setInitialBase] = useState<FlowDraft | undefined>(undefined);
   const [draftVersion, setDraftVersion] = useState(0);
   const [sideTab, setSideTab] = useState<SideTab>("chat");
   const [zen, setZen] = useState(false);
@@ -70,6 +71,7 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
   const [createForWorkId, setCreateForWorkId] = useState<string | undefined>(() =>
     consumeBuilderCreateForWorkHint(typeof window === "undefined" ? undefined : window.sessionStorage)
   );
+  const [workLinkFailed, setWorkLinkFailed] = useState(false);
   useEffect(() => {
     if (createForWorkId) {
       setCreating(true);
@@ -124,6 +126,10 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
   };
   const handleDrafted = (draft: FlowDraftPayloadRow) => {
     setInitialDraft(draft);
+    // On a revision turn the remounted panel re-seeds from the payload —
+    // hand it the live form so model/system-prompt/retry-count edits the
+    // payload can't express survive the turn.
+    setInitialBase(creating && liveDraft ? liveDraft : undefined);
     setDraftVersion((version) => version + 1);
     setCreating(true);
   };
@@ -135,8 +141,11 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
     setCreateForWorkId(undefined);
   };
   // The copilot drafts BOTH kinds (agent prompts and read-risk tool flows),
-  // so a revision turn always carries the live form state.
-  const currentDraft = creating && liveDraft
+  // so a revision turn carries the live form state — but ONLY once the form
+  // is actually a valid draft. A blank/half-filled panel projected as
+  // `currentDraft` fails the server's revision validation (400), so an
+  // incomplete form sends a FRESH first turn instead.
+  const currentDraft = creating && liveDraft && isFlowDraftValid(liveDraft)
     ? flowDraftToCopilotPayload(liveDraft)
     : undefined;
 
@@ -167,12 +176,21 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
 
       <div className="ws-body">
         <div className="ws-main">
+          {workLinkFailed && (
+            <div className="banner err" style={{ margin: "10px 12px 0" }}>
+              {t("auto.flows.workLinkFailed")}
+              <button type="button" className="banner-dismiss" onClick={() => setWorkLinkFailed(false)} aria-label={t("common.cancel")}>
+                ×
+              </button>
+            </div>
+          )}
           {creating ? (
             <div className="ws-create">
               <FlowCreatePanel
                 key={initialDraft ? `draft-${draftVersion.toString()}` : "empty"}
                 client={client}
                 initialDraft={initialDraft}
+                initialBase={initialBase}
                 onDraftChange={setLiveDraft}
                 onCancel={closeCreatePanel}
                 onCreated={(jobId) => {
@@ -181,12 +199,14 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
                   if (createForWorkId) {
                     const workId = createForWorkId;
                     setCreateForWorkId(undefined);
+                    setWorkLinkFailed(false);
                     void client
                       .post(`/api/works/${workId}/link`, { id: jobId, kind: "flow" })
                       .then(() => void qc.invalidateQueries({ queryKey: ["works"] }))
                       .catch(() => {
-                        /* linking is best-effort sugar — the flow itself was
-                           created; the user can still link it from the Work view */
+                        // The flow itself was created — surface the miss so the
+                        // user knows to link it manually from the Work view.
+                        setWorkLinkFailed(true);
                       });
                   }
                 }}
@@ -250,7 +270,8 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
                   client={client}
                   flow={selectedFlow}
                   nodeId={selectedNodeId}
-                  onSaved={() => void qc.invalidateQueries({ queryKey: ["flows"] })}
+                  // invalidation is owned by the edit panel's own onSuccess
+                  onSaved={() => undefined}
                 />
               ) : (
                 <p className="subtle">{t("auto.flows.detailEmpty")}</p>

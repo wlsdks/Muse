@@ -34,6 +34,8 @@ export type FlowCanvasNode = Node<FlowCanvasNodeData, FlowCanvasNodeType>;
 export interface FlowCanvasEdgeData extends Record<string, unknown> {
   readonly flowEnabled: boolean;
   readonly loop: boolean;
+  /** True on the action→output.notify edge — double-click detaches it. */
+  readonly detachable?: boolean;
 }
 
 export type FlowCanvasEdge = Edge<FlowCanvasEdgeData, "flowEdge">;

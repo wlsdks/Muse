@@ -652,3 +652,60 @@ describe("flowEditToJobPatch — tool node with an editable tool pair", () => {
   });
 });
 
+describe("flowDraftFromCopilot — revision base preservation", () => {
+  it("keeps model/system-prompt/retry-count/enabled from the live form the payload cannot express", () => {
+    const base = {
+      ...flowDraftFromCopilot({
+        action: "agent" as const,
+        cronExpression: "0 9 * * *",
+        name: "브리핑",
+        notifyChannel: null,
+        prompt: "요약해줘",
+        retry: false,
+        toolArguments: {},
+        toolName: null,
+        toolServer: null
+      }),
+      agentModel: "ollama/qwen3:8b",
+      agentSystemPrompt: "간결하게",
+      enabled: false,
+      maxRetryCount: 5
+    };
+    const revised = flowDraftFromCopilot(
+      {
+        action: "agent",
+        cronExpression: "30 8 * * *",
+        name: "브리핑",
+        notifyChannel: null,
+        prompt: "요약해줘",
+        retry: false,
+        toolArguments: {},
+        toolName: null,
+        toolServer: null
+      },
+      base
+    );
+    expect(revised.agentModel).toBe("ollama/qwen3:8b");
+    expect(revised.agentSystemPrompt).toBe("간결하게");
+    expect(revised.maxRetryCount).toBe(5);
+    expect(revised.enabled).toBe(false);
+    expect(revised.schedule).toEqual({ customCron: "30 8 * * *", kind: "custom" });
+  });
+
+  it("without a base (first turn) the defaults stay", () => {
+    const draft = flowDraftFromCopilot({
+      action: "agent",
+      cronExpression: "0 9 * * *",
+      name: "브리핑",
+      notifyChannel: null,
+      prompt: "요약해줘",
+      retry: false,
+      toolArguments: {},
+      toolName: null,
+      toolServer: null
+    });
+    expect(draft.agentModel).toBe("");
+    expect(draft.agentSystemPrompt).toBe("");
+    expect(draft.enabled).toBe(true);
+  });
+});

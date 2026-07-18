@@ -2712,3 +2712,13 @@ button.status-chip {
   font-weight: 600;
   font-size: 13px;
 }
+
+.banner-dismiss {
+  margin-left: 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}

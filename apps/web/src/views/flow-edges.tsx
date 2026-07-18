@@ -1,5 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type Edge, type EdgeProps } from "@xyflow/react";
 
+import { useI18n } from "../i18n/index.js";
+
 import type { FlowCanvasEdgeData } from "./flow-canvas-mapping.js";
 
 // Same reasoning as `flow-nodes.tsx`'s `FlowNodeProps`: `edgeTypes`'s
@@ -24,6 +26,7 @@ export function FlowEdge({
   label,
   data
 }: FlowEdgeProps) {
+  const { t } = useI18n();
   const enabled = data?.flowEnabled ?? true;
   const loop = data?.loop ?? false;
   const stroke = enabled ? "var(--flow-edge-enabled)" : "var(--flow-edge-disabled)";
@@ -52,6 +55,14 @@ export function FlowEdge({
   }
 
   const [path] = getBezierPath({ sourcePosition, sourceX, sourceY, targetPosition, targetX, targetY });
+  if (data?.detachable) {
+    return (
+      <g>
+        <title>{t("auto.flows.connect.detachTitle")}</title>
+        <BaseEdge id={id} path={path} style={{ stroke, strokeWidth: 1.5 }} />
+      </g>
+    );
+  }
   return <BaseEdge id={id} path={path} style={{ stroke, strokeWidth: 1.5 }} />;
 }
 

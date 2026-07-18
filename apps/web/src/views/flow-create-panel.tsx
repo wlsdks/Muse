@@ -45,6 +45,7 @@ export function FlowCreatePanel({
   onCreated,
   onCancel,
   initialDraft,
+  initialBase,
   onDraftChange
 }: {
   client: ApiClient;
@@ -53,6 +54,10 @@ export function FlowCreatePanel({
   /** A 코파일럿 초안 (copilot draft) to prefill the form with — the user still
    * reviews every field and clicks 만들기; nothing is created automatically. */
   initialDraft?: FlowDraftPayloadRow;
+  /** The live form state at the moment a REVISION draft landed — carries the
+   * fields the copilot payload can't express (model/system prompt/retry
+   * count) through the remount so manual edits survive a chat turn. */
+  initialBase?: FlowDraft;
   /** Mirrors the LIVE form state up to the parent on every change — the
    * conversational draft composer (rendered as this panel's sibling) reads
    * this to build `currentDraft` for its next revision turn, so a manual
@@ -61,7 +66,7 @@ export function FlowCreatePanel({
 }) {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const [draft, setDraft] = useState<FlowDraft>(() => (initialDraft ? flowDraftFromCopilot(initialDraft) : emptyFlowDraft()));
+  const [draft, setDraft] = useState<FlowDraft>(() => (initialDraft ? flowDraftFromCopilot(initialDraft, initialBase) : emptyFlowDraft()));
 
   useEffect(() => {
     onDraftChange?.(draft);

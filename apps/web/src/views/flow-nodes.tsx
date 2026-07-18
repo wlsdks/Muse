@@ -119,7 +119,18 @@ export function OutputNode({ data, selected }: FlowNodeProps) {
   const { t } = useI18n();
   if (data.ghost) {
     return (
-      <div className="flow-node flow-node-ghost" role="button" title={t("auto.flows.connect.ghostTitle")}>
+      <div
+        className="flow-node flow-node-ghost"
+        role="button"
+        tabIndex={0}
+        title={t("auto.flows.connect.ghostTitle")}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.currentTarget.click();
+          }
+        }}
+      >
         <Handle type="target" position={Position.Left} style={{ visibility: "hidden" }} />
         <div className="flow-node-head">
           <span className="flow-node-ic" aria-hidden="true">

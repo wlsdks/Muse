@@ -898,3 +898,30 @@ test("editing a TOOL node re-points the tool pair via the read-risk cascade and 
     toolName: "now"
   });
 });
+
+test("a copilot request from a BLANK create panel sends a FRESH turn (no currentDraft) instead of 400ing", async () => {
+  const client = fakeClient();
+  const screen = await renderFlows(client);
+
+  await openCreatePanel(screen);
+  const composerInput = screen.getByPlaceholder("e.g. every morning at 9am, summarize my schedule");
+  await composerInput.fill("매일 아침 9시에 일정 요약해서 알려줘");
+  await screen.getByRole("button", { name: "Draft it" }).click();
+
+  await expect.poll(() => (client.post as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
+  expect(client.post).toHaveBeenCalledWith("/api/flows/draft", {
+    text: "매일 아침 9시에 일정 요약해서 알려줘"
+  });
+});
+
+test("the notify ghost activates from the keyboard (Enter opens the channel popover)", async () => {
+  const client = fakeClient();
+  await renderFlows(client);
+
+  const ghost = document.querySelector<HTMLElement>(".flow-node-ghost");
+  expect(ghost).not.toBeNull();
+  expect(ghost!.tabIndex).toBe(0);
+  ghost!.focus();
+  ghost!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+  await expect.poll(() => document.querySelector(".flow-notify-pop") !== null).toBe(true);
+});

@@ -68,3 +68,13 @@ describe("classifyEdgeRemoval", () => {
     expect(classifyEdgeRemoval({ target: notifyGhostId("flow-1") }, canvas.nodes)).toBe("keep");
   });
 });
+
+describe("detachable edge marking", () => {
+  it("marks only the edge into the real notify node", () => {
+    const canvas = canvasWithNotifyGhost(
+      flowWith([TRIGGER, ACTION, OUTPUT], [{ from: TRIGGER.id, id: "e0", to: ACTION.id }, { from: ACTION.id, id: "e1", to: OUTPUT.id }])
+    );
+    expect(canvas.edges.find((edge) => edge.id === "e1")?.data?.detachable).toBe(true);
+    expect(canvas.edges.find((edge) => edge.id === "e0")?.data?.detachable).toBeUndefined();
+  });
+});
