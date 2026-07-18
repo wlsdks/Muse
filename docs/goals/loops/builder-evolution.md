@@ -179,3 +179,13 @@ ratchet: unit flow-edit-compile 62(+3) · browser 46(+1) · related 238 · fabri
 - 리스크: 없음(내부 폼 타입은 edit-panel 단독 소비 — create/copilot 무영향 확인).
 - 라이브: 격리 데모(3808) — 실 레지스트리 13서버 캐스케이드 시딩→muse.url/parse→muse.time/now 전환(도구 옵션 캐스케이드·args 리셋 실측)→저장 영속→재실행 SUCCESS.
 - self-eval 노트: fire 시작 시 apiBoot:fail은 신규 worktree stale-dist(autoconfigure 미빌드)로 판명 — tsc -b 후 green, 회귀 아님.
+
+## fire 19 · 2026-07-18 · skill v2.1.1 · (4 commits, 아래 pin) (인터랙티브 "sonnet 검수+정리+LNB" 지시)
+meta: value-class=fix+ia+refactor · pkg=@muse/web · kind=review-remediation · verdict=PASS(opus, 4커밋 일괄) · firesSinceDrill=3 · consecutiveAllPASS=4
+ratchet: unit 592 · browser 50(+5) · Flows.tsx 707→336 · LNB 15→13행 · fabrication 0
+- 무엇: Sonnet 검수 3방향(결함/정리/LNB) 발견 반영 4커밋 — ①P1 결함 6건 fix(blank-panel 400·revision 필드소실·detach 무단서·고스트 키보드·링크실패 침묵·중복 무효화) ②LNB 1단계(Scheduled→Builder "스케줄" 탭 흡수+행 삭제, 연동 advanced 강등, Work eyebrow 진실화, Autonomy EN 충돌 해소) ③기계 정리(미사용 i18n 8쌍·SaveRow 추출·safe-storage·Flows 3분할) ④진안 라이브 피드백: 코파일럿을 진짜 채팅형으로(하단 고정 composer·Enter 전송·IME-safe·버블·pending·ack·빈상태).
+- 왜: 진안 "sonnet으로 검수해서 개선/수정/활용+코드정리+LNB 더 뺄 것" 직접 지시.
+- 리뷰지점: 검수는 Sonnet 3병렬(발견=데이터), 판정/게이트는 Opus 독립(4커밋 일괄 PASS — 스위트 직접 재실행+뮤테이션-RED 재현+퓨어무브 검증). ScheduledView 완전 삭제(잔존참조 0), 연동은 devMode/홈 딥링크로 접근 유지.
+- 리스크: 코파일럿 재시도 시 사용자 버블 2개(별개 제출로 정당, opus 수용); nav.scheduled 키는 부재-어설션 테스트가 참조해 보존.
+- 라이브: 데모 2회 실측 — LNB 13행+스케줄 탭 왕복 / 채팅 composer 하단고정(<4px)·즉시buble·pending·ack·gemma4 실왕복 폼 채움.
+- 잘한것(검수 확인): compile-seam 분리·bounded repair-retry·useSavableForm 패턴 — 타 표면 재사용 후보로 기록.
