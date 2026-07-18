@@ -45,6 +45,18 @@ if (!(await ollamaHasModel())) {
 
 const modelProvider = new OllamaProvider({ baseUrl: OLLAMA_BASE });
 
+// Mirrors the route's listDraftableTools: read-risk loopback tools the
+// scheduler can actually execute. A fixed representative subset keeps the
+// battery deterministic (the live route derives the full set at runtime).
+const DRAFTABLE_TOOLS = [
+  { description: "Returns the current date/time (ISO timestamp, weekday).", server: "muse.time", tool: "now" },
+  { description: "Millisecond difference between two ISO timestamps.", server: "muse.time", tool: "diff_ms" },
+  { description: "Character/word/line statistics for a text.", server: "muse.text", tool: "stats" },
+  { description: "Evaluates an arithmetic expression.", server: "muse.math", tool: "evaluate" },
+  { description: "Pretty-prints a JSON document.", server: "muse.json", tool: "format" },
+  { description: "Parses a URL into components.", server: "muse.url", tool: "parse" }
+];
+
 const CASES = [
   {
     expectNotify: false,
@@ -82,11 +94,15 @@ async function generate(prompt) {
 }
 
 async function draftFor(text) {
-  const first = parseFlowDraftResponse(await generate(buildFlowDraftPrompt(text)));
+  const options = { allowedTools: DRAFTABLE_TOOLS };
+  const first = parseFlowDraftResponse(await generate(buildFlowDraftPrompt(text, DRAFTABLE_TOOLS)), options);
   if (first.ok) {
     return first;
   }
-  return parseFlowDraftResponse(await generate(buildFlowDraftRepairPrompt(text, "(previous attempt)", first.error)));
+  return parseFlowDraftResponse(
+    await generate(buildFlowDraftRepairPrompt(text, "(previous attempt)", first.error, DRAFTABLE_TOOLS)),
+    options
+  );
 }
 
 async function revisionDraftFor(text, currentDraft) {
@@ -106,11 +122,14 @@ async function revisionDraftFor(text, currentDraft) {
 // preservation is the scored property, not just a valid draft.
 const REVISION_CASE = {
   currentDraft: {
+    action: "agent",
     cronExpression: "0 9 * * *",
     name: "아침 브리핑",
     notifyChannel: null,
     prompt: "일정 요약해줘",
-    retry: false
+    retry: false,
+    toolName: null,
+    toolServer: null
   },
   expectedCron: "30 8 * * *",
   label: "KO revision (time-change, field-preservation)",
@@ -128,7 +147,10 @@ for (const testCase of CASES) {
   const cronOk = parsed.value.cronExpression === testCase.expectedCron;
   const promptOk = testCase.promptKeywords.every((keyword) => parsed.value.prompt.includes(keyword));
   const notifyOk = !testCase.expectNotify || parsed.value.notifyChannel !== null;
-  const ok = cronOk && promptOk && notifyOk;
+  // Over-fire guard (IrrelAcc analog): an agent-shaped request must NOT
+  // become a tool draft just because tools are on offer.
+  const actionOk = parsed.value.action === "agent";
+  const ok = cronOk && promptOk && notifyOk && actionOk;
 
   if (ok) {
     passed += 1;
@@ -136,8 +158,40 @@ for (const testCase of CASES) {
   console.log(
     `${ok ? "PASS" : "FAIL"} [${testCase.label}] cron=${cronOk ? "ok" : `WRONG (${parsed.value.cronExpression})`} `
       + `prompt=${promptOk ? "ok" : `MISSING keyword (${parsed.value.prompt})`} `
-      + `notify=${notifyOk ? "ok" : "MISSING"}`
+      + `notify=${notifyOk ? "ok" : "MISSING"} `
+      + `action=${actionOk ? "ok" : `OVER-FIRED (${parsed.value.action} ${String(parsed.value.toolServer)}.${String(parsed.value.toolName)})`}`
   );
+}
+
+// Tool-draft case: a request that IS a direct tool call must select the
+// matching read-risk loopback tool in one shot (repair allowed, same as the
+// route), with the exact server/tool pair — the binding constraint on a
+// local model per tool-calling.md.
+const TOOL_CASE = {
+  expectedCron: "0 * * * *",
+  expectedServer: "muse.time",
+  expectedTool: "now",
+  label: "KO tool-draft (hourly current time)",
+  text: "매시간 정각에 현재 시각 기록해줘"
+};
+{
+  const parsed = await draftFor(TOOL_CASE.text);
+  if (!parsed.ok) {
+    console.log(`FAIL [${TOOL_CASE.label}] — model never returned a valid draft: ${parsed.error}`);
+  } else {
+    const actionOk = parsed.value.action === "tool";
+    const pairOk = parsed.value.toolServer === TOOL_CASE.expectedServer && parsed.value.toolName === TOOL_CASE.expectedTool;
+    const cronOk = parsed.value.cronExpression === TOOL_CASE.expectedCron;
+    const ok = actionOk && pairOk && cronOk;
+    if (ok) {
+      passed += 1;
+    }
+    console.log(
+      `${ok ? "PASS" : "FAIL"} [${TOOL_CASE.label}] action=${actionOk ? "ok" : `WRONG (${parsed.value.action})`} `
+        + `tool=${pairOk ? "ok" : `WRONG (${String(parsed.value.toolServer)}.${String(parsed.value.toolName)})`} `
+        + `cron=${cronOk ? "ok" : `WRONG (${parsed.value.cronExpression})`}`
+    );
+  }
 }
 
 const revisionParsed = await revisionDraftFor(REVISION_CASE.text, REVISION_CASE.currentDraft);
@@ -159,7 +213,7 @@ if (!revisionParsed.ok) {
   );
 }
 
-const totalCases = CASES.length + 1;
+const totalCases = CASES.length + 2;
 const rate = passed / totalCases;
 console.log(`\neval:flow-draft — ${passed}/${totalCases} cases passed on ${MODEL} (threshold ${THRESHOLD})`);
 process.exit(rate >= THRESHOLD ? 0 : 1);

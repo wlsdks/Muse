@@ -341,7 +341,7 @@ export function flowDraftToJobInput(draft: FlowDraft, timezone: string = default
  * copilot only ever produces an agent-prompt draft. */
 export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
   return {
-    actionKind: "agent",
+    actionKind: payload.action === "tool" ? "tool" : "agent",
     agentModel: "",
     agentPrompt: payload.prompt,
     agentSystemPrompt: "",
@@ -352,8 +352,8 @@ export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
     retryOnFailure: payload.retry,
     schedule: scheduleFormFromCron(payload.cronExpression),
     toolArgumentsText: "",
-    toolName: "",
-    toolServerName: ""
+    toolName: payload.action === "tool" ? (payload.toolName ?? "") : "",
+    toolServerName: payload.action === "tool" ? (payload.toolServer ?? "") : ""
   };
 }
 
@@ -364,12 +364,16 @@ export function flowDraftFromCopilot(payload: FlowDraftPayloadRow): FlowDraft {
  * values, never the last server-returned draft. */
 export function flowDraftToCopilotPayload(draft: FlowDraft): FlowDraftPayloadRow {
   const notifyChannel = draft.notificationChannelId.trim();
+  const isTool = draft.actionKind === "tool";
   return {
+    action: isTool ? "tool" : "agent",
     cronExpression: resolveScheduleCron(draft.schedule),
     name: draft.name.trim(),
     notifyChannel: notifyChannel.length > 0 ? notifyChannel : null,
-    prompt: draft.agentPrompt.trim(),
-    retry: draft.retryOnFailure
+    prompt: isTool ? "" : draft.agentPrompt.trim(),
+    retry: draft.retryOnFailure,
+    toolName: isTool ? draft.toolName.trim() || null : null,
+    toolServer: isTool ? draft.toolServerName.trim() || null : null
   };
 }
 

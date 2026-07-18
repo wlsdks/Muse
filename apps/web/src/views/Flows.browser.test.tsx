@@ -155,6 +155,8 @@ function fakeClientWithPost(post: ApiClient["post"]): ApiClient {
     get: vi.fn(async (path: string) => {
       if (path === "/api/flows") return FLOWS_RESPONSE;
       if (path === "/api/scheduler/jobs/job_1") return JOB_DETAIL;
+      if (path === "/api/muse/loopback") return LOOPBACK_CATALOG;
+      if (path === "/api/messaging/setup") return { providers: [] };
       if (path.startsWith("/api/scheduler/jobs/job_1/executions")) return { items: [], limit: 5, offset: 0, total: 0 };
       throw new Error(`unexpected GET ${path}`);
     }) as unknown as ApiClient["get"],
@@ -350,15 +352,16 @@ test("도구 실행 (Run a tool) flow: New flow -> Run a tool -> pick server+too
   });
 });
 
-test("도구 실행 (Run a tool) mode disables the copilot composer with an honest note instead of a chat box", async () => {
+test("도구 실행 (Run a tool) mode keeps the copilot composer available (it drafts tool flows now)", async () => {
   const client = fakeClient();
   const screen = await renderFlows(client);
 
   await screen.getByRole("button", { name: "New flow" }).click();
   await screen.getByRole("radio", { name: "Run a tool" }).click();
 
-  await expect.element(screen.getByText("Draft chat only builds an agent flow for now", { exact: false })).toBeVisible();
-  expect(document.querySelector("[aria-label='Describe an automation']")).toBeNull();
+  // The composer stays a live chat box in tool mode — no disabled note.
+  await expect.element(screen.getByRole("textbox", { name: "Describe an automation" })).toBeVisible();
+  expect(document.body.textContent).not.toContain("Draft chat only builds an agent flow for now");
 });
 
 test("'Test run' POSTs to the job's dry-run endpoint with no body", async () => {
@@ -373,11 +376,14 @@ test("'Test run' POSTs to the job's dry-run endpoint with no body", async () => 
 test("초안 그리기 (Draft it) opens the create panel PREFILLED from the parsed draft, and never auto-creates a job", async () => {
   const draftResponse: FlowDraftResponse = {
     draft: {
+      action: "agent",
       cronExpression: "0 9 * * *",
       name: "Morning wrap",
       notifyChannel: "telegram:777",
       prompt: "오늘 하루 요약해줘",
-      retry: false
+      retry: false,
+      toolName: null,
+      toolServer: null
     }
   };
   const post = vi.fn(async (path: string) => (path === "/api/flows/draft" ? draftResponse : {})) as unknown as ApiClient["post"];
@@ -402,20 +408,26 @@ test("초안 그리기 (Draft it) opens the create panel PREFILLED from the pars
 test("multi-turn: after drafting, a manual form edit + a follow-up revision turn sends currentDraft reflecting the EDITED form (not the server's last draft), and an ack names the changed field", async () => {
   const firstDraft: FlowDraftResponse = {
     draft: {
+      action: "agent",
       cronExpression: "0 9 * * *",
       name: "Morning wrap",
       notifyChannel: null,
       prompt: "오늘 하루 요약해줘",
-      retry: false
+      retry: false,
+      toolName: null,
+      toolServer: null
     }
   };
   const revisedDraft: FlowDraftResponse = {
     draft: {
+      action: "agent",
       cronExpression: "30 8 * * *",
       name: "Evening wrap",
       notifyChannel: null,
       prompt: "오늘 하루 요약해줘",
-      retry: false
+      retry: false,
+      toolName: null,
+      toolServer: null
     }
   };
   const post = vi.fn(async (path: string, body?: unknown) => {
@@ -446,11 +458,14 @@ test("multi-turn: after drafting, a manual form edit + a follow-up revision turn
 
   expect(post).toHaveBeenCalledWith("/api/flows/draft", {
     currentDraft: {
+      action: "agent",
       cronExpression: "0 9 * * *",
       name: "Evening wrap",
       notifyChannel: null,
       prompt: "오늘 하루 요약해줘",
-      retry: false
+      retry: false,
+      toolName: null,
+      toolServer: null
     },
     text: "8시 반으로 바꿔줘"
   });
@@ -577,4 +592,40 @@ test("invalid tool-arguments JSON shows the field-error warning and blocks Creat
   await expect.element(warning).toBeVisible();
   expect((warning.query() as HTMLElement | null)?.className).toContain("field-error");
   await expect.element(screen.getByRole("button", { name: "Create" })).toBeDisabled();
+});
+
+test("a TOOL draft from the copilot prefills the create panel in tool mode (server/tool pickers set)", async () => {
+  const toolDraft: FlowDraftResponse = {
+    draft: {
+      action: "tool",
+      cronExpression: "0 * * * *",
+      name: "매시간 시각 기록",
+      notifyChannel: null,
+      prompt: "",
+      retry: false,
+      toolName: "now",
+      toolServer: "muse.time"
+    }
+  };
+  const post = vi.fn(async (path: string) => (path === "/api/flows/draft" ? toolDraft : {})) as unknown as ApiClient["post"];
+  const client = fakeClientWithPost(post);
+  const screen = await renderFlows(client);
+
+  await screen.getByRole("textbox", { name: "Describe an automation" }).fill("매시간 정각에 현재 시각 기록해줘");
+  await screen.getByRole("button", { name: "Draft it" }).click();
+
+  // The panel opens in tool mode with the drafted pair selected.
+  await expect.element(screen.getByRole("textbox", { name: "Name" })).toHaveValue("매시간 시각 기록");
+  const toolRadio = document.querySelector<HTMLInputElement>('input[type="radio"][value="tool"], input[type="radio"]:checked');
+  const serverSelect = document.querySelector<HTMLSelectElement>("select option[value='muse.time']")?.closest("select");
+  await expect.poll(() => serverSelect?.value ?? document.querySelectorAll("select").length).toBeTruthy();
+  const selects = [...document.querySelectorAll("select")];
+  const serverSel = selects.find((sel) => [...sel.options].some((o) => o.value === "muse.time"));
+  expect(serverSel?.value).toBe("muse.time");
+  const toolSel = selects.find((sel) => [...sel.options].some((o) => o.value === "now"));
+  expect(toolSel?.value).toBe("now");
+  expect(toolRadio).not.toBeNull();
+
+  // Draft-first still holds — no job auto-created.
+  expect(post).not.toHaveBeenCalledWith("/api/scheduler/jobs", expect.anything());
 });

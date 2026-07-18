@@ -83,15 +83,11 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
     setCreating(false);
     setLiveDraft(undefined);
   };
-  // Tool-mode drafts are authored directly in the create form (server/tool
-  // pickers), not through the copilot — the composer only ever produces an
-  // agent-prompt draft, so it's disabled with an honest note while the form
-  // is in tool mode rather than silently ignoring a chat message.
-  const currentDraft = creating && liveDraft && liveDraft.actionKind === "agent"
+  // The copilot drafts BOTH kinds now (agent prompts and read-risk tool
+  // flows), so a revision turn always carries the live form state —
+  // whichever action kind the form is in.
+  const currentDraft = creating && liveDraft
     ? flowDraftToCopilotPayload(liveDraft)
-    : undefined;
-  const composerDisabledNote = creating && liveDraft?.actionKind === "tool"
-    ? t("auto.flows.draft.disabledForTool")
     : undefined;
 
   if (creating) {
@@ -102,7 +98,6 @@ function FlowsBody({ client, flows }: { client: ApiClient; flows: readonly FlowP
           flows={flows}
           onDrafted={handleDrafted}
           currentDraft={currentDraft}
-          composerDisabledNote={composerDisabledNote}
           selectedId={selectedFlow?.id}
           onSelect={(id) => {
             setSelectedFlowId(id);
@@ -196,8 +191,7 @@ function FlowListCard({
   onSelect,
   onCreate,
   onDrafted,
-  currentDraft,
-  composerDisabledNote
+  currentDraft
 }: {
   client: ApiClient;
   flows: readonly FlowProjection[];
@@ -208,10 +202,6 @@ function FlowListCard({
   /** Present only while the create panel is open — turns the composer into
    * a revision turn against the panel's LIVE form values. */
   currentDraft?: FlowDraftPayloadRow;
-  /** Present only while the create panel is in TOOL mode — replaces the
-   * composer with an honest one-line note instead of a chat box that would
-   * silently do nothing (the copilot only drafts agent flows). */
-  composerDisabledNote?: string;
 }) {
   const { t, locale } = useI18n();
   return (
@@ -224,9 +214,7 @@ function FlowListCard({
         </Button>
       }
     >
-      {composerDisabledNote
-        ? <div className="banner" style={{ marginBottom: 10 }}>{composerDisabledNote}</div>
-        : <FlowDraftComposer client={client} onDrafted={onDrafted} currentDraft={currentDraft} />}
+      <FlowDraftComposer client={client} onDrafted={onDrafted} currentDraft={currentDraft} />
       <div className="flow-list">
         {flows.map((flow) => (
           <button

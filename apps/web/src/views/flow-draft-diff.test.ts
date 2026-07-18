@@ -10,7 +10,10 @@ const BASE: FlowDraftPayloadRow = {
   name: "아침 브리핑",
   notifyChannel: null,
   prompt: "오늘 일정을 요약해서 알려줘",
-  retry: false
+  retry: false,
+  action: "agent",
+  toolServer: null,
+  toolName: null
 };
 
 function tFor(lang: "en" | "ko") {

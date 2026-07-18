@@ -24,11 +24,14 @@ describe("POST /api/flows/draft", () => {
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toEqual({
       draft: {
+        action: "agent",
         cronExpression: "0 9 * * *",
         name: "아침 일정 요약",
         notifyChannel: null,
         prompt: "오늘 일정을 요약해서 알려줘",
-        retry: false
+        retry: false,
+        toolName: null,
+        toolServer: null
       }
     });
     expect(generateDraft).toHaveBeenCalledTimes(1);
@@ -116,12 +119,26 @@ const CURRENT_DRAFT = {
   retry: false
 };
 
+// What the route's revision prompt actually echoes: parseCurrentDraftInput's
+// normalized payload (the legacy 5-field client shape + defaulted action/tool
+// fields), NOT the raw client body.
+const NORMALIZED_CURRENT_DRAFT = {
+  action: "agent",
+  cronExpression: "0 9 * * *",
+  name: "아침 브리핑",
+  notifyChannel: null,
+  prompt: "오늘 일정을 요약해서 알려줘",
+  retry: false,
+  toolName: null,
+  toolServer: null
+};
+
 describe("POST /api/flows/draft — revision mode (currentDraft present)", () => {
   it("returns the FULL revised draft, calling the model exactly once when the revision echoes correctly", async () => {
-    const revised = '{"name": "아침 브리핑", "cronExpression": "30 8 * * *", "prompt": "오늘 일정을 요약해서 알려줘", "notifyChannel": null, "retry": false}';
+    const revised = '{"name": "아침 브리핑", "cronExpression": "30 8 * * *", "prompt": "오늘 일정을 요약해서 알려줘", "notifyChannel": null, "retry": false, "action": "agent", "toolServer": null, "toolName": null}';
     const generateDraft = vi.fn(async (prompt: FlowDraftPrompt) => {
       expect(prompt.system).toContain("FULL updated JSON");
-      expect(prompt.user).toContain(JSON.stringify(CURRENT_DRAFT));
+      expect(prompt.user).toContain(JSON.stringify(NORMALIZED_CURRENT_DRAFT));
       expect(prompt.user).toContain("8시 반으로 바꿔줘");
       return revised;
     });
@@ -133,7 +150,16 @@ describe("POST /api/flows/draft — revision mode (currentDraft present)", () =>
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toEqual({
-      draft: { cronExpression: "30 8 * * *", name: "아침 브리핑", notifyChannel: null, prompt: "오늘 일정을 요약해서 알려줘", retry: false }
+      draft: {
+        action: "agent",
+        cronExpression: "30 8 * * *",
+        name: "아침 브리핑",
+        notifyChannel: null,
+        prompt: "오늘 일정을 요약해서 알려줘",
+        retry: false,
+        toolName: null,
+        toolServer: null
+      }
     });
     expect(generateDraft).toHaveBeenCalledTimes(1);
     await server.close();
@@ -141,7 +167,7 @@ describe("POST /api/flows/draft — revision mode (currentDraft present)", () =>
 
   it("field-preservation: changing ONLY the cron leaves prompt/notifyChannel exactly as the currentDraft had them", async () => {
     const priorDraft = { ...CURRENT_DRAFT, notifyChannel: "telegram:123", retry: true };
-    const revised = JSON.stringify({ ...priorDraft, cronExpression: "0 20 * * *" });
+    const revised = JSON.stringify({ ...priorDraft, action: "agent", cronExpression: "0 20 * * *", toolName: null, toolServer: null });
     const generateDraft = vi.fn(async () => revised);
     const server = serverWith(generateDraft);
     const res = await server.inject({
@@ -185,8 +211,8 @@ describe("POST /api/flows/draft — revision mode (currentDraft present)", () =>
         return '{"name": "아침 브리핑", "cronExpression": "0 9 * * *", "prompt": "오늘 일정을 요약해서 알려줘"}';
       }
       expect(prompt.user).toContain("missing required field");
-      expect(prompt.user).toContain(JSON.stringify(CURRENT_DRAFT));
-      return '{"name": "아침 브리핑", "cronExpression": "0 9 * * *", "prompt": "오늘 일정을 요약해서 알려줘", "notifyChannel": null, "retry": true}';
+      expect(prompt.user).toContain(JSON.stringify(NORMALIZED_CURRENT_DRAFT));
+      return '{"name": "아침 브리핑", "cronExpression": "0 9 * * *", "prompt": "오늘 일정을 요약해서 알려줘", "notifyChannel": null, "retry": true, "action": "agent"}';
     });
     const server = serverWith(generateDraft);
     const res = await server.inject({
@@ -233,6 +259,54 @@ describe("POST /api/flows/draft — revision mode (currentDraft present)", () =>
     expect(notAnObject.statusCode).toBe(400);
 
     expect(generateDraft).not.toHaveBeenCalled();
+    await server.close();
+  });
+});
+
+describe("POST /api/flows/draft — tool drafts (listDraftableTools wired)", () => {
+  const TOOLS = [{ description: "Current time", server: "muse.time", tool: "now" }];
+
+  function serverWithTools(generateDraft: GenerateFlowDraft) {
+    const server = Fastify();
+    registerFlowDraftRoutes(server, { authService: undefined, generateDraft, listDraftableTools: () => TOOLS });
+    return server;
+  }
+
+  it("offers the tool list in the prompt and returns a validated tool draft", async () => {
+    const generateDraft = vi.fn(async (prompt: FlowDraftPrompt) => {
+      expect(prompt.system).toContain("Available tools:");
+      expect(prompt.system).toContain("muse.time.now — Current time");
+      return '{"name": "매시간 시각", "cronExpression": "0 * * * *", "prompt": "", "notifyChannel": null, "retry": false, "action": "tool", "toolServer": "muse.time", "toolName": "now"}';
+    });
+    const server = serverWithTools(generateDraft);
+    const res = await server.inject({ method: "POST", payload: { text: "매시간 정각에 현재 시각 기록해줘" }, url: "/api/flows/draft" });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { draft: { action: string; toolServer: string; toolName: string } };
+    expect(body.draft.action).toBe("tool");
+    expect(body.draft.toolServer).toBe("muse.time");
+    expect(body.draft.toolName).toBe("now");
+    await server.close();
+  });
+
+  it("rejects a tool pair outside the allowed list on both attempts with 422 (never a stored-but-unrunnable draft)", async () => {
+    const bad = '{"name": "x", "cronExpression": "0 * * * *", "prompt": "", "notifyChannel": null, "retry": false, "action": "tool", "toolServer": "muse.messaging", "toolName": "send"}';
+    const generateDraft = vi.fn(async () => bad);
+    const server = serverWithTools(generateDraft);
+    const res = await server.inject({ method: "POST", payload: { text: "메시지 보내줘" }, url: "/api/flows/draft" });
+    expect(res.statusCode).toBe(422);
+    expect((JSON.parse(res.body) as { error: string }).error).toContain("muse.messaging.send");
+    expect(generateDraft).toHaveBeenCalledTimes(2);
+    await server.close();
+  });
+
+  it("without listDraftableTools the prompt stays agent-only (no Available tools list)", async () => {
+    const generateDraft = vi.fn(async (prompt: FlowDraftPrompt) => {
+      expect(prompt.system).not.toContain("Available tools");
+      return VALID_JSON;
+    });
+    const server = serverWith(generateDraft);
+    const res = await server.inject({ method: "POST", payload: { text: "매일 아침 브리핑" }, url: "/api/flows/draft" });
+    expect(res.statusCode).toBe(200);
     await server.close();
   });
 });

@@ -9,16 +9,19 @@
 import type { FlowDraftPayloadRow } from "../api/types.js";
 import type { StringKey, Translate } from "../i18n/index.js";
 
-export type DraftFieldKey = "name" | "cronExpression" | "prompt" | "notifyChannel" | "retry";
+export type DraftFieldKey = "name" | "cronExpression" | "prompt" | "notifyChannel" | "retry" | "action" | "toolServer" | "toolName";
 
-const DRAFT_FIELD_ORDER: readonly DraftFieldKey[] = ["name", "cronExpression", "prompt", "notifyChannel", "retry"];
+const DRAFT_FIELD_ORDER: readonly DraftFieldKey[] = ["name", "cronExpression", "prompt", "notifyChannel", "retry", "action", "toolServer", "toolName"];
 
 const DRAFT_FIELD_LABEL_KEY: Record<DraftFieldKey, StringKey> = {
+  action: "auto.flows.create.actionKindLabel",
   cronExpression: "auto.flows.edit.scheduleLabel",
   name: "auto.flows.create.nameLabel",
   notifyChannel: "auto.flows.edit.notifyLabel",
   prompt: "auto.flows.edit.promptLabel",
-  retry: "auto.flows.edit.retryLabel"
+  retry: "auto.flows.edit.retryLabel",
+  toolName: "auto.flows.create.toolNameLabel",
+  toolServer: "auto.flows.create.toolServerLabel"
 };
 
 const VALUE_PREVIEW_MAX_LENGTH = 40;
@@ -30,11 +33,17 @@ function previewValue(field: DraftFieldKey, next: FlowDraftPayloadRow, t: Transl
   if (field === "notifyChannel") {
     return next.notifyChannel ?? t("auto.flows.draft.diff.notifyNone");
   }
+  if (field === "action") {
+    return t(next.action === "tool" ? "auto.flows.create.actionKindTool" : "auto.flows.create.actionKindAgent");
+  }
+  if (field === "toolServer" || field === "toolName") {
+    return next[field] ?? "";
+  }
   const raw = next[field];
   return raw.length > VALUE_PREVIEW_MAX_LENGTH ? `${raw.slice(0, VALUE_PREVIEW_MAX_LENGTH - 1)}…` : raw;
 }
 
-/** Which of the 5 whitelisted fields differ between `previous` and `next`. */
+/** Which of the whitelisted draft fields differ between `previous` and `next`. */
 export function changedDraftFields(previous: FlowDraftPayloadRow, next: FlowDraftPayloadRow): DraftFieldKey[] {
   return DRAFT_FIELD_ORDER.filter((field) => previous[field] !== next[field]);
 }

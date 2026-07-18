@@ -25,6 +25,7 @@ import {
   buildFlowDraftRevisionRepairPrompt,
   parseCurrentDraftInput,
   parseFlowDraftResponse,
+  type DraftableTool,
   type FlowDraftPayload,
   type FlowDraftPrompt
 } from "./flows-draft-compile.js";
@@ -38,6 +39,11 @@ export interface FlowDraftRoutesOptions {
   readonly authService: ServerOptions["authService"];
   /** Buffered single-shot completion; the server adapts its ModelProvider. Tests inject a fake. */
   readonly generateDraft: GenerateFlowDraft;
+  /** The runtime's actually-executable read-risk loopback tools the copilot
+   * may draft an `action: "tool"` flow for. Absent/empty keeps the copilot
+   * agent-only (e.g. loopback MCP disabled) — it never offers a tool that
+   * would fail at execution. */
+  readonly listDraftableTools?: () => readonly DraftableTool[];
 }
 
 interface FlowDraftBody {
@@ -61,6 +67,7 @@ async function attemptDraft(
   generateDraft: GenerateFlowDraft,
   buildPrompt: (repairFrom?: { readonly raw: string; readonly error: string }) => FlowDraftPrompt,
   requireAllFields: boolean,
+  allowedTools: readonly DraftableTool[],
   repairFrom?: { readonly raw: string; readonly error: string }
 ): Promise<DraftAttempt> {
   const prompt = buildPrompt(repairFrom);
@@ -72,7 +79,7 @@ async function attemptDraft(
     return { kind: "provider-error", message: errorMessage(error, "model provider failed") };
   }
 
-  const parsed = parseFlowDraftResponse(raw, { requireAllFields });
+  const parsed = parseFlowDraftResponse(raw, { allowedTools, requireAllFields });
   return parsed.ok ? { kind: "ok", value: parsed.value } : { error: parsed.error, kind: "invalid", raw };
 }
 
@@ -103,18 +110,19 @@ export function registerFlowDraftRoutes(server: FastifyInstance, options: FlowDr
     }
 
     const isRevision = currentDraft !== undefined;
+    const draftableTools = options.listDraftableTools?.() ?? [];
     const buildPrompt = (repairFrom?: { readonly raw: string; readonly error: string }): FlowDraftPrompt => {
       if (currentDraft) {
         return repairFrom
-          ? buildFlowDraftRevisionRepairPrompt(text, currentDraft, repairFrom.raw, repairFrom.error)
-          : buildFlowDraftRevisionPrompt(text, currentDraft);
+          ? buildFlowDraftRevisionRepairPrompt(text, currentDraft, repairFrom.raw, repairFrom.error, draftableTools)
+          : buildFlowDraftRevisionPrompt(text, currentDraft, draftableTools);
       }
       return repairFrom
-        ? buildFlowDraftRepairPrompt(text, repairFrom.raw, repairFrom.error)
-        : buildFlowDraftPrompt(text);
+        ? buildFlowDraftRepairPrompt(text, repairFrom.raw, repairFrom.error, draftableTools)
+        : buildFlowDraftPrompt(text, draftableTools);
     };
 
-    const first = await attemptDraft(options.generateDraft, buildPrompt, isRevision);
+    const first = await attemptDraft(options.generateDraft, buildPrompt, isRevision, draftableTools);
     if (first.kind === "provider-error") {
       return reply.status(502).send({ error: first.message });
     }
@@ -122,7 +130,7 @@ export function registerFlowDraftRoutes(server: FastifyInstance, options: FlowDr
       return { draft: first.value };
     }
 
-    const second = await attemptDraft(options.generateDraft, buildPrompt, isRevision, { error: first.error, raw: first.raw });
+    const second = await attemptDraft(options.generateDraft, buildPrompt, isRevision, draftableTools, { error: first.error, raw: first.raw });
     if (second.kind === "provider-error") {
       return reply.status(502).send({ error: second.message });
     }

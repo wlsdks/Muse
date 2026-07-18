@@ -582,6 +582,9 @@ export interface FlowDraftPayloadRow {
   readonly prompt: string;
   readonly notifyChannel: string | null;
   readonly retry: boolean;
+  readonly action: "agent" | "tool";
+  readonly toolServer: string | null;
+  readonly toolName: string | null;
 }
 export interface FlowDraftResponse {
   readonly draft: FlowDraftPayloadRow;

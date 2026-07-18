@@ -12,11 +12,14 @@ import {
 import type { FlowDraftPayload } from "./flows-draft-compile.js";
 
 const SAMPLE_DRAFT: FlowDraftPayload = {
+  action: "agent",
   cronExpression: "0 9 * * *",
   name: "아침 브리핑",
   notifyChannel: null,
   prompt: "오늘 일정을 요약해서 알려줘",
-  retry: false
+  retry: false,
+  toolName: null,
+  toolServer: null
 };
 
 describe("buildFlowDraftPrompt / buildFlowDraftRepairPrompt", () => {
@@ -44,11 +47,14 @@ describe("parseFlowDraftResponse", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value).toEqual({
+        action: "agent",
         cronExpression: "0 9 * * *",
         name: "아침 일정 요약",
         notifyChannel: null,
         prompt: "오늘 일정을 요약해서 알려줘",
-        retry: false
+        retry: false,
+        toolName: null,
+        toolServer: null
       });
     }
   });
@@ -108,9 +114,18 @@ describe("parseFlowDraftResponse", () => {
   });
 
   it("with requireAllFields, accepts a response that literally carries a null notifyChannel", () => {
-    const raw = '{"name": "x", "cronExpression": "0 9 * * *", "prompt": "y", "notifyChannel": null, "retry": false}';
+    const raw = '{"name": "x", "cronExpression": "0 9 * * *", "prompt": "y", "notifyChannel": null, "retry": false, "action": "agent"}';
     const result = parseFlowDraftResponse(raw, { requireAllFields: true });
     expect(result.ok).toBe(true);
+  });
+
+  it("with requireAllFields, rejects a revision response that DROPS action (a tool draft must never silently flip to agent)", () => {
+    const raw = '{"name": "x", "cronExpression": "0 9 * * *", "prompt": "y", "notifyChannel": null, "retry": false}';
+    const result = parseFlowDraftResponse(raw, { requireAllFields: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("action");
+    }
   });
 
   it("with requireAllFields, rejects a response that DROPS notifyChannel entirely (never silently defaults it)", () => {
@@ -163,6 +178,76 @@ describe("buildFlowDraftRevisionPrompt / buildFlowDraftRevisionRepairPrompt", ()
   });
 });
 
+describe("parseFlowDraftResponse — tool drafts", () => {
+  const TOOLS = [
+    { description: "Current time", server: "muse.time", tool: "now" },
+    { description: "Text stats", server: "muse.text", tool: "stats" }
+  ];
+
+  it("parses a tool draft whose pair is in the allowed list (prompt normalized to blank)", () => {
+    const raw = '{"name": "매시간 시각", "cronExpression": "0 * * * *", "prompt": "whatever", "notifyChannel": null, "retry": false, "action": "tool", "toolServer": "muse.time", "toolName": "now"}';
+    const result = parseFlowDraftResponse(raw, { allowedTools: TOOLS });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.action).toBe("tool");
+      expect(result.value.toolServer).toBe("muse.time");
+      expect(result.value.toolName).toBe("now");
+      expect(result.value.prompt).toBe("");
+    }
+  });
+
+  it("rejects a tool draft whose pair is NOT in the allowed list (never a stored-but-unrunnable job)", () => {
+    const raw = '{"name": "x", "cronExpression": "0 * * * *", "prompt": "", "notifyChannel": null, "retry": false, "action": "tool", "toolServer": "muse.messaging", "toolName": "send"}';
+    const result = parseFlowDraftResponse(raw, { allowedTools: TOOLS });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("muse.messaging.send");
+    }
+  });
+
+  it("rejects action tool without a tool pair", () => {
+    const raw = '{"name": "x", "cronExpression": "0 * * * *", "prompt": "y", "action": "tool"}';
+    const result = parseFlowDraftResponse(raw, { allowedTools: TOOLS });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects an unknown action value", () => {
+    const raw = '{"name": "x", "cronExpression": "0 * * * *", "prompt": "y", "action": "banana"}';
+    const result = parseFlowDraftResponse(raw);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("action");
+    }
+  });
+
+  it("normalizes a stray tool pair on an AGENT draft to null (over-fire guard)", () => {
+    const raw = '{"name": "x", "cronExpression": "0 9 * * *", "prompt": "y", "action": "agent", "toolServer": "muse.time", "toolName": "now"}';
+    const result = parseFlowDraftResponse(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolServer).toBeNull();
+      expect(result.value.toolName).toBeNull();
+    }
+  });
+});
+
+describe("buildFlowDraftPrompt — draftable tools", () => {
+  it("agent-only prompt (no tools) pins action to \"agent\" and never mentions an Available tools list", () => {
+    const prompt = buildFlowDraftPrompt("daily brief at 9am");
+    expect(prompt.system).toContain('"action": "agent"');
+    expect(prompt.system).not.toContain("Available tools");
+  });
+
+  it("with tools, the system prompt lists each server.tool with its description and carries the tool few-shot", () => {
+    const prompt = buildFlowDraftPrompt("매시간 현재 시각 기록해줘", [
+      { description: "Current time", server: "muse.time", tool: "now" }
+    ]);
+    expect(prompt.system).toContain("Available tools:");
+    expect(prompt.system).toContain("muse.time.now — Current time");
+    expect(prompt.system).toContain('"toolServer": "muse.time"');
+  });
+});
+
 describe("parseCurrentDraftInput", () => {
   const VALID = {
     cronExpression: "0 9 * * *",
@@ -172,11 +257,36 @@ describe("parseCurrentDraftInput", () => {
     retry: false
   };
 
-  it("accepts the exact whitelisted 5-field shape", () => {
+  it("accepts the legacy 5-field shape, normalizing it to an agent draft (back-compat)", () => {
     const result = parseCurrentDraftInput(VALID);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toEqual(VALID);
+      expect(result.value).toEqual({ ...VALID, action: "agent", toolName: null, toolServer: null });
+    }
+  });
+
+  it("accepts a tool currentDraft (action/toolServer/toolName), normalizing prompt to blank", () => {
+    const result = parseCurrentDraftInput({
+      ...VALID,
+      action: "tool",
+      prompt: "",
+      toolName: "now",
+      toolServer: "muse.time"
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.action).toBe("tool");
+      expect(result.value.toolServer).toBe("muse.time");
+      expect(result.value.toolName).toBe("now");
+      expect(result.value.prompt).toBe("");
+    }
+  });
+
+  it("rejects a tool currentDraft with a missing tool pair", () => {
+    const result = parseCurrentDraftInput({ ...VALID, action: "tool", toolName: null, toolServer: null });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("toolServer");
     }
   });
 

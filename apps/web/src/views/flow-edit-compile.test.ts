@@ -483,13 +483,34 @@ describe("draftToPreviewProjection — client-side-only preview, never sent to t
 describe("flowDraftToCopilotPayload — the create panel's LIVE form values, projected into the copilot's 5-field shape", () => {
   it("round-trips through flowDraftFromCopilot for a full draft (custom cron, notify, retry)", () => {
     const payload: FlowDraftPayloadRow = {
+      action: "agent",
       cronExpression: "15 7 * * 2",
       name: "화요일 리마인더",
       notifyChannel: "telegram:999",
       prompt: "이번 주 할 일 알려줘",
-      retry: true
+      retry: true,
+      toolName: null,
+      toolServer: null
     };
     const draft = flowDraftFromCopilot(payload);
+    expect(flowDraftToCopilotPayload(draft)).toEqual(payload);
+  });
+
+  it("round-trips a TOOL draft (action/toolServer/toolName preserved, prompt blank)", () => {
+    const payload: FlowDraftPayloadRow = {
+      action: "tool",
+      cronExpression: "0 * * * *",
+      name: "매시간 시각 기록",
+      notifyChannel: null,
+      prompt: "",
+      retry: false,
+      toolName: "now",
+      toolServer: "muse.time"
+    };
+    const draft = flowDraftFromCopilot(payload);
+    expect(draft.actionKind).toBe("tool");
+    expect(draft.toolServerName).toBe("muse.time");
+    expect(draft.toolName).toBe("now");
     expect(flowDraftToCopilotPayload(draft)).toEqual(payload);
   });
 
@@ -510,11 +531,14 @@ describe("flowDraftToCopilotPayload — the create panel's LIVE form values, pro
       toolServerName: ""
     };
     expect(flowDraftToCopilotPayload(draft)).toEqual({
+      action: "agent",
       cronExpression: "0 9 * * *",
       name: "아침 브리핑",
       notifyChannel: null,
       prompt: "일정 요약",
-      retry: false
+      retry: false,
+      toolName: null,
+      toolServer: null
     });
   });
 

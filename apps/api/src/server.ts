@@ -497,6 +497,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   if (options.modelProvider && options.defaultModel) {
     const draftModelProvider = options.modelProvider;
     const draftModel = options.defaultModel;
+    // Draftable tools = the RUNTIME registry's read-risk loopback tools
+    // (name shape `muse.<server>.<tool>`) — the same set the scheduler's
+    // extraTools seam can actually execute, so the copilot never drafts a
+    // stored-but-unrunnable tool flow. Resolved fresh per request via the
+    // route's callback (cheap: an in-memory list()).
+    const LOOPBACK_TOOL_NAME_RE = /^(muse\.[a-z_]+)\.([a-z0-9_]+)$/u;
     registerFlowDraftRoutes(server, {
       authService,
       generateDraft: async (prompt) => {
@@ -509,6 +515,20 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           temperature: 0
         });
         return response.output;
+      },
+      listDraftableTools: () => {
+        const catalog = options.toolCatalogProvider ? options.toolCatalogProvider() : [];
+        if (catalog instanceof Promise) {
+          return [];
+        }
+        const draftable: { server: string; tool: string; description: string }[] = [];
+        for (const entry of catalog) {
+          const match = LOOPBACK_TOOL_NAME_RE.exec(entry.name);
+          if (match && entry.risk === "read") {
+            draftable.push({ description: entry.description, server: match[1]!, tool: match[2]! });
+          }
+        }
+        return draftable;
       }
     });
   }
