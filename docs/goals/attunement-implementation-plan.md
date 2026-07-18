@@ -173,6 +173,17 @@ life `0/10`, work `0/10`. This is collection readiness, not natural completion
 evidence or permission. Evidence:
 [`../evaluations/continuity-natural-collection-cycle-1-2026-07-18.md`](../evaluations/continuity-natural-collection-cycle-1-2026-07-18.md).
 
+The shared exact-artifact resolver boundary now revalidates artifact id, type,
+provider, and role before evidence can become available or a delivery can open.
+`undefined` remains an unavailable source and resolver errors still propagate;
+identity mismatch, throw, and all-unavailable open failures preserve the entire
+Attunement file and do not allocate delivery/run ids. A fixed-seed offline
+evaluation covered all 126 public preview/open signatures and 10,000 core
+stress cases with zero mismatch omissions, control drift, evidence laundering,
+or oracle mismatches. Its generated corpus is ignored synthetic evidence only;
+it does not change natural coverage, outcomes, policy, or permission. Evidence:
+[`../evaluations/continuity-provider-boundary-2026-07-18.md`](../evaluations/continuity-provider-boundary-2026-07-18.md).
+
 ## Slice B — safe observation and better timing
 
 **User experience:** after the user explicitly starts a personal thread, Muse can notice a

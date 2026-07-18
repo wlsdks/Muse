@@ -62,6 +62,7 @@
     "eval:shadow-trial": "pnpm --filter @muse/model build && node scripts/eval-shadow-trial.mjs",
     "eval:evidence": "node scripts/eval-evidence.mjs",
     "eval:continuity-interaction-audit": "pnpm --filter @muse/attunement build && node scripts/eval-continuity-interaction-audit.mjs --eval-run",
+    "eval:continuity-provider-boundary": "pnpm --filter @muse/attunement build && node scripts/eval-continuity-provider-boundary.mjs --eval-run",
     "eval:agent:offline": "node --test scripts/eval-harness.test.mjs scripts/eval-adversarial.test.mjs scripts/eval-recall-quality.test.mjs scripts/eval-skip.test.mjs scripts/eval-evidence.test.mjs",
     "eval:agent": "pnpm --filter @muse/model build && pnpm --filter @muse/tools build && pnpm --filter @muse/prompts build && pnpm --filter @muse/agent-core build && pnpm --filter @muse/cli build && pnpm --filter @muse/api build && node scripts/eval-agent.mjs",
     "eval:self-improving": "pnpm --filter \"@muse/autoconfigure...\" build && pnpm --filter @muse/cli build && node scripts/eval-self-improving.mjs",

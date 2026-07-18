@@ -97,6 +97,39 @@ describe("buildContinuityPack", () => {
     expect(pack.evidenceRefs).toEqual([noteLink, taskLink].map(({ artifactId, artifactType, providerId, role }) => ({ artifactId, artifactType, providerId, role })));
   });
 
+  it("rejects a resolver artifact whose canonical id does not match the user-authored link", async () => {
+    await expect(buildContinuityPack(state(), "thread_life", async (link) => ({
+      ...link,
+      artifactId: link.artifactType === "task" ? "task_other" : link.artifactId,
+      taskStatus: link.artifactType === "task" ? "open" : undefined,
+      title: link.artifactId
+    }))).rejects.toThrow("exact artifact resolver returned mismatched artifactId");
+  });
+
+  it("rejects a resolver artifact whose type does not match the user-authored link", async () => {
+    await expect(buildContinuityPack(state(), "thread_life", async (link) => ({
+      ...link,
+      artifactType: link.artifactType === "task" ? "note" : link.artifactType,
+      title: link.artifactId
+    }))).rejects.toThrow("exact artifact resolver returned mismatched artifactType");
+  });
+
+  it("rejects a resolver artifact whose provider does not match the user-authored link", async () => {
+    await expect(buildContinuityPack(state(), "thread_life", async (link) => ({
+      ...link,
+      providerId: link.artifactType === "task" ? "mcp:other" : link.providerId,
+      title: link.artifactId
+    }))).rejects.toThrow("exact artifact resolver returned mismatched providerId");
+  });
+
+  it("rejects a resolver artifact whose role does not match the user-authored link", async () => {
+    await expect(buildContinuityPack(state(), "thread_life", async (link) => ({
+      ...link,
+      role: link.artifactType === "task" ? "context" : link.role,
+      title: link.artifactId
+    }))).rejects.toThrow("exact artifact resolver returned mismatched role");
+  });
+
   it("does not infer a replacement when the linked next task is done or hidden", async () => {
     const done = await buildContinuityPack(state(), "thread_life", async (link) => ({ ...link, taskStatus: link.artifactType === "task" ? "done" : undefined, title: link.artifactId }));
     expect(done.nextStep).toBeUndefined();

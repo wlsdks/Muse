@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +12,8 @@ import {
   readAttunementState,
   resetThreadPolicy,
   type ArtifactLink,
-  type AttunementState
+  type AttunementState,
+  type ResolvedArtifact
 } from "./index.js";
 import { writeAttunementState } from "./attunement-store.js";
 
@@ -89,11 +90,65 @@ describe("openPreparedContinuityPack", () => {
 
   it("fails closed without a delivery when every exact source is unavailable", async () => {
     const file = await seededFile();
+    const before = await readFile(file);
+    const idFactory = vi.fn(() => "must-not-run");
 
     await expect(openPreparedContinuityPack(file, "thread_life", async () => undefined, {
+      idFactory,
       now: () => Date.parse("2026-07-18T09:00:00.000Z")
     })).rejects.toThrow(new AttunementStoreError("thread 'thread_life' has no currently available linked evidence; no delivery was recorded"));
+    expect(idFactory).not.toHaveBeenCalled();
+    expect(await readFile(file)).toEqual(before);
     expect((await readAttunementState(file)).deliveries).toHaveLength(0);
+  });
+
+  it.each([
+    ["artifactId", (link: ArtifactLink): ResolvedArtifact => ({ ...link, artifactId: "task_other", taskStatus: "open", title: "Other task" })],
+    ["artifactType", (link: ArtifactLink): ResolvedArtifact => ({ ...link, artifactType: "note", title: "Wrong type" })],
+    ["providerId", (link: ArtifactLink): ResolvedArtifact => ({ ...link, providerId: "mcp:other", taskStatus: "open", title: "Wrong provider" })],
+    ["role", (link: ArtifactLink): ResolvedArtifact => ({ ...link, role: "context", taskStatus: "open", title: "Wrong role" })]
+  ] as const)("rejects a late %s mismatch before delivery without changing bytes or allocating an id", async (field, mutate) => {
+    const file = await seededFile();
+    const initial = await readAttunementState(file);
+    await writeAttunementState(file, {
+      ...initial,
+      threads: initial.threads.map((thread) => ({ ...thread, links: [noteLink, taskLink] }))
+    });
+    const before = await readFile(file);
+    const idFactory = vi.fn(() => "must-not-run");
+    const resolved: string[] = [];
+
+    await expect(openPreparedContinuityPack(file, "thread_life", async (link) => {
+      resolved.push(link.artifactId);
+      return link.artifactType === "note"
+        ? { ...link, title: "Resolved context" }
+        : mutate(link);
+    }, { idFactory, now: () => Date.parse("2026-07-18T09:00:00.000Z") }))
+      .rejects.toThrow(`exact artifact resolver returned mismatched ${field}`);
+
+    expect(resolved).toEqual(["birthday/context.md", "task_prepare"]);
+    expect(idFactory).not.toHaveBeenCalled();
+    expect(await readFile(file)).toEqual(before);
+  });
+
+  it("propagates a late resolver failure unchanged without delivery, byte changes, or id allocation", async () => {
+    const file = await seededFile();
+    const initial = await readAttunementState(file);
+    await writeAttunementState(file, {
+      ...initial,
+      threads: initial.threads.map((thread) => ({ ...thread, links: [noteLink, taskLink] }))
+    });
+    const before = await readFile(file);
+    const idFactory = vi.fn(() => "must-not-run");
+    const failure = new Error("provider unavailable");
+
+    await expect(openPreparedContinuityPack(file, "thread_life", async (link) => {
+      if (link.artifactType === "task") throw failure;
+      return { ...link, title: "Resolved context" };
+    }, { idFactory, now: () => Date.parse("2026-07-18T09:00:00.000Z") })).rejects.toBe(failure);
+
+    expect(idFactory).not.toHaveBeenCalled();
+    expect(await readFile(file)).toEqual(before);
   });
 
   it("opens a Pack when at least one exact source remains available", async () => {

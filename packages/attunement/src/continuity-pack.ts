@@ -37,6 +37,22 @@ function deriveTaskTemporalState(artifact: ResolvedArtifact, nowMs: number): Res
   };
 }
 
+function requireExactResolvedArtifact(link: ArtifactLink, artifact: ResolvedArtifact): ResolvedArtifact {
+  if (artifact.artifactId !== link.artifactId) {
+    throw new Error(`exact artifact resolver returned mismatched artifactId for '${link.artifactId}'`);
+  }
+  if (artifact.artifactType !== link.artifactType) {
+    throw new Error(`exact artifact resolver returned mismatched artifactType for '${link.artifactId}'`);
+  }
+  if (artifact.providerId !== link.providerId) {
+    throw new Error(`exact artifact resolver returned mismatched providerId for '${link.artifactId}'`);
+  }
+  if (artifact.role !== link.role) {
+    throw new Error(`exact artifact resolver returned mismatched role for '${link.artifactId}'`);
+  }
+  return artifact;
+}
+
 /**
  * Build only from the selected thread's persisted links. Calling code cannot
  * smuggle a pre-resolved task/note list into this function, which is the core
@@ -54,7 +70,7 @@ export async function buildContinuityPack(
 
   for (const link of thread.links) {
     const resolved = await resolveExactArtifact(link);
-    const artifact = resolved ? deriveTaskTemporalState(resolved, nowMs) : undefined;
+    const artifact = resolved ? deriveTaskTemporalState(requireExactResolvedArtifact(link, resolved), nowMs) : undefined;
     evidence.push({
       reference: {
         artifactId: link.artifactId,

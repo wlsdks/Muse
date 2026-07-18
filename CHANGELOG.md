@@ -92,6 +92,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Fixed
 
+- **Continuity now rejects provider identity drift before opening a Pack.** An
+  exact resolver must return the same artifact id, type, provider, and role as
+  the user's link; mismatches and provider failures cannot create a delivery or
+  allocate delivery/run ids, while a genuinely unavailable source retains its prior
+  unavailable behavior. A fixed-seed offline evaluator covers all 126 public
+  preview/open signatures and 10,000 synthetic core cases without touching
+  product Attunement state or expanding permission.
+
 - **Stored proactive text can no longer carry forged instructions into an
   immediate delivery.** Pattern notices, commitment check-ins, and ambient
   notices now neutralize injection spans and forged system/grounding markers at
