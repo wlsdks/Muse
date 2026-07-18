@@ -17,6 +17,8 @@ import { parseAlpha, runCalibrationDoctor } from "./commands-doctor-calibration.
 export { buildCalibrationReport, formatCalibration, parseAlpha } from "./commands-doctor-calibration.js";
 import { backgroundProcessCheck, cloudSyncFolderCheck, episodeIndexHealth, localOnlyCheck, messagingConfigCheck, modelEnvCheck, museSpeedEnvCheck, notesIndexHealth, ollamaPerfPostureCheck, permissionModeDriftCheck, probeOllamaPromptCache, promptCacheHealth, platformPostureCheck, privacyRoutingCheck, readMuseSpeedEnv, readOllamaPerfEnv, readSensitiveFileModes, schedulerPauseCheck, secretSourcesCheck, selfLearningCheck, type SensitiveFileTarget, toolResultCapAdvisoryCheck, visionModelCheck, voiceSetupChecks, volatileMountCheck, weaknessFuelCheck, webEgressCheck, type LocalCheck } from "./commands-doctor-checks.js";
 import { readProactiveHeartbeatCheck } from "./commands-doctor-heartbeat.js";
+import { readDayRhythmDoctorCheck } from "./commands-doctor-day-rhythm.js";
+export { dayRhythmDoctorCheck } from "./commands-doctor-day-rhythm.js";
 export { heartbeatStatusToCheckStatus, proactiveHeartbeatCheck } from "./commands-doctor-heartbeat.js";
 import { findOllamaModelTag, type OllamaTagsEntry } from "./commands-doctor-ollama.js";
 import { probeOllamaModels } from "./ollama-probe.js";
@@ -39,7 +41,7 @@ import { isRecord , errorMessage} from "@muse/shared";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { describeOfficialMcpPosture, LOCAL_FIRST_DEFAULT_MODEL, mergeModelKeysFromFile, parseBoolean, resolveActionLogFile, resolveContactsFile, resolveDefaultModel, resolveEpisodesFile, resolveLearningPauseFile, resolveNotesDir, resolveRecallHitsFile, resolveReflectionsFile, resolveWeaknessesFile, type MuseEnvironment, type OfficialMcpPresetPosture } from "@muse/autoconfigure";
+import { buildMessagingRegistry, describeOfficialMcpPosture, LOCAL_FIRST_DEFAULT_MODEL, mergeModelKeysFromFile, parseBoolean, resolveActionLogFile, resolveBriefingSidecarFile, resolveContactsFile, resolveDefaultModel, resolveEpisodesFile, resolveIntegrationEnvironment, resolveLearningPauseFile, resolveMuseCliConfigFilePath, resolveNotesDir, resolveRecallHitsFile, resolveReflectionsFile, resolveWeaknessesFile, type MuseEnvironment, type OfficialMcpPresetPosture } from "@muse/autoconfigure";
 import { isLearningPaused, isMasteredWeakness, readBackgroundProcesses, readEpisodes, readPendingLearnEvents, readSchedulerPauseState, readWeaknesses, resolveLearnQueueFile, selectDevFixableWeaknesses, type DevFixableWeakness, type WeaknessEntry } from "@muse/stores";
 import { isLocalOnlyEnabled } from "@muse/model";
 import type { Command } from "commander";
@@ -628,6 +630,18 @@ export async function runLocalDoctor(runtimeOptions: DoctorLocalRuntimeOptions =
   // Outbound messengers (Telegram/Discord/Slack/LINE) — opt-in; surface which
   // are wired so the user knows why `muse messaging send` has/has no target.
   checks.push({ name: "messaging", ...messagingConfigCheck(env) });
+
+  // Day rhythm ("하루 리듬") — the one-click morning-briefing + evening-digest
+  // opt-in: on/off, the paired channel (or "none"), and the last delivered
+  // briefing's timestamp when the tick's own sidecar has one.
+  try {
+    checks.push(await readDayRhythmDoctorCheck(
+      resolveMuseCliConfigFilePath(env),
+      resolveIntegrationEnvironment(env).messaging.ownersFile,
+      resolveBriefingSidecarFile(env),
+      buildMessagingRegistry(env)
+    ));
+  } catch { /* diagnostic probe must never take `muse doctor` down */ }
 
   // Gmail — opt-in; for the refreshing OAuth path (`muse setup email`), a
   // live probe that the stored refresh token still works, not just that a

@@ -4,6 +4,7 @@
  * so the capability gating is unit-testable without a render.
  */
 
+import type { DayRhythmStateResponse } from "../api/types.js";
 import type { StringKey } from "../i18n/strings.js";
 
 export interface HomeCapabilityInput {
@@ -37,6 +38,37 @@ export function homeCapabilities(input: HomeCapabilityInput): readonly HomeCapab
     caps.push({ id: "threads", labelKey: "home.cap.threads", navigate: "continuity" });
   }
   return caps;
+}
+
+/**
+ * The Home "하루 리듬" (day rhythm) card's three honest states, derived from
+ * the `/api/day-rhythm` response — never a fourth guessed state:
+ *
+ *   - `off`      — the default; a single "turn on" button + explainer.
+ *   - `unpaired` — the user turned it on but no messaging channel is
+ *                  paired yet, so nothing can actually be delivered.
+ *   - `on`       — armed and routing to a real paired channel.
+ *
+ * Pure so the state machine is unit-testable without a render.
+ */
+export type DayRhythmCardState =
+  | { readonly kind: "off" }
+  | { readonly kind: "unpaired"; readonly morningHour: number; readonly eveningHour: number }
+  | { readonly kind: "on"; readonly morningHour: number; readonly eveningHour: number; readonly providerId: string };
+
+export function dayRhythmCardState(response: DayRhythmStateResponse | undefined): DayRhythmCardState {
+  if (!response || !response.enabled) {
+    return { kind: "off" };
+  }
+  if (!response.pairedChannel) {
+    return { kind: "unpaired", eveningHour: response.eveningHour, morningHour: response.morningHour };
+  }
+  return {
+    eveningHour: response.eveningHour,
+    kind: "on",
+    morningHour: response.morningHour,
+    providerId: response.pairedChannel.providerId
+  };
 }
 
 /** Bridge into a seeded conversation: plant the same `companion_seed` param

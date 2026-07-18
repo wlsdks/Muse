@@ -14,6 +14,7 @@ import {
   resolveActionLogFile,
   resolveContactsFile,
   resolveIntegrationEnvironment,
+  resolveMuseCliConfigFilePath,
   resolveNotesIndexFile,
   resolveObjectivesFile,
   resolveProgressiveAutonomyOpportunitiesFile,
@@ -40,6 +41,7 @@ import { registerCompatibilityRoutes } from "./compat-routes.js";
 import { registerNotesRoutes } from "./notes-routes.js";
 import { registerMessagingRoutes } from "./messaging-routes.js";
 import { registerMessagingSetupRoutes } from "./messaging-setup-routes.js";
+import { registerDayRhythmRoutes } from "./day-rhythm-routes.js";
 import { registerConversationsRoutes } from "./conversations-routes.js";
 import { registerEmailStatusRoutes } from "./email-status-routes.js";
 import { lineWebhookPlugin } from "./messaging-webhooks-routes.js";
@@ -432,6 +434,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       registry: options.messaging
     });
   }
+  registerDayRhythmRoutes(server, {
+    authService,
+    channelOwnersFile: integrationEnv.messaging.ownersFile,
+    configFile: resolveMuseCliConfigFilePath(options.env ?? process.env),
+    ...(options.messaging ? { registry: options.messaging } : {})
+  });
   registerEmailStatusRoutes(server, {
     authService,
     ...(options.emailCredentialsDir ? { credentialsDir: options.emailCredentialsDir } : {}),

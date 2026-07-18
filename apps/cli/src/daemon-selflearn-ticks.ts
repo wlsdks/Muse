@@ -17,10 +17,12 @@ import {
   createGateEmbedder,
   decayContradictedStrategies,
   distillQueuedCorrections,
+  readDayRhythmConfigSafe,
   resolveFadedMemoriesFile,
   resolveLearningPauseFile,
   resolvePlaybookFile,
   resolveRecallHitsFile,
+  resolveSinglePairedChannel,
   resolveSuppressedLessonsFile,
   parseBoolean,
   type DecayContradictedDeps,
@@ -380,6 +382,10 @@ export interface MakeDigestFlushTickDeps {
   readonly digestQueueFile: string;
   readonly digestHourRaw: number | undefined;
   readonly digestSentFile: string;
+  /** `~/.config/muse/config.json` — read LIVE every tick so a web-console day-rhythm toggle takes effect without a daemon restart. */
+  readonly dayRhythmConfigFile: string;
+  /** `~/.muse/channel-owners.json` — day-rhythm's auto-route source when `provider` is still the "log" default. */
+  readonly channelOwnersFile: string;
 }
 
 /**
@@ -389,20 +395,45 @@ export interface MakeDigestFlushTickDeps {
  * (MUSE_DIGEST_ENABLED); mirrors apps/api's digest-tick so the CLI daemon
  * (which runs several loops the API daemon doesn't duplicate) never leaves
  * its own suppressed notices stranded.
+ *
+ * Day-rhythm overlay (opt-in, `dayRhythm.enabled` in config.json): when
+ * `--digest-hour`/MUSE_DIGEST_HOUR was NOT explicitly set, the digest fires
+ * at `dayRhythm.eveningHour` instead of the hardcoded default; when
+ * `provider` is still the "log" sink default, the flush auto-routes to the
+ * single paired messaging channel. No paired channel ⇒ an honest skip,
+ * never a silent log-sink send (fail-close).
  */
 export function makeDigestFlushTick(deps: MakeDigestFlushTickDeps): () => Promise<void> {
-  const { stdout, messagingRegistry, provider, destination, digestEnabled, quietHours, digestQueueFile, digestHourRaw, digestSentFile } = deps;
+  const { stdout, messagingRegistry, provider, destination, digestEnabled, quietHours, digestQueueFile, digestHourRaw, digestSentFile, dayRhythmConfigFile, channelOwnersFile } = deps;
   return async (): Promise<void> => {
     if (!digestEnabled) return;
     const activeQuietHours = resolveQuietHoursOption(quietHours);
     if (activeQuietHours && isQuietHour(new Date().getHours(), activeQuietHours)) return;
+    const dayRhythm = await readDayRhythmConfigSafe(dayRhythmConfigFile);
+    let effectiveProvider = provider;
+    let effectiveDestination = destination;
+    let effectiveDigestHour = digestHourRaw;
+    if (dayRhythm.enabled) {
+      if (effectiveDigestHour === undefined) {
+        effectiveDigestHour = dayRhythm.eveningHour;
+      }
+      if (provider === "log") {
+        const paired = await resolveSinglePairedChannel(channelOwnersFile, messagingRegistry);
+        if (!paired) {
+          stdout(`[${new Date().toISOString()}] digest: day rhythm on but no channel paired\n`);
+          return;
+        }
+        effectiveProvider = paired.providerId;
+        effectiveDestination = paired.destination;
+      }
+    }
     try {
       const summary = await runDigestFlushIfDue({
-        destination,
+        destination: effectiveDestination,
         digestFile: digestQueueFile,
-        ...(digestHourRaw !== undefined && Number.isFinite(digestHourRaw) ? { digestHour: digestHourRaw } : {}),
+        ...(effectiveDigestHour !== undefined && Number.isFinite(effectiveDigestHour) ? { digestHour: effectiveDigestHour } : {}),
         now: () => new Date(),
-        providerId: provider,
+        providerId: effectiveProvider,
         registry: messagingRegistry,
         sentFile: digestSentFile
       });

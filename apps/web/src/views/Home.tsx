@@ -1,15 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Badge, Button, Card, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { modelChip } from "../lib/model-chip.js";
 import { factLabel } from "../lib/memory-labels.js";
-import { homeCapabilities, seedChat } from "./home-logic.js";
+import { dayRhythmCardState, homeCapabilities, seedChat } from "./home-logic.js";
 import { greetingKey, TodaySections } from "./Today.js";
 
 import type { ApiClient } from "../api/client.js";
 import type {
   DaemonFlagsResponse,
+  DayRhythmStateResponse,
   EmailStatusResponse,
   HealthResponse,
   MessagingSetupResponse,
@@ -62,6 +63,84 @@ export function LearnedRow({
         </Button>
       </div>
     </div>
+  );
+}
+
+const DAY_RHYTHM_QUERY_KEY = "day-rhythm";
+
+/**
+ * The Home "하루 리듬" (day rhythm) card — a single opt-in that turns the
+ * morning briefing + evening digest from env archaeology into a one-click
+ * toggle. Three honest states only (`dayRhythmCardState`): off (default,
+ * trust floor), on (armed + shows the paired channel + times), unpaired
+ * (turned on but nothing can actually be delivered yet — a deep link to
+ * 연동, never a silent no-op).
+ */
+export function DayRhythmCard({
+  client,
+  t,
+  messagingProviders,
+  onNavigate
+}: {
+  client: ApiClient;
+  t: Translate;
+  messagingProviders: MessagingSetupResponse["providers"] | undefined;
+  onNavigate?: (view: string) => void;
+}) {
+  const queryClient = useQueryClient();
+  const queryKey = [DAY_RHYTHM_QUERY_KEY, client.baseUrl];
+  const dayRhythm = useQuery({
+    queryFn: () => client.get<DayRhythmStateResponse>("/api/day-rhythm"),
+    queryKey
+  });
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => client.post<DayRhythmStateResponse>("/api/day-rhythm", { enabled }),
+    onSuccess: (next) => queryClient.setQueryData(queryKey, next)
+  });
+
+  const state = dayRhythmCardState(dayRhythm.data);
+  const busy = toggle.isPending;
+
+  return (
+    <Card title={t("home.dayRhythm.title")}>
+      {state.kind === "off" && (
+        <div className="row">
+          <div className="row-main">
+            <div className="row-meta">{t("home.dayRhythm.off.explain")}</div>
+          </div>
+          <Button variant="primary" size="sm" disabled={busy} onClick={() => toggle.mutate(true)}>
+            {t("home.dayRhythm.off.button")}
+          </Button>
+        </div>
+      )}
+      {state.kind === "unpaired" && (
+        <div className="row">
+          <div className="row-main">
+            <div className="row-meta">{t("home.dayRhythm.unpaired.explain")}</div>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => onNavigate?.("integrations")}>
+            {t("home.dayRhythm.unpaired.link")}
+          </Button>
+        </div>
+      )}
+      {state.kind === "on" && (
+        <div className="row">
+          <div className="row-main">
+            <div className="row-title">
+              {t("home.dayRhythm.on.morning", { hour: state.morningHour })} · {t("home.dayRhythm.on.evening", { hour: state.eveningHour })}
+            </div>
+            <div className="row-meta">
+              {t("home.dayRhythm.on.channel", {
+                channel: messagingProviders?.find((p) => p.id === state.providerId)?.displayName ?? state.providerId
+              })}
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => toggle.mutate(false)}>
+            {t("home.dayRhythm.on.button")}
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -169,6 +248,10 @@ export function HomeView({ client, onNavigate }: { client: ApiClient; onNavigate
             )}
           </div>
         </Card>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <DayRhythmCard client={client} messagingProviders={messaging.data?.providers} onNavigate={onNavigate} t={t} />
       </div>
 
       <div className="grid grid-2" style={{ marginTop: 16 }}>

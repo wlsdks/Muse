@@ -25,10 +25,12 @@ import { adjustConfidenceFloor, sdtCriterion, summarizeNoticeResponses, synthesi
 import {
   createGateEmbedder,
   parseBoolean,
+  readDayRhythmConfigSafe,
   resolveContactsFile,
   resolveEpisodesFile,
   resolvePatternsFiredFile,
-  resolveProactiveHistoryFile
+  resolveProactiveHistoryFile,
+  resolveSinglePairedChannel
 } from "@muse/autoconfigure";
 import type { CalendarProviderRegistry } from "@muse/calendar";
 import { runDueSituationalBriefing } from "@muse/domain-tools";
@@ -535,21 +537,59 @@ export interface MakeBriefingTickDeps {
   readonly objectivesFile: string;
   readonly provider: string;
   readonly stdout: (message: string) => void;
+  /** `~/.config/muse/config.json` — read LIVE every tick (`readDayRhythmConfig`) so a web-console toggle takes effect without a daemon restart. */
+  readonly dayRhythmConfigFile: string;
+  /** `~/.muse/channel-owners.json` — day-rhythm's auto-route source when `provider` is still the "log" default. */
+  readonly channelOwnersFile: string;
+  /** Test seam — defaults to `() => new Date()`. */
+  readonly now?: () => Date;
 }
 
 /**
  * Situational briefing — a periodic digest (objective status + imminent
  * tasks + a related note), self-deduped by its sidecar (default 4h window).
- * Opt-in via MUSE_BRIEFING_ENABLED.
+ * Turns on via MUSE_BRIEFING_ENABLED (unchanged, byte-compatible path) OR
+ * the day-rhythm opt-in (`dayRhythm.enabled` in config.json) — the LATTER
+ * additionally gates delivery to the user's chosen morning window
+ * (`morningHour` .. `morningHour + 2`) and, when `provider` is still the
+ * "log" sink default, auto-routes to the single paired messaging channel.
+ * No paired channel ⇒ an honest skip, never a silent log-sink send
+ * (fail-close — day rhythm never guesses a recipient).
  */
 export function makeBriefingTick(deps: MakeBriefingTickDeps): () => Promise<void> {
-  const { env: e, tasksFile, leadMinutes, calendarRegistry, briefingCalendarLister, knowledgeEnrich, destination, messagingRegistry, objectivesFile, provider, stdout } = deps;
+  const { env: e, tasksFile, leadMinutes, calendarRegistry, briefingCalendarLister, knowledgeEnrich, destination, messagingRegistry, objectivesFile, provider, stdout, dayRhythmConfigFile, channelOwnersFile } = deps;
+  const nowFn = deps.now ?? (() => new Date());
   return async (): Promise<void> => {
-    if (!parseBoolean(e.MUSE_BRIEFING_ENABLED, false)) {
-      stdout(`[${new Date().toISOString()}] briefing: skipped (set MUSE_BRIEFING_ENABLED)\n`);
+    const envEnabled = parseBoolean(e.MUSE_BRIEFING_ENABLED, false);
+    const dayRhythm = await readDayRhythmConfigSafe(dayRhythmConfigFile);
+    // The env-flag path stays byte-compatible for existing users: once it's
+    // set, day-rhythm's morning-window gate and channel auto-derivation
+    // never apply, even if dayRhythm.enabled is ALSO true.
+    const dayRhythmDriven = !envEnabled && dayRhythm.enabled;
+    if (!envEnabled && !dayRhythm.enabled) {
+      stdout(`[${new Date().toISOString()}] briefing: skipped (set MUSE_BRIEFING_ENABLED, or turn on 하루 리듬 day rhythm)\n`);
       return;
     }
-    const now = new Date();
+    const now = nowFn();
+    if (dayRhythmDriven) {
+      const hour = now.getHours();
+      const withinMorningWindow = hour >= dayRhythm.morningHour && hour < dayRhythm.morningHour + 2;
+      if (!withinMorningWindow) {
+        stdout(`[${now.toISOString()}] briefing: held (day rhythm morning window is ${dayRhythm.morningHour.toString()}:00-${(dayRhythm.morningHour + 2).toString()}:00)\n`);
+        return;
+      }
+    }
+    let effectiveProvider = provider;
+    let effectiveDestination = destination;
+    if (dayRhythmDriven && provider === "log") {
+      const paired = await resolveSinglePairedChannel(channelOwnersFile, messagingRegistry);
+      if (!paired) {
+        stdout(`[${now.toISOString()}] briefing: day rhythm on but no channel paired\n`);
+        return;
+      }
+      effectiveProvider = paired.providerId;
+      effectiveDestination = paired.destination;
+    }
     let imminent: Awaited<ReturnType<typeof deriveBriefingImminent>> = [];
     try {
       imminent = await deriveBriefingImminent(tasksFile, { leadMinutes, now });
@@ -570,12 +610,12 @@ export function makeBriefingTick(deps: MakeBriefingTickDeps): () => Promise<void
           return undefined;
         }
       },
-      destination,
+      destination: effectiveDestination,
       imminent,
       messagingRegistry,
       now: () => now,
       objectivesFile,
-      providerId: provider,
+      providerId: effectiveProvider,
       sidecarFile: e.MUSE_BRIEFING_SIDECAR_FILE?.trim()?.length
         ? e.MUSE_BRIEFING_SIDECAR_FILE.trim()
         : join(homedir(), ".muse", "briefing-fired.json"),

@@ -26,6 +26,8 @@ import {
   resolveInterruptionLedgerFile,
   resolveLastProactiveDeliveryFile,
   resolveActionLogFile,
+  resolveIntegrationEnvironment,
+  resolveMuseCliConfigFilePath,
   resolveNotesDir,
   resolveObjectivesFile,
   resolveProactiveHistoryFile,
@@ -593,6 +595,14 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       // (see `resolveInterruptionBudgetWiring`'s doc comment).
       const interruptionBudget = resolveInterruptionBudgetWiring(e);
 
+      // Day-rhythm ("하루 리듬") — the one-click opt-in that lets the
+      // briefing/digest ticks auto-route to the paired messaging channel.
+      // Both paths are resolved ONCE here; the CONFIG CONTENTS are still
+      // read live every tick (see `readDayRhythmConfig` inside each tick)
+      // so a web-console toggle takes effect without a daemon restart.
+      const dayRhythmConfigFile = resolveMuseCliConfigFilePath(e);
+      const channelOwnersFile = resolveIntegrationEnvironment(e).messaging.ownersFile;
+
       const calendarRegistry = buildCalendarRegistry(e);
       const tasksFile = resolveTasksFile(e);
       const historyFile = resolveProactiveHistoryFile(e);
@@ -918,6 +928,8 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const briefingTick = makeBriefingTick({
         briefingCalendarLister: helpers.briefingCalendarLister,
         calendarRegistry,
+        channelOwnersFile,
+        dayRhythmConfigFile,
         destination,
         env: e,
         knowledgeEnrich,
@@ -1049,6 +1061,8 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const digestQueueFile = resolveDigestQueueFile(e);
       const digestSentFile = resolveDigestSentFile(e);
       const digestFlushTick = makeDigestFlushTick({
+        channelOwnersFile,
+        dayRhythmConfigFile,
         destination,
         digestEnabled,
         digestHourRaw,

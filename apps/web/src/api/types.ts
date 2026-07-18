@@ -727,6 +727,16 @@ export interface ThreadsResponse {
 export interface MessagingSetupResponse {
   readonly providers: readonly MessagingSetupProvider[];
 }
+export interface DayRhythmPairedChannel {
+  readonly providerId: string;
+  readonly destination: string;
+}
+export interface DayRhythmStateResponse {
+  readonly enabled: boolean;
+  readonly morningHour: number;
+  readonly eveningHour: number;
+  readonly pairedChannel: DayRhythmPairedChannel | null;
+}
 export interface MessagingConnectResponse {
   readonly ok: boolean;
   readonly account?: string;

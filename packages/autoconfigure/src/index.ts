@@ -64,6 +64,7 @@ export {
   resolveActionLogFile,
   resolvePendingApprovalsFile,
   resolveObjectivesFile,
+  resolveBriefingSidecarFile,
   resolveRemindersFile,
   resolveDiscordAfterFile,
   resolveDiscordInboxFile,
@@ -156,6 +157,23 @@ export {
   createReviewSkillArm,
   type ReviewArmDeps
 } from "./background-review-arms.js";
+
+export {
+  DAY_RHYTHM_DEFAULT_EVENING_HOUR,
+  DAY_RHYTHM_DEFAULT_MORNING_HOUR,
+  normalizeDayRhythmConfig,
+  readDayRhythmConfig,
+  readDayRhythmConfigSafe,
+  writeDayRhythmConfig,
+  type DayRhythmConfig
+} from "./day-rhythm-config.js";
+
+export {
+  PAIRABLE_MESSAGING_PROVIDER_IDS,
+  readChannelOwner,
+  resolveSinglePairedChannel,
+  type PairedChannel
+} from "./paired-channel.js";
 
 export { createApiServerOptions } from "./api-server-options.js";
 

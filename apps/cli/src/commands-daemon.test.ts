@@ -7,7 +7,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { readBrowsingStore } from "@muse/recall";
 
-import { MessagingProviderRegistry, type MessagingProvider, type OutboundMessage, type OutboundReceipt } from "@muse/messaging";
+import { LogMessagingProvider, MessagingProviderRegistry, type MessagingProvider, type OutboundMessage, type OutboundReceipt } from "@muse/messaging";
+import { writeDayRhythmConfig } from "@muse/autoconfigure";
 import { appendDigestItem, enqueueLearnEvent, readDigestQueue, readPendingLearnEvents, readPlaybook, readProactiveHeartbeat, readProposedActions, readReflections, setLearningPaused, writeEpisodes, writeFollowups, writeObjectives, writePlaybook, type PersistedEpisode } from "@muse/stores";
 import { buildCheckinQuestion, writeCheckins, type PersistedCheckin } from "@muse/proactivity";
 import { Command } from "commander";
@@ -99,6 +100,8 @@ function tmpEnv(): NodeJS.ProcessEnv {
   return {
     MUSE_AMBIENT_FILE: join(dir, "ambient.json"),
     MUSE_BRIEFING_SIDECAR_FILE: join(dir, "briefing-fired.json"),
+    MUSE_CHANNEL_OWNERS_FILE: join(dir, "channel-owners.json"),
+    MUSE_CLI_CONFIG_FILE: join(dir, "config.json"),
     MUSE_CONTACTS_FILE: join(dir, "contacts.json"),
     MUSE_DAEMON_CONFIG_FILE: join(dir, "daemon.json"),
     MUSE_DIGEST_QUEUE_FILE: join(dir, "digest-queue.json"),
@@ -928,6 +931,85 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
 
     expect(res.stdout).toContain("briefing: skipped");
     expect(sent).toHaveLength(0);
+  });
+
+  describe("day rhythm (하루 리듬) — briefing auto-routing", () => {
+    it("day rhythm on: auto-routes the morning briefing to the single paired channel when provider is still 'log'", async () => {
+      const env = tmpEnv();
+      const dueSoon = new Date(Date.now() + 5 * 60_000).toISOString();
+      writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({
+        tasks: [{ id: "t1", title: "Day-rhythm memo", status: "open", dueAt: dueSoon, createdAt: "2026-01-01T00:00:00Z" }]
+      }), "utf8");
+      writeFileSync(env.MUSE_CHANNEL_OWNERS_FILE!, JSON.stringify({ owners: { telegram: "555" }, version: 1 }), "utf8");
+      await writeDayRhythmConfig(env.MUSE_CLI_CONFIG_FILE!, { enabled: true, eveningHour: 18, morningHour: new Date().getHours() });
+      const sent: OutboundMessage[] = [];
+      const registry = new MessagingProviderRegistry([capturingProvider(sent), new LogMessagingProvider()]);
+
+      // NO --provider/--destination flags — the default resolves to "log".
+      const res = await runDaemon(["--once"], { env, registry });
+
+      expect(res.exitCode).toBeUndefined();
+      expect(res.stdout).toMatch(/briefing: delivered/);
+      const briefingSend = sent.find((m) => m.destination === "555");
+      expect(briefingSend).toBeDefined();
+    });
+
+    it("day rhythm on: no paired channel → an honest skip, never a silent log-sink send", async () => {
+      const env = tmpEnv();
+      const dueSoon = new Date(Date.now() + 5 * 60_000).toISOString();
+      writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({
+        tasks: [{ id: "t1", title: "Unpaired memo", status: "open", dueAt: dueSoon, createdAt: "2026-01-01T00:00:00Z" }]
+      }), "utf8");
+      await writeDayRhythmConfig(env.MUSE_CLI_CONFIG_FILE!, { enabled: true, eveningHour: 18, morningHour: new Date().getHours() });
+      const sent: OutboundMessage[] = [];
+      const registry = new MessagingProviderRegistry([capturingProvider(sent), new LogMessagingProvider()]);
+
+      const res = await runDaemon(["--once"], { env, registry });
+
+      expect(res.exitCode).toBeUndefined();
+      expect(res.stdout).toMatch(/briefing: day rhythm on but no channel paired/);
+      expect(sent).toHaveLength(0);
+    });
+
+    it("day rhythm on: outside the morning window, the briefing is held (not delivered)", async () => {
+      const env = tmpEnv();
+      const dueSoon = new Date(Date.now() + 5 * 60_000).toISOString();
+      writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({
+        tasks: [{ id: "t1", title: "Held memo", status: "open", dueAt: dueSoon, createdAt: "2026-01-01T00:00:00Z" }]
+      }), "utf8");
+      writeFileSync(env.MUSE_CHANNEL_OWNERS_FILE!, JSON.stringify({ owners: { telegram: "555" }, version: 1 }), "utf8");
+      // Well clear of the current hour's [morningHour, morningHour+2) window either direction.
+      const heldMorningHour = (new Date().getHours() + 6) % 24;
+      await writeDayRhythmConfig(env.MUSE_CLI_CONFIG_FILE!, { enabled: true, eveningHour: 18, morningHour: heldMorningHour });
+      const sent: OutboundMessage[] = [];
+      const registry = new MessagingProviderRegistry([capturingProvider(sent), new LogMessagingProvider()]);
+
+      const res = await runDaemon(["--once"], { env, registry });
+
+      expect(res.exitCode).toBeUndefined();
+      expect(res.stdout).toMatch(/briefing: held \(day rhythm morning window/);
+      expect(sent).toHaveLength(0);
+    });
+
+    it("MUSE_BRIEFING_ENABLED stays byte-compatible even when day rhythm is ALSO on (env path wins: no window gate, no channel override)", async () => {
+      const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_BRIEFING_ENABLED: "true" };
+      const dueSoon = new Date(Date.now() + 5 * 60_000).toISOString();
+      writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({
+        tasks: [{ id: "t1", title: "Env-path memo", status: "open", dueAt: dueSoon, createdAt: "2026-01-01T00:00:00Z" }]
+      }), "utf8");
+      // dayRhythm ALSO on, with a window that would otherwise HOLD it and no
+      // paired channel at all — neither should matter on the env-flag path.
+      const heldMorningHour = (new Date().getHours() + 6) % 24;
+      await writeDayRhythmConfig(env.MUSE_CLI_CONFIG_FILE!, { enabled: true, eveningHour: 18, morningHour: heldMorningHour });
+      const sent: OutboundMessage[] = [];
+      const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+
+      const res = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], { env, registry });
+
+      expect(res.exitCode).toBeUndefined();
+      expect(res.stdout).toMatch(/briefing: delivered/);
+      expect(sent.some((m) => m.destination === "555")).toBe(true);
+    });
   });
 
   it("--print echoes every delivered notice to stdout AND still delivers to the channel", async () => {
@@ -2046,5 +2128,66 @@ describe("muse daemon — daily digest flush (delivery half of the interruption 
     const registry = new MessagingProviderRegistry([capturingProvider([])]);
     const res = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], { env: tmpEnv(), registry });
     expect(res.stdout).toContain("digest:     enabled (daily, at 18:00 local)");
+  });
+
+  describe("day rhythm (하루 리듬) — digest auto-routing", () => {
+    it("day rhythm on: flushes at dayRhythm.eveningHour and auto-routes to the paired channel when provider is still 'log'", async () => {
+      const env = tmpEnv();
+      const currentHour = new Date().getHours();
+      await appendDigestItem(env.MUSE_DIGEST_QUEUE_FILE!, {
+        at: new Date(Date.now() - 60_000),
+        source: "pattern-firing",
+        text: "day-rhythm queued item"
+      });
+      writeFileSync(env.MUSE_CHANNEL_OWNERS_FILE!, JSON.stringify({ owners: { telegram: "555" }, version: 1 }), "utf8");
+      await writeDayRhythmConfig(env.MUSE_CLI_CONFIG_FILE!, { enabled: true, eveningHour: currentHour, morningHour: 8 });
+      const sent: OutboundMessage[] = [];
+      const registry = new MessagingProviderRegistry([capturingProvider(sent), new LogMessagingProvider()]);
+
+      // NO --provider/--destination flags and no MUSE_DIGEST_HOUR — both come from day rhythm.
+      const res = await runDaemon(["--once"], { env, registry });
+
+      expect(res.exitCode).toBeUndefined();
+      expect(res.stdout).toMatch(/digest: sent \(1 item\(s\)\)/);
+      const digestSend = sent.find((m) => m.text.includes("day-rhythm queued item"));
+      expect(digestSend).toBeDefined();
+      expect(digestSend!.destination).toBe("555");
+      expect(await readDigestQueue(env.MUSE_DIGEST_QUEUE_FILE!)).toHaveLength(0);
+    });
+
+    it("day rhythm on: no paired channel → an honest skip, the queue is preserved (fail-close)", async () => {
+      const env = tmpEnv();
+      const currentHour = new Date().getHours();
+      await appendDigestItem(env.MUSE_DIGEST_QUEUE_FILE!, { at: new Date(), source: "pattern-firing", text: "should stay queued (unpaired)" });
+      await writeDayRhythmConfig(env.MUSE_CLI_CONFIG_FILE!, { enabled: true, eveningHour: currentHour, morningHour: 8 });
+      const sent: OutboundMessage[] = [];
+      const registry = new MessagingProviderRegistry([capturingProvider(sent), new LogMessagingProvider()]);
+
+      const res = await runDaemon(["--once"], { env, registry });
+
+      expect(res.exitCode).toBeUndefined();
+      expect(res.stdout).toMatch(/digest: day rhythm on but no channel paired/);
+      expect(sent).toHaveLength(0);
+      expect(await readDigestQueue(env.MUSE_DIGEST_QUEUE_FILE!)).toHaveLength(1);
+    });
+
+    it("an explicit MUSE_DIGEST_HOUR still wins over dayRhythm.eveningHour (env overrides config)", async () => {
+      const env = tmpEnv();
+      const currentHour = new Date().getHours();
+      const farEveningHour = (currentHour + 6) % 24;
+      env.MUSE_DIGEST_HOUR = currentHour.toString();
+      await appendDigestItem(env.MUSE_DIGEST_QUEUE_FILE!, { at: new Date(Date.now() - 60_000), source: "pattern-firing", text: "explicit-hour item" });
+      writeFileSync(env.MUSE_CHANNEL_OWNERS_FILE!, JSON.stringify({ owners: { telegram: "555" }, version: 1 }), "utf8");
+      // dayRhythm's eveningHour is deliberately FAR from now — if it (wrongly)
+      // won over the explicit env var, the flush would not fire this tick.
+      await writeDayRhythmConfig(env.MUSE_CLI_CONFIG_FILE!, { enabled: true, eveningHour: farEveningHour, morningHour: 8 });
+      const sent: OutboundMessage[] = [];
+      const registry = new MessagingProviderRegistry([capturingProvider(sent), new LogMessagingProvider()]);
+
+      const res = await runDaemon(["--once"], { env, registry });
+
+      expect(res.exitCode).toBeUndefined();
+      expect(res.stdout).toMatch(/digest: sent \(1 item\(s\)\)/);
+    });
   });
 });
