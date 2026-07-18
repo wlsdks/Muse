@@ -41,9 +41,10 @@ const noteLink: ArtifactLink = {
 function state(): AttunementState {
   return {
     deliveries: [],
+    interactionReceipts: [],
     nextPolicyVersion: 1,
     resetReceipts: [],
-    schemaVersion: 1,
+    schemaVersion: 2,
     threads: [{
       createdAt: "2026-07-14T00:00:00.000Z",
       id: "thread_life",

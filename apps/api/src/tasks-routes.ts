@@ -20,6 +20,7 @@ import { isErrorLike } from "@muse/shared";
 
 import { randomUUID } from "node:crypto";
 
+import { recordContinuityTaskCompletionInteraction } from "@muse/attunement";
 import { compareTasksByDueDate, mutateTasks, parseTaskDueAt, readTasks, readTaskStatusFilter, type PersistedTask } from "@muse/stores";
 import { type TasksProviderRegistry } from "@muse/domain-tools";
 import type { FastifyInstance } from "fastify";
@@ -28,6 +29,7 @@ import { requireAuthenticated } from "./server-helpers.js";
 import type { ServerOptions } from "./server.js";
 
 interface TasksRoutesGate {
+  readonly attunementFile: string;
   readonly authService: ServerOptions["authService"];
   readonly tasksFile: string;
   /**
@@ -134,8 +136,13 @@ export function registerTasksRoutes(server: FastifyInstance, gate: TasksRoutesGa
     }
     const { id } = request.params as { readonly id: string };
     let completed: PersistedTask | undefined;
-    await mutateTasks(tasksFile, (current) => { const index = current.findIndex((task) => task.id === id); if (index < 0) return current; completed = { ...current[index]!, completedAt: new Date().toISOString(), status: "done" }; const next = [...current]; next[index] = completed; return next; });
+    let changedToDone = false;
+    await mutateTasks(tasksFile, (current) => { const index = current.findIndex((task) => task.id === id); if (index < 0) return current; const existing = current[index]!; if (existing.status === "done") { completed = existing; return current; } changedToDone = true; completed = { ...existing, completedAt: new Date().toISOString(), status: "done" }; const next = [...current]; next[index] = completed; return next; });
     if (!completed) return reply.status(404).send({ code: "TASK_NOT_FOUND", message: `task not found: ${id}` });
+    if (changedToDone) {
+      await recordContinuityTaskCompletionInteraction(gate.attunementFile, tasksFile, completed.id)
+        .catch((error: unknown) => request.log.warn({ error }, "continuity interaction evidence recording failed"));
+    }
     return completed;
   });
 

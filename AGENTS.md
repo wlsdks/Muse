@@ -168,6 +168,12 @@ so the per-turn cost is on by default. Set to `false`
 when an offline run / cheap-model budget / disabled-memory test
 rig wants to skip the extra call.
 
+Continuity factual interaction receipts are intentionally separate from
+`used|adjusted|ignored|rejected`: an exact linked local task transition may
+corroborate progress, but it never becomes feedback, permission, or promotion.
+Test this distinction through the public Attunement Interfaces; details live in
+[`docs/development/ai-agent-testing-strategy.md`](docs/development/ai-agent-testing-strategy.md).
+
 ## Where to look next
 
 - [`CLAUDE.md`](CLAUDE.md) — the contract every Claude Code agent reads first.

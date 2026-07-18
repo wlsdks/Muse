@@ -15,7 +15,8 @@ import { isErrorLike } from "@muse/shared";
 import { randomUUID } from "node:crypto";
 
 import { openLoops, type OpenLoop } from "@muse/agent-core";
-import { resolveTasksFile } from "@muse/autoconfigure";
+import { recordContinuityTaskCompletionInteraction } from "@muse/attunement";
+import { resolveAttunementFile, resolveTasksFile } from "@muse/autoconfigure";
 import { compareTasksByDueDate, mutateTasks, parseTaskDueAt, readTasks, readTaskStatusFilter, resolveTaskRef, serializeTask, type PersistedTask } from "@muse/stores";
 import type { Command } from "commander";
 
@@ -363,6 +364,13 @@ export function registerTasksCommands(program: Command, io: ProgramIO, helpers: 
           completed = { ...existing, completedAt: new Date().toISOString(), status: "done" };
           return current.map((task, taskIndex) => taskIndex === index ? completed! : task);
         });
+        if (!alreadyDone) {
+          await recordContinuityTaskCompletionInteraction(
+            resolveAttunementFile(process.env),
+            file,
+            completed!.id
+          ).catch(() => undefined);
+        }
         return serializeTask(completed!);
       };
       const completeApi = async (): Promise<Record<string, unknown>> => (await helpers.apiRequest(

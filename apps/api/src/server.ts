@@ -332,6 +332,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   }
   if (options.tasksFile) {
     registerTasksRoutes(server, {
+      attunementFile: options.attunementFile ?? resolveAttunementFile(process.env),
       authService,
       tasksFile: options.tasksFile,
       ...(options.tasksProviderRegistry ? { tasksProviderRegistry: options.tasksProviderRegistry } : {})

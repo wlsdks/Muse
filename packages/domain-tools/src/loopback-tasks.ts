@@ -36,6 +36,8 @@ export interface TasksMcpServerOptions {
   readonly maxListEntries?: number;
   readonly maxQueryLength?: number;
   readonly now?: () => Date;
+  /** Trusted post-commit observer; it cannot alter the tool's completion result. */
+  readonly onTaskCompleted?: (taskId: string) => Promise<void>;
 }
 
 /**
@@ -230,6 +232,9 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
             });
           } catch (error) {
             return { error: errorMessage(error) };
+          }
+          if (resolution.task.status === "open") {
+            await options.onTaskCompleted?.(completed.id).catch(() => undefined);
           }
           return { task: serializeTaskForModel(completed, now) as JsonValue };
         },
@@ -449,4 +454,3 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
     ]
   };
 }
-

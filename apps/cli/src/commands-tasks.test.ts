@@ -1,6 +1,14 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  createLocalArtifactValidator,
+  createLocalExactArtifactResolver,
+  createPersonalThread,
+  linkArtifact,
+  openPreparedContinuityPack,
+  readAttunementState
+} from "@muse/attunement";
 import { errorMessage } from "@muse/shared";
 
 import { readTasks, writeTasks, type PersistedTask } from "@muse/stores";
@@ -127,9 +135,12 @@ describe("muse tasks list --local --search — filters the real store", () => {
 
 describe("muse tasks — API-unreachable falls back to the local store (local-first reliability)", () => {
   const prev = process.env.MUSE_TASKS_FILE;
+  const prevAttunement = process.env.MUSE_ATTUNEMENT_FILE;
   afterEach(() => {
     if (prev === undefined) delete process.env.MUSE_TASKS_FILE;
     else process.env.MUSE_TASKS_FILE = prev;
+    if (prevAttunement === undefined) delete process.env.MUSE_ATTUNEMENT_FILE;
+    else process.env.MUSE_ATTUNEMENT_FILE = prevAttunement;
   });
 
   const runWith = async (apiRequest: TasksCommandHelpers["apiRequest"], args: string[]): Promise<string | undefined> => {
@@ -198,6 +209,31 @@ describe("muse tasks — API-unreachable falls back to the local store (local-fi
     expect(error).toBeUndefined();
     // the original "when it was done" is intact, NOT rewritten to now
     expect((await readTasks(file))[0]?.completedAt).toBe(originalCompletedAt);
+  });
+
+  it("complete --local records factual Continuity evidence only after the open task becomes done", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-tasks-continuity-"));
+    const file = join(dir, "tasks.json");
+    const attunementFile = join(dir, "attunement.json");
+    const notesDir = join(dir, "notes");
+    process.env.MUSE_TASKS_FILE = file;
+    process.env.MUSE_ATTUNEMENT_FILE = attunementFile;
+    await writeTasks(file, [{ createdAt: "2026-01-01T00:00:00.000Z", id: "task_cli_evidence", status: "open", title: "CLI evidence" }]);
+    const thread = await createPersonalThread(attunementFile, { kind: "work", title: "CLI root" });
+    await linkArtifact(attunementFile, {
+      artifactId: "task_cli_evidence", artifactType: "task", role: "next-step", threadId: thread.id
+    }, { validateArtifact: createLocalArtifactValidator({ notesDir, tasksFile: file }) });
+    await openPreparedContinuityPack(
+      attunementFile,
+      thread.id,
+      createLocalExactArtifactResolver({ notesDir, tasksFile: file }),
+      { now: () => Date.parse("2026-01-02T00:00:00.000Z") }
+    );
+
+    expect(await runWith(async () => ({}), ["complete", "task_cli_evidence", "--local"])).toBeUndefined();
+    const state = await readAttunementState(attunementFile);
+    expect(state.interactionReceipts).toHaveLength(1);
+    expect(state.deliveries[0]?.outcome).toBeUndefined();
   });
 });
 

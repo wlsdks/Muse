@@ -13,6 +13,7 @@
  * later (assigned after `activeContextProvider` is built).
  */
 
+import { recordContinuityTaskCompletionInteraction } from "@muse/attunement";
 import { createLoopbackMcpMuseTools } from "@muse/mcp";
 import { createCalendarMcpServer, createEpisodesMcpServer, createFollowupsMcpServer, createHistoryMcpServer, createMathMcpServer, createMessagingMcpServer, createNotesMcpServer, createNotesRegistryMcpServer, createPatternsMcpServer, createProactiveMcpServer, createRemindersMcpServer, createStatusMcpServer, createTasksMcpServer, createTasksRegistryMcpServer, createSearchMcpServer, createWebReadMcpServer, type MessageApprovalGate } from "@muse/domain-tools";
 import { mirrorNoteToApple, mirrorReminderToApple } from "@muse/macos";
@@ -28,6 +29,7 @@ import { resolveWeaknessesFile } from "./provider-paths.js";
 import type { MuseEnvironment } from "./index.js";
 
 export interface LoopbackToolsDeps {
+  readonly attunementFile?: string;
   readonly env: MuseEnvironment;
   /** Optional LLM provider for `mode: "llm-judge"` paths on notes / episodes search. */
   readonly modelProvider?: ModelProvider;
@@ -120,7 +122,15 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
 
   const tasks = parseBoolean(env.MUSE_TASKS_ENABLED, true)
     ? createLoopbackMcpMuseTools(
-        createTasksMcpServer({ file: deps.tasksFile, maxListEntries: parseInteger(env.MUSE_TASKS_LIST_MAX, 12) })
+        createTasksMcpServer({
+          file: deps.tasksFile,
+          maxListEntries: parseInteger(env.MUSE_TASKS_LIST_MAX, 12),
+          ...(deps.attunementFile ? {
+            onTaskCompleted: (taskId: string) => recordContinuityTaskCompletionInteraction(
+              deps.attunementFile!, deps.tasksFile, taskId
+            ).then(() => undefined)
+          } : {})
+        })
       )
     : [];
 

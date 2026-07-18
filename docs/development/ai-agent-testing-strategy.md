@@ -56,7 +56,9 @@ are all-pass from the beginning. A skip is `unverified`, never `passed`.
 - Diagnostic: steps, redundant tool calls, handoff failures, tokens, latency,
   cost, infrastructure retries, and refusal/over-refusal balance.
 - Product: explicit user outcomes such as `used`, `adjusted`, `ignored`, and
-  `rejected`; these remain distinct from synthetic eval scores.
+  `rejected`; these remain distinct from synthetic eval scores and factual
+  interaction receipts. A task transition can corroborate progress but never
+  silently become a usefulness label or permission grant.
 
 Do not use test count, coverage percentage, or average judge score as proof that
 the agent improved. For a safety or regression gate, one critical failure cannot
@@ -75,6 +77,7 @@ be averaged away by many easy passes.
 | PARTIAL P1 | `eval:evidence` validates complete local artifacts, extracts terminal failures, requires explicit redaction review before case promotion, and compares per-case baseline deltas | use it in weekly dogfood; automatic redaction and dataset insertion remain forbidden |
 | GAP P1 | paraphrase/metamorphic robustness and controlled tool/API fault matrices are present only in isolated tests | add shared perturbation and fault fixtures, beginning with provider routing and Continuity |
 | GAP P1 | Attunement has outcome receipts but not an end-to-end natural-return agent suite | build cases from real life/work returns only after explicit human labels exist |
+| DONE P1 | Continuity records exact local `open-to-done` interaction receipts separately from explicit outcomes | test anchor/source binding, ambiguous/relinked/pre-delivery refusal, byte-idempotent replay, and unchanged feedback/readiness counts |
 
 ### Implementation order
 

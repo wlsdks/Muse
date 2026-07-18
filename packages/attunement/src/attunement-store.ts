@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 
-import { atomicWriteFile } from "@muse/stores";
+import { atomicWriteFile, readTaskByIdStrict } from "@muse/stores";
 import { isRecord, parseJson } from "@muse/shared";
 
 import { baselinePolicy, isBaselinePolicy, policyForOutcome } from "./policy-reducer.js";
+import { fingerprintContinuityTaskState } from "./interaction-evidence.js";
 import { mutateFileState, type FileStateMutation } from "./file-state-mutation.js";
 import {
   ARTIFACT_ROLES,
@@ -20,6 +21,8 @@ import {
   type ArtifactReference,
   type AttunementState,
   type ContinuityDelivery,
+  type ContinuityInteractionAnchor,
+  type ContinuityInteractionReceipt,
   type ContinuityOutcome,
   type PersonalThread,
   type PersonalThreadKind,
@@ -83,8 +86,13 @@ export interface UnlinkArtifactInput {
 export interface OpenDeliveryInput {
   readonly evidenceRefs: readonly ArtifactReference[];
   readonly expectedPolicyVersion: number;
+  readonly interactionAnchor?: Omit<ContinuityInteractionAnchor, "observedAt">;
   readonly threadId: string;
 }
+
+export type RecordContinuityTaskCompletionInteractionResult =
+  | { readonly kind: "not-correlated" | "unavailable" }
+  | { readonly kind: "recorded"; readonly receipt: ContinuityInteractionReceipt };
 
 export interface ThreadInspection {
   readonly deliveries: readonly ContinuityDelivery[];
@@ -95,9 +103,10 @@ export interface ThreadInspection {
 
 const EMPTY_STATE: AttunementState = {
   deliveries: [],
+  interactionReceipts: [],
   nextPolicyVersion: 1,
   resetReceipts: [],
-  schemaVersion: 1,
+  schemaVersion: 2,
   threads: [],
   undoResetReceipts: []
 };
@@ -124,6 +133,14 @@ function hasControlCharacter(value: string): boolean {
 
 function isSafeVersion(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isIsoTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function isFingerprint(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }
 
 function isReference(value: unknown): value is ArtifactReference {
@@ -168,7 +185,9 @@ function isDelivery(value: unknown): value is ContinuityDelivery {
     || !isNonEmptyString(value.id)
     || !isNonEmptyString(value.openedAt)
     || !isSafeVersion(value.policyVersion)
-    || !isNonEmptyString(value.threadId)) {
+    || !isNonEmptyString(value.threadId)
+    || (value.runId !== undefined && !isNonEmptyString(value.runId))
+    || (value.interactionAnchor !== undefined && !isInteractionAnchor(value.interactionAnchor))) {
     return false;
   }
   if (value.outcome === undefined) return true;
@@ -176,6 +195,35 @@ function isDelivery(value: unknown): value is ContinuityDelivery {
     && isOneOf(value.outcome.outcome, OUTCOMES)
     && isSafeVersion(value.outcome.policyVersion)
     && isNonEmptyString(value.outcome.recordedAt);
+}
+
+function isInteractionAnchor(value: unknown): value is ContinuityInteractionAnchor {
+  return isRecord(value)
+    && isNonEmptyString(value.artifactId)
+    && isIsoTimestamp(value.linkedAt)
+    && isIsoTimestamp(value.observedAt)
+    && value.observedStatus === "open"
+    && isFingerprint(value.openStateFingerprint)
+    && value.providerId === "local"
+    && value.role === "next-step";
+}
+
+function isInteractionReceipt(value: unknown): value is ContinuityInteractionReceipt {
+  return isRecord(value)
+    && isNonEmptyString(value.artifactId)
+    && isIsoTimestamp(value.completedAt)
+    && isNonEmptyString(value.deliveryId)
+    && isFingerprint(value.doneStateFingerprint)
+    && isNonEmptyString(value.eventId)
+    && isNonEmptyString(value.id)
+    && isIsoTimestamp(value.linkedAt)
+    && isFingerprint(value.openStateFingerprint)
+    && value.providerId === "local"
+    && isIsoTimestamp(value.recordedAt)
+    && value.role === "next-step"
+    && isNonEmptyString(value.runId)
+    && isNonEmptyString(value.threadId)
+    && value.transition === "open-to-done";
 }
 
 function isResetReceipt(value: unknown): value is PolicyResetReceipt {
@@ -200,7 +248,7 @@ function isUndoResetReceipt(value: unknown): value is UndoResetReceipt {
 
 function parseState(value: unknown): AttunementState {
   if (!isRecord(value)
-    || value.schemaVersion !== 1
+    || (value.schemaVersion !== 1 && value.schemaVersion !== 2)
     || !Array.isArray(value.threads)
     || !value.threads.every(isThread)
     || !Array.isArray(value.deliveries)
@@ -209,15 +257,20 @@ function parseState(value: unknown): AttunementState {
     || !value.resetReceipts.every(isResetReceipt)
     || !Array.isArray(value.undoResetReceipts)
     || !value.undoResetReceipts.every(isUndoResetReceipt)
+    || (value.schemaVersion === 2
+      && (!Array.isArray(value.interactionReceipts) || !value.interactionReceipts.every(isInteractionReceipt)))
     || !isSafeVersion(value.nextPolicyVersion)
     || value.nextPolicyVersion < 1) {
     throw new AttunementStoreError("attunement store is invalid; refusing to guess or overwrite it");
   }
   const state: AttunementState = {
     deliveries: value.deliveries,
+    interactionReceipts: value.schemaVersion === 2
+      ? value.interactionReceipts as unknown as readonly ContinuityInteractionReceipt[]
+      : [],
     nextPolicyVersion: value.nextPolicyVersion,
     resetReceipts: value.resetReceipts,
-    schemaVersion: value.schemaVersion,
+    schemaVersion: 2,
     threads: value.threads,
     undoResetReceipts: value.undoResetReceipts
   };
@@ -299,6 +352,10 @@ function assertUnique(values: readonly string[], label: string): void {
 function validateStateRelations(state: AttunementState): void {
   assertUnique(state.threads.map((thread) => thread.id), "thread ids");
   assertUnique(state.deliveries.map((delivery) => delivery.id), "delivery ids");
+  assertUnique(state.deliveries.flatMap((delivery) => delivery.runId ? [delivery.runId] : []), "delivery run ids");
+  assertUnique(state.interactionReceipts.map((receipt) => receipt.id), "interaction receipt ids");
+  assertUnique(state.interactionReceipts.map((receipt) => receipt.eventId), "interaction event ids");
+  assertUnique(state.interactionReceipts.map((receipt) => receipt.deliveryId), "interaction delivery ids");
   assertUnique(state.resetReceipts.map((receipt) => receipt.id), "reset receipt ids");
   assertUnique(state.undoResetReceipts.map((receipt) => receipt.id), "undo receipt ids");
 
@@ -328,11 +385,33 @@ function validateStateRelations(state: AttunementState): void {
     if (delivery.evidenceRefs.some((reference) => reference.role === "next-step" && reference.artifactType !== "task")) {
       throw new AttunementStoreError(`delivery '${delivery.id}' has a non-task next-step`);
     }
+    if (delivery.interactionAnchor) {
+      if (!delivery.runId || (Number.isFinite(Date.parse(delivery.openedAt))
+        && delivery.interactionAnchor.observedAt !== delivery.openedAt)
+        || !delivery.evidenceRefs.some((reference) => reference.artifactId === delivery.interactionAnchor!.artifactId
+          && reference.artifactType === "task" && reference.providerId === "local" && reference.role === "next-step")) {
+        throw new AttunementStoreError(`delivery '${delivery.id}' has an invalid interaction anchor`);
+      }
+    }
     if (delivery.outcome) {
       if (delivery.outcome.policyVersion <= delivery.policyVersion) {
         throw new AttunementStoreError(`delivery '${delivery.id}' has an outcome at or before its delivery policy version`);
       }
       addVersion(delivery.threadId, delivery.outcome.policyVersion);
+    }
+  }
+  const deliveriesById = new Map(state.deliveries.map((delivery) => [delivery.id, delivery]));
+  for (const receipt of state.interactionReceipts) {
+    const delivery = deliveriesById.get(receipt.deliveryId);
+    const anchor = delivery?.interactionAnchor;
+    if (!delivery || !anchor || !delivery.runId
+      || receipt.artifactId !== anchor.artifactId
+      || receipt.linkedAt !== anchor.linkedAt
+      || receipt.openStateFingerprint !== anchor.openStateFingerprint
+      || receipt.providerId !== anchor.providerId || receipt.role !== anchor.role
+      || receipt.runId !== delivery.runId || receipt.threadId !== delivery.threadId
+      || Date.parse(receipt.completedAt) <= Date.parse(delivery.openedAt)) {
+      throw new AttunementStoreError(`interaction receipt '${receipt.id}' has invalid delivery binding`);
     }
   }
   for (const receipt of state.resetReceipts) {
@@ -519,6 +598,7 @@ export async function deletePersonalThread(
       state: {
         ...state,
         deliveries: state.deliveries.filter((delivery) => delivery.threadId !== thread.id),
+        interactionReceipts: state.interactionReceipts.filter((receipt) => receipt.threadId !== thread.id),
         resetReceipts: state.resetReceipts.filter((receipt) => receipt.threadId !== thread.id),
         threads: state.threads.filter((candidate) => candidate.id !== thread.id),
         undoResetReceipts: state.undoResetReceipts.filter((receipt) => receipt.threadId !== thread.id && !resetIds.has(receipt.resetId))
@@ -542,11 +622,29 @@ export async function openContinuityDelivery(
     if (!sameEvidence(expectedRefs, input.evidenceRefs)) {
       throw new AttunementStoreError("delivery evidence must exactly match this thread's stored links");
     }
+    const openedAt = nowIso(options);
+    let interactionAnchor: ContinuityInteractionAnchor | undefined;
+    if (input.interactionAnchor) {
+      const link = thread.links.find((entry) => entry.artifactId === input.interactionAnchor!.artifactId
+        && entry.artifactType === "task"
+        && entry.linkedAt === input.interactionAnchor!.linkedAt
+        && entry.linkedBy === "user"
+        && entry.providerId === "local"
+        && entry.role === "next-step");
+      if (!link || input.interactionAnchor.observedStatus !== "open"
+        || input.interactionAnchor.providerId !== "local" || input.interactionAnchor.role !== "next-step"
+        || !isFingerprint(input.interactionAnchor.openStateFingerprint)) {
+        throw new AttunementStoreError("delivery interaction anchor must match the exact open local next-step");
+      }
+      interactionAnchor = { ...input.interactionAnchor, observedAt: openedAt };
+    }
     const delivery: ContinuityDelivery = {
       evidenceRefs: expectedRefs,
       id: newId("delivery", options),
-      openedAt: nowIso(options),
+      ...(interactionAnchor ? { interactionAnchor } : {}),
+      openedAt,
       policyVersion: thread.policy.version,
+      runId: newId("continuity_run", options),
       threadId: thread.id
     };
     return { changed: true, result: delivery, state: { ...state, deliveries: [...state.deliveries, delivery] } };
@@ -584,6 +682,91 @@ export async function recordContinuityOutcome(
       changed: true,
       result: { applied: true, delivery: updatedDelivery, policy },
       state: { ...replaceThread(state, nextThread), deliveries, nextPolicyVersion: version + 1 }
+    };
+  });
+}
+
+/**
+ * Observe a task completion that already succeeded through a trusted local
+ * composition root. The task store and delivery anchor supply every durable
+ * fact; callers cannot submit an outcome, event id, timestamp, or scope.
+ */
+export async function recordContinuityTaskCompletionInteraction(
+  file: string,
+  tasksFile: string,
+  taskId: string
+): Promise<RecordContinuityTaskCompletionInteractionResult> {
+  let task: Awaited<ReturnType<typeof readTaskByIdStrict>>;
+  try {
+    task = await readTaskByIdStrict(tasksFile, taskId);
+  } catch {
+    return { kind: "unavailable" };
+  }
+  if (!task || task.status !== "done" || !isIsoTimestamp(task.completedAt)) return { kind: "not-correlated" };
+  const completedAt = task.completedAt;
+  const eventId = `continuity_task_completed_${createHash("sha256")
+    .update(`${task.id}\u0000${completedAt}`).digest("hex").slice(0, 24)}`;
+  const doneStateFingerprint = fingerprintContinuityTaskState({
+    artifactId: task.id,
+    status: "done",
+    updatedAt: completedAt
+  });
+  const expectedOpenStateFingerprint = fingerprintContinuityTaskState({
+    artifactId: task.id,
+    status: "open",
+    updatedAt: task.createdAt
+  });
+  return mutate<RecordContinuityTaskCompletionInteractionResult>(file, (state) => {
+    const replay = state.interactionReceipts.find((receipt) => receipt.eventId === eventId);
+    if (replay) {
+      if (replay.openStateFingerprint !== expectedOpenStateFingerprint) {
+        return { changed: false, result: { kind: "not-correlated" }, state };
+      }
+      if (replay.artifactId !== task.id || replay.completedAt !== completedAt
+        || replay.doneStateFingerprint !== doneStateFingerprint) {
+        throw new AttunementStoreError("continuity interaction event identity conflicts with existing evidence");
+      }
+      return { changed: false, result: { kind: "recorded", receipt: replay }, state };
+    }
+    const candidates = state.deliveries.filter((delivery) => {
+      const anchor = delivery.interactionAnchor;
+      if (!anchor || !delivery.runId || anchor.artifactId !== task.id
+        || anchor.openStateFingerprint !== expectedOpenStateFingerprint
+        || state.interactionReceipts.some((receipt) => receipt.deliveryId === delivery.id)
+        || Date.parse(completedAt) <= Date.parse(delivery.openedAt)
+        || Date.parse(completedAt) <= Date.parse(anchor.observedAt)) return false;
+      const thread = state.threads.find((entry) => entry.id === delivery.threadId);
+      return thread?.links.some((link) => link.artifactId === anchor.artifactId
+        && link.artifactType === "task"
+        && link.linkedAt === anchor.linkedAt
+        && link.linkedBy === "user"
+        && link.providerId === "local"
+        && link.role === "next-step") ?? false;
+    });
+    if (candidates.length !== 1) return { changed: false, result: { kind: "not-correlated" }, state };
+    const delivery = candidates[0]!;
+    const anchor = delivery.interactionAnchor!;
+    const receipt: ContinuityInteractionReceipt = {
+      artifactId: task.id,
+      completedAt,
+      deliveryId: delivery.id,
+      doneStateFingerprint,
+      eventId,
+      id: `continuity_interaction_${createHash("sha256")
+        .update(`${eventId}\u0000${delivery.id}`).digest("hex").slice(0, 24)}`,
+      linkedAt: anchor.linkedAt,
+      openStateFingerprint: anchor.openStateFingerprint,
+      providerId: "local",
+      recordedAt: new Date().toISOString(),
+      role: "next-step",
+      runId: delivery.runId!,
+      threadId: delivery.threadId,
+      transition: "open-to-done"
+    };
+    return {
+      changed: true,
+      result: { kind: "recorded", receipt },
+      state: { ...state, interactionReceipts: [...state.interactionReceipts, receipt], schemaVersion: 2 }
     };
   });
 }

@@ -99,6 +99,10 @@ binary LLM-judge — see [`agent-testing.md`](agent-testing.md) (the method).
 - Playwright for UI flows.
 - Testcontainers for PostgreSQL query behavior.
 - Direct unit tests for every export of every helper module — no implicit-only coverage.
+- Factual agent evidence and user judgments are separate test dimensions. For
+  Continuity, prove exact source/event binding and unchanged bytes on rejected
+  or replayed interaction receipts; never assert that task completion implies
+  `used`, feedback coverage, permission, or promotion.
 
 ## Supported TypeScript test stack (reviewed 2026-07-16)
 

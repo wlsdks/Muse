@@ -1,5 +1,12 @@
 export { prepareContinuityPack, type ContinuityPreparationOptions } from "./continuity-pack.js";
 export {
+  buildContinuityInteractionProjection,
+  fingerprintContinuityTaskState,
+  type ContinuityInteractionProjectionItem,
+  type ContinuityTaskInteractionSource,
+  type ContinuityTaskInteractionSourceResolver
+} from "./interaction-evidence.js";
+export {
   openPreparedContinuityPack,
   readPreparedContinuityPack,
   type ContinuityFilePreparationOptions,
@@ -64,7 +71,7 @@ export type {
   TimingState,
   TimingStoreOptions
 } from "./timing-store.js";
-export { createLocalArtifactValidator, createLocalExactArtifactResolver, readCanonicalLocalNote, type LocalArtifactValidatorOptions } from "./local-artifacts.js";
+export { createLocalArtifactValidator, createLocalContinuityTaskInteractionSourceResolver, createLocalExactArtifactResolver, readCanonicalLocalNote, type LocalArtifactValidatorOptions } from "./local-artifacts.js";
 export {
   AttunementStoreError,
   type ArtifactLinkValidator,
@@ -74,6 +81,7 @@ export {
   linkArtifact,
   openContinuityDelivery,
   readAttunementState,
+  recordContinuityTaskCompletionInteraction,
   recordContinuityOutcome,
   resetThreadPolicy,
   undoThreadReset,
@@ -85,6 +93,7 @@ export type {
   LinkArtifactInput,
   LinkArtifactOptions,
   OpenDeliveryInput,
+  RecordContinuityTaskCompletionInteractionResult,
   ThreadInspection,
   UnlinkArtifactInput
 } from "./attunement-store.js";

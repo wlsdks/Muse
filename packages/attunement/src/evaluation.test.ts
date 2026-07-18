@@ -20,9 +20,10 @@ function delivery(kind: PersonalThreadKind, index: number, day: 16 | 17): Contin
 function state(deliveries: readonly ContinuityDelivery[]): AttunementState {
   return {
     deliveries,
+    interactionReceipts: [],
     nextPolicyVersion: 1,
     resetReceipts: [],
-    schemaVersion: 1,
+    schemaVersion: 2,
     threads: (["life", "work"] as const).map((kind) => ({
       createdAt: "2026-07-16T00:00:00.000Z",
       id: `thread_${kind}`,

@@ -802,6 +802,7 @@ function buildPersonalStoreStack(
   // inline as 95 LOC of repeated scaffolding.
   const loopback = buildLoopbackTools({
     actionLogFile: resolveActionLogFile(env),
+    attunementFile: resolveAttunementFile(env),
     ...(options.messagingApprovalGate ? { messagingApprovalGate: options.messagingApprovalGate } : {}),
     calendarRegistry,
     defaultModel,

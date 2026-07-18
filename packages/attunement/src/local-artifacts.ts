@@ -1,12 +1,13 @@
 import { promises as fs } from "node:fs";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 
-import { readTaskById, readTasks } from "@muse/stores";
+import { readTaskById, readTaskByIdStrict, readTasks } from "@muse/stores";
 
 import { AttunementStoreError } from "./attunement-store.js";
 
 import type { ArtifactLinkValidator } from "./attunement-store.js";
 import type { ExactArtifactResolver } from "./types.js";
+import type { ContinuityTaskInteractionSourceResolver } from "./interaction-evidence.js";
 
 export interface LocalArtifactValidatorOptions {
   readonly notesDir: string;
@@ -129,5 +130,21 @@ export function createLocalExactArtifactResolver(options: LocalArtifactValidator
       return note?.artifactId === link.artifactId ? { ...note, role: link.role } : undefined;
     }
     return undefined;
+  };
+}
+
+/** Strict current-source reader for the mutation-free interaction projection. */
+export function createLocalContinuityTaskInteractionSourceResolver(
+  tasksFile: string
+): ContinuityTaskInteractionSourceResolver {
+  return async (artifactId) => {
+    const task = await readTaskByIdStrict(tasksFile, artifactId);
+    if (!task) return undefined;
+    return {
+      artifactId: task.id,
+      createdAt: task.createdAt,
+      status: task.status,
+      updatedAt: task.completedAt ?? task.createdAt
+    };
   };
 }

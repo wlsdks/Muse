@@ -10,6 +10,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Continuity now keeps factual progress evidence separate from feedback.**
+  New user-opened Packs anchor an exact local next-step while it is open; trusted
+  CLI, HTTP, and loopback task-completion paths can then record one immutable
+  `open-to-done` receipt. `muse thread interactions` and the authenticated HTTP
+  projection show `exact`, `none`, or `unavailable` without inventing `used`,
+  changing Attunement policy, or widening autonomy.
+
 - **Talk the Builder into shape.** After Muse drafts a flow you can keep
   talking — "8시 반으로 바꾸고 텔레그램 123으로 보내줘" updates the same
   draft in place (canvas and form follow), Muse replies naming exactly

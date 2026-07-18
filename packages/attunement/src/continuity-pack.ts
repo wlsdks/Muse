@@ -1,4 +1,5 @@
 import type {
+  ArtifactLink,
   AttunementState,
   ContinuityEvidence,
   ContinuityPack,
@@ -6,6 +7,7 @@ import type {
   PersonalThread,
   ResolvedArtifact
 } from "./types.js";
+import { fingerprintContinuityTaskState } from "./interaction-evidence.js";
 
 function requireThread(state: AttunementState, threadId: string): PersonalThread {
   const thread = state.threads.find((candidate) => candidate.id === threadId);
@@ -48,7 +50,7 @@ export async function buildContinuityPack(
 ): Promise<ContinuityPack> {
   const thread = requireThread(state, threadId);
   const evidence: ContinuityEvidence[] = [];
-  const nextCandidates: ResolvedArtifact[] = [];
+  const nextCandidates: { readonly artifact: ResolvedArtifact; readonly link: ArtifactLink }[] = [];
 
   for (const link of thread.links) {
     const resolved = await resolveExactArtifact(link);
@@ -63,7 +65,7 @@ export async function buildContinuityPack(
       ...(artifact ? { artifact, status: "available" as const } : { status: "unavailable" as const })
     });
     if (artifact && link.role === "next-step" && artifact.artifactType === "task" && artifact.taskStatus === "open") {
-      nextCandidates.push(artifact);
+      nextCandidates.push({ artifact, link });
     }
   }
 
@@ -77,7 +79,21 @@ export async function buildContinuityPack(
     deliveryPolicyVersion: thread.policy.version,
     evidence,
     evidenceRefs: evidence.map((entry) => entry.reference),
-    ...(thread.policy.nextStep === "hidden" || nextCandidates.length === 0 ? {} : { nextStep: nextCandidates[0] }),
+    ...(nextCandidates.length === 0 ? {} : {
+      interactionAnchor: {
+        artifactId: nextCandidates[0]!.artifact.artifactId,
+        linkedAt: nextCandidates[0]!.link.linkedAt,
+        observedStatus: "open" as const,
+        openStateFingerprint: fingerprintContinuityTaskState({
+          artifactId: nextCandidates[0]!.artifact.artifactId,
+          status: "open",
+          updatedAt: nextCandidates[0]!.artifact.updatedAt ?? ""
+        }),
+        providerId: "local" as const,
+        role: "next-step" as const
+      }
+    }),
+    ...(thread.policy.nextStep === "hidden" || nextCandidates.length === 0 ? {} : { nextStep: nextCandidates[0]!.artifact }),
     policy: thread.policy,
     ...(thread.policy.suppression === "acknowledge-previous" && latestOutcome(state, threadId)
       ? { previousOutcome: latestOutcome(state, threadId) }

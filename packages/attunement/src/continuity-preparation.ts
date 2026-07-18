@@ -55,6 +55,7 @@ export async function openPreparedContinuityPack(
   const delivery = await openContinuityDelivery(file, {
     evidenceRefs: pack.evidenceRefs,
     expectedPolicyVersion: pack.deliveryPolicyVersion,
+    ...(pack.interactionAnchor ? { interactionAnchor: pack.interactionAnchor } : {}),
     threadId
   }, {
     ...(options.idFactory ? { idFactory: options.idFactory } : {}),

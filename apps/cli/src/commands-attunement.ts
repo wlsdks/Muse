@@ -10,8 +10,10 @@ import {
   AttunementStoreError,
   CONTINUITY_IMPROVEMENT_COHORT_SIZE,
   CONTINUITY_KILL_CRITERION_FIRST_PACKS,
+  buildContinuityInteractionProjection,
   computeContinuityEvaluation,
   createLocalArtifactValidator,
+  createLocalContinuityTaskInteractionSourceResolver,
   createLocalExactArtifactResolver,
   createPersonalThread,
   deletePersonalThread,
@@ -538,6 +540,30 @@ Examples:
       await commandAction(command, io, "thread stats", async () => {
         const stats = computeContinuityStats(await readAttunementState(attunementFile()));
         io.stdout(options.json ? `${JSON.stringify(stats, null, 2)}\n` : formatContinuityStats(stats));
+      });
+    });
+
+  thread
+    .command("interactions")
+    .description("Inspect factual Continuity task interactions without inferring usefulness")
+    .option("--json", "Print the canonical interaction projection")
+    .action(async (options: { readonly json?: boolean }, command: Command) => {
+      await commandAction(command, io, "thread interactions", async () => {
+        const projection = await buildContinuityInteractionProjection(
+          await readAttunementState(attunementFile()),
+          createLocalContinuityTaskInteractionSourceResolver(tasksFile())
+        );
+        if (options.json) {
+          io.stdout(`${JSON.stringify({ interactions: projection, schemaVersion: 1 }, null, 2)}\n`);
+          return;
+        }
+        if (projection.length === 0) {
+          io.stdout("No Continuity deliveries have interaction evidence yet.\n");
+          return;
+        }
+        for (const item of projection) {
+          io.stdout(`${item.deliveryId}  interaction=${item.interaction.state}  outcome=${item.explicitOutcome ?? "unscored"}\n`);
+        }
       });
     });
 

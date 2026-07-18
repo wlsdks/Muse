@@ -101,6 +101,14 @@ describe("muse thread / continue — Personal Continuity", () => {
     const deliveryId = continued.stdout.match(/Delivery: (delivery_[\w-]+)/u)?.[1];
     expect(deliveryId).toBeTruthy();
 
+    const interactions = JSON.parse((await run(f, ["thread", "interactions", "--json"])).stdout) as {
+      readonly interactions: readonly { readonly deliveryId: string; readonly interaction: { readonly state: string } }[];
+    };
+    expect(interactions.interactions).toContainEqual(expect.objectContaining({
+      deliveryId,
+      interaction: expect.objectContaining({ state: "none" })
+    }));
+
     const outcome = await run(f, ["thread", "outcome", deliveryId!, "ignored"]);
     expect(outcome.stdout).toContain("Recorded ignored");
     const next = await run(f, ["thread", "continue", id]);

@@ -2,8 +2,17 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import {
+  createLocalArtifactValidator,
+  createLocalExactArtifactResolver,
+  createPersonalThread,
+  linkArtifact,
+  openPreparedContinuityPack,
+  readAttunementState
+} from "@muse/attunement";
 import { CalendarProviderRegistry } from "@muse/calendar";
 import { MessagingProviderRegistry } from "@muse/messaging";
+import { writeTasks } from "@muse/stores";
 import { describe, expect, it } from "vitest";
 
 import { buildLoopbackTools, type LoopbackToolsBundle, type LoopbackToolsDeps } from "../src/loopback-tools.js";
@@ -133,6 +142,34 @@ describe("buildLoopbackTools — gating", () => {
     const approvedBundle = buildLoopbackTools(baseDeps({ messagingApprovalGate: () => ({ approved: true }), messagingRegistry: new MessagingProviderRegistry([sendProvider(approved)]), ...poll }));
     await findSend(approvedBundle).execute({ destination: "@me", text: "hi" }, {} as never);
     expect(approved).toHaveLength(1); // gate approved → provider.send called
+  });
+
+  it("wires assembled muse.tasks.complete to factual Continuity evidence after a real open-to-done commit", async () => {
+    const testDir = mkdtempSync(join(tmpdir(), "muse-loopback-continuity-"));
+    const tasksFile = join(testDir, "tasks.json");
+    const attunementFile = join(testDir, "attunement.json");
+    const notesDir = join(testDir, "notes");
+    await writeTasks(tasksFile, [{
+      createdAt: "2026-01-01T00:00:00.000Z", id: "task_mcp_evidence", status: "open", title: "MCP evidence"
+    }]);
+    const thread = await createPersonalThread(attunementFile, { kind: "work", title: "MCP root" });
+    await linkArtifact(attunementFile, {
+      artifactId: "task_mcp_evidence", artifactType: "task", role: "next-step", threadId: thread.id
+    }, { validateArtifact: createLocalArtifactValidator({ notesDir, tasksFile }) });
+    await openPreparedContinuityPack(
+      attunementFile,
+      thread.id,
+      createLocalExactArtifactResolver({ notesDir, tasksFile }),
+      { now: () => Date.parse("2026-01-02T00:00:00.000Z") }
+    );
+    const bundle = buildLoopbackTools(baseDeps({ attunementFile, notesDir, tasksFile }));
+    const complete = bundle.tasks.find((tool) => tool.definition.name.endsWith("complete"));
+    expect(complete).toBeDefined();
+
+    await complete!.execute({ id: "task_mcp_evidence" }, {} as never);
+    const state = await readAttunementState(attunementFile);
+    expect(state.interactionReceipts).toHaveLength(1);
+    expect(state.deliveries[0]?.outcome).toBeUndefined();
   });
 
   it("consent pin: MUSE_APPLE_REMINDERS_MIRROR absent ⇒ no Apple mirror is wired (add produces no mirrorNote, zero osascript)", async () => {

@@ -77,7 +77,9 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     "subcommands": [
       "approve",
       "clear",
-      "list"
+      "list",
+      "recover",
+      "status"
     ]
   },
   {
@@ -1045,6 +1047,7 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
       "continue",
       "delete",
       "inspect",
+      "interactions",
       "link",
       "list",
       "outcome",

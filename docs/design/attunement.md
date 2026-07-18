@@ -148,6 +148,14 @@ delivery boundary. The canonical outcome enum is `used`, `adjusted`, `ignored`, 
 `rejected` outcome with an explicit suppression instruction. Later stable dwell is a
 separate behavioral observation, not proof of causality.
 
+Continuity interaction evidence is also separate from outcome. An eligible new
+delivery anchors the exact user-authored local next-step link and its observed
+open-state fingerprint. When an existing trusted task-completion path later
+commits that exact task as done, Muse may record an immutable `open-to-done`
+receipt. The receipt never becomes `used`, feedback, permission, readiness, or
+promotion evidence by itself. Legacy, relinked, ambiguous, unreadable, and
+pre-delivery sources remain explicitly unavailable or uncorrelated.
+
 Slice A adaptation may change only:
 
 - detail (`standard` or `compact`);

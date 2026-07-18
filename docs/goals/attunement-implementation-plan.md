@@ -55,6 +55,10 @@ pack. It does not require desktop observation.
   CLI and HTTP use the same open Interface; timing offers use its read-only preview path.
 - ✅ `muse thread start|list|link|unlink|continue|inspect|outcome|reset|undo-reset` and the
   short `muse continue` entry point are available.
+- ✅ New deliveries can anchor one exact open local next-step and trusted local
+  task completion paths record an immutable factual interaction receipt. CLI
+  and authenticated HTTP expose the same mutation-free projection; explicit
+  outcomes remain a separate ledger and legacy deliveries remain unavailable.
 - ✅ Slice A supports only local tasks and local notes. Reminders, calendar events, contacts,
   run logs/checkpoints, and browser history are later adapters.
 - ✅ Only the user binds an item to a `threadId`; no deterministic auto-link or LLM summary is
@@ -111,6 +115,11 @@ with both kinds spanning `2/2` UTC dates. Status remains `collecting` because li
 more explicit outcomes. Even after numeric coverage, the only next status is
 `audit-required`; code cannot certify natural timing, domain diversity, comparability, or a
 strict action receipt, and it never enables automation.
+
+Interaction receipts improve that future audit without filling the four-outcome
+gap: they can prove an exact linked task changed after a Pack, but never infer
+whether the Pack was useful. The next life episodes still need distinct natural
+return moments and explicit calibration feedback.
 
 ## Slice B — safe observation and better timing
 

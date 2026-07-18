@@ -99,10 +99,40 @@ export interface ContinuityOutcomeRecord {
   readonly recordedAt: string;
 }
 
+/** Immutable proof that a delivery observed one exact user-linked local task as open. */
+export interface ContinuityInteractionAnchor {
+  readonly artifactId: string;
+  readonly linkedAt: string;
+  readonly observedAt: string;
+  readonly observedStatus: "open";
+  readonly openStateFingerprint: string;
+  readonly providerId: "local";
+  readonly role: "next-step";
+}
+
+/** Factual local interaction evidence. It is deliberately not a usefulness outcome. */
+export interface ContinuityInteractionReceipt {
+  readonly artifactId: string;
+  readonly completedAt: string;
+  readonly deliveryId: string;
+  readonly doneStateFingerprint: string;
+  readonly eventId: string;
+  readonly id: string;
+  readonly linkedAt: string;
+  readonly openStateFingerprint: string;
+  readonly providerId: "local";
+  readonly recordedAt: string;
+  readonly role: "next-step";
+  readonly runId: string;
+  readonly threadId: string;
+  readonly transition: "open-to-done";
+}
+
 /** A delivery is opened before feedback; its outcome can be recorded once. */
 export interface ContinuityDelivery {
   readonly evidenceRefs: readonly ArtifactReference[];
   readonly id: string;
+  readonly interactionAnchor?: ContinuityInteractionAnchor;
   readonly openedAt: string;
   readonly outcome?: ContinuityOutcomeRecord;
   readonly policyVersion: number;
@@ -133,10 +163,11 @@ export interface UndoResetReceipt {
 
 export interface AttunementState {
   readonly deliveries: readonly ContinuityDelivery[];
+  readonly interactionReceipts: readonly ContinuityInteractionReceipt[];
   /** The next globally monotonic policy version. Initial thread policies use 0. */
   readonly nextPolicyVersion: number;
   readonly resetReceipts: readonly PolicyResetReceipt[];
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly threads: readonly PersonalThread[];
   readonly undoResetReceipts: readonly UndoResetReceipt[];
 }
@@ -163,6 +194,7 @@ export interface ContinuityPack {
   readonly deliveryPolicyVersion: number;
   readonly evidence: readonly ContinuityEvidence[];
   readonly evidenceRefs: readonly ArtifactReference[];
+  readonly interactionAnchor?: Omit<ContinuityInteractionAnchor, "observedAt">;
   readonly nextStep?: ResolvedArtifact;
   readonly policy: ContinuityPolicy;
   readonly previousOutcome?: ContinuityOutcome;

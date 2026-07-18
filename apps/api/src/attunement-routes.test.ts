@@ -119,6 +119,12 @@ describe("POST /api/attunement/threads/:threadId/continue", () => {
       role: "next-step"
     });
     expect((await readAttunementState(attunementFile)).deliveries).toHaveLength(1);
+    const interactions = await server().inject({ method: "GET", url: "/api/attunement/interactions" });
+    expect(interactions.statusCode).toBe(200);
+    expect(interactions.json().interactions).toContainEqual(expect.objectContaining({
+      deliveryId: body.delivery.id,
+      interaction: expect.objectContaining({ state: "none" })
+    }));
   });
 
   it("maps unavailable preparation to a structured 409 without a delivery", async () => {
