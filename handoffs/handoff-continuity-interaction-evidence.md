@@ -5,7 +5,7 @@
 - **작업 이름:** continuity-interaction-evidence
 - **한 줄 목표:** Muse가 명시적 Continuity outcome과 섞지 않고, 정확히 연결된 로컬 task의 delivery 이후 상호작용 사실을 불변 receipt로 기록·평가한다.
 - **제품 맥락:** 현재 `adjusted` 이유와 실제 task 진전이 canonical state에 없어 Attunement가 반복 피드백 없이 개선되기 어렵다.
-- **현재 단계:** `EVAL`
+- **현재 단계:** `COMPLETE`
 - **담당(현재):** root orchestrator / worker
 
 ## 1. 수용 기준 (검증 가능한 PASS 조건)
@@ -20,7 +20,7 @@
 - [x] legacy read는 byte-preserving이다. unknown future schema, malformed/orphan/duplicate/cross-record mismatch는 전체 state를 rewrite 없이 거부한다. 첫 valid mutation은 기존 file lock 아래 원자적으로 migration/record하며 crash 전에는 receipt가 없고 commit 후 replay는 원본을 반환한다.
 - [x] 기존 thread 삭제는 interaction receipt를 함께 제거해 orphan을 남기지 않고 owner-only file permission을 유지한다. 향후 delivery 삭제가 생기면 같은 cascade를 요구하되 이 slice에서 새 delivery 삭제 기능은 만들지 않는다.
 - [x] 격리된 owner-only fixture에서 anchored delivery를 open task 상태로 열고, 기존 explicit user/test path로 task를 완료한 다음 receipt 하나를 기록한다. replay는 추가 기록을 만들지 않으며 이 기능 자체는 task mutation이나 autonomy authority를 만들지 않는다.
-- [ ] 타깃 테스트, TS7 typecheck, 관련 contract 검증, 독립 평가가 PASS한다. (빌더 검증은 PASS, 독립 평가 대기)
+- [x] 타깃 테스트, TS7 typecheck, 관련 contract 검증, 독립 평가가 PASS한다.
 - **범위 밖(하지 말 것):** interaction을 `used`로 추론, 자동 source 탐색/연결, proactive delivery, Observe 수집, live autonomy/권한 승격, 외부 전송.
 
 ## 2. 검증 방법
@@ -62,3 +62,4 @@
 - 2026-07-18 11:35 KST · independent evaluator · COMPLETION EVAL cycle 2 **FAIL** · Original same-ID replacement attack and all three composition-root tests are closed/green, but replacing the task after a valid receipt with a different `createdAt` while reusing the same ID and `completedAt` makes the replay branch return the old receipt rather than fail closed on changed exact-task identity. Bytes remained unchanged; only evaluator section 4 and this status entry were changed.
 - 2026-07-18 11:38 KST · independent evaluator · COMPLETION EVAL cycle 3 **FAIL** · External cycle-2 replay attack is runtime-closed (`not-correlated`, unchanged bytes, one original receipt) and focused 5+40+14+1+11 checks pass, but the submitted five interaction tests contain no valid-record-then-replacement replay regression despite the worker/status claim. Only evaluator section 4 and this status entry were changed.
 - 2026-07-18 11:40 KST · independent evaluator · COMPLETION EVAL cycle 4 **PASS** · Corrected cycle-3 file inspection: current untracked test lines 81–91 permanently cover valid receipt then same-ID/same-`completedAt`/different-`createdAt` replay refusal with unchanged bytes. Named 5/5 and external replay probe pass; all prior acceptance and composition-root evidence remains green. Only evaluator section 4 and this status entry were changed.
+- 2026-07-18 11:45 KST · root · COMPLETE · 최신 origin/main rebase 후 전체 `pnpm check`(CLI 4,354 포함), lint, API boot, capabilities drift, prompt seam을 다시 PASS함.
