@@ -58,7 +58,7 @@ only and never issue or widen an autonomy grant.
 
 ## Outside P0
 
-P0 has no live-autonomy CLI, API, web, messaging, posting, purchasing, finance, account or credential changes, calendar invitations, browser submission, generic desktop control, irreversible deletion, subagent side effects, new personal-data sources, or outcome-driven permission promotion. CLI and local/authenticated HTTP expose shadow evidence review only; they cannot execute the reviewed action. A web review screen, cross-surface live execution, and every additional action schema require separate reviewed slices.
+P0 has no live-autonomy CLI, API, web, messaging, posting, purchasing, finance, account or credential changes, calendar invitations, browser submission, generic desktop control, irreversible deletion, subagent side effects, new personal-data sources, or outcome-driven permission promotion. Web, CLI, and local/authenticated HTTP expose shadow evidence review only; none can execute or authorize the reviewed action. Cross-surface live execution and every additional action schema require separate reviewed slices.
 
 ## Shadow dogfood and promotion
 

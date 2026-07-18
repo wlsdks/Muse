@@ -10,6 +10,13 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Progressive Autonomy shadow review is now available on the web.** The
+  existing Autonomy page shows the oldest organic opportunity and records only
+  counterfactual decisions through the shared local/authenticated review API.
+  Exact/stale/unavailable source checks fail closed, failed writes retain input
+  without retrying, and regression evidence proves reviews do not change tasks,
+  Attunement state, runtime decisions, grants, or live execution.
+
 - Add a fail-closed, one-shot `dogfood:continuity-natural-cycle` runner that starts one actual user-linked work collection cycle, proves the task and receipt outbox are unchanged, and emits only aggregate non-identifying evidence.
 
 - **Continuity task evidence now survives recorder failures and restarts.**

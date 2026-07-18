@@ -333,6 +333,33 @@ export interface VetoesResponse {
   readonly total: number;
 }
 
+export type ProgressiveAutonomyReviewDecision = "needs-adjustment" | "would-approve" | "would-deny";
+
+export type ProgressiveAutonomyCurrentSource =
+  | { readonly state: "exact" }
+  | { readonly reason: string; readonly state: "stale" | "unavailable" };
+
+export interface ProgressiveAutonomyReviewOpportunity {
+  readonly action: string;
+  readonly currentSource: ProgressiveAutonomyCurrentSource;
+  readonly evidenceClass: "organic";
+  readonly linkedAt: string;
+  readonly opportunityId: string;
+  readonly ownerUserId: string;
+  readonly recordedAt: string;
+  readonly runId: string;
+  readonly shadowAssessment: string;
+  readonly shadowRationale: string;
+  readonly taskId: string;
+  readonly threadId: string;
+  readonly toolCallId: string;
+}
+
+export interface ProgressiveAutonomyReviewResponse {
+  readonly opportunity: ProgressiveAutonomyReviewOpportunity | null;
+  readonly schemaVersion: 1;
+}
+
 // Mirrors apps/api's `automation-routes.ts` GET /api/automation/upcoming.
 interface UpcomingDigest {
   readonly enabled: boolean;

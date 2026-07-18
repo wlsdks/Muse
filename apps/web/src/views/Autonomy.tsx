@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { AsyncBlock, Badge, Card, Empty, Icon } from "../components/ui.js";
+import { AsyncBlock, Badge, Button, Card, Empty, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { safeDateTime } from "../lib/datetime.js";
 import { actionResultLabel, objectiveStatusLabel } from "./autonomy-labels.js";
@@ -13,6 +13,9 @@ import type {
   ActionsResponse,
   AutomationUpcomingResponse,
   ObjectivesResponse,
+  ProgressiveAutonomyReviewDecision,
+  ProgressiveAutonomyReviewOpportunity,
+  ProgressiveAutonomyReviewResponse,
   VetoesResponse
 } from "../api/types.js";
 import type { StringKey, Translate } from "../i18n/index.js";
@@ -48,6 +51,10 @@ export function AutonomyView({ client }: { client: ApiClient }) {
         {t("auto.subtitle")}
       </p>
 
+      <div style={{ marginTop: 16 }}>
+        <ShadowReviewCard client={client} locale={locale} />
+      </div>
+
       <div className="tabs" style={{ margin: "16px 0" }} role="tablist" aria-label={t("nav.autonomy")}>
         {TABS.map((entry, i) => (
           <button
@@ -75,6 +82,223 @@ export function AutonomyView({ client }: { client: ApiClient }) {
       {tab === "objectives" && <ObjectivesTab client={client} locale={locale} />}
       {tab === "vetoes" && <VetoesTab client={client} locale={locale} />}
     </div>
+  );
+}
+
+const REVIEW_QUERY_KEY = "autonomy-review";
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
+
+function sourceAllowsDecision(
+  opportunity: ProgressiveAutonomyReviewOpportunity,
+  decision: ProgressiveAutonomyReviewDecision
+): boolean {
+  return opportunity.currentSource.state !== "unavailable"
+    && !(opportunity.currentSource.state === "stale" && decision === "would-approve");
+}
+
+function ShadowReviewCard({ client, locale }: { client: ApiClient; locale: string }) {
+  const { t } = useI18n();
+  const queryKey = [REVIEW_QUERY_KEY, client.baseUrl] as const;
+  const q = useQuery({
+    queryFn: () => client.get<ProgressiveAutonomyReviewResponse>("/api/autonomy/review"),
+    queryKey
+  });
+
+  return (
+    <Card title={t("auto.review.title")}>
+      <p className="subtle" style={{ fontSize: 12, marginTop: -4, marginBottom: 12 }}>
+        {t("auto.review.notice")}
+      </p>
+      <div aria-live="polite">
+        <AsyncBlock
+          loading={q.isLoading}
+          error={q.error}
+          empty={q.data?.opportunity === null}
+          emptyLabel={t("auto.review.empty")}
+        >
+          {q.data?.opportunity && (
+            <ShadowReviewOpportunityForm
+              key={q.data.opportunity.opportunityId}
+              client={client}
+              locale={locale}
+              opportunity={q.data.opportunity}
+              queryKey={queryKey}
+              refetching={q.isFetching}
+              onRefetch={async () => { await q.refetch(); }}
+            />
+          )}
+        </AsyncBlock>
+      </div>
+    </Card>
+  );
+}
+
+function ShadowReviewOpportunityForm({
+  client,
+  locale,
+  opportunity,
+  queryKey,
+  refetching,
+  onRefetch
+}: {
+  readonly client: ApiClient;
+  readonly locale: string;
+  readonly opportunity: ProgressiveAutonomyReviewOpportunity;
+  readonly queryKey: readonly [typeof REVIEW_QUERY_KEY, string];
+  readonly refetching: boolean;
+  readonly onRefetch: () => Promise<void>;
+}) {
+  const queryClient = useQueryClient();
+  const [decision, setDecision] = useState<ProgressiveAutonomyReviewDecision | null>(null);
+  const [reason, setReason] = useState("");
+  const normalizedReason = reason.trim();
+  const { t } = useI18n();
+  const reasonError = CONTROL_CHARACTER_PATTERN.test(normalizedReason) || normalizedReason.length > 500
+    ? t("auto.review.reasonInvalid")
+    : null;
+  const mutation = useMutation({
+    mutationFn: async (input: {
+      readonly decision: ProgressiveAutonomyReviewDecision;
+      readonly opportunityId: string;
+      readonly reason?: string;
+    }) => client.post(
+      `/api/autonomy/opportunities/${encodeURIComponent(input.opportunityId)}/decision`,
+      { decision: input.decision, ...(input.reason === undefined ? {} : { reason: input.reason }) }
+    ),
+    onError: async () => {
+      await onRefetch();
+    },
+    onSuccess: async () => {
+      setDecision(null);
+      setReason("");
+      await queryClient.invalidateQueries({ queryKey });
+    },
+    retry: false
+  });
+  const busy = mutation.isPending || refetching;
+
+  return (
+    <ShadowReviewForm
+      busy={busy}
+      decision={decision}
+      locale={locale}
+      mutationError={mutation.error}
+      opportunity={opportunity}
+      reason={reason}
+      reasonError={reasonError}
+      onDecision={setDecision}
+      onReason={setReason}
+      onSubmit={() => {
+        if (!decision || reasonError || !sourceAllowsDecision(opportunity, decision)) return;
+        mutation.mutate({
+          decision,
+          opportunityId: opportunity.opportunityId,
+          ...(normalizedReason.length === 0 ? {} : { reason: normalizedReason })
+        });
+      }}
+    />
+  );
+}
+
+function ShadowReviewForm({
+  busy,
+  decision,
+  locale,
+  mutationError,
+  opportunity,
+  reason,
+  reasonError,
+  onDecision,
+  onReason,
+  onSubmit
+}: {
+  readonly busy: boolean;
+  readonly decision: ProgressiveAutonomyReviewDecision | null;
+  readonly locale: string;
+  readonly mutationError: Error | null;
+  readonly opportunity: ProgressiveAutonomyReviewOpportunity;
+  readonly reason: string;
+  readonly reasonError: string | null;
+  readonly onDecision: (decision: ProgressiveAutonomyReviewDecision) => void;
+  readonly onReason: (reason: string) => void;
+  readonly onSubmit: () => void;
+}) {
+  const { t } = useI18n();
+  const options: readonly { readonly label: StringKey; readonly value: ProgressiveAutonomyReviewDecision }[] = [
+    { label: "auto.review.wouldApprove", value: "would-approve" },
+    { label: "auto.review.wouldDeny", value: "would-deny" },
+    { label: "auto.review.needsAdjustment", value: "needs-adjustment" }
+  ];
+  const sourceState = opportunity.currentSource.state;
+  const sourceUnavailable = sourceState === "unavailable";
+  const decisionAllowed = decision === null || sourceAllowsDecision(opportunity, decision);
+  const sourceLabel = t(`auto.review.source.${sourceState}`);
+  const sourceTone = sourceState === "exact" ? "ok" : sourceState === "stale" ? "warn" : "err";
+
+  return (
+    <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+      <div className="row" style={{ alignItems: "flex-start" }}>
+        <div className="row-main">
+          <div className="label">{t("auto.review.action")}</div>
+          <div className="row-title">{opportunity.action}</div>
+          <div className="row-meta">{t("auto.review.scope", { taskId: opportunity.taskId, threadId: opportunity.threadId })}</div>
+          <div className="row-meta">{t("auto.review.linkedAt", { when: safeDateTime(opportunity.linkedAt, locale) })}</div>
+          <div className="row-meta">{t("auto.review.recordedAt", { when: safeDateTime(opportunity.recordedAt, locale) })}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="label">{t("auto.review.source")}</div>
+          <Badge tone={sourceTone}>{sourceLabel}</Badge>
+          {sourceState !== "exact" && (
+            <div className="row-meta" style={{ marginTop: 4 }}>{opportunity.currentSource.reason}</div>
+          )}
+        </div>
+      </div>
+      <dl style={{ display: "grid", gap: 8, margin: "12px 0" }}>
+        <div>
+          <dt className="label">{t("auto.review.assessment")}</dt>
+          <dd style={{ margin: 0 }}>{opportunity.shadowAssessment}</dd>
+        </div>
+        <div>
+          <dt className="label">{t("auto.review.rationale")}</dt>
+          <dd className="subtle" style={{ margin: 0 }}>{opportunity.shadowRationale}</dd>
+        </div>
+      </dl>
+      <fieldset disabled={busy || sourceUnavailable} style={{ border: 0, margin: "12px 0", padding: 0 }}>
+        <legend className="label">{t("auto.review.decision")}</legend>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+          {options.map((option) => (
+            <label key={option.value}>
+              <input
+                checked={decision === option.value}
+                disabled={sourceState === "stale" && option.value === "would-approve"}
+                name="autonomy-shadow-decision"
+                type="radio"
+                value={option.value}
+                onChange={() => onDecision(option.value)}
+              />{" "}{t(option.label)}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <label className="label" htmlFor="autonomy-shadow-reason">{t("auto.review.reason")}</label>
+      <textarea
+        aria-describedby={reasonError ? "autonomy-shadow-reason-error" : undefined}
+        aria-invalid={reasonError ? true : undefined}
+        className="textarea"
+        disabled={busy || sourceUnavailable}
+        id="autonomy-shadow-reason"
+        placeholder={t("auto.review.reasonPlaceholder")}
+        value={reason}
+        onChange={(event) => onReason(event.target.value)}
+      />
+      {reasonError && <p className="field-error" id="autonomy-shadow-reason-error" role="alert">{reasonError}</p>}
+      {mutationError && <p className="field-error" role="alert">{t("auto.review.failed")}</p>}
+      <div style={{ marginTop: 12 }}>
+        <Button disabled={busy || sourceUnavailable || decision === null || !decisionAllowed || reasonError !== null} type="submit" variant="primary">
+          {busy ? t("auto.review.submitting") : t("auto.review.submit")}
+        </Button>
+      </div>
+    </form>
   );
 }
 

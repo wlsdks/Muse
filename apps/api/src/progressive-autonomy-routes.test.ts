@@ -42,12 +42,24 @@ describe("progressive autonomy HTTP review boundary", () => {
     });
     expect(invalidReason.statusCode).toBe(400);
     expect(await readFile(fixture.opportunitiesFile, "utf8")).toBe(beforeIdentity);
+    const beforeAttunement = await readFile(fixture.attunementFile, "utf8");
+    const beforeTasks = await readFile(fixture.tasksFile, "utf8");
+    const opportunityStore = new FileProgressiveAutonomyOpportunityStore({ file: fixture.opportunitiesFile });
+    const beforeOpportunities = await opportunityStore.list();
+    expect(await opportunityStore.listRuntimeDecisions()).toEqual([]);
     const decided = await server.inject({
       method: "POST", payload: { decision: "would-approve", reason: "yes" },
       remoteAddress: "127.0.0.1", url: "/api/autonomy/opportunities/organic-http/decision"
     });
     expect(decided.statusCode).toBe(200);
     expect(decided.json()).toMatchObject({ review: { decision: "would-approve", reason: "yes" } });
+    expect(await readFile(fixture.attunementFile, "utf8")).toBe(beforeAttunement);
+    expect(await readFile(fixture.tasksFile, "utf8")).toBe(beforeTasks);
+    expect(await opportunityStore.list()).toEqual(beforeOpportunities);
+    expect(await opportunityStore.listRuntimeDecisions()).toEqual([]);
+    expect(await opportunityStore.listReviews()).toMatchObject([
+      { decision: "would-approve", opportunityId: "organic-http", reason: "yes" }
+    ]);
     await server.close();
   });
 
