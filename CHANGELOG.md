@@ -24,6 +24,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   byte-stable reads/replays, owner-only state, zero outcomes, and zero permission
   expansion without presenting same-session data as natural product evidence.
 
+- **Continuity now exposes its actual interaction collection gap.** The shared
+  core report, CLI, and authenticated HTTP surface track exact life/work task
+  interactions across distinct UTC opened dates and stop at `audit-required`.
+  A fixed-seed offline evaluator checks 5,000 synthetic cohorts against an
+  independent oracle, while aggregate-only local dogfood proves Attunement and
+  task source bytes remain unchanged; neither path infers usefulness or expands
+  permission.
+
 - **Talk the Builder into shape.** After Muse drafts a flow you can keep
   talking — "8시 반으로 바꾸고 텔레그램 123으로 보내줘" updates the same
   draft in place (canvas and form follow), Muse replies naming exactly

@@ -11,6 +11,9 @@ import type {
 const INTERACTION_STATES = ["exact", "none", "unavailable"] as const;
 type ContinuityInteractionState = (typeof INTERACTION_STATES)[number];
 
+export const CONTINUITY_INTERACTION_EXACT_PER_KIND = 10;
+export const CONTINUITY_INTERACTION_DISTINCT_DATES_PER_KIND = 2;
+
 export interface ContinuityInteractionLatencyDigest {
   readonly maxMs: number | null;
   readonly medianMs: number | null;
@@ -33,7 +36,23 @@ export interface ContinuityInteractionDigest {
   readonly overall: ContinuityInteractionDigestSlice;
 }
 
+export interface ContinuityInteractionKindAudit {
+  readonly distinctUtcOpenedDates: number;
+  readonly distinctUtcOpenedDatesTarget: number;
+  readonly exactInteractions: number;
+  readonly exactInteractionsTarget: number;
+  readonly remainingDates: number;
+  readonly remainingExactInteractions: number;
+}
+
+export interface ContinuityInteractionAudit {
+  readonly byThreadKind: Readonly<Record<PersonalThreadKind, ContinuityInteractionKindAudit>>;
+  readonly reason: string;
+  readonly status: "collecting" | "audit-required";
+}
+
 export interface ContinuityInteractionReport {
+  readonly audit: ContinuityInteractionAudit;
   readonly digest: ContinuityInteractionDigest;
   readonly interactions: readonly ContinuityInteractionProjectionItem[];
   readonly schemaVersion: 1;
@@ -200,12 +219,52 @@ export function buildContinuityInteractionDigest(
   };
 }
 
+/** Numeric collection coverage only. It never certifies naturalness, usefulness, or permission. */
+export function buildContinuityInteractionAudit(
+  interactions: readonly ContinuityInteractionProjectionItem[]
+): ContinuityInteractionAudit {
+  // Reuse the canonical fail-closed evidence validation before counting any coverage.
+  buildContinuityInteractionDigest(interactions);
+
+  const slice = (kind: PersonalThreadKind): ContinuityInteractionKindAudit => {
+    const exact = interactions.filter((item) => item.threadKind === kind && item.interaction.state === "exact");
+    const distinctDates = new Set(exact.map((item) => new Date(Date.parse(item.openedAt)).toISOString().slice(0, 10)));
+    return {
+      distinctUtcOpenedDates: distinctDates.size,
+      distinctUtcOpenedDatesTarget: CONTINUITY_INTERACTION_DISTINCT_DATES_PER_KIND,
+      exactInteractions: exact.length,
+      exactInteractionsTarget: CONTINUITY_INTERACTION_EXACT_PER_KIND,
+      remainingDates: Math.max(0, CONTINUITY_INTERACTION_DISTINCT_DATES_PER_KIND - distinctDates.size),
+      remainingExactInteractions: Math.max(0, CONTINUITY_INTERACTION_EXACT_PER_KIND - exact.length)
+    };
+  };
+  const byThreadKind = { life: slice("life"), work: slice("work") };
+  const complete = Object.values(byThreadKind).every((entry) =>
+    entry.remainingDates === 0 && entry.remainingExactInteractions === 0);
+  return complete
+    ? {
+        byThreadKind,
+        reason: "Numeric interaction coverage is complete; human audit is still required for natural timing, usefulness, causality, and permission.",
+        status: "audit-required"
+      }
+    : {
+        byThreadKind,
+        reason: "Continue collecting canonical exact interactions across both life and work dates; numeric coverage does not grant permission.",
+        status: "collecting"
+      };
+}
+
 export async function buildContinuityInteractionReport(
   state: AttunementState,
   resolveCurrentTask: ContinuityTaskInteractionSourceResolver
 ): Promise<ContinuityInteractionReport> {
   const interactions = await buildContinuityInteractionProjection(state, resolveCurrentTask);
-  return { digest: buildContinuityInteractionDigest(interactions), interactions, schemaVersion: 1 };
+  return {
+    audit: buildContinuityInteractionAudit(interactions),
+    digest: buildContinuityInteractionDigest(interactions),
+    interactions,
+    schemaVersion: 1
+  };
 }
 
 function latencyDigest(sorted: readonly number[]): ContinuityInteractionLatencyDigest {

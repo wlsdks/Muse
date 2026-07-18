@@ -566,6 +566,12 @@ Examples:
         io.stdout(`${formatSlice("Interaction digest", report.digest.overall)}\n`);
         io.stdout(`  ${formatSlice("life", report.digest.byThreadKind.life)}\n`);
         io.stdout(`  ${formatSlice("work", report.digest.byThreadKind.work)}\n`);
+        io.stdout(`Interaction audit: ${report.audit.status}\n`);
+        for (const kind of ["life", "work"] as const) {
+          const coverage = report.audit.byThreadKind[kind];
+          io.stdout(`  ${kind}: exact=${coverage.exactInteractions.toString()}/${coverage.exactInteractionsTarget.toString()} opened UTC dates=${coverage.distinctUtcOpenedDates.toString()}/${coverage.distinctUtcOpenedDatesTarget.toString()}\n`);
+        }
+        io.stdout("  Numeric coverage does not certify natural timing, usefulness, or permission.\n");
         if (report.interactions.length === 0) {
           io.stdout("No Continuity deliveries have interaction evidence yet.\n");
           return;

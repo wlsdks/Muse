@@ -10,6 +10,7 @@ import {
   createLocalContinuityTaskInteractionSourceResolver,
   createLocalExactArtifactResolver,
   createPersonalThread,
+  buildContinuityInteractionAudit,
   buildContinuityInteractionDigest,
   buildContinuityInteractionReport,
   buildContinuityInteractionProjection,
@@ -62,6 +63,77 @@ function projectionItem(input: {
 }
 
 describe("Continuity interaction evidence", () => {
+  it("reports an explicit finite collection gap for an empty interaction set", () => {
+    expect(buildContinuityInteractionAudit([])).toEqual({
+      byThreadKind: {
+        life: {
+          distinctUtcOpenedDates: 0,
+          distinctUtcOpenedDatesTarget: 2,
+          exactInteractions: 0,
+          exactInteractionsTarget: 10,
+          remainingDates: 2,
+          remainingExactInteractions: 10
+        },
+        work: {
+          distinctUtcOpenedDates: 0,
+          distinctUtcOpenedDatesTarget: 2,
+          exactInteractions: 0,
+          exactInteractionsTarget: 10,
+          remainingDates: 2,
+          remainingExactInteractions: 10
+        }
+      },
+      reason: expect.stringContaining("collect"),
+      status: "collecting"
+    });
+  });
+
+  it("requires exact interactions in both kinds across two opened UTC dates before audit", () => {
+    const exact = (kind: PersonalThreadKind, count: number, dates: number): ContinuityInteractionProjectionItem[] =>
+      Array.from({ length: count }, (_, index) => {
+        const day = 18 + (index % dates);
+        const openedAt = `2026-07-${day.toString().padStart(2, "0")}T00:00:00.000Z`;
+        return projectionItem({
+          completedAt: `2026-07-${day.toString().padStart(2, "0")}T00:00:00.001Z`,
+          deliveryId: `${kind}_${count.toString()}_${dates.toString()}_${index.toString()}`,
+          openedAt,
+          state: "exact",
+          threadKind: kind
+        });
+      });
+
+    const complete = [...exact("life", 10, 2), ...exact("work", 10, 2)];
+    expect(buildContinuityInteractionAudit(complete)).toMatchObject({
+      byThreadKind: {
+        life: { distinctUtcOpenedDates: 2, exactInteractions: 10, remainingDates: 0, remainingExactInteractions: 0 },
+        work: { distinctUtcOpenedDates: 2, exactInteractions: 10, remainingDates: 0, remainingExactInteractions: 0 }
+      },
+      status: "audit-required"
+    });
+    expect(buildContinuityInteractionAudit([...exact("life", 10, 2), ...exact("work", 9, 2)]).status)
+      .toBe("collecting");
+    expect(buildContinuityInteractionAudit([...exact("life", 10, 2), ...exact("work", 10, 1)]).status)
+      .toBe("collecting");
+    expect(buildContinuityInteractionAudit(exact("life", 10, 2)).status).toBe("collecting");
+
+    const nonExactAcrossDates = Array.from({ length: 20 }, (_, index) => projectionItem({
+      deliveryId: `non_exact_${index.toString()}`,
+      openedAt: `2026-08-${(index + 1).toString().padStart(2, "0")}T00:00:00.000Z`,
+      state: index % 2 === 0 ? "none" : "unavailable",
+      threadKind: index % 2 === 0 ? "life" : "work"
+    }));
+    expect(buildContinuityInteractionAudit(nonExactAcrossDates)).toMatchObject({
+      byThreadKind: { life: { distinctUtcOpenedDates: 0 }, work: { distinctUtcOpenedDates: 0 } },
+      status: "collecting"
+    });
+
+    const outcomeVariant = complete.map((item, index) => ({
+      ...item,
+      explicitOutcome: (["used", "adjusted", "ignored", "rejected"] as const)[index % 4]
+    }));
+    expect(buildContinuityInteractionAudit(outcomeVariant)).toEqual(buildContinuityInteractionAudit(complete));
+  });
+
   it("builds a finite empty digest with explicit zero-sample latency", () => {
     expect(buildContinuityInteractionDigest([])).toEqual({
       byThreadKind: {
@@ -202,6 +274,13 @@ describe("Continuity interaction evidence", () => {
         receipt: { ...first.interaction.receipt!, recordedAt: "2026-07-18T00:00:00.005Z" }
       }
     }])).toThrow(/chronology/iu);
+    expect(() => buildContinuityInteractionAudit([{
+      ...first,
+      interaction: {
+        ...first.interaction,
+        receipt: { ...first.interaction.receipt!, recordedAt: "2026-07-18T00:00:00.005Z" }
+      }
+    }])).toThrow(/chronology/iu);
   });
 
   it("records one immutable factual receipt for an anchored task completion", async () => {
@@ -266,6 +345,10 @@ describe("Continuity interaction evidence", () => {
       createLocalContinuityTaskInteractionSourceResolver(tasksFile)
     );
     expect(report).toMatchObject({
+      audit: {
+        byThreadKind: { work: { exactInteractions: 1, remainingExactInteractions: 9 } },
+        status: "collecting"
+      },
       digest: {
         byThreadKind: { work: { completionLatencyMs: { sampleSize: 1 }, totalDeliveries: 1 } },
         overall: { completionLatencyMs: { sampleSize: 1 }, states: { exact: { count: 1 } }, totalDeliveries: 1 }

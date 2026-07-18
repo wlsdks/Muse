@@ -1,11 +1,16 @@
 export { prepareContinuityPack, type ContinuityPreparationOptions } from "./continuity-pack.js";
 export {
+  CONTINUITY_INTERACTION_DISTINCT_DATES_PER_KIND,
+  CONTINUITY_INTERACTION_EXACT_PER_KIND,
+  buildContinuityInteractionAudit,
   buildContinuityInteractionDigest,
   buildContinuityInteractionReport,
   buildContinuityInteractionProjection,
   fingerprintContinuityTaskState,
+  type ContinuityInteractionAudit,
   type ContinuityInteractionDigest,
   type ContinuityInteractionDigestSlice,
+  type ContinuityInteractionKindAudit,
   type ContinuityInteractionLatencyDigest,
   type ContinuityInteractionProjectionItem,
   type ContinuityInteractionReport,

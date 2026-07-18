@@ -131,6 +131,16 @@ implementation shadow gate only; the same-session timing distribution is not
 natural resumption evidence and cannot release Slice B or autonomy. Details:
 [`../evaluations/continuity-interaction-shadow-24-2026-07-18.md`](../evaluations/continuity-interaction-shadow-24-2026-07-18.md).
 
+The shared report now exposes the remaining interaction evidence gap directly:
+each kind needs ten exact receipts across two UTC opened dates before moving from
+`collecting` to `audit-required`. Generated stress data remains offline and cannot
+fill this gate. A 5,000-cohort / 174,548-item production-vs-oracle evaluation had
+zero mismatches and caught an off-by-one mutation, while an aggregate-only read of
+the actual default state preserved both Attunement and tasks bytes. Actual coverage
+is still life `0/10`, work `0/10`, and `0/2` dates for both, so no usefulness,
+naturalness, permission, or automation claim is released. Evidence:
+[`../evaluations/continuity-interaction-longitudinal-audit-2026-07-18.md`](../evaluations/continuity-interaction-longitudinal-audit-2026-07-18.md).
+
 ## Slice B — safe observation and better timing
 
 **User experience:** after the user explicitly starts a personal thread, Muse can notice a

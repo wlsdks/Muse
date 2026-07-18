@@ -163,6 +163,13 @@ separately for `life` and `work`. Completion latency uses only exact receipt
 CLI and HTTP return the same core report. The report does not feed the outcome
 reducer, longitudinal readiness, promotion, permission, or autonomy grants.
 
+The report also carries an interaction-only longitudinal audit. Each thread kind
+has a conservative collection target of ten canonical exact interactions across
+two distinct UTC `openedAt` dates. Until both life and work meet both numbers the
+status is `collecting`; numeric completion can only produce `audit-required`.
+`none`, `unavailable`, and explicit outcomes do not count. This audit is a gap
+tracker, not proof of natural timing, usefulness, causality, or permission.
+
 Slice A adaptation may change only:
 
 - detail (`standard` or `compact`);

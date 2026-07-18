@@ -126,6 +126,13 @@ describe("POST /api/attunement/threads/:threadId/continue", () => {
       byThreadKind: { life: { totalDeliveries: 1 }, work: { totalDeliveries: 0 } },
       overall: { states: { none: { count: 1 } }, totalDeliveries: 1 }
     });
+    expect(interactions.json().audit).toMatchObject({
+      byThreadKind: {
+        life: { distinctUtcOpenedDates: 0, exactInteractions: 0, remainingDates: 2, remainingExactInteractions: 10 },
+        work: { distinctUtcOpenedDates: 0, exactInteractions: 0, remainingDates: 2, remainingExactInteractions: 10 }
+      },
+      status: "collecting"
+    });
     expect(interactions.json().interactions).toContainEqual(expect.objectContaining({
       deliveryId: body.delivery.id,
       interaction: expect.objectContaining({ state: "none" })

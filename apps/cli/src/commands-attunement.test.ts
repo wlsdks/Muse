@@ -103,12 +103,17 @@ describe("muse thread / continue — Personal Continuity", () => {
 
     const beforeInteractions = readFileSync(f.attunementFile, "utf8");
     const interactions = JSON.parse((await run(f, ["thread", "interactions", "--json"])).stdout) as {
+      readonly audit: { readonly byThreadKind: { readonly life: { readonly remainingExactInteractions: number } }; readonly status: string };
       readonly digest: { readonly byThreadKind: { readonly life: { readonly totalDeliveries: number } }; readonly overall: { readonly states: { readonly none: { readonly count: number } }; readonly totalDeliveries: number } };
       readonly interactions: readonly { readonly deliveryId: string; readonly interaction: { readonly state: string } }[];
     };
     expect(interactions.digest).toMatchObject({
       byThreadKind: { life: { totalDeliveries: 1 } },
       overall: { states: { none: { count: 1 } }, totalDeliveries: 1 }
+    });
+    expect(interactions.audit).toMatchObject({
+      byThreadKind: { life: { remainingExactInteractions: 10 } },
+      status: "collecting"
     });
     expect(interactions.interactions).toContainEqual(expect.objectContaining({
       deliveryId,
@@ -119,6 +124,9 @@ describe("muse thread / continue — Personal Continuity", () => {
     const interactionText = await run(f, ["thread", "interactions"]);
     expect(interactionText.stdout).toContain("Interaction digest: 1 delivery; exact=0 none=1 unavailable=0");
     expect(interactionText.stdout).toContain("life: 1 delivery; exact=0 none=1 unavailable=0");
+    expect(interactionText.stdout).toContain("Interaction audit: collecting");
+    expect(interactionText.stdout).toContain("life: exact=0/10 opened UTC dates=0/2");
+    expect(interactionText.stdout).toContain("does not certify natural timing, usefulness, or permission");
 
     const outcome = await run(f, ["thread", "outcome", deliveryId!, "ignored"]);
     expect(outcome.stdout).toContain("Recorded ignored");
