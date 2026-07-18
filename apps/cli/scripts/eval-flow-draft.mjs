@@ -39,7 +39,7 @@ async function ollamaHasModel() {
 }
 
 if (!(await ollamaHasModel())) {
-  console.log(`eval:flow-draft skipped — local model '${MODEL}' unavailable at ${OLLAMA_BASE} (a skip is not a pass).`);
+  console.log(`eval:flow-draft skipped — local Ollama not reachable at ${OLLAMA_BASE} or model '${MODEL}' missing. A skip is not a pass.`);
   process.exit(0);
 }
 
