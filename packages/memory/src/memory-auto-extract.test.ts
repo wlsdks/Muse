@@ -2,7 +2,7 @@ import type { ModelProvider, ModelResponse } from "@muse/model";
 import { describe, expect, it } from "vitest";
 
 import type { FactSupersession } from "./index.js";
-import { createUserMemoryAutoExtractHook } from "./memory-auto-extract.js";
+import { AUTO_EXTRACT_SLOT_CONFIDENCE, createUserMemoryAutoExtractHook } from "./memory-auto-extract.js";
 import { InMemoryUserMemoryStore } from "./memory-user-store.js";
 import { formatLearnedConfirmation } from "./recently-learned.js";
 
@@ -199,5 +199,23 @@ describe("createUserMemoryAutoExtractHook — FIX 2 ephemeral value guard", () =
     await hook.afterComplete?.(...turn("u", "오늘 기분이 좋아요"));
     const memory = store.findByUserId("u");
     expect(memory?.preferences?.mood_today).toBe("오늘 기분 좋음");
+  });
+});
+
+describe("auto-extracted typed slots carry an INFERRED confidence (reconfirm-card fuel)", () => {
+  it("veto and goal slots written by the extractor carry AUTO_EXTRACT_SLOT_CONFIDENCE — an extracted guess must decay and become reconfirmable, never masquerade as asserted", async () => {
+    const store = new InMemoryUserMemoryStore();
+    const hook = createUserMemoryAutoExtractHook({
+      store,
+      modelProvider: fakeProvider(
+        '{"facts":{},"preferences":{},"vetoes":[{"id":"veto_no_am_call","value":"오전 회의 잡지 말기"}],"goals":[{"id":"goal_blog","value":"이번 달 블로그 3편 쓰기"}]}'
+      ),
+      model: "m",
+      extractionCooldownMs: 0
+    });
+    await hook.afterComplete?.(...turn("u", "앞으론 오전엔 회의 잡지 말아줘, 그리고 이번 달 목표는 블로그 3편이야"));
+    const memory = store.findByUserId("u");
+    expect(memory?.userModel?.vetoes?.[0]?.confidence).toBe(AUTO_EXTRACT_SLOT_CONFIDENCE);
+    expect(memory?.userModel?.goals?.[0]?.confidence).toBe(AUTO_EXTRACT_SLOT_CONFIDENCE);
   });
 });
