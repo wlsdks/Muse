@@ -9,6 +9,7 @@ import { factLabel } from "../lib/memory-labels.js";
 import { isThreadResumable, OutcomeButtons } from "./continuity-shared.js";
 import { OpenedPackCard } from "./ContinuityReview.js";
 import { consumeAutoContinueThread, dayRhythmCardState, homeCapabilities, seedChat } from "./home-logic.js";
+import { useReconfirmCard } from "./reconfirm-inline.js";
 import { greetingKey, TodaySections } from "./Today.js";
 
 import type { ApiClient } from "../api/client.js";
@@ -19,7 +20,6 @@ import type {
   HealthResponse,
   MessagingSetupResponse,
   ModelsResponse,
-  ReconfirmCardResponse,
   UserMemoryResponse
 } from "../api/types.js";
 import type { OpenedPack, Outcome } from "./continuity-shared.js";
@@ -151,8 +151,6 @@ export function DayRhythmCard({
   );
 }
 
-const RECONFIRM_CARD_QUERY_KEY = "reconfirm-card";
-
 /**
  * The Home "Muse가 확인하고 싶은 것" card — Muse states ONE uncertain
  * inference about the user (a decayed inferred preference/schedule/veto/goal
@@ -163,24 +161,8 @@ const RECONFIRM_CARD_QUERY_KEY = "reconfirm-card";
  * card or errors.
  */
 export function ReconfirmCard({ client, t }: { client: ApiClient; t: Translate }) {
-  const queryClient = useQueryClient();
-  const queryKey = [RECONFIRM_CARD_QUERY_KEY, client.baseUrl];
-  const query = useQuery({
-    queryFn: () => client.get<ReconfirmCardResponse>("/api/user-model/reconfirm-card"),
-    queryKey,
-    retry: false
-  });
-  const [answered, setAnswered] = useState<{ readonly verdict: "confirm" | "reject" } | undefined>();
-  const respond = useMutation({
-    mutationFn: ({ slotId, verdict }: { readonly slotId: string; readonly verdict: "confirm" | "reject" }) =>
-      client.post(`/api/user-model/reconfirm-card/${encodeURIComponent(slotId)}`, { verdict }),
-    onSuccess: (_result, variables) => {
-      setAnswered({ verdict: variables.verdict });
-      return queryClient.invalidateQueries({ queryKey });
-    }
-  });
+  const { answered, card, respond } = useReconfirmCard(client);
 
-  const card = query.data?.card;
   if (!card && !answered) {
     return null;
   }

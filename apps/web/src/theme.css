@@ -1447,6 +1447,23 @@ button.row:last-child {
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
 }
+.chat-reconfirm-strip {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-sm);
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--s-sm) var(--s-md);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+}
+.chat-reconfirm-strip .row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .chat-composer {
   flex: none;
   border-top: 1px solid var(--hairline);

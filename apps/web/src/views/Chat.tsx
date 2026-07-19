@@ -5,7 +5,7 @@ import { useChatStream } from "../api/useChatStream.js";
 import { useVoice } from "../api/useVoice.js";
 import { DeskPet } from "../components/DeskPet.js";
 import { Markdown } from "../components/markdown.js";
-import { Button, Icon } from "../components/ui.js";
+import { Badge, Button, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { readLocationSeed, stripCompanionSeed } from "../lib/companion-seed.js";
 import { modelChip } from "../lib/model-chip.js";
@@ -15,6 +15,7 @@ import { shouldStickToBottom } from "./chat-autoscroll.js";
 import { ChatsView } from "./Chats.js";
 import { continuityNudgeFor, dismissNudge, isNudgeDismissed } from "./continuity-nudge.js";
 import { writeAutoContinueThread } from "./home-logic.js";
+import { useReconfirmCard } from "./reconfirm-inline.js";
 import { writeBuilderCopilotSeed } from "./scheduled-logic.js";
 
 import type { ApiClient } from "../api/client.js";
@@ -262,6 +263,64 @@ export function ChatContinuitySection({
   );
 }
 
+/**
+ * The chat-view reconfirm strip — the SAME "Muse가 확인하고 싶은 것" one-tap
+ * question as Home's `ReconfirmCard` (`reconfirm-inline.ts`'s `useReconfirmCard`
+ * shared hook, same endpoints, same i18n strings), compressed to a single
+ * inline line so a PC-only user who never opens Home still meets it. Gated by
+ * the SAME `isEmptySession` rule as `ChatContinuitySection` — the fetch itself
+ * is disabled once a turn lands, so it never re-fires mid-conversation. Once
+ * answered, the acknowledgment line stays up (component state, not session
+ * state) until the user navigates away, even if they then start chatting.
+ * Silent (renders nothing) when there is no card, the session isn't empty, or
+ * the GET fails.
+ */
+export function ChatReconfirmStrip({
+  client,
+  isEmptySession,
+  t
+}: {
+  client: ApiClient;
+  isEmptySession: boolean;
+  t: Translate;
+}) {
+  const { answered, card, respond } = useReconfirmCard(client, { enabled: isEmptySession });
+  if (!answered && (!isEmptySession || !card)) {
+    return null;
+  }
+  return (
+    <div className="chat-reconfirm-strip" role="group" aria-label={t("home.reconfirm.title")}>
+      {answered ? (
+        <span className="row-meta">
+          {t(answered.verdict === "confirm" ? "home.reconfirm.confirmedAck" : "home.reconfirm.rejectedAck")}
+        </span>
+      ) : card ? (
+        <>
+          <Badge tone="neutral">{t("home.reconfirm.guessLabel")}</Badge>
+          <span className="row-title">{card.question}</span>
+          {respond.isError && <span className="row-meta exec-error">{t("home.reconfirm.answerFailed")}</span>}
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={respond.isPending}
+            onClick={() => respond.mutate({ slotId: card.slotId, verdict: "confirm" })}
+          >
+            {t("home.reconfirm.confirm")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={respond.isPending}
+            onClick={() => respond.mutate({ slotId: card.slotId, verdict: "reject" })}
+          >
+            {t("home.reconfirm.reject")}
+          </Button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 /** The 대화 surface: a conversation session plus a 기록 (history) tab — the
  * read-only conversation list lives INSIDE chat, not as a separate sidebar
  * destination. Resuming from history bumps `epoch` so the remounted session
@@ -497,6 +556,7 @@ export function ChatSession({ client, onNavigate }: { client: ApiClient; onNavig
       </div>
 
       <ChatContinuitySection client={client} isEmptySession={turns.length === 0} onNavigate={onNavigate} />
+      <ChatReconfirmStrip client={client} isEmptySession={turns.length === 0} t={t} />
 
       <div className="chat-composer">
         {voice.error && <div className="banner err" style={{ maxWidth: 760, margin: "0 auto 8px" }}>{voice.error}</div>}

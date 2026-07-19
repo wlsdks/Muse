@@ -3,13 +3,21 @@ import { useRef, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, render } from "vitest-browser-react";
 
-import { I18nProvider } from "../i18n/index.js";
+import { I18nProvider, useI18n } from "../i18n/index.js";
 import { safeSessionStorage } from "../lib/safe-storage.js";
-import { applyStarterPrompt, ChatContinuitySection, CreateInBuilderButton, STARTER_PROMPTS, StarterChips } from "./Chat.js";
+import {
+  applyStarterPrompt,
+  ChatContinuitySection,
+  ChatReconfirmStrip,
+  CreateInBuilderButton,
+  STARTER_PROMPTS,
+  StarterChips
+} from "./Chat.js";
 import { consumeAutoContinueThread } from "./home-logic.js";
 import { consumeBuilderCopilotSeed, writeBuilderCopilotSeed } from "./scheduled-logic.js";
 
 import type { ApiClient } from "../api/client.js";
+import type { ReconfirmCard as ReconfirmCardData } from "../api/types.js";
 import type { ReviewThreadSummary } from "./continuity-shared.js";
 import type { Translate } from "../i18n/index.js";
 
@@ -76,6 +84,105 @@ test("clicking 'Create in Builder' seeds the one-shot copilot handoff and naviga
   // The real seed helper round-trips through real sessionStorage, one-shot.
   expect(consumeBuilderCopilotSeed(safeSessionStorage())).toBe(AUTOMATION_ASK);
   expect(window.sessionStorage.getItem("muse.builderCopilotSeed")).toBeNull();
+});
+
+// Chat's reconfirm strip (`ChatReconfirmStrip`) — the SAME "Muse가 확인하고
+// 싶은 것" one-tap question Home's `ReconfirmCard` shows, surfaced in Chat too
+// so a PC-only user who never opens Home still meets it. Same shared hook,
+// same endpoints, same i18n strings as Home's card; these tests cover the
+// chat-specific empty-session gate and the compact single-line rendering.
+
+const RECONFIRM_FIXTURE: ReconfirmCardData = {
+  category: "preference",
+  evidence: "추측의 신뢰도가 12%로 옅어졌어요.",
+  question: "진안은 말투에서 '간결한 답변'을(를) 선호한다고 추측하고 있어요 — 맞나요?",
+  slotId: "pref-tone"
+};
+
+function TestChatReconfirmStrip(props: { readonly client: ApiClient; readonly isEmptySession: boolean }) {
+  const { t } = useI18n();
+  return <ChatReconfirmStrip client={props.client} isEmptySession={props.isEmptySession} t={t} />;
+}
+
+function renderReconfirmStrip(props: {
+  readonly get: (path: string) => Promise<unknown>;
+  readonly isEmptySession?: boolean;
+  readonly post?: (path: string, body?: Record<string, unknown>) => Promise<unknown>;
+}) {
+  window.localStorage.setItem("muse.lang", "en");
+  const forbiddenPostFn = vi.fn(async () => {
+    throw new Error("unexpected POST — the reconfirm strip must never mutate on mere render");
+  });
+  const client = {
+    baseUrl: "http://chat-reconfirm.test",
+    get: props.get,
+    post: props.post ?? forbiddenPostFn
+  } as unknown as ApiClient;
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <TestChatReconfirmStrip client={client} isEmptySession={props.isEmptySession ?? true} />
+      </I18nProvider>
+    </QueryClientProvider>
+  );
+}
+
+test("reconfirm strip: renders the card fixture — badge, question, and both buttons — on an EMPTY session", async () => {
+  const get = vi.fn(async () => ({ card: RECONFIRM_FIXTURE }));
+
+  const screen = await renderReconfirmStrip({ get });
+
+  await expect.element(screen.getByText("Guess", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText(RECONFIRM_FIXTURE.question, { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Yes, that's right" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "No, that's wrong" })).toBeVisible();
+});
+
+test("reconfirm strip: renders NOTHING on a non-empty session and never fetches", async () => {
+  const get = vi.fn(async () => ({ card: RECONFIRM_FIXTURE }));
+
+  const screen = await renderReconfirmStrip({ get, isEmptySession: false });
+
+  expect(screen.container.textContent).toBe("");
+  expect(get).not.toHaveBeenCalled();
+});
+
+test("reconfirm strip: the mere render never POSTs", async () => {
+  const get = vi.fn(async () => ({ card: RECONFIRM_FIXTURE }));
+
+  const screen = await renderReconfirmStrip({ get });
+
+  await expect.element(screen.getByText(RECONFIRM_FIXTURE.question, { exact: true })).toBeVisible();
+  // renderReconfirmStrip's default `post` throws if called — reaching this
+  // point without a thrown assertion failure already proves no POST fired.
+});
+
+test("reconfirm strip: 맞아요/confirm click POSTs the exact verdict body then swaps to the ack line", async () => {
+  const get = vi.fn(async () => ({ card: RECONFIRM_FIXTURE }));
+  const post = vi.fn(async (path: string, body?: Record<string, unknown>) => {
+    expect(path).toBe(`/api/user-model/reconfirm-card/${RECONFIRM_FIXTURE.slotId}`);
+    expect(body).toEqual({ verdict: "confirm" });
+    return { recorded: true, verdict: "confirm" };
+  });
+
+  const screen = await renderReconfirmStrip({ get, post });
+  await screen.getByRole("button", { name: "Yes, that's right" }).click();
+
+  expect(post).toHaveBeenCalledTimes(1);
+  await expect.element(screen.getByText("Thanks — noted.", { exact: true })).toBeVisible();
+  expect(screen.container.textContent).not.toContain(RECONFIRM_FIXTURE.question);
+});
+
+test("reconfirm strip: renders nothing when the GET errors — no error noise", async () => {
+  const get = vi.fn(async () => {
+    throw new Error("reconfirm-card unavailable");
+  });
+
+  const screen = await renderReconfirmStrip({ get });
+
+  await expect.poll(() => get.mock.calls.length > 0).toBe(true);
+  expect(screen.container.textContent).toBe("");
 });
 
 // Chat's session-open continuity nudge (`ChatContinuitySection`). Tested as
@@ -199,3 +306,4 @@ test("'Continue' writes the one-shot Home handoff (the exact thread id) and navi
   expect(onNavigate).toHaveBeenCalledWith("home");
   expect(consumeAutoContinueThread(safeSessionStorage())).toBe("thread_life");
 });
+
