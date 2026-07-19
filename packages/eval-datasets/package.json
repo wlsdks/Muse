@@ -1,0 +1,25 @@
+{
+  "name": "@muse/eval-datasets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@muse/attunement": "workspace:*",
+    "@muse/memory": "workspace:*",
+    "@muse/policy": "workspace:*",
+    "@muse/recall": "workspace:*"
+  }
+}

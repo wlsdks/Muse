@@ -542,6 +542,21 @@ importers:
         specifier: ^8.0.1
         version: 8.0.1
 
+  packages/eval-datasets:
+    dependencies:
+      '@muse/attunement':
+        specifier: workspace:*
+        version: link:../attunement
+      '@muse/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@muse/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@muse/recall':
+        specifier: workspace:*
+        version: link:../recall
+
   packages/fs:
     dependencies:
       '@muse/shared':

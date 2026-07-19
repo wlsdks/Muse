@@ -1,0 +1,533 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": "v1",
+  "qualification": "qualified-controlled-synthetic-integrity",
+  "capabilityClaim": "corpus-integrity-and-sampled-public-seam-execution-only",
+  "dataOrigin": "synthetic",
+  "organicEvidence": false,
+  "personalLearningEligible": false,
+  "humanOutcome": false,
+  "heldOut": false,
+  "evidenceClass": "controlled-synthetic-corpus-integrity",
+  "robustnessReplay": false,
+  "matrix": {
+    "families": [
+      "recall-correction",
+      "absent-abstention",
+      "continuity",
+      "memory-preference-veto-correction",
+      "tool-policy-approval",
+      "context-stress"
+    ],
+    "locales": [
+      "en",
+      "ko",
+      "ja",
+      "zh-CN"
+    ],
+    "complexities": [
+      "simple",
+      "medium",
+      "complex",
+      "long-context"
+    ],
+    "cells": 96
+  },
+  "seamMapping": [
+    {
+      "family": "recall-correction",
+      "publicSeam": "@muse/recall.prepareGroundedRecall",
+      "execution": "sampled-public-seam"
+    },
+    {
+      "family": "absent-abstention",
+      "publicSeam": "@muse/recall.prepareGroundedRecall",
+      "execution": "sampled-public-seam"
+    },
+    {
+      "family": "continuity",
+      "publicSeam": "@muse/attunement.prepareContinuityReview",
+      "execution": "sampled-public-seam"
+    },
+    {
+      "family": "memory-preference-veto-correction",
+      "publicSeam": "@muse/memory.InMemoryUserMemoryStore",
+      "execution": "sampled-public-seam"
+    },
+    {
+      "family": "tool-policy-approval",
+      "publicSeam": "@muse/policy.evaluateProgressiveAutonomy",
+      "execution": "sampled-public-seam"
+    },
+    {
+      "family": "context-stress",
+      "publicSeam": "@muse/memory.trimConversationMessages",
+      "execution": "sampled-public-seam"
+    }
+  ],
+  "tiers": [
+    {
+      "tier": 1000,
+      "seed": 120031,
+      "records": 1000,
+      "bytes": 1169320,
+      "corpusSha256": "0af095c2bf2968667ac6d8ae3cb3b73676d4530e773f97518da68b048aa46470",
+      "collisions": {
+        "recordId": 0,
+        "topicHash": 0,
+        "contentHash": 0
+      },
+      "cellCount": 96,
+      "cellMinimum": 10,
+      "cellMaximum": 11,
+      "generationWallTimeMs": 15,
+      "validationWallTimeMs": 26,
+      "seamWallTimeMs": 1430,
+      "tierWallTimeMs": 1471,
+      "peakRssBytes": 389988352,
+      "familyCounters": {
+        "recall-correction": {
+          "generated": 160,
+          "serialized": 160,
+          "parsedAndSchemaValidated": 160,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "absent-abstention": {
+          "generated": 161,
+          "serialized": 161,
+          "parsedAndSchemaValidated": 161,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "continuity": {
+          "generated": 176,
+          "serialized": 176,
+          "parsedAndSchemaValidated": 176,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "memory-preference-veto-correction": {
+          "generated": 176,
+          "serialized": 176,
+          "parsedAndSchemaValidated": 176,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "tool-policy-approval": {
+          "generated": 167,
+          "serialized": 167,
+          "parsedAndSchemaValidated": 167,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "context-stress": {
+          "generated": 160,
+          "serialized": 160,
+          "parsedAndSchemaValidated": 160,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        }
+      }
+    },
+    {
+      "tier": 10000,
+      "seed": 220033,
+      "records": 10000,
+      "bytes": 11884995,
+      "corpusSha256": "5b47bbc6597b4f2d46dfd14aaae5ada458a1bb2774deb7f110100381bd809051",
+      "collisions": {
+        "recordId": 0,
+        "topicHash": 0,
+        "contentHash": 0
+      },
+      "cellCount": 96,
+      "cellMinimum": 104,
+      "cellMaximum": 105,
+      "generationWallTimeMs": 114,
+      "validationWallTimeMs": 219,
+      "seamWallTimeMs": 1364,
+      "tierWallTimeMs": 1697,
+      "peakRssBytes": 399245312,
+      "familyCounters": {
+        "recall-correction": {
+          "generated": 1679,
+          "serialized": 1679,
+          "parsedAndSchemaValidated": 1679,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "absent-abstention": {
+          "generated": 1665,
+          "serialized": 1665,
+          "parsedAndSchemaValidated": 1665,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "continuity": {
+          "generated": 1664,
+          "serialized": 1664,
+          "parsedAndSchemaValidated": 1664,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "memory-preference-veto-correction": {
+          "generated": 1664,
+          "serialized": 1664,
+          "parsedAndSchemaValidated": 1664,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "tool-policy-approval": {
+          "generated": 1664,
+          "serialized": 1664,
+          "parsedAndSchemaValidated": 1664,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "context-stress": {
+          "generated": 1664,
+          "serialized": 1664,
+          "parsedAndSchemaValidated": 1664,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        }
+      }
+    },
+    {
+      "tier": 100000,
+      "seed": 320039,
+      "records": 100000,
+      "bytes": 119726486,
+      "corpusSha256": "73a63a5506f2deec7173e1da5c96e0e9453c4e07e8bd92b92caf2f92efb9b2ca",
+      "collisions": {
+        "recordId": 0,
+        "topicHash": 0,
+        "contentHash": 0
+      },
+      "cellCount": 96,
+      "cellMinimum": 1041,
+      "cellMaximum": 1042,
+      "generationWallTimeMs": 1019,
+      "validationWallTimeMs": 2500,
+      "seamWallTimeMs": 1319,
+      "tierWallTimeMs": 4838,
+      "peakRssBytes": 409829376,
+      "familyCounters": {
+        "recall-correction": {
+          "generated": 16672,
+          "serialized": 16672,
+          "parsedAndSchemaValidated": 16672,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "absent-abstention": {
+          "generated": 16672,
+          "serialized": 16672,
+          "parsedAndSchemaValidated": 16672,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "continuity": {
+          "generated": 16663,
+          "serialized": 16663,
+          "parsedAndSchemaValidated": 16663,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "memory-preference-veto-correction": {
+          "generated": 16656,
+          "serialized": 16656,
+          "parsedAndSchemaValidated": 16656,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "tool-policy-approval": {
+          "generated": 16665,
+          "serialized": 16665,
+          "parsedAndSchemaValidated": 16665,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "context-stress": {
+          "generated": 16672,
+          "serialized": 16672,
+          "parsedAndSchemaValidated": 16672,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        }
+      }
+    },
+    {
+      "tier": 1000000,
+      "seed": 420041,
+      "records": 1000000,
+      "bytes": 1205948054,
+      "corpusSha256": "d878be3bd455eb15ee38969ba040a30724f93b3abdabc29a335b58afe460c49c",
+      "collisions": {
+        "recordId": 0,
+        "topicHash": 0,
+        "contentHash": 0
+      },
+      "cellCount": 96,
+      "cellMinimum": 10416,
+      "cellMaximum": 10417,
+      "generationWallTimeMs": 10012,
+      "validationWallTimeMs": 29494,
+      "seamWallTimeMs": 1343,
+      "tierWallTimeMs": 40849,
+      "peakRssBytes": 420134912,
+      "familyCounters": {
+        "recall-correction": {
+          "generated": 166665,
+          "serialized": 166665,
+          "parsedAndSchemaValidated": 166665,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "absent-abstention": {
+          "generated": 166656,
+          "serialized": 166656,
+          "parsedAndSchemaValidated": 166656,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "continuity": {
+          "generated": 166663,
+          "serialized": 166663,
+          "parsedAndSchemaValidated": 166663,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "memory-preference-veto-correction": {
+          "generated": 166672,
+          "serialized": 166672,
+          "parsedAndSchemaValidated": 166672,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "tool-policy-approval": {
+          "generated": 166672,
+          "serialized": 166672,
+          "parsedAndSchemaValidated": 166672,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        },
+        "context-stress": {
+          "generated": 166672,
+          "serialized": 166672,
+          "parsedAndSchemaValidated": 166672,
+          "namedPublicMuseSeamExecuted": 32,
+          "terminalInvariantPassed": 32,
+          "llmCalls": 0,
+          "toolCalls": 0,
+          "networkCalls": 0
+        }
+      }
+    }
+  ],
+  "totals": {
+    "generated": 1111000,
+    "serialized": 1111000,
+    "parsedAndSchemaValidated": 1111000,
+    "namedPublicMuseSeamExecuted": 768,
+    "terminalInvariantPassed": 768,
+    "llmCalls": 0,
+    "toolCalls": 0,
+    "networkCalls": 0,
+    "bulkBytes": 1338728855,
+    "collisionDatabaseTemporaryBytesPeak": 454799360,
+    "recallSidecarTemporaryBytesPeak": 1719,
+    "totalDiskBytesPeak": 1795116293,
+    "peakRssBytes": 429572096,
+    "wholeRunWallTimeMs": 51644
+  },
+  "caps": {
+    "recordBytes": 16384,
+    "totalBulkBytes": 1610612736,
+    "totalDiskBytes": 2147483648,
+    "peakRssBytes": 536870912,
+    "tierWallTimeMs": 300000,
+    "wholeRunWallTimeMs": 900000,
+    "runtimeSamplePerTier": 192,
+    "runtimeSampleTotal": 768
+  },
+  "ownerState": {
+    "entryCount": 1947,
+    "beforeDigest": "7855861659735a8cd25bbc3ca2fb469eb54905b60fa7253d045ac69586d559c2",
+    "afterDigest": "7855861659735a8cd25bbc3ca2fb469eb54905b60fa7253d045ac69586d559c2",
+    "byteStable": true
+  },
+  "robustnessReplayResult": {
+    "schemaVersion": 1,
+    "generatorVersion": "v1",
+    "qualification": "qualified-controlled-synthetic-robustness-replay",
+    "dataOrigin": "synthetic",
+    "organicEvidence": false,
+    "personalLearningEligible": false,
+    "humanOutcome": false,
+    "heldOut": false,
+    "evidenceClass": "controlled-synthetic-corpus-integrity",
+    "robustnessReplay": true,
+    "tier": 1000,
+    "seed": 520057,
+    "generated": 1000,
+    "serialized": 1000,
+    "parsedAndSchemaValidated": 1000,
+    "namedPublicMuseSeamExecuted": 192,
+    "terminalInvariantPassed": 192,
+    "llmCalls": 0,
+    "toolCalls": 0,
+    "networkCalls": 0,
+    "bytes": 1170863,
+    "corpusSha256": "7fb5c9d3bb383cb06521ff7d578f6159aaaefaafd36a7dfcc922f62c27bdecef",
+    "collisions": {
+      "recordId": 0,
+      "topicHash": 0,
+      "contentHash": 0
+    },
+    "familyCounters": {
+      "recall-correction": {
+        "generated": 160,
+        "serialized": 160,
+        "parsedAndSchemaValidated": 160,
+        "namedPublicMuseSeamExecuted": 32,
+        "terminalInvariantPassed": 32,
+        "llmCalls": 0,
+        "toolCalls": 0,
+        "networkCalls": 0
+      },
+      "absent-abstention": {
+        "generated": 167,
+        "serialized": 167,
+        "parsedAndSchemaValidated": 167,
+        "namedPublicMuseSeamExecuted": 32,
+        "terminalInvariantPassed": 32,
+        "llmCalls": 0,
+        "toolCalls": 0,
+        "networkCalls": 0
+      },
+      "continuity": {
+        "generated": 176,
+        "serialized": 176,
+        "parsedAndSchemaValidated": 176,
+        "namedPublicMuseSeamExecuted": 32,
+        "terminalInvariantPassed": 32,
+        "llmCalls": 0,
+        "toolCalls": 0,
+        "networkCalls": 0
+      },
+      "memory-preference-veto-correction": {
+        "generated": 176,
+        "serialized": 176,
+        "parsedAndSchemaValidated": 176,
+        "namedPublicMuseSeamExecuted": 32,
+        "terminalInvariantPassed": 32,
+        "llmCalls": 0,
+        "toolCalls": 0,
+        "networkCalls": 0
+      },
+      "tool-policy-approval": {
+        "generated": 161,
+        "serialized": 161,
+        "parsedAndSchemaValidated": 161,
+        "namedPublicMuseSeamExecuted": 32,
+        "terminalInvariantPassed": 32,
+        "llmCalls": 0,
+        "toolCalls": 0,
+        "networkCalls": 0
+      },
+      "context-stress": {
+        "generated": 160,
+        "serialized": 160,
+        "parsedAndSchemaValidated": 160,
+        "namedPublicMuseSeamExecuted": 32,
+        "terminalInvariantPassed": 32,
+        "llmCalls": 0,
+        "toolCalls": 0,
+        "networkCalls": 0
+      }
+    },
+    "peakRssBytes": 429572096,
+    "wallTimeMs": 1769,
+    "collisionDatabaseTemporaryBytesPeak": 413696,
+    "recallSidecarTemporaryBytesPeak": 1800,
+    "ownerState": {
+      "entryCount": 1947,
+      "beforeDigest": "7855861659735a8cd25bbc3ca2fb469eb54905b60fa7253d045ac69586d559c2",
+      "afterDigest": "7855861659735a8cd25bbc3ca2fb469eb54905b60fa7253d045ac69586d559c2",
+      "byteStable": true
+    },
+    "bulkCleanupVerified": true
+  },
+  "generatedAt": "2026-07-19T17:23:06.069Z"
+}
