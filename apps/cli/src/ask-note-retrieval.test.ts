@@ -1,11 +1,51 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createRecallRerankFn, createWarmedRecallRerankFn, parseRerankReply, resolveRerankModel } from "./ask-note-retrieval.js";
+const { retrieveCore } = vi.hoisted(() => ({
+  retrieveCore: vi.fn(async () => ({
+    notesUnavailable: false,
+    preGapScored: [],
+    queryVec: undefined,
+    scored: [],
+    splitClauses: [],
+    subqueryEmbeddings: []
+  }))
+}));
+
+vi.mock("@muse/recall", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@muse/recall")>(),
+  retrieveAndRankNotes: retrieveCore
+}));
+vi.mock("./embed.js", () => ({ embed: vi.fn() }));
+
+import { createRecallRerankFn, createWarmedRecallRerankFn, parseRerankReply, resolveRerankModel, retrieveAndRankNotes } from "./ask-note-retrieval.js";
 
 afterEach(() => {
+  retrieveCore.mockClear();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+});
+
+describe("retrieveAndRankNotes — production conflict-aware default", () => {
+  const params = {
+    embedModel: "test-embed",
+    indexFiles: [],
+    json: true,
+    notesDir: "/tmp/notes",
+    onStderr: () => {},
+    query: "what changed",
+    rerankFn: undefined,
+    scope: undefined,
+    topK: 3
+  } as const;
+
+  it("enables conflict-aware selection when omitted while preserving the explicit diagnostic opt-out", async () => {
+    await retrieveAndRankNotes(params);
+    expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ conflictAwareSelection: true }));
+
+    await retrieveAndRankNotes({ ...params, conflictAwareSelection: false });
+    expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ conflictAwareSelection: false }));
+  });
 });
 
 describe("resolveRerankModel — default ON for local-model users, off for cloud, MUSE_RECALL_RERANK overrides", () => {

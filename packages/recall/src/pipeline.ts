@@ -322,6 +322,7 @@ function toPrepareRecallInput(input: GroundedRecallInput): PrepareRecallInput {
 async function prepareRecall(input: PrepareRecallInput): Promise<PreparedGroundedRecall> {
   const { embedFn, extras, options, query, sources } = input;
   const topK = options.topK ?? 6;
+  const conflictAwareSelection = options.conflictAwareSelection !== false;
 
   const { embedModel, files: indexFiles, indexBuiltAtIso } = await resolveIndexForModel(sources.notesIndexFile, options.embedModel);
   const snapshot = input.retrievalSnapshot;
@@ -335,11 +336,11 @@ async function prepareRecall(input: PrepareRecallInput): Promise<PreparedGrounde
     && snapshot.identity.notesDir === sources.notesDir
     && snapshot.identity.notesIndexFile === sources.notesIndexFile
     && snapshot.identity.indexBuiltAtIso === indexBuiltAtIso
-    && snapshot.identity.conflictAwareSelection === (options.conflictAwareSelection === true);
+    && snapshot.identity.conflictAwareSelection === conflictAwareSelection;
   const retrieval: Omit<NoteRetrievalResult, "snapshot"> = canReuseSnapshot
     ? cloneSnapshotResult(snapshot.result)
     : await retrieveAndRankNotes({
-        conflictAwareSelection: options.conflictAwareSelection,
+        conflictAwareSelection,
         embedFn,
         embedModel: embedModel ?? "",
         indexFiles,

@@ -406,6 +406,27 @@ describe("runGroundedRecall — extras (the ask→seam retrofit enabling slice)"
 });
 
 describe("prepareGroundedRecall — the prepare-only entry point (--with-tools convergence, Slice 1)", () => {
+  it("defaults production prepare retrieval to conflict-aware current/stale pair selection", async () => {
+    const current = { embedding: [0.99, Math.sqrt(1 - 0.99 ** 2)], path: join(notesDir, "rent-current.md"), text: "Office rent is 1300 now." };
+    const noise = { embedding: [0.98, Math.sqrt(1 - 0.98 ** 2)], path: join(notesDir, "agenda.md"), text: "Tuesday meeting agenda." };
+    const stale = { embedding: [0.94, Math.sqrt(1 - 0.94 ** 2)], path: join(notesDir, "rent-old.md"), text: "I used to pay office rent 1200; no longer current." };
+    for (const file of [current, noise, stale]) await writeFile(file.path, file.text);
+    await writeIndex([current, noise, stale]);
+
+    const prepared = await prepareGroundedRecall({
+      embedFn: async () => [1, 0],
+      options: { embedModel: EMBED_MODEL, topK: 2 },
+      query: "what changed about office rent",
+      rerankFn: async (_query, texts) => [
+        texts.findIndex((text) => text.includes("1300 now")),
+        texts.findIndex((text) => text.includes("meeting agenda"))
+      ],
+      sources: { notesDir, notesIndexFile: indexFile }
+    });
+
+    expect(prepared.scored.map((item) => item.file)).toEqual([current.path, stale.path]);
+  });
+
   it("reuses a matching first-retrieval snapshot without invoking the reranker twice", async () => {
     const files = [
       { embedding: [0.95, Math.sqrt(1 - 0.95 ** 2), 0], path: join(notesDir, "vpn-overview.md"), text: "VPN overview and routing notes." },
@@ -421,7 +442,7 @@ describe("prepareGroundedRecall — the prepare-only entry point (--with-tools c
       return [texts.findIndex((text) => text.includes("1380"))];
     };
     const first = await retrieveAndRankNotes({
-      embedFn: fakeEmbed, embedModel: EMBED_MODEL, indexFiles: index?.files ?? [], json: true, notesDir,
+      conflictAwareSelection: true, embedFn: fakeEmbed, embedModel: EMBED_MODEL, indexFiles: index?.files ?? [], json: true, notesDir,
       onStderr: () => {}, query: "what MTU does my VPN use?", rerankFn, scope: undefined,
       snapshotIdentity: { indexBuiltAtIso: index?.builtAtIso ?? "", notesIndexFile: indexFile }, topK: 1
     });
@@ -441,7 +462,7 @@ describe("prepareGroundedRecall — the prepare-only entry point (--with-tools c
 
     await prepareGroundedRecall({
       embedFn: fakeEmbed,
-      options: { conflictAwareSelection: true, embedModel: EMBED_MODEL, topK: 1 },
+      options: { conflictAwareSelection: false, embedModel: EMBED_MODEL, topK: 1 },
       query: "what MTU does my VPN use?",
       rerankFn,
       retrievalSnapshot: first.snapshot,

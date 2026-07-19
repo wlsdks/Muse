@@ -96,7 +96,7 @@ export async function retrieveAndRankNotes(params: {
    * texts, returns candidate indices best-first — or undefined to fail open.
    */
   readonly rerankFn?: RecallRerankFn;
-  /** Internal diagnostic/development switch. Production defaults OFF; only true enables pair selection. */
+  /** Internal diagnostic/development switch. Production bindings default ON; direct core callers opt in explicitly. */
   readonly conflictAwareSelection?: boolean;
   /** Index generation identity required to mint a reusable first-retrieval snapshot. */
   readonly snapshotIdentity?: { readonly notesIndexFile: string; readonly indexBuiltAtIso: string };
@@ -147,7 +147,14 @@ export async function retrieveAndRankNotes(params: {
     // the prompt — cosine ranking is fooled by lexical-overlap distractors
     // (measured 2026-07-15: cosine top-1 3/8 vs LLM-reranked 8/8 at ~200-540ms).
     if (rerankFn) {
-      const window = diversifyAskChunks(allScored, topK + 4, undefined, query, subqueryEmbeddings);
+      const windowLimit = Math.min(topK + 4, allScored.length);
+      const window = diversifyAskChunks(allScored, windowLimit, undefined, query, subqueryEmbeddings);
+      if (window.length <= topK && allScored.length > topK) {
+        for (const candidate of [...allScored].sort((a, b) => b.score - a.score)) {
+          if (window.length >= windowLimit) break;
+          if (!window.includes(candidate)) window.push(candidate);
+        }
+      }
       scored = window.slice(0, topK);
       if (window.length > topK) {
         try {
@@ -311,6 +318,7 @@ function preserveConflictPairs(selected: readonly ScoredChunk[], candidates: rea
     }
   }
   const documentFrequency = new Map([...documentsByToken].map(([token, files]) => [token, files.size]));
+  const corpusDocumentCount = new Set(candidates.map((candidate) => candidate.file)).size;
   const proposals = selected.flatMap((anchor) => {
     const anchorIsStale = detectStaleMarker(anchor.chunk.text);
     const match = candidates
@@ -319,11 +327,11 @@ function preserveConflictPairs(selected: readonly ScoredChunk[], candidates: rea
         candidate,
         semantic: cosine(anchor.chunk.embedding, candidate.chunk.embedding),
         topicOverlap: lexicalOverlap(tokensByCandidate.get(anchor) ?? new Set(), candidate.chunk.text),
-        topicSpecific: hasSpecificLexicalTopic(anchor, candidate, tokensByCandidate, documentFrequency)
+        topicSpecific: hasSpecificLexicalTopic(anchor, candidate, tokensByCandidate, documentFrequency, corpusDocumentCount)
       }))
       .filter(({ candidate, semantic, topicOverlap, topicSpecific }) =>
         (semantic >= 0.92 && topicOverlap >= 2 && topicSpecific)
-        || isPortableConflictPair(anchor, candidate, candidates, tokensByCandidate, documentFrequency, semantic, topicOverlap))
+        || isPortableConflictPair(anchor, candidate, candidates, tokensByCandidate, documentFrequency, corpusDocumentCount, semantic, topicOverlap))
       .sort((a, b) => b.semantic - a.semantic || b.candidate.score - a.candidate.score)[0];
     return match ? [{ anchor, counterpart: match.candidate, semantic: match.semantic }] : [];
   }).sort((a, b) =>
@@ -345,6 +353,14 @@ function preserveConflictPairs(selected: readonly ScoredChunk[], candidates: rea
       if (replaceAt < 0) continue;
       out[replaceAt] = counterpart;
     }
+    if (detectStaleMarker(anchor.chunk.text) && !detectStaleMarker(counterpart.chunk.text)) {
+      const anchorAt = out.indexOf(anchor);
+      const counterpartAt = out.indexOf(counterpart);
+      if (anchorAt >= 0 && counterpartAt >= 0) {
+        out[anchorAt] = counterpart;
+        out[counterpartAt] = anchor;
+      }
+    }
     protectedItems.add(anchor);
     protectedItems.add(counterpart);
   }
@@ -355,7 +371,8 @@ function hasSpecificLexicalTopic(
   anchor: ScoredChunk,
   candidate: ScoredChunk,
   tokensByCandidate: ReadonlyMap<ScoredChunk, ReadonlySet<string>>,
-  documentFrequency: ReadonlyMap<string, number>
+  documentFrequency: ReadonlyMap<string, number>,
+  corpusDocumentCount: number
 ): boolean {
   const anchorTokens = tokensByCandidate.get(anchor) ?? new Set<string>();
   const candidateTokens = tokensByCandidate.get(candidate) ?? new Set<string>();
@@ -363,7 +380,7 @@ function hasSpecificLexicalTopic(
   const shorterSize = Math.min(anchorTokens.size, candidateTokens.size);
   return shorterSize > 0
     && shared.length * 2 >= shorterSize
-    && shared.some((token) => (documentFrequency.get(token) ?? 0) <= 2);
+    && shared.some((token) => (documentFrequency.get(token) ?? 0) <= Math.max(2, Math.ceil(corpusDocumentCount * 0.05)));
 }
 
 function isPortableConflictPair(
@@ -372,19 +389,24 @@ function isPortableConflictPair(
   corpus: readonly ScoredChunk[],
   tokensByCandidate: ReadonlyMap<ScoredChunk, ReadonlySet<string>>,
   documentFrequency: ReadonlyMap<string, number>,
+  corpusDocumentCount: number,
   semantic: number,
   topicOverlap: number
 ): boolean {
   if (topicOverlap < 3) return false;
-  if (!hasSpecificLexicalTopic(anchor, candidate, tokensByCandidate, documentFrequency)) return false;
+  if (!hasSpecificLexicalTopic(anchor, candidate, tokensByCandidate, documentFrequency, corpusDocumentCount)) return false;
 
   const anchorIsStale = detectStaleMarker(anchor.chunk.text);
   const uniquelyBestForAnchor = corpus
     .filter((other) => other !== anchor && detectStaleMarker(other.chunk.text) !== anchorIsStale)
+    .filter((other) => lexicalOverlap(new Set(tokensByCandidate.get(anchor) ?? []), other.chunk.text) >= 3)
+    .filter((other) => hasSpecificLexicalTopic(anchor, other, tokensByCandidate, documentFrequency, corpusDocumentCount))
     .every((other) => other === candidate || semantic > cosine(anchor.chunk.embedding, other.chunk.embedding));
   const candidateIsStale = detectStaleMarker(candidate.chunk.text);
   const uniquelyBestForCandidate = corpus
     .filter((other) => other !== candidate && detectStaleMarker(other.chunk.text) !== candidateIsStale)
+    .filter((other) => lexicalOverlap(new Set(tokensByCandidate.get(candidate) ?? []), other.chunk.text) >= 3)
+    .filter((other) => hasSpecificLexicalTopic(candidate, other, tokensByCandidate, documentFrequency, corpusDocumentCount))
     .every((other) => other === anchor || semantic > cosine(candidate.chunk.embedding, other.chunk.embedding));
   if (!uniquelyBestForAnchor || !uniquelyBestForCandidate) return false;
 

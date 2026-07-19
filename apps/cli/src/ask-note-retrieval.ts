@@ -165,6 +165,7 @@ export async function retrieveAndRankNotes(
   const selectedRerankFn = Object.hasOwn(params, "rerankFn") ? params.rerankFn : createRecallRerankFn();
   return retrieveAndRankNotesCore({
     ...params,
+    conflictAwareSelection: params.conflictAwareSelection !== false,
     embedFn: embed,
     ...(selectedRerankFn ? { rerankFn: selectedRerankFn } : {})
   });

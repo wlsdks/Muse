@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 describe("retrieveAndRankNotes — stale-vs-current demotion (answer-evidence seam)", () => {
-  it("preserves a matching stale note when current is selected even when adaptive selection skips reranking", async () => {
+  it("preserves a matching stale note when the original adaptive window would have skipped reranking", async () => {
     const selectedNoise = await noteFile("agenda.md", "Tuesday meeting agenda.", [0.98, Math.sqrt(1 - 0.98 ** 2)]);
     const current = await noteFile("rent_current.md", "Office rent is 1300 now.", [0.99, Math.sqrt(1 - 0.99 ** 2)]);
     const stale = await noteFile("rent_old.md", "I used to pay office rent 1200; no longer current.", [0.94, Math.sqrt(1 - 0.94 ** 2)]);
@@ -47,12 +47,12 @@ describe("retrieveAndRankNotes — stale-vs-current demotion (answer-evidence se
       expect(baseline.scored.map((item) => item.file)).toContain(current.path);
       expect(baseline.scored.map((item) => item.file)).not.toContain(stale.path);
       const result = await ask(true);
-      expect(rerankCalls).toBe(0);
+      expect(rerankCalls).toBe(2);
       expect(result.rerankDecision).toEqual({
-        eligible: false,
+        eligible: true,
         httpAttempts: 0,
-        logicalInvocations: 0,
-        outcome: "ineligible-window"
+        logicalInvocations: 1,
+        outcome: "success"
       });
       expect(result.scored.map((item) => item.file)).toEqual([current.path, stale.path]);
       expect(result.scored).toHaveLength(2);
@@ -106,6 +106,31 @@ describe("retrieveAndRankNotes — stale-vs-current demotion (answer-evidence se
       });
       expect(result.scored.map((item) => item.file)).toEqual([current.path, stale.path]);
       expect(result.scored).toHaveLength(2);
+    } finally {
+      delete process.env.MUSE_RECALL_GRAPH_HOP;
+      delete process.env.MUSE_RECALL_SECOND_HOP;
+    }
+  });
+
+  it("promotes a confirmed current counterpart into its selected stale anchor's relevance position", async () => {
+    const stale = await noteFile("rent-old.md", "I used to pay office rent 1200; no longer current.", [0.8, 0.6]);
+    const current = await noteFile("rent-current.md", "Office rent is 1300 now.", [0.75, Math.sqrt(1 - 0.75 ** 2)]);
+    const firstNoise = await noteFile("agenda.md", "Tuesday meeting agenda.", [0.95, Math.sqrt(1 - 0.95 ** 2)]);
+    const secondNoise = await noteFile("groceries.md", "Grocery shopping list.", [0.9, Math.sqrt(1 - 0.9 ** 2)]);
+    process.env.MUSE_RECALL_GRAPH_HOP = "false";
+    process.env.MUSE_RECALL_SECOND_HOP = "false";
+    try {
+      const result = await retrieveAndRankNotes({
+        conflictAwareSelection: true,
+        embedFn, embedModel: "test-embed", indexFiles: [stale, current, firstNoise, secondNoise], json: true, notesDir: dir,
+        onStderr: () => {}, query: "what changed", rerankFn: async (_query, texts) => [
+          texts.findIndex((text) => text.includes("used to pay")),
+          texts.findIndex((text) => text.includes("meeting agenda")),
+          texts.findIndex((text) => text.includes("shopping list"))
+        ], scope: undefined, topK: 3
+      });
+
+      expect(result.scored.map((item) => item.file)).toEqual([current.path, firstNoise.path, stale.path]);
     } finally {
       delete process.env.MUSE_RECALL_GRAPH_HOP;
       delete process.env.MUSE_RECALL_SECOND_HOP;
@@ -212,6 +237,38 @@ describe("retrieveAndRankNotes — stale-vs-current demotion (answer-evidence se
     });
     expect(result.scored.map((item) => item.file)).toEqual([current.path, selectedNoise.path]);
     expect(result.scored.map((item) => item.file)).not.toContain(staleLookalike.path);
+  });
+
+  it("preserves a specific current/stale pair in a large corpus despite unrelated semantic collisions", async () => {
+    const current = await noteFile("cedar-current.md", "Cedar lantern calibration is 41 now.", [0.8, 0.6, 0]);
+    const stale = await noteFile("cedar-old.md", "I used to set cedar lantern calibration to 37; no longer current.", [0.3, Math.sqrt(1 - 0.3 ** 2), 0]);
+    const collision = await noteFile("harbor-old.md", "I used to follow the harbor ferry timetable; no longer current.", [0.8, 0.6, 0]);
+    const noise = await noteFile("selected-noise.md", "Tuesday meeting agenda.", [0.95, 0, Math.sqrt(1 - 0.95 ** 2)]);
+    const topicalCorpus = await Promise.all([0, 1].map((index) =>
+      noteFile(`cedar-reference-${index.toString()}.md`, `Cedar lantern calibration reference ${index.toString()}.`, [0.1, 0, Math.sqrt(0.99)])));
+    const unrelatedCorpus = await Promise.all(Array.from({ length: 92 }, (_value, index) =>
+      noteFile(`archive-${index.toString()}.md`, `Unrelated archive topic ${index.toString()}.`, [0.05, 0, Math.sqrt(1 - 0.05 ** 2)])));
+
+    process.env.MUSE_RECALL_GRAPH_HOP = "false";
+    process.env.MUSE_RECALL_SECOND_HOP = "false";
+    try {
+      const result = await retrieveAndRankNotes({
+        conflictAwareSelection: true,
+        embedFn, embedModel: "test-embed",
+        indexFiles: [current, stale, collision, noise, ...topicalCorpus, ...unrelatedCorpus],
+        json: true, notesDir: dir, onStderr: () => {}, query: "cedar lantern setting",
+        rerankFn: async (_query, texts) => [
+          texts.findIndex((text) => text.includes("Cedar lantern calibration is")),
+          texts.findIndex((text) => text.includes("Tuesday meeting agenda"))
+        ], scope: undefined, topK: 2
+      });
+
+      expect(result.scored.map((item) => item.file)).toEqual([current.path, stale.path]);
+      expect(result.scored.map((item) => item.file)).not.toContain(collision.path);
+    } finally {
+      delete process.env.MUSE_RECALL_GRAPH_HOP;
+      delete process.env.MUSE_RECALL_SECOND_HOP;
+    }
   });
 
   it("bounds direct topK input to the CLI retrieval contract", async () => {
@@ -404,6 +461,24 @@ describe("retrieveAndRankNotes — local-LLM rerank seam (opt-in via rerankFn)",
       logicalInvocations: 1,
       outcome: "success"
     });
+  });
+
+  it("keeps a wider rerank candidate window when adaptive gap-cut would stop at topK", async () => {
+    const files = [
+      await noteFile("dominant.md", "dominant cosine distractor", unit(0.99)),
+      await noteFile("answer-after-gap.md", "the corrected answer lives after the score gap", unit(0.2)),
+      ...await Promise.all(Array.from({ length: 5 }, (_value, index) =>
+        noteFile(`tail-${index.toString()}.md`, `unrelated tail ${index.toString()}`, unit(0.1 - index * 0.01))))
+    ];
+    let sawTexts: readonly string[] = [];
+    const result = await ask(files, async (_query, texts) => {
+      sawTexts = texts;
+      return [texts.findIndex((text) => text.includes("corrected answer"))];
+    });
+
+    expect(sawTexts.length).toBeGreaterThan(1);
+    expect(result.rerankDecision?.eligible).toBe(true);
+    expect(result.scored[0]?.file).toBe(files[1]!.path);
   });
 
   it("a throwing or empty reranker fails open to the cosine ordering", async () => {
