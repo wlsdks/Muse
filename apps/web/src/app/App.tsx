@@ -39,44 +39,20 @@ import { McpServersView } from "../views/McpServers.js";
 import { SelfImprovementView } from "../views/SelfImprovement.js";
 import { SkillsView } from "../views/Skills.js";
 import { ToolsView } from "../views/Tools.js";
+import { useHashView } from "./use-hash-view.js";
 import { useShortcuts } from "./useShortcuts.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { Command } from "../components/CommandPalette.js";
 import type { HealthResponse, TaglineResponse, TasksResponse } from "../api/types.js";
 import type { Lang, StringKey, Translate } from "../i18n/index.js";
+import type { ViewId } from "../lib/view-route.js";
 import type { ComponentType } from "react";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1, staleTime: 10_000 } }
 });
 
-type ViewId =
-  | "home"
-  | "chat"
-  | "chats"
-  | "tasks"
-  | "board"
-  | "agents"
-  | "calendar"
-  | "reminders"
-  | "messaging"
-  | "integrations"
-  | "notes"
-  | "continuity"
-  | "journey"
-  | "activity"
-  | "autonomy"
-  | "flows"
-  | "work"
-  | "dashboard"
-  | "tools"
-  | "mcp"
-  | "self-improvement"
-  | "skills"
-  | "prompt-lab"
-  | "scheduler"
-  | "settings";
 type GroupKey = "group.workspace" | "group.life" | "group.continuity" | "group.automation" | "group.knowledge" | "group.system";
 
 interface NavEntry {
@@ -234,8 +210,10 @@ function Console() {
   const [token, setToken] = useState(() => readSetting("muse.token", ""));
   // Chat is the front door: the native companion's every interaction (voice,
   // tap-bubble, companion_seed deep link) lands in a conversation, so the web
-  // console boots there too. 홈/오늘 are one sidebar click away.
-  const [view, setView] = useState<ViewId>("chat");
+  // console boots there too. 홈/오늘 are one sidebar click away. The initial
+  // view still comes from `location.hash` when one is present (reload, deep
+  // link, browser back/forward) — see `useHashView`.
+  const [view, updateView] = useHashView();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [devMode, setDevMode] = useState(() => readDeveloperMode());
   useEffect(() => onDeveloperModeChange(setDevMode), []);
@@ -271,15 +249,21 @@ function Console() {
     staleTime: Infinity
   });
 
+  // `active` (and therefore `ActiveComponent`) resolves purely from `view`
+  // against the FULL `NAV` list — `advanced` only hides an entry from the
+  // sidebar/`SidebarNav`, it was never a gate on which component can render.
+  // A hash deep-link to an advanced view must stay consistent with that:
+  // it renders (nav just won't list it), the same as the existing ⌘K
+  // palette / leader-shortcut reachability documented on `NavEntry.advanced`.
   const active: NavEntry = NAV.find((n) => n.id === view) ?? NAV[0]!;
   const ActiveComponent = active.Component;
 
   const onLeader = useCallback((key: string) => {
     const target = NAV.find((n) => n.key === key);
     if (target) {
-      setView(target.id);
+      updateView(target.id);
     }
-  }, []);
+  }, [updateView]);
   useShortcuts({ onLeader, onTogglePalette: () => setPaletteOpen((p) => !p), onToggleSidebar: toggleSidebar });
 
   const commands = useMemo<readonly Command[]>(
@@ -288,10 +272,10 @@ function Console() {
         group: t("cmd.navigate"),
         hint: `G ${n.key.toUpperCase()}`,
         id: n.id,
-        run: () => setView(n.id),
+        run: () => updateView(n.id),
         title: t(n.labelKey)
       })),
-    [t]
+    [t, updateView]
   );
 
   const updateConnection = (url: string, tok: string) => {
@@ -347,7 +331,7 @@ function Console() {
             </button>
           </div>
 
-          <SidebarNav view={view} taskCount={openTasks.data?.total ?? 0} t={t} onSelect={setView} devMode={devMode} collapsed={sidebarCollapsed} />
+          <SidebarNav view={view} taskCount={openTasks.data?.total ?? 0} t={t} onSelect={updateView} devMode={devMode} collapsed={sidebarCollapsed} />
 
           <div className="sidebar-foot">
             <LangToggle lang={lang} onChange={setLang} />
@@ -372,7 +356,7 @@ function Console() {
                 <SettingsView client={client} apiUrl={apiUrl} token={token} onSave={updateConnection} />
               ) : (
                 <Suspense fallback={<div className="skeleton-block" aria-busy="true"><span className="skeleton" style={{ width: "40%" }} /><span className="skeleton" style={{ width: "70%" }} /></div>}>
-                  <ActiveComponent client={client} onNavigate={(id) => setView(id as ViewId)} />
+                  <ActiveComponent client={client} onNavigate={(id) => updateView(id as ViewId)} />
                 </Suspense>
               )}
             </div>
