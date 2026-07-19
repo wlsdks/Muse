@@ -59,6 +59,9 @@ related: [team-roles.md, role-prompts.md, ../README.md]
 - **진전 판정:** `material-progress | no-progress` — material progress는 이전 blocker를 닫거나
   acceptance/accounting을 측정 가능하게 만든 변경, no-progress는 같은 blocker가 새 증거·수정 없이
   반복되는 상태
+- **근거 회계:** <semantic family/surface variant/profile/journey/turn 수; `realismProxy` 이름;
+  immutable `dataOrigin`; independent `executionEvidence`; controlled replay/organic production evidence;
+  receipt와 feedback 분리>
 
 ## 3. 워커 노트 (워커/빌더가 채움)
 

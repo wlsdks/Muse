@@ -74,8 +74,13 @@ is unverified. `self-eval` fails closed on regression. Error-analysis is FIRST â
 Large synthetic corpora must keep semantic coverage separate from prompt volume.
 A **semantic family** is one canonical objective/setup/expected/forbidden contract;
 a **surface variant** changes factors or expression without becoming an independent
-truth. Report both, and never relabel 20,000 surface variants as 20,000 independent
+truth. Report both, and never relabel synthetic surface variants as independent
 semantic cases.
+
+Synthetic scale is not evidence quality. A **synthetic profile** shapes generated
+conditions; a **journey** is an ordered state-linked sequence; a **turn** is one case
+within it. Longitudinal transition coverage may be named `realismProxy.v1`, but that
+proxy is neither organic usage nor proof of realistic user behavior.
 
 Dataset accounting and agent-execution accounting are different ledgers:
 
@@ -89,10 +94,22 @@ Dataset accounting and agent-execution accounting are different ledgers:
   counts. Do not report it as `pass@k`.
 - Until trials actually run, agent results remain `UNVERIFIED`/`NOT_RUN`; generated or
   validated data cannot be booked as agent passed/failed signal.
+- Provenance and execution are independent axes. Immutable case `dataOrigin`
+  (`synthetic | consented_trace_derived`) answers where a case came from;
+  `executionEvidence` (`not_run | live_executed`) answers whether it ran. Never infer
+  one from the other.
+- **Controlled replay** exercises a public interface against synthetic state. It is
+  not organic production evidence. `organic` authority is minted only by the
+  production composition root; `unclassified` is fail-closed. A factual interaction
+  receipt is not outcome feedback and cannot promote policy.
 
 Every report names the ledger explicitly: semantic families, surface variants,
-generated/valid/invalid/sampled cases, executed cases, trials, inference requests,
-and agent passed/failed/unverified. Reconciliation identities are fail-closed.
+synthetic profiles/journeys/turns, immutable `dataOrigin`, independent
+`executionEvidence`, controlled replay/organic evidence, generated/valid/invalid/sampled
+cases, executed cases, trials, inference requests, and agent passed/failed/unverified.
+Consented trace-derived promotion requires explicit consent and privacy validation;
+live-executed organic evidence requires actual production execution. Reconciliation
+identities are fail-closed.
 
 ## Where each gate lives (Muse mapping)
 

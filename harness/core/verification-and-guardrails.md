@@ -75,6 +75,10 @@ related: [team-roles.md, handoff-template.md, ../host/muse-mapping.md, ../README
   묶어 concrete violation으로 반환합니다. 이후 새 blocker에는 왜 이전 pass에서 발견 불가능했는지
   기록합니다. 앞선 수정 때문에 새 경로가 생긴 경우처럼 근거가 있어야 하며, 설명 없는 순차 공개는
   평가 루프의 no-progress입니다.
+- **근거 축을 섞지 않는다.** synthetic scale과 `realismProxy`는 evidence quality가 아닙니다.
+  immutable `dataOrigin`(synthetic/consented trace-derived)과 `executionEvidence`(not-run/live-executed)를
+  독립 검증합니다. controlled replay는 public-interface dry-run 근거일 뿐 organic production authority가
+  아니며, factual interaction receipt를 feedback/outcome/policy promotion으로 해석하면 게이트 FAIL입니다.
 
 ## 4. 실패에 강하게 (관측 & 복구)
 

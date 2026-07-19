@@ -131,6 +131,12 @@ BUILD↔EVAL은 PLAN과 별도의 반복 횟수·시간·비용 cap을 가집니
 구체적 회계 필드는 [handoff-template](core/handoff-template.md), 종료 판정은
 [loop-budget](reference/loop-budget.md)을 따릅니다.
 
+평가 데이터의 양은 근거 품질과 별도입니다. synthetic family/profile/journey/turn 또는 controlled
+replay가 많아져도 organic 사용자 근거나 agent PASS가 되지 않습니다. `realismProxy`는 결정적 전환
+coverage 이름일 뿐 현실성 증명이 아닙니다. 출처인 immutable `dataOrigin`과 실제 실행 여부인
+`executionEvidence`를 독립 회계하고, factual interaction receipt를 feedback/outcome/policy 승격으로
+환산하지 않습니다.
+
 ## 4. 토대 (모든 단계에 적용)
 
 - **루프 한도** — 횟수·시간·예산 하드캡(반복 2~3회 상한). → [loop-budget](reference/loop-budget.md).

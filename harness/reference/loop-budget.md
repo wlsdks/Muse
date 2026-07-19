@@ -51,6 +51,10 @@ related: [../core/team-roles.md, failure-modes-and-observability.md, ../core/ver
 각 pass는 handoff 상태 로그에 `budget kind`, 누적 사용량, `material-progress | no-progress`, 닫힌
 blocker, 새 증거를 기록합니다. 한 루프의 남은 예산을 다른 루프의 재시도 근거로 빌려 쓰지 않습니다.
 
+대량 synthetic 생성·controlled replay는 budget 소비량이지 evidence quality가 아닙니다. 회계에는
+생성 단위와 실행 단위를 분리하고, `dataOrigin`과 `executionEvidence`를 독립 축으로 남깁니다.
+`realismProxy` coverage나 dry-run 성공은 live trial/inference request를 증가시키지 않습니다.
+
 ## 3. 폭주를 끊는 안전장치
 
 - **회로 차단(circuit breaker)** — 도구 연쇄 실패·이상 행동을 감지하면 한도 전이라도 루프를 끊습니다.
