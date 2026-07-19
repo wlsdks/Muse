@@ -10,6 +10,93 @@ export interface ToolArgumentValidation {
   readonly missing: readonly string[];
 }
 
+export type ToolArgumentAliasRepair =
+  | { readonly ok: true; readonly args: JsonObject }
+  | {
+      readonly ok: false;
+      readonly alias: string;
+      readonly canonical: string;
+      readonly reason: string;
+    };
+
+/** Validate exact alias metadata before a tool can enter the production registry. */
+export function validateToolArgumentAliasDefinition(
+  inputSchema: JsonValue | undefined,
+  aliases: Readonly<Record<string, string>> | undefined
+): string | undefined {
+  if (!aliases) return undefined;
+  if (!isRecord(inputSchema) || inputSchema.type !== "object" || !isRecord(inputSchema.properties)) {
+    return "argument aliases require an object input schema with properties";
+  }
+  const aliasNames = new Set(Object.keys(aliases));
+  for (const [alias, canonical] of Object.entries(aliases)) {
+    if (alias.trim().length === 0 || canonical.trim().length === 0
+      || alias !== alias.trim() || canonical !== canonical.trim()) {
+      return `unsafe argument alias '${alias}' -> '${canonical}': names must be nonempty and trimmed`;
+    }
+    if (!Object.hasOwn(inputSchema.properties, canonical)) {
+      return `unsafe argument alias '${alias}' -> '${canonical}': canonical target is not a schema property`;
+    }
+    if (Object.hasOwn(inputSchema.properties, alias)) {
+      return `unsafe argument alias '${alias}' -> '${canonical}': alias is already a canonical schema property`;
+    }
+    if (aliasNames.has(canonical)) {
+      return `unsafe argument alias '${alias}' -> '${canonical}': alias chains and cycles are forbidden`;
+    }
+  }
+  return undefined;
+}
+
+const hasOwn = (value: object, key: string): boolean => Object.prototype.hasOwnProperty.call(value, key);
+
+function sameJsonBytes(left: JsonValue, right: JsonValue): boolean {
+  return Object.is(left, right) || JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * Apply only exact aliases explicitly declared by a tool. An alias value is
+ * copied unchanged to the canonical key and the alias key is removed. No
+ * lexical/fuzzy/tool-name inference is permitted. Supplying both names is safe
+ * only when their JSON bytes are equal; disagreement is an ambiguity and fails
+ * closed before any gate or effect observes it.
+ */
+export function canonicalizeToolArgumentAliases(
+  aliases: Readonly<Record<string, string>> | undefined,
+  args: JsonObject
+): ToolArgumentAliasRepair {
+  if (!aliases || Object.keys(aliases).length === 0) {
+    return { args, ok: true };
+  }
+
+  let out: Record<string, JsonValue> | undefined;
+  for (const [alias, canonical] of Object.entries(aliases)) {
+    const current = out ?? args;
+    if (alias === canonical || !hasOwn(current, alias)) continue;
+    const aliasValue = current[alias]!;
+    if (hasOwn(current, canonical) && !sameJsonBytes(current[canonical]!, aliasValue)) {
+      return {
+        alias,
+        canonical,
+        ok: false,
+        reason: `conflicting values for alias '${alias}' and canonical argument '${canonical}'`
+      };
+    }
+
+    out = { ...current };
+    delete out[alias];
+    if (!hasOwn(out, canonical)) {
+      Object.defineProperty(out, canonical, {
+        configurable: true,
+        enumerable: true,
+        value: aliasValue,
+        writable: true
+      });
+    }
+  }
+
+  return { args: out ?? args, ok: true };
+}
+
 /**
  * Deterministic pre-execute check of a model's tool arguments against the
  * tool's input schema. Enforces ONLY the schema's `required` list — the

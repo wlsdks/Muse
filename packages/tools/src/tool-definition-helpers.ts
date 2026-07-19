@@ -2,6 +2,7 @@ import type { ModelTool } from "@muse/model";
 import { isRecord, truncateUtf16Safe } from "@muse/shared";
 
 import { ToolRegistryError, type MuseTool, type ToolDescriptionIssue } from "./index.js";
+import { validateToolArgumentAliasDefinition } from "./tools-argument-validation.js";
 
 export function toModelTool(tool: MuseTool): ModelTool {
   return {
@@ -9,7 +10,8 @@ export function toModelTool(tool: MuseTool): ModelTool {
     inputSchema: tool.definition.inputSchema,
     name: tool.definition.name,
     risk: tool.definition.risk,
-    ...(tool.definition.groundedArgs ? { groundedArgs: tool.definition.groundedArgs } : {})
+    ...(tool.definition.groundedArgs ? { groundedArgs: tool.definition.groundedArgs } : {}),
+    ...(tool.definition.argumentAliases ? { argumentAliases: tool.definition.argumentAliases } : {})
   };
 }
 
@@ -57,6 +59,15 @@ export function validateToolDefinitions(tools: readonly MuseTool[]): readonly To
           });
         }
       }
+    }
+
+    const aliasIssue = validateToolArgumentAliasDefinition(definition.inputSchema, definition.argumentAliases);
+    if (aliasIssue) {
+      issues.push({
+        code: "invalid_argument_alias",
+        message: `Tool '${definition.name}' has invalid alias metadata: ${aliasIssue}`,
+        toolName: definition.name
+      });
     }
 
     if (!["read", "write", "execute"].includes(definition.risk)) {

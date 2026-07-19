@@ -78,17 +78,20 @@ export interface ModelObjectiveEvaluatorOptions {
   readonly model: string;
   /** Injected store readers the resolved evidence query fetches from. */
   readonly evidenceDeps?: ObjectiveEvidenceDeps;
+  /** Evaluator-wide clock. Takes precedence over evidenceDeps.now. */
   readonly now?: () => Date;
 }
 
 export function createModelObjectiveEvaluator(
   options: ModelObjectiveEvaluatorOptions
 ): (objective: StandingObjective) => Promise<ObjectiveEvaluation> {
-  const now = options.now ?? (() => new Date());
+  const evaluatorClock = options.now ?? options.evidenceDeps?.now ?? (() => new Date());
   const evidenceDeps = options.evidenceDeps ?? {};
   return async (objective) => {
     let output: string;
+    let evaluatedAt: Date;
     try {
+      evaluatedAt = evaluatorClock();
       const result = await options.modelProvider.generate({
         maxOutputTokens: 200,
         messages: [
@@ -96,7 +99,7 @@ export function createModelObjectiveEvaluator(
           {
             content:
               `objective (${objective.kind}): ${objective.spec}\n`
-              + `now: ${now().toISOString()}`,
+              + `now: ${evaluatedAt.toISOString()}`,
             role: "user"
           }
         ],
@@ -121,7 +124,7 @@ export function createModelObjectiveEvaluator(
       ...(proposal.windowDays !== undefined ? { windowDays: proposal.windowDays } : {}),
       ...(proposal.expectedCount !== undefined ? { expectedCount: proposal.expectedCount } : {})
     };
-    const records = await resolveObjectiveEvidence(query, evidenceDeps);
+    const records = await resolveObjectiveEvidence(query, { ...evidenceDeps, now: () => evaluatedAt });
     const { evidence, met } = checkObjectiveMet(records, query);
     return met ? { evidence, outcome: "met" } : { outcome: "unmet" };
   };

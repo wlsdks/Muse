@@ -1054,6 +1054,119 @@ describe("AgentRuntime", () => {
     expect(String(blocked?.result.output)).toContain("service");
   });
 
+  it("canonicalizes declared aliases before hooks, approval, required validation, grounding, and execute", async () => {
+    const executeTool = vi.fn(() => ({ ok: true }));
+    const beforeToolArgs: Record<string, unknown>[] = [];
+    const approvalArgs: Record<string, unknown>[] = [];
+    const toolRegistry = new ToolRegistry([{
+      definition: {
+        argumentAliases: { startTime: "startsAt" },
+        description: "Schedule an exact test event.",
+        groundedArgs: ["startsAt"],
+        inputSchema: {
+          properties: { startsAt: { type: "string" }, title: { type: "string" } },
+          required: ["title", "startsAt"],
+          type: "object"
+        },
+        keywords: ["schedule", "event"],
+        name: "schedule_exact",
+        risk: "read"
+      },
+      execute: executeTool
+    }]);
+    const runtime = createAgentRuntime({
+      hooks: [{
+        beforeTool: (_ctx, toolCall) => { beforeToolArgs.push(toolCall.arguments); },
+        id: "capture-canonical-alias"
+      }],
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        {
+          id: "tool",
+          model: "test-model",
+          output: "Scheduling.",
+          toolCalls: [{
+            arguments: { startTime: "tomorrow 3pm", title: "Review" },
+            id: "tc-alias",
+            name: "schedule_exact"
+          }]
+        },
+        { id: "final", model: "test-model", output: "Done." }
+      ]),
+      toolApprovalGate: ({ toolCall }) => {
+        approvalArgs.push(toolCall.arguments);
+        return { allowed: true };
+      },
+      toolRegistry
+    });
+
+    await runtime.run({
+      messages: [{ content: "schedule the Review event tomorrow 3pm", role: "user" }],
+      model: "provider/model",
+      runId: "run-exact-alias"
+    });
+
+    const canonical = { startsAt: "tomorrow 3pm", title: "Review" };
+    expect(beforeToolArgs).toEqual([canonical]);
+    expect(approvalArgs).toEqual([canonical]);
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(executeTool).toHaveBeenCalledWith(canonical, expect.anything());
+  });
+
+  it("fails closed before approval and execute when canonical and alias values conflict", async () => {
+    const executeTool = vi.fn(() => ({ ok: true }));
+    const approvalGate = vi.fn(() => ({ allowed: true }));
+    const captured: { result: { status?: string; output?: unknown } }[] = [];
+    const toolRegistry = new ToolRegistry([{
+      definition: {
+        argumentAliases: { startTime: "startsAt" },
+        description: "Schedule an exact test event.",
+        inputSchema: {
+          properties: { startsAt: { type: "string" }, title: { type: "string" } },
+          required: ["title", "startsAt"],
+          type: "object"
+        },
+        keywords: ["schedule", "event"],
+        name: "schedule_exact",
+        risk: "read"
+      },
+      execute: executeTool
+    }]);
+    const runtime = createAgentRuntime({
+      hooks: [{
+        afterTool: (_ctx, _toolCall, result) => { captured.push({ result: result as { status?: string; output?: unknown } }); },
+        id: "capture-alias-conflict"
+      }],
+      maxToolCalls: 1,
+      modelProvider: createSequenceProvider([
+        {
+          id: "tool",
+          model: "test-model",
+          output: "Scheduling.",
+          toolCalls: [{
+            arguments: { startTime: "tomorrow 5pm", startsAt: "tomorrow 3pm", title: "Review" },
+            id: "tc-conflict",
+            name: "schedule_exact"
+          }]
+        },
+        { id: "final", model: "test-model", output: "Done." }
+      ]),
+      toolApprovalGate: approvalGate,
+      toolRegistry
+    });
+
+    await runtime.run({
+      messages: [{ content: "schedule the Review event tomorrow 3pm", role: "user" }],
+      model: "provider/model",
+      runId: "run-alias-conflict"
+    });
+
+    expect(approvalGate).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(String(captured[0]?.result.output)).toMatch(/conflicting.*startTime.*startsAt/iu);
+    expect(captured[0]?.result.status).toBe("blocked");
+  });
+
   it("blocks an out-of-enum argument on the ReAct path before the executor runs (parity with plan-execute)", async () => {
     const executeTool = vi.fn(() => ({ ok: true }));
     const toolRegistry = new ToolRegistry([

@@ -3,6 +3,7 @@ import type { SanitizedToolOutput } from "@muse/policy";
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import { toModelTool } from "./tool-definition-helpers.js";
+import { validateToolArgumentAliasDefinition } from "./tools-argument-validation.js";
 import {
   createDefaultToolExposurePolicy,
   createWorkspaceToolRoutingPlan,
@@ -40,6 +41,12 @@ export interface MuseToolDefinition {
    * metadata; never sent to the provider (only `inputSchema` is).
    */
   readonly groundedArgs?: readonly string[];
+  /**
+   * Exact model-emitted argument aliases (`alias` → canonical schema property).
+   * Non-wire metadata: providers see only `inputSchema`; AgentRuntime applies
+   * this contract before validation, approval, grounding, and execution.
+   */
+  readonly argumentAliases?: Readonly<Record<string, string>>;
 }
 
 export interface MuseToolContext {
@@ -77,7 +84,7 @@ export interface ToolIdempotencyStore {
 }
 
 export interface ToolDescriptionIssue {
-  readonly code: "missing_description" | "missing_input_schema" | "ambiguous_risk" | "duplicate_name" | "unknown_dependency" | "undescribed_parameter";
+  readonly code: "missing_description" | "missing_input_schema" | "ambiguous_risk" | "duplicate_name" | "unknown_dependency" | "undescribed_parameter" | "invalid_argument_alias";
   readonly message: string;
   readonly toolName: string;
 }
@@ -94,6 +101,14 @@ export class ToolRegistry {
   register(tool: MuseTool): void {
     if (this.tools.has(tool.definition.name)) {
       throw new ToolRegistryError(`Duplicate tool registered: ${tool.definition.name}`);
+    }
+
+    const aliasIssue = validateToolArgumentAliasDefinition(
+      tool.definition.inputSchema,
+      tool.definition.argumentAliases
+    );
+    if (aliasIssue) {
+      throw new ToolRegistryError(`Tool '${tool.definition.name}' has ${aliasIssue}`);
     }
 
     this.tools.set(tool.definition.name, tool);
@@ -120,7 +135,15 @@ export class ToolRegistry {
   }
 }
 
-export { coerceToolArguments, coerceEnumArguments, validateRequiredToolArguments, type ToolArgumentValidation } from "./tools-argument-validation.js";
+export {
+  canonicalizeToolArgumentAliases,
+  coerceToolArguments,
+  coerceEnumArguments,
+  validateRequiredToolArguments,
+  validateToolArgumentAliasDefinition,
+  type ToolArgumentAliasRepair,
+  type ToolArgumentValidation
+} from "./tools-argument-validation.js";
 
 // ToolExecutor lives in `./executor.ts` (lifted out so the
 // tool-execution loop stays in one cohesive module). Re-exported

@@ -25,6 +25,14 @@ function toolRegistry() {
     {
       definition: { description: "Search notes", inputSchema: { type: "object" }, name: "notes_search", risk: "read" as const },
       execute: async () => ({ hits: [] })
+    },
+    {
+      definition: { description: "Execute a bounded tool plan", inputSchema: { type: "object" }, name: "run_tool_plan", risk: "read" as const },
+      execute: async () => ({ steps: [] })
+    },
+    {
+      definition: { description: "Read the current time", inputSchema: { type: "object" }, name: "time_now", risk: "read" as const },
+      execute: async () => ({ now: "2026-07-19T00:00:00.000Z" })
     }
   ]);
 }
@@ -75,6 +83,21 @@ describe("PTC production wiring — tool-exemplar few-shot reaches the live prom
     expect(system.toLowerCase()).toContain("past requests and the tool that correctly handled each");
     const sectionLines = system.split("\n").filter((line) => line.trimStart().startsWith("- \""));
     expect(sectionLines.some((line) => line.includes("time_now") || line.includes("no tool"))).toBe(true);
+  });
+
+  it("filters positive exemplars to exposed tools while retaining an active tool and no-tool restraint", async () => {
+    const system = await assembleSystemPrompt({
+      bank: [
+        { prompt: "search project notes now", tool: "unexposed_notes_search" },
+        { prompt: "search project notes now", tool: "notes_search" },
+        { prompt: "maybe search project notes later", tool: null }
+      ],
+      prompt: "search project notes now"
+    });
+
+    expect(system).not.toContain("unexposed_notes_search");
+    expect(system).toContain("notes_search");
+    expect(system).toContain("(no tool — answered directly)");
   });
 
   it("fail-open: an empty bank produces no section and no throw", async () => {

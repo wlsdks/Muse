@@ -1,7 +1,7 @@
 import type { ModelMessage, ModelTool } from "@muse/model";
 import { unwrapToolData } from "@muse/policy";
 import { isRecord, type JsonObject, type JsonValue } from "@muse/shared";
-import { coerceToolArguments, coerceEnumArguments, validateRequiredToolArguments } from "@muse/tools";
+import { canonicalizeToolArgumentAliases, coerceToolArguments, coerceEnumArguments, validateRequiredToolArguments } from "@muse/tools";
 
 import { neutralizeInjectionSpans } from "./injection.js";
 import { extractFirstJsonArray, iterateJsonArrayCandidates } from "./json-array-scan.js";
@@ -156,6 +156,8 @@ export interface PlanValidationInput {
    * one bounded repair round. Absent → byte-identical to prior behaviour.
    */
   readonly toolSchemas?: ReadonlyMap<string, JsonValue>;
+  /** Exact per-tool argument aliases applied before required validation. */
+  readonly toolArgumentAliases?: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /**
    * ISR-LLM (arXiv:2308.13724) precondition check: when supplied, write/execute
    * steps whose string args are unfilled placeholders are rejected before any
@@ -383,11 +385,21 @@ export function validatePlan(input: PlanValidationInput): PlanValidationResult {
     };
   }
 
+  const aliasConflicts = new Map<number, string>();
+  const steps = input.steps.map((step, index) => {
+    const repaired = canonicalizeToolArgumentAliases(input.toolArgumentAliases?.get(step.tool), step.args);
+    if (!repaired.ok) {
+      aliasConflicts.set(index, repaired.reason);
+      return step;
+    }
+    return repaired.args === step.args ? step : { ...step, args: repaired.args };
+  });
+
   // Tracks exact-duplicate detection: key → first occurrence index.
   const seenKeys = new Map<string, number>();
 
-  for (let index = 0; index < input.steps.length; index += 1) {
-    const step = input.steps[index];
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
     if (!step) {
       continue;
     }
@@ -402,6 +414,8 @@ export function validatePlan(input: PlanValidationInput): PlanValidationResult {
         tool: step.tool
       });
       // Still check for duplicates below even when unregistered, but skip arg validation.
+    } else if (aliasConflicts.has(index)) {
+      errors.push({ reason: aliasConflicts.get(index)!, stepIndex: index, tool: step.tool });
     } else if (input.toolSchemas) {
       // ISR-LLM (arXiv:2308.13724): validate args before execution so a missing
       // required arg on step N doesn't block AFTER steps 0…N-1 wrote side effects.
@@ -442,7 +456,7 @@ export function validatePlan(input: PlanValidationInput): PlanValidationResult {
   }
   // LLMCompiler (arXiv:2312.04511): forward/dangling dependency refs are
   // un-dispatchable — reject before any tool runs (no partial side-effects).
-  for (const depError of validateStepDependencies(input.steps)) {
+  for (const depError of validateStepDependencies(steps)) {
     errors.push(depError);
   }
 
@@ -450,14 +464,14 @@ export function validatePlan(input: PlanValidationInput): PlanValidationResult {
   // an unfilled placeholder arg would commit a partial side-effect — fail-close
   // before execution so no garbage write ever reaches the store.
   if (input.toolRisks) {
-    for (const precondError of validateWritePreconditions(input.steps, input.toolRisks)) {
+    for (const precondError of validateWritePreconditions(steps, input.toolRisks)) {
       errors.push(precondError);
     }
   }
 
   return {
     errors,
-    steps: input.steps,
+    steps,
     valid: errors.length === 0
   };
 }

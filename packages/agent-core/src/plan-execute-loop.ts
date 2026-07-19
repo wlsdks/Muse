@@ -131,10 +131,14 @@ export async function* streamPlanExecute(
   }
 
   const toolSchemas = new Map(tools.map((tool) => [tool.name, tool.inputSchema as import("@muse/shared").JsonValue]));
+  const toolArgumentAliases = new Map(tools.flatMap((tool) =>
+    tool.argumentAliases ? [[tool.name, tool.argumentAliases] as const] : []
+  ));
   const toolRisks = new Map(tools.map((tool) => [tool.name, tool.risk]));
   const availableToolNames = new Set(tools.map((tool) => tool.name));
 
-  let validation = validatePlan({ availableToolNames, steps, toolRisks, toolSchemas });
+  let validation = validatePlan({ availableToolNames, steps, toolArgumentAliases, toolRisks, toolSchemas });
+  steps = validation.steps;
   if (!validation.valid && PLAN_REPAIR_MAX_ROUNDS > 0) {
     const errorBullets = validation.errors
       .map((error) => `- step ${(error.stepIndex + 1).toString()} (${error.tool || "?"}): ${error.reason}`)
@@ -150,7 +154,8 @@ export async function* streamPlanExecute(
     const repairedRaw = await generatePlan(runner, context, provider, request, repairPrompt, toolDescriptions, userId);
     if (repairedRaw !== null) {
       steps = dedupeNearDuplicateSteps(repairedRaw);
-      validation = validatePlan({ availableToolNames, steps, toolRisks, toolSchemas });
+      validation = validatePlan({ availableToolNames, steps, toolArgumentAliases, toolRisks, toolSchemas });
+      steps = validation.steps;
     }
   }
   if (!validation.valid) {

@@ -670,6 +670,7 @@ export { sanitiseCitations, type SanitiseCitationsResult } from "./citation-sani
 export { applyCitationSanitisation, buildModelRequestWithWebSearch } from "./model-invocation.js";
 export { renderToolExemplarSection, selectToolExemplars, type ToolExemplar } from "./tool-exemplars.js";
 export { RUN_TOOL_PLAN_EXEMPLAR_BANK } from "./tool-plan-exemplars.js";
+export { DEFAULT_TOOL_EXEMPLAR_BANK } from "./default-tool-exemplars.js";
 export { applyToolExemplars } from "./context-transforms.js";
 export { summarizeTokenConfidence, type TokenConfidenceSummary } from "./token-confidence.js";
 export { baseLevelActivation, computeActivationBoost } from "./actr-activation.js";

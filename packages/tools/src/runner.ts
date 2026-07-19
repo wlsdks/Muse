@@ -1,5 +1,7 @@
 import { errorMessage, isRecord, redactSecretsInText, runCommandWithTimeout, type JsonObject } from "@muse/shared";
 import { spawn, type ChildProcess } from "node:child_process";
+import { realpath } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { classifyDangerousCommand } from "./dangerous-command.js";
 import { classifyRunnerFailure, type RunnerFailureKind } from "./runner-failure.js";
@@ -29,6 +31,11 @@ export interface RunnerCommandRequest {
    * `parseRunnerCommandRequest`, so the model can never grant itself network access.
    */
   readonly allowNetwork?: boolean;
+  /**
+   * Caller-only strict filesystem isolation boundary. This is deliberately
+   * absent from the model-facing schema/parser: only a trusted host may set it.
+   */
+  readonly isolationRoot?: string;
 }
 
 export interface RunnerCommandResponse {
@@ -48,6 +55,8 @@ export interface RunnerCommandResponse {
 export interface RustRunnerToolOptions {
   readonly runnerPath?: string;
   readonly invokeRunner?: (request: RunnerCommandRequest) => Promise<RunnerCommandResponse>;
+  /** Caller-only fixture boundary; model-supplied cwd cannot escape it. */
+  readonly isolationRoot?: string;
 }
 
 export function createRustRunnerTool(options: RustRunnerToolOptions = {}): MuseTool {
@@ -86,7 +95,10 @@ export function createRustRunnerTool(options: RustRunnerToolOptions = {}): MuseT
       risk: "execute"
     },
     async execute(args) {
-      const request = parseRunnerCommandRequest(args);
+      const parsed = parseRunnerCommandRequest(args);
+      const request = options.isolationRoot === undefined
+        ? parsed
+        : await constrainRunnerRequestToIsolationRoot(parsed, options.isolationRoot);
       const response = await invoke(request);
 
       const cap = request.maxOutputBytes;
@@ -116,6 +128,27 @@ export function createRustRunnerTool(options: RustRunnerToolOptions = {}): MuseT
       };
     }
   };
+}
+
+async function constrainRunnerRequestToIsolationRoot(
+  request: RunnerCommandRequest,
+  isolationRoot: string
+): Promise<RunnerCommandRequest> {
+  const canonicalRoot = await realpath(isolationRoot).catch((cause: unknown) => {
+    throw new ToolRegistryError(`run_command isolation root is unavailable: ${errorMessage(cause)}`);
+  });
+  const requestedCwd = request.cwd === undefined
+    ? canonicalRoot
+    : resolve(canonicalRoot, request.cwd);
+  const canonicalCwd = await realpath(requestedCwd).catch((cause: unknown) => {
+    throw new ToolRegistryError(`run_command cwd is unavailable inside the isolated root: ${errorMessage(cause)}`);
+  });
+  const fromRoot = relative(canonicalRoot, canonicalCwd);
+  const escapesRoot = fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot);
+  if (escapesRoot) {
+    throw new ToolRegistryError("run_command cwd must stay inside the caller-configured isolated root");
+  }
+  return { ...request, cwd: canonicalCwd, isolationRoot: canonicalRoot };
 }
 
 /**

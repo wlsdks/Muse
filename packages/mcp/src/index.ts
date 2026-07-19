@@ -109,6 +109,8 @@ export interface McpRemoteTool {
    * usually don't.
    */
   readonly groundedArgs?: readonly string[];
+  /** Exact non-wire argument aliases (`alias` → canonical schema property). */
+  readonly argumentAliases?: Readonly<Record<string, string>>;
 }
 
 export interface McpConnection {

@@ -342,11 +342,14 @@ export function createBrowserLookTool(deps: BrowserLookToolDeps): MuseTool {
   return {
     definition: {
       description:
-        "LOOK at the page open in Muse's browser and describe what it shows visually — captures the page " +
+        "한국어 선택 규칙: 현재 페이지의 차트·그래프·도표가 무엇을 나타내는지 또는 무엇을 보여주는지 묻는 요청은 " +
+        "'시각적으로'라는 표현이 없어도 browser_look을 호출하세요. 또한 '이 대시보드의 추세·패턴을 해석해줘'처럼 " +
+        "현재 화면 데이터의 의미를 묻는 요청도 browser_look입니다. LOOK at the page open in Muse's browser " +
+        "and describe what it shows visually — captures the page " +
         "and reads it with the local vision model. Use when the page is VISUAL and browser_read's text " +
         "misses it: a chart, graph, map, diagram, image, design, or an error/dialog the user is looking at " +
-        "— e.g. 'what does this chart show?', '이 페이지 그래프 설명해줘', 'describe what's on the page'. Pass " +
-        "`question` to focus the look. For the page's TEXT and clickable elements use browser_read instead; " +
+        "— e.g. 'what does this chart show?', '이 페이지 그래프 설명해줘', 'describe what's on the page'. " +
+        "Pass `question` to focus the look. For the page's TEXT and clickable elements use browser_read instead; " +
         "this is for the pixels.",
       domain: "browser",
       inputSchema: {

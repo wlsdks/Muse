@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { MessagingProviderRegistry, TelegramProvider } from "@muse/messaging";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createMessagingObjectiveActuator,
@@ -42,6 +42,81 @@ describe("createModelObjectiveEvaluator — propose → resolve → check", () =
     const result = await evaluate(objective({ spec: "log the workout 3 times this week" }));
     expect(result.outcome).toBe("met");
     expect(result.outcome === "met" && result.evidence).toHaveLength(3);
+  });
+
+  it("uses one injected evaluator clock for both the proposal timestamp and evidence window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-19T12:00:00.000Z"));
+    try {
+      let proposalPrompt = "";
+      const evaluatorNow = vi.fn(() => new Date("2026-07-11T12:00:00.000Z"));
+      const evaluate = createModelObjectiveEvaluator({
+        evidenceDeps: {
+          readTasks: async () => [
+            { completedAt: "2026-07-08T09:00:00.000Z", title: "workout day 1" },
+            { completedAt: "2026-07-09T09:00:00.000Z", title: "workout day 2" },
+            { completedAt: "2026-07-10T09:00:00.000Z", title: "workout day 3" }
+          ]
+        },
+        model: "m",
+        modelProvider: {
+          generate: async (request) => {
+            proposalPrompt = request.messages.at(-1)?.content ?? "";
+            return { output: '{"store":"tasks","keywords":["workout"],"windowDays":7,"expectedCount":3}' };
+          }
+        },
+        now: evaluatorNow
+      });
+
+      const result = await evaluate(objective({ spec: "log the workout 3 times this week" }));
+
+      expect(proposalPrompt).toContain("now: 2026-07-11T12:00:00.000Z");
+      expect(result.outcome).toBe("met");
+      expect(result.outcome === "met" && result.evidence).toHaveLength(3);
+      expect(evaluatorNow).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls back to evidenceDeps.now as the coherent evaluator clock when options.now is absent", async () => {
+    let proposalPrompt = "";
+    const evidenceNow = vi.fn(() => new Date("2026-07-11T12:00:00.000Z"));
+    const evaluate = createModelObjectiveEvaluator({
+      evidenceDeps: {
+        now: evidenceNow,
+        readTasks: async () => [{ completedAt: "2026-07-10T09:00:00.000Z", title: "workout" }]
+      },
+      model: "m",
+      modelProvider: {
+        generate: async (request) => {
+          proposalPrompt = request.messages.at(-1)?.content ?? "";
+          return { output: '{"store":"tasks","keywords":["workout"],"windowDays":7}' };
+        }
+      }
+    });
+
+    expect((await evaluate(objective())).outcome).toBe("met");
+    expect(proposalPrompt).toContain("now: 2026-07-11T12:00:00.000Z");
+    expect(evidenceNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("options.now takes precedence over a conflicting evidenceDeps.now", async () => {
+    const evidenceNow = vi.fn(() => new Date("2026-07-19T12:00:00.000Z"));
+    const evaluatorNow = vi.fn(() => new Date("2026-07-11T12:00:00.000Z"));
+    const evaluate = createModelObjectiveEvaluator({
+      evidenceDeps: {
+        now: evidenceNow,
+        readTasks: async () => [{ completedAt: "2026-07-10T09:00:00.000Z", title: "workout" }]
+      },
+      model: "m",
+      modelProvider: modelReturning('{"store":"tasks","keywords":["workout"],"windowDays":7}'),
+      now: evaluatorNow
+    });
+
+    expect((await evaluate(objective())).outcome).toBe("met");
+    expect(evaluatorNow).toHaveBeenCalledTimes(1);
+    expect(evidenceNow).not.toHaveBeenCalled();
   });
 
   it("model proposes a store query but the store is empty ⇒ unmet, never a bare-assertion met", async () => {

@@ -73,11 +73,22 @@ describe("toOpenAIResponsesRequest", () => {
   it("emits caller-supplied function tools in the flat Responses shape alongside web_search", () => {
     const request = {
       ...base,
-      tools: [{ name: "get_time", description: "", inputSchema: { type: "object" }, risk: "read" as const }]
+      tools: [{
+        name: "get_time",
+        description: "",
+        inputSchema: { properties: { startsAt: { type: "string" } }, required: ["startsAt"], type: "object" },
+        risk: "read" as const,
+        argumentAliases: { startTime: "startsAt" }
+      }]
     };
     const out = toOpenAIResponsesRequest(request, "gpt-4o", { enabled: true, maxUses: 5 });
     expect(out.tools).toEqual([
-      { type: "function", name: "get_time", description: "", parameters: { type: "object" } },
+      {
+        type: "function",
+        name: "get_time",
+        description: "",
+        parameters: { properties: { startsAt: { type: "string" } }, required: ["startsAt"], type: "object" }
+      },
       { type: "web_search" }
     ]);
   });

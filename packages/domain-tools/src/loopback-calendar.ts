@@ -230,6 +230,7 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
         risk: "read"
       },
       {
+        argumentAliases: { endTime: "endsAt", startTime: "startsAt" },
         description:
           "Create a new calendar event. `startsAt` is required; `endsAt` defaults to startsAt + 60 minutes. " +
           "Pass the user's time IN THEIR OWN WORDS — do NOT compute a date or convert the timezone yourself; the server resolves the phrase against the current local time. " +
@@ -487,4 +488,3 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
     ]
   };
 }
-

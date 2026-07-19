@@ -570,7 +570,9 @@ export function applyToolExemplars(
     if (!query) {
       return context.input;
     }
-    const selected = selectToolExemplars(query, bank, topK);
+    const exposed = new Set(exposedToolNames);
+    const eligibleBank = bank.filter((exemplar) => exemplar.tool === null || exposed.has(exemplar.tool));
+    const selected = selectToolExemplars(query, eligibleBank, topK);
     const rendered = renderToolExemplarSection(selected);
     if (!rendered) {
       return context.input;

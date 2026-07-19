@@ -75,6 +75,57 @@ describe("validatePlan — required arg checks (ISR-LLM arXiv:2308.13724)", () =
     expect(result.errors).toHaveLength(0);
   });
 
+  it("applies exact declared aliases before plan required validation and rejects conflicts", () => {
+    const toolArgumentAliases = new Map([["echo_value", { aliasValue: "value" }]]);
+    const aliasOnly = validatePlan({
+      availableToolNames,
+      steps: [makeStep("echo_value", { aliasValue: "hello" })],
+      toolArgumentAliases,
+      toolSchemas
+    });
+    expect(aliasOnly.valid).toBe(true);
+    expect(aliasOnly.errors).toEqual([]);
+    expect(aliasOnly.steps[0]?.args).toEqual({ value: "hello" });
+
+    const conflict = validatePlan({
+      availableToolNames,
+      steps: [makeStep("echo_value", { aliasValue: "different", value: "hello" })],
+      toolArgumentAliases,
+      toolSchemas
+    });
+    expect(conflict.valid).toBe(false);
+    expect(conflict.errors).toContainEqual(expect.objectContaining({
+      reason: expect.stringMatching(/conflicting.*aliasValue.*value/iu),
+      stepIndex: 0,
+      tool: "echo_value"
+    }));
+
+    const unknown = validatePlan({
+      availableToolNames,
+      steps: [makeStep("echo_value", { guessedValue: "hello" })],
+      toolArgumentAliases,
+      toolSchemas
+    });
+    expect(unknown.errors).toContainEqual(expect.objectContaining({ reason: "missing required argument 'value'" }));
+  });
+
+  it("canonicalizes before exact duplicate detection so alias/canonical twins cannot double-act", () => {
+    const result = validatePlan({
+      availableToolNames,
+      steps: [
+        makeStep("echo_value", { aliasValue: "hello" }),
+        makeStep("echo_value", { value: "hello" })
+      ],
+      toolArgumentAliases: new Map([["echo_value", { aliasValue: "value" }]]),
+      toolSchemas
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({
+      reason: "repeats step 1 verbatim",
+      stepIndex: 1
+    }));
+  });
+
   it("multiple missing args on one step → one error per missing arg", () => {
     const steps = [makeStep("multi_arg", {})];
     const result = validatePlan({ availableToolNames, steps, toolSchemas });

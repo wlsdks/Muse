@@ -28,6 +28,7 @@ export function createMcpMuseTool(
       ...(tool.domain ? { domain: tool.domain } : {}),
       ...(tool.keywords && tool.keywords.length > 0 ? { keywords: tool.keywords } : {}),
       ...(tool.groundedArgs && tool.groundedArgs.length > 0 ? { groundedArgs: tool.groundedArgs } : {}),
+      ...(tool.argumentAliases ? { argumentAliases: tool.argumentAliases } : {}),
       inputSchema: tool.inputSchema ?? {},
       name: `${serverName}.${tool.name}`,
       risk: tool.risk ?? "read"

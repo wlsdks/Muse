@@ -16,6 +16,12 @@ describe("createMacAppReadTool", () => {
     expect(schema.properties.app.enum).toContain("music");
   });
 
+  it("describes contact lookup as an explicit current read, not a future-intent musing", () => {
+    const description = createMacAppReadTool().definition.description;
+    expect(description).toMatch(/^NO-TOOL CONTACT RULE:.*statements.*musings.*future intentions.*adding or contacting.*not reads.*call no tool.*explicitly asks.*current lookup.*existing named contact.*phone.*email/iu);
+    expect(description).toMatch(/contacts.*look up a person by name/iu);
+  });
+
   it("rejects an unknown app", async () => {
     const tool = createMacAppReadTool({ runner: async () => ok("") });
     expect(await tool.execute({ app: "browser" }, ctx)).toMatchObject({ error: expect.stringContaining("app must be one of") });

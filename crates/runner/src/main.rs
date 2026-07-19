@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
-use std::process::{Command, Stdio};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -24,11 +25,15 @@ const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 1 * 1024 * 1024;
 
 fn effective_timeout_ms(requested: Option<u64>) -> u64 {
-    requested.unwrap_or(DEFAULT_TIMEOUT_MS).clamp(1, MAX_TIMEOUT_MS)
+    requested
+        .unwrap_or(DEFAULT_TIMEOUT_MS)
+        .clamp(1, MAX_TIMEOUT_MS)
 }
 
 fn effective_max_output_bytes(requested: Option<usize>) -> usize {
-    requested.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES).clamp(1, MAX_OUTPUT_BYTES)
+    requested
+        .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES)
+        .clamp(1, MAX_OUTPUT_BYTES)
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +49,9 @@ struct RunnerRequest {
     max_output_bytes: Option<usize>,
     #[serde(default)]
     allow_network: bool,
+    /// Trusted caller-only strict filesystem boundary. Model-facing parsers do
+    /// not expose this field.
+    isolation_root: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,7 +82,9 @@ enum SandboxMode {
 }
 
 fn resolve_sandbox_mode() -> SandboxMode {
-    let requested = env::var("MUSE_RUNNER_SANDBOX").map(|v| v == "seatbelt").unwrap_or(false);
+    let requested = env::var("MUSE_RUNNER_SANDBOX")
+        .map(|v| v == "seatbelt")
+        .unwrap_or(false);
     if !requested {
         SandboxMode::Disabled
     } else if cfg!(target_os = "macos") {
@@ -102,7 +112,9 @@ fn main() {
 
     let mut stdout = io::stdout();
     serde_json::to_writer(&mut stdout, &response).expect("runner response should serialize");
-    stdout.write_all(b"\n").expect("runner response newline should write");
+    stdout
+        .write_all(b"\n")
+        .expect("runner response newline should write");
 }
 
 fn read_request() -> Result<RunnerRequest, String> {
@@ -116,7 +128,9 @@ fn read_request_from<R: Read>(input: R) -> Result<RunnerRequest, String> {
         .read_to_end(&mut bytes)
         .map_err(|error| format!("failed to read stdin: {error}"))?;
     if bytes.len() > MAX_REQUEST_BYTES {
-        return Err(format!("runner request exceeds the {MAX_REQUEST_BYTES} byte limit"));
+        return Err(format!(
+            "runner request exceeds the {MAX_REQUEST_BYTES} byte limit"
+        ));
     }
 
     serde_json::from_slice(&bytes).map_err(|error| format!("invalid runner request JSON: {error}"))
@@ -129,11 +143,13 @@ fn read_request_from<R: Read>(input: R) -> Result<RunnerRequest, String> {
 struct SpawnPlan {
     program: String,
     args: Vec<String>,
+    cwd: Option<String>,
     /// Set only when running under Seatbelt — the canonicalized TMPDIR the
     /// profile allows writes under, so the child env can be pointed at it.
     tmpdir: Option<String>,
     sandbox_warning: Option<String>,
     sandbox_active: bool,
+    strict_root: Option<String>,
 }
 
 // Seatbelt matches CANONICAL paths — cwd/TMPDIR/HOME are frequently symlinks
@@ -143,22 +159,29 @@ struct SpawnPlan {
 // any failure to canonicalize fails the whole request closed (never a rule
 // built on an unresolved, wrong path).
 fn spawn_plan(request: &RunnerRequest, mode: SandboxMode) -> Result<SpawnPlan, String> {
+    if request.isolation_root.is_some() {
+        return strict_isolation_spawn_plan(request);
+    }
     match mode {
         SandboxMode::Disabled => Ok(SpawnPlan {
             program: request.command.clone(),
             args: request.args.clone(),
+            cwd: request.cwd.clone(),
             tmpdir: None,
             sandbox_warning: None,
             sandbox_active: false,
+            strict_root: None,
         }),
         SandboxMode::RequestedUnsupported => Ok(SpawnPlan {
             program: request.command.clone(),
             args: request.args.clone(),
+            cwd: request.cwd.clone(),
             tmpdir: None,
             sandbox_warning: Some(
                 "MUSE_RUNNER_SANDBOX=seatbelt was requested, but seatbelt sandboxing is only supported on macOS — running this command unsandboxed.".to_string(),
             ),
             sandbox_active: false,
+            strict_root: None,
         }),
         SandboxMode::Seatbelt => {
             let cwd_path = match request.cwd.as_deref() {
@@ -192,12 +215,94 @@ fn spawn_plan(request: &RunnerRequest, mode: SandboxMode) -> Result<SpawnPlan, S
             Ok(SpawnPlan {
                 program: "/usr/bin/sandbox-exec".to_string(),
                 args,
+                cwd: Some(canonical_cwd),
                 tmpdir: Some(canonical_tmpdir),
                 sandbox_warning: None,
                 sandbox_active: true,
+                strict_root: None,
             })
         }
     }
+}
+
+fn strict_isolation_spawn_plan(request: &RunnerRequest) -> Result<SpawnPlan, String> {
+    let raw_root = request
+        .isolation_root
+        .as_deref()
+        .expect("strict caller checked above");
+    let canonical_root = fs::canonicalize(raw_root)
+        .map_err(|error| format!("failed to canonicalize isolation root '{raw_root}': {error}"))?;
+    let requested_cwd = request
+        .cwd
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| canonical_root.clone());
+    let rooted_cwd = if requested_cwd.is_absolute() {
+        requested_cwd
+    } else {
+        canonical_root.join(requested_cwd)
+    };
+    let canonical_cwd = fs::canonicalize(&rooted_cwd).map_err(|error| {
+        format!(
+            "failed to canonicalize cwd '{}' inside isolation root: {error}",
+            rooted_cwd.display()
+        )
+    })?;
+    if !canonical_cwd.starts_with(&canonical_root) {
+        return Err(format!(
+            "cwd '{}' must stay inside isolation root '{}'",
+            canonical_cwd.display(),
+            canonical_root.display()
+        ));
+    }
+
+    if !cfg!(target_os = "macos") {
+        return Err(
+            "strict runner isolation is unavailable: Seatbelt is supported only on macOS"
+                .to_string(),
+        );
+    }
+    if !Path::new("/usr/bin/sandbox-exec").is_file() {
+        return Err(
+            "strict runner isolation is unavailable: /usr/bin/sandbox-exec is missing".to_string(),
+        );
+    }
+
+    let canonical_root = canonical_root.to_string_lossy().into_owned();
+    let canonical_cwd = canonical_cwd.to_string_lossy().into_owned();
+    let executable = resolve_executable(&request.command)?;
+    let executable = executable.to_string_lossy().into_owned();
+    let profile =
+        build_strict_seatbelt_profile(&canonical_root, &executable, request.allow_network);
+    let mut args = vec!["-p".to_string(), profile, executable];
+    args.extend(request.args.iter().cloned());
+    Ok(SpawnPlan {
+        program: "/usr/bin/sandbox-exec".to_string(),
+        args,
+        cwd: Some(canonical_cwd),
+        tmpdir: Some(canonical_root.clone()),
+        sandbox_warning: None,
+        sandbox_active: true,
+        strict_root: Some(canonical_root),
+    })
+}
+
+fn resolve_executable(command: &str) -> Result<PathBuf, String> {
+    let path = env::var_os("PATH").unwrap_or_default();
+    for directory in env::split_paths(&path) {
+        let candidate = directory.join(command);
+        if candidate.is_file() {
+            return fs::canonicalize(&candidate).map_err(|error| {
+                format!(
+                    "failed to canonicalize executable '{}': {error}",
+                    candidate.display()
+                )
+            });
+        }
+    }
+    Err(format!(
+        "strict runner isolation could not resolve executable '{command}' on PATH"
+    ))
 }
 
 fn canonicalize_for_sandbox(label: &str, path: &str) -> Result<String, String> {
@@ -229,7 +334,7 @@ fn run_request(request: RunnerRequest, mode: SandboxMode) -> RunnerResponse {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    if let Some(cwd) = request.cwd.as_deref() {
+    if let Some(cwd) = plan.cwd.as_deref() {
         command.current_dir(cwd);
     }
 
@@ -240,8 +345,13 @@ fn run_request(request: RunnerRequest, mode: SandboxMode) -> RunnerResponse {
         command.env("TMPDIR", tmpdir);
     }
 
+    if let Some(root) = plan.strict_root.as_deref() {
+        command.env("HOME", root);
+    }
+
     for (key, value) in request.env {
-        if is_safe_env_key(&key) {
+        let strict_boundary_env = plan.strict_root.is_some() && (key == "HOME" || key == "TMPDIR");
+        if is_safe_env_key(&key) && !strict_boundary_env {
             command.env(key, value);
         }
     }
@@ -316,7 +426,11 @@ fn run_request(request: RunnerRequest, mode: SandboxMode) -> RunnerResponse {
         stderr: mark_if_truncated(stderr, stderr_truncated),
         timed_out,
         truncated: stdout_truncated || stderr_truncated,
-        error: if timed_out { Some(describe_timeout(timeout.as_millis())) } else { None },
+        error: if timed_out {
+            Some(describe_timeout(timeout.as_millis()))
+        } else {
+            None
+        },
         sandbox_warning: plan.sandbox_warning,
     }
 }
@@ -358,7 +472,9 @@ fn recv_drained(drainer: mpsc::Receiver<(String, bool)>) -> (String, bool) {
     // A timed-out or disconnected drainer means the captured stream is unknown,
     // never complete. Preserve the runner response but surface `truncated` so a
     // caller cannot treat an empty fallback as a clean command result.
-    drainer.recv_timeout(DRAIN_RECV_TIMEOUT).unwrap_or_else(|_| (String::new(), true))
+    drainer
+        .recv_timeout(DRAIN_RECV_TIMEOUT)
+        .unwrap_or_else(|_| (String::new(), true))
 }
 
 /// Self-labelled marker appended to a captured stream that was truncated at the
@@ -393,7 +509,8 @@ fn spawn_drainer<R: Read + Send + 'static>(
                 match pipe.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(read) => {
-                        truncated = append_capped(&mut kept, &buffer[..read], max_output_bytes) || truncated;
+                        truncated = append_capped(&mut kept, &buffer[..read], max_output_bytes)
+                            || truncated;
                     }
                     Err(_) => break,
                 }
@@ -450,45 +567,97 @@ fn append_capped(kept: &mut Vec<u8>, chunk: &[u8], max_output_bytes: usize) -> b
 // NODE_OPTIONS (--require), shell startup (BASH_ENV/ENV), interpreter opt/path
 // injection (perl/python/ruby), and git's command-exec hooks.
 const UNSAFE_ENV_EXACT: &[&str] = &[
-    "NODE_OPTIONS", "NODE_PATH",
-    "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS",
-    "PERL5OPT", "PERL5DB", "PERLLIB", "PERL5LIB",
-    "PYTHONSTARTUP", "PYTHONPATH", "PYTHONINSPECT", "PYTHONHOME",
-    "RUBYOPT", "RUBYLIB", "GEM_HOME", "GEM_PATH",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "BASH_ENV",
+    "ENV",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "PERL5OPT",
+    "PERL5DB",
+    "PERLLIB",
+    "PERL5LIB",
+    "PYTHONSTARTUP",
+    "PYTHONPATH",
+    "PYTHONINSPECT",
+    "PYTHONHOME",
+    "RUBYOPT",
+    "RUBYLIB",
+    "GEM_HOME",
+    "GEM_PATH",
     // JVM honors -javaagent via *_JAVA_OPTIONS on startup; CLASSPATH/LESSOPEN same class.
-    "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH", "LESSOPEN",
+    "JAVA_TOOL_OPTIONS",
+    "_JAVA_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+    "CLASSPATH",
+    "LESSOPEN",
     // PATH is the ONLY resolution path for a bare command name (a `/` is rejected),
     // so a model-set PATH redirects a guard-passing name to an attacker binary.
     // Strip it; the runner-set PATH (above) resolves normal commands.
     "PATH",
-    "GIT_SSH_COMMAND", "GIT_SSH", "GIT_EXTERNAL_DIFF", "GIT_PAGER", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "GIT_PROXY_COMMAND", "GIT_ASKPASS",
-    "EDITOR", "VISUAL",
+    "GIT_SSH_COMMAND",
+    "GIT_SSH",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_PAGER",
+    "GIT_EDITOR",
+    "GIT_SEQUENCE_EDITOR",
+    "GIT_PROXY_COMMAND",
+    "GIT_ASKPASS",
+    "EDITOR",
+    "VISUAL",
     // Git discovers subcommands from GIT_EXEC_PATH and copies hooks from its
     // template directory. Both turn a guard-approved `git` command into an
     // arbitrary executable path controlled by the request environment.
-    "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR", "GIT_DIR", "GIT_COMMON_DIR",
+    "GIT_EXEC_PATH",
+    "GIT_TEMPLATE_DIR",
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
     // GIT_CONFIG* point git at an attacker config (core.sshCommand / core.pager)
     // — a second path to the command-exec hooks above.
-    "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
     // Cargo can replace every compiler/doc/formatter invocation, configure a
     // registry credential provider, or hand execution to an arbitrary browser.
-    "CARGO", "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTC_WRAPPER",
-    "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER", "CARGO_BUILD_RUSTDOC", "CARGO_BUILD_TARGET",
-    "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_RUSTDOCFLAGS",
-    "CARGO_REGISTRY_CREDENTIAL_PROVIDER", "CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS",
+    "CARGO",
+    "CARGO_BUILD_RUSTC",
+    "CARGO_BUILD_RUSTC_WRAPPER",
+    "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+    "CARGO_BUILD_RUSTDOC",
+    "CARGO_BUILD_TARGET",
+    "CARGO_BUILD_RUSTFLAGS",
+    "CARGO_BUILD_RUSTDOCFLAGS",
+    "CARGO_REGISTRY_CREDENTIAL_PROVIDER",
+    "CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS",
     // The runner starts from env_clear(); accepting these overrides would
     // re-enable user-controlled Cargo/Git global configuration discovery.
-    "CARGO_HOME", "HOME", "XDG_CONFIG_HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
-    "RUSTC", "RUSTC_WRAPPER",
-    "RUSTC_WORKSPACE_WRAPPER", "RUSTDOC", "RUSTDOCFLAGS", "RUSTFLAGS",
-    "CARGO_ENCODED_RUSTDOCFLAGS", "CARGO_ENCODED_RUSTFLAGS", "RUSTFMT",
+    "CARGO_HOME",
+    "HOME",
+    "XDG_CONFIG_HOME",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "RUSTC",
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "RUSTDOC",
+    "RUSTDOCFLAGS",
+    "RUSTFLAGS",
+    "CARGO_ENCODED_RUSTDOCFLAGS",
+    "CARGO_ENCODED_RUSTFLAGS",
+    "RUSTFMT",
     // Rustup proxy binaries honor both a selected toolchain (including an
     // absolute custom-toolchain path) and an alternate toolchain/config root.
-    "RUSTUP_HOME", "RUSTUP_TOOLCHAIN",
-    "BROWSER", "PAGER", "MANPAGER",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+    "BROWSER",
+    "PAGER",
+    "MANPAGER",
     // OpenSSH invokes the configured askpass helper and loads a requested
     // security-key provider library before it ever reaches the remote host.
-    "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "SSH_SK_PROVIDER",
+    "SSH_ASKPASS",
+    "SSH_ASKPASS_REQUIRE",
+    "SSH_SK_PROVIDER",
 ];
 
 const UNSAFE_ENV_PREFIXES: &[&str] = &[
@@ -501,8 +670,12 @@ const UNSAFE_ENV_PREFIXES: &[&str] = &[
 
 fn is_safe_env_key(key: &str) -> bool {
     !key.is_empty()
-        && !["LD_", "DYLD_"].iter().any(|prefix| key.starts_with(prefix))
-        && !UNSAFE_ENV_PREFIXES.iter().any(|prefix| key.starts_with(prefix))
+        && !["LD_", "DYLD_"]
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
+        && !UNSAFE_ENV_PREFIXES
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
         && !(key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_CREDENTIAL_PROVIDER"))
         && !UNSAFE_ENV_EXACT.contains(&key)
         && key
@@ -602,12 +775,20 @@ fn build_seatbelt_profile(spec: &SeatbeltSpec) -> String {
     // Without this, even `sh -c 'echo x > /dev/null'` and ALL of git fail
     // ("could not open /dev/null") — every well-behaved Unix tool routinely
     // discards output through these two devices.
-    profile.push_str("(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))\n");
+    profile.push_str(
+        "(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))\n",
+    );
 
     if let Some(cwd) = spec.cwd {
-        profile.push_str(&format!("(allow file-write* (subpath \"{}\"))\n", escape_sbpl_string(cwd)));
+        profile.push_str(&format!(
+            "(allow file-write* (subpath \"{}\"))\n",
+            escape_sbpl_string(cwd)
+        ));
     }
-    profile.push_str(&format!("(allow file-write* (subpath \"{}\"))\n", escape_sbpl_string(spec.tmpdir)));
+    profile.push_str(&format!(
+        "(allow file-write* (subpath \"{}\"))\n",
+        escape_sbpl_string(spec.tmpdir)
+    ));
     // Some tools hardcode `/tmp` rather than reading `$TMPDIR` — on macOS that
     // is itself a symlink to `/private/tmp`, so allow it explicitly alongside
     // the canonicalized `spec.tmpdir` rather than relying on the two coinciding.
@@ -617,7 +798,10 @@ fn build_seatbelt_profile(spec: &SeatbeltSpec) -> String {
         let home = home.trim_end_matches('/');
         for suffix in RW_CACHE_HOME_SUBPATHS {
             let path = format!("{home}/{suffix}");
-            profile.push_str(&format!("(allow file-write* (subpath \"{}\"))\n", escape_sbpl_string(&path)));
+            profile.push_str(&format!(
+                "(allow file-write* (subpath \"{}\"))\n",
+                escape_sbpl_string(&path)
+            ));
         }
     }
     // `home: None` omits the cache rules entirely rather than emitting a
@@ -632,6 +816,51 @@ fn build_seatbelt_profile(spec: &SeatbeltSpec) -> String {
     // above already denies it, and adding a redundant `(deny network*)` would
     // just be noise.
 
+    profile
+}
+
+/// Strict profile for caller-scoped eval/code execution. Unlike the normal
+/// local runner sandbox, this boundary protects confidentiality as well as
+/// integrity: fixture-external file contents are not readable.
+fn build_strict_seatbelt_profile(
+    isolation_root: &str,
+    executable: &str,
+    allow_network: bool,
+) -> String {
+    let root = escape_sbpl_string(isolation_root);
+    let executable = escape_sbpl_string(executable);
+    let mut profile = String::new();
+    profile.push_str("(version 1)\n");
+    profile.push_str("(deny default)\n\n");
+    profile.push_str("(allow process-fork)\n");
+    profile.push_str(&format!(
+        "(allow process-exec (literal \"{executable}\"))\n"
+    ));
+    profile.push_str("(allow signal (target self))\n");
+    profile.push_str("(allow sysctl-read)\n");
+    profile.push('\n');
+
+    // Metadata is needed to traverse to the fixture and resolve executables;
+    // file contents remain deny-by-default outside the explicit roots below.
+    profile.push_str("(allow file-read-metadata)\n");
+    // dyld/libSystem opens the root directory during process startup on current
+    // macOS. This permits only that directory object, not any child contents.
+    profile.push_str("(allow file-read-data (literal \"/\"))\n");
+    profile.push_str(&format!("(allow file-read* (subpath \"{root}\"))\n"));
+    profile.push_str(&format!("(allow file-read* (literal \"{executable}\"))\n"));
+    // Only immutable Apple runtime libraries are shared with the child. Broad
+    // package/config roots such as /usr, /Library, and /opt are intentionally
+    // excluded: they can contain owner-installed and owner-writable secrets.
+    for system_root in ["/System", "/usr/lib"] {
+        profile.push_str(&format!("(allow file-read* (subpath \"{system_root}\"))\n"));
+    }
+    profile.push_str("(allow file-read* (literal \"/dev/null\") (literal \"/dev/random\") (literal \"/dev/urandom\"))\n\n");
+
+    profile.push_str("(allow file-write-data (literal \"/dev/null\"))\n");
+    profile.push_str(&format!("(allow file-write* (subpath \"{root}\"))\n"));
+    if allow_network {
+        profile.push_str("\n(allow network*)\n");
+    }
     profile
 }
 
@@ -658,15 +887,19 @@ mod tests {
 
     #[test]
     fn rejects_blank_commands() {
-        let response = run_request(RunnerRequest {
-            command: " ".to_string(),
-            args: vec![],
-            cwd: None,
-            env: BTreeMap::new(),
-            timeout_ms: None,
-            max_output_bytes: None,
-            allow_network: false,
-        }, SandboxMode::Disabled);
+        let response = run_request(
+            RunnerRequest {
+                command: " ".to_string(),
+                args: vec![],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout_ms: None,
+                max_output_bytes: None,
+                allow_network: false,
+                isolation_root: None,
+            },
+            SandboxMode::Disabled,
+        );
 
         assert!(!response.ok);
         assert_eq!(response.error.as_deref(), Some("command must not be blank"));
@@ -678,9 +911,19 @@ mod tests {
         // attacker binary, bypassing the command guard; *_JAVA_OPTIONS / PYTHONHOME
         // / loader vars are the same interpreter-startup code-exec class.
         for key in [
-            "PATH", "NODE_OPTIONS", "NODE_PATH", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS",
-            "JDK_JAVA_OPTIONS", "PYTHONHOME", "CLASSPATH", "LESSOPEN", "GEM_HOME",
-            "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "GIT_SSH_COMMAND",
+            "PATH",
+            "NODE_OPTIONS",
+            "NODE_PATH",
+            "JAVA_TOOL_OPTIONS",
+            "_JAVA_OPTIONS",
+            "JDK_JAVA_OPTIONS",
+            "PYTHONHOME",
+            "CLASSPATH",
+            "LESSOPEN",
+            "GEM_HOME",
+            "LD_PRELOAD",
+            "DYLD_INSERT_LIBRARIES",
+            "GIT_SSH_COMMAND",
         ] {
             assert!(!is_safe_env_key(key), "{key} must be rejected");
         }
@@ -690,15 +933,19 @@ mod tests {
 
     #[test]
     fn rejects_path_commands_to_avoid_shell_like_execution() {
-        let response = run_request(RunnerRequest {
-            command: "/bin/echo".to_string(),
-            args: vec!["hello".to_string()],
-            cwd: None,
-            env: BTreeMap::new(),
-            timeout_ms: None,
-            max_output_bytes: None,
-            allow_network: false,
-        }, SandboxMode::Disabled);
+        let response = run_request(
+            RunnerRequest {
+                command: "/bin/echo".to_string(),
+                args: vec!["hello".to_string()],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout_ms: None,
+                max_output_bytes: None,
+                allow_network: false,
+                isolation_root: None,
+            },
+            SandboxMode::Disabled,
+        );
 
         assert!(!response.ok);
         assert_eq!(
@@ -727,17 +974,27 @@ mod tests {
         // With concurrent pipe draining this completes near-instantly; the
         // pre-fix poll-only loop blocked until the timeout and reported a
         // false `timed_out`. A generous 10s timeout proves we don't rely on it.
-        let response = run_request(RunnerRequest {
-            command: "bash".to_string(),
-            args: vec!["-c".to_string(), "head -c 200000 /dev/zero | tr '\\0' a".to_string()],
-            cwd: None,
-            env: BTreeMap::new(),
-            timeout_ms: Some(10_000),
-            max_output_bytes: Some(1_000_000),
-            allow_network: false,
-        }, SandboxMode::Disabled);
+        let response = run_request(
+            RunnerRequest {
+                command: "bash".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    "head -c 200000 /dev/zero | tr '\\0' a".to_string(),
+                ],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout_ms: Some(10_000),
+                max_output_bytes: Some(1_000_000),
+                allow_network: false,
+                isolation_root: None,
+            },
+            SandboxMode::Disabled,
+        );
 
-        assert!(!response.timed_out, "large output must not be killed as a timeout");
+        assert!(
+            !response.timed_out,
+            "large output must not be killed as a timeout"
+        );
         assert!(response.ok, "a command that exits 0 must report ok");
         assert_eq!(response.stdout.len(), 200_000);
         assert!(!response.truncated);
@@ -745,22 +1002,35 @@ mod tests {
 
     #[test]
     fn caps_output_without_blocking_when_it_exceeds_max_bytes() {
-        let response = run_request(RunnerRequest {
-            command: "bash".to_string(),
-            args: vec!["-c".to_string(), "head -c 200000 /dev/zero | tr '\\0' a".to_string()],
-            cwd: None,
-            env: BTreeMap::new(),
-            timeout_ms: Some(10_000),
-            max_output_bytes: Some(1024),
-            allow_network: false,
-        }, SandboxMode::Disabled);
+        let response = run_request(
+            RunnerRequest {
+                command: "bash".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    "head -c 200000 /dev/zero | tr '\\0' a".to_string(),
+                ],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout_ms: Some(10_000),
+                max_output_bytes: Some(1024),
+                allow_network: false,
+                isolation_root: None,
+            },
+            SandboxMode::Disabled,
+        );
 
         assert!(!response.timed_out);
         assert!(response.ok);
         // stdout is the capped 1024 bytes of program output PLUS the self-labelled
         // in-band truncation marker (the capped content itself is unchanged).
-        assert!(response.stdout.starts_with(&"a".repeat(1024)), "the capped program output is preserved");
-        assert!(response.stdout.contains("[muse: output truncated"), "a truncated stream carries the in-band marker");
+        assert!(
+            response.stdout.starts_with(&"a".repeat(1024)),
+            "the capped program output is preserved"
+        );
+        assert!(
+            response.stdout.contains("[muse: output truncated"),
+            "a truncated stream carries the in-band marker"
+        );
         assert_eq!(response.stdout.len(), 1024 + OUTPUT_TRUNCATION_MARKER.len());
         assert!(response.truncated);
     }
@@ -796,7 +1066,23 @@ mod tests {
 
     #[test]
     fn rejects_the_whole_code_injection_env_family() {
-        for key in ["NODE_OPTIONS", "BASH_ENV", "ENV", "SHELLOPTS", "PERL5OPT", "PYTHONSTARTUP", "PYTHONPATH", "RUBYOPT", "GIT_SSH_COMMAND", "GIT_EXTERNAL_DIFF", "GIT_PAGER", "GIT_PROXY_COMMAND", "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"] {
+        for key in [
+            "NODE_OPTIONS",
+            "BASH_ENV",
+            "ENV",
+            "SHELLOPTS",
+            "PERL5OPT",
+            "PYTHONSTARTUP",
+            "PYTHONPATH",
+            "RUBYOPT",
+            "GIT_SSH_COMMAND",
+            "GIT_EXTERNAL_DIFF",
+            "GIT_PAGER",
+            "GIT_PROXY_COMMAND",
+            "GIT_CONFIG",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_CONFIG_SYSTEM",
+        ] {
             assert!(!is_safe_env_key(key), "{key} must be rejected");
         }
         // Legitimate, similarly-named vars survive.
@@ -810,22 +1096,47 @@ mod tests {
         // Each variable below is documented by its owning tool as choosing an
         // executable, executable search path, hook template, or loaded library.
         for key in [
-            "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR", "GIT_CONFIG_COUNT",
-            "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_DIR", "GIT_COMMON_DIR",
-            "GIT_EDITOR", "GIT_SEQUENCE_EDITOR", "EDITOR", "VISUAL",
-            "RUSTC", "RUSTC_WRAPPER",
-            "RUSTC_WORKSPACE_WRAPPER", "RUSTDOC", "RUSTFMT", "RUSTFLAGS",
-            "CARGO_BUILD_RUSTC", "CARGO_BUILD_RUSTC_WRAPPER",
-            "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER", "CARGO_BUILD_RUSTDOC", "CARGO_BUILD_TARGET",
-            "CARGO_BUILD_RUSTFLAGS", "CARGO_BUILD_RUSTDOCFLAGS",
+            "GIT_EXEC_PATH",
+            "GIT_TEMPLATE_DIR",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+            "GIT_DIR",
+            "GIT_COMMON_DIR",
+            "GIT_EDITOR",
+            "GIT_SEQUENCE_EDITOR",
+            "EDITOR",
+            "VISUAL",
+            "RUSTC",
+            "RUSTC_WRAPPER",
+            "RUSTC_WORKSPACE_WRAPPER",
+            "RUSTDOC",
+            "RUSTFMT",
+            "RUSTFLAGS",
+            "CARGO_BUILD_RUSTC",
+            "CARGO_BUILD_RUSTC_WRAPPER",
+            "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+            "CARGO_BUILD_RUSTDOC",
+            "CARGO_BUILD_TARGET",
+            "CARGO_BUILD_RUSTFLAGS",
+            "CARGO_BUILD_RUSTDOCFLAGS",
             "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER",
             "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
             "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS",
             "CARGO_REGISTRY_CREDENTIAL_PROVIDER",
             "CARGO_REGISTRIES_PRIVATE_CREDENTIAL_PROVIDER",
-            "CARGO_HOME", "HOME", "XDG_CONFIG_HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
-            "RUSTUP_HOME", "RUSTUP_TOOLCHAIN",
-            "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "SSH_SK_PROVIDER", "BROWSER",
+            "CARGO_HOME",
+            "HOME",
+            "XDG_CONFIG_HOME",
+            "USERPROFILE",
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "RUSTUP_HOME",
+            "RUSTUP_TOOLCHAIN",
+            "SSH_ASKPASS",
+            "SSH_ASKPASS_REQUIRE",
+            "SSH_SK_PROVIDER",
+            "BROWSER",
         ] {
             assert!(!is_safe_env_key(key), "{key} must be rejected");
         }
@@ -837,14 +1148,26 @@ mod tests {
     fn timeout_message_is_actionable() {
         let msg = describe_timeout(5000);
         assert!(msg.contains("5000ms"), "names the elapsed timeout: {msg}");
-        assert!(msg.contains("timed out") && msg.contains("killed"), "explains the kill: {msg}");
-        assert!(msg.contains("timeoutMs"), "tells the model how to react: {msg}");
+        assert!(
+            msg.contains("timed out") && msg.contains("killed"),
+            "explains the kill: {msg}"
+        );
+        assert!(
+            msg.contains("timeoutMs"),
+            "tells the model how to react: {msg}"
+        );
         // A timeout means the command needed MORE time than the budget — so the
         // remediation must advise a LARGER timeout, never a smaller one (a smaller
         // budget kills the retry sooner). Pin the DIRECTION, not just the token
         // (JUDGE-DRILL #4: "smaller timeoutMs" passed a contains-only check).
-        assert!(msg.contains("larger"), "advises MORE time on a timeout: {msg}");
-        assert!(!msg.contains("smaller"), "never advises a smaller timeout — it would kill the retry sooner: {msg}");
+        assert!(
+            msg.contains("larger"),
+            "advises MORE time on a timeout: {msg}"
+        );
+        assert!(
+            !msg.contains("smaller"),
+            "never advises a smaller timeout — it would kill the retry sooner: {msg}"
+        );
         assert!(!msg.contains("os error"), "no raw errno: {msg}");
     }
 
@@ -853,15 +1176,19 @@ mod tests {
     fn run_request_surfaces_the_timeout_message_end_to_end() {
         // a real command that outlives a tiny timeout → killed → the model must
         // receive BOTH timed_out=true AND the actionable error message (not None).
-        let resp = run_request(RunnerRequest {
-            command: "sleep".to_string(),
-            args: vec!["5".to_string()],
-            cwd: None,
-            env: std::collections::BTreeMap::new(),
-            timeout_ms: Some(50),
-            max_output_bytes: None,
-            allow_network: false,
-        }, SandboxMode::Disabled);
+        let resp = run_request(
+            RunnerRequest {
+                command: "sleep".to_string(),
+                args: vec!["5".to_string()],
+                cwd: None,
+                env: std::collections::BTreeMap::new(),
+                timeout_ms: Some(50),
+                max_output_bytes: None,
+                allow_network: false,
+                isolation_root: None,
+            },
+            SandboxMode::Disabled,
+        );
         assert!(resp.timed_out, "the command was killed for timing out");
         assert!(!resp.ok, "a timed-out command is not ok");
         assert!(
@@ -899,19 +1226,29 @@ mod tests {
         let script = format!("(sleep 2 && touch {marker_path}) &\necho parent-done");
 
         let started = Instant::now();
-        let response = run_request(RunnerRequest {
-            command: "sh".to_string(),
-            args: vec!["-c".to_string(), script],
-            cwd: None,
-            env: BTreeMap::new(),
-            timeout_ms: Some(5_000),
-            max_output_bytes: None,
-            allow_network: false,
-        }, SandboxMode::Disabled);
+        let response = run_request(
+            RunnerRequest {
+                command: "sh".to_string(),
+                args: vec!["-c".to_string(), script],
+                cwd: None,
+                env: BTreeMap::new(),
+                timeout_ms: Some(5_000),
+                max_output_bytes: None,
+                allow_network: false,
+                isolation_root: None,
+            },
+            SandboxMode::Disabled,
+        );
         let elapsed = started.elapsed();
 
-        assert!(response.ok, "the direct child completes normally: {response:?}");
-        assert!(!response.timed_out, "the direct child exits well within the 5s timeout: {response:?}");
+        assert!(
+            response.ok,
+            "the direct child completes normally: {response:?}"
+        );
+        assert!(
+            !response.timed_out,
+            "the direct child exits well within the 5s timeout: {response:?}"
+        );
         assert!(
             elapsed < Duration::from_secs(1),
             "the runner must return promptly once the direct child exits, not wedge on the orphaned grandchild's pipe: {elapsed:?}"
@@ -933,16 +1270,34 @@ mod tests {
     fn spawn_error_maps_to_actionable_message() {
         use std::io::{Error, ErrorKind};
         // command-not-found → names the command, no raw "os error", actionable.
-        let nf = describe_spawn_error("pytest", &Error::new(ErrorKind::NotFound, "No such file or directory (os error 2)"));
+        let nf = describe_spawn_error(
+            "pytest",
+            &Error::new(
+                ErrorKind::NotFound,
+                "No such file or directory (os error 2)",
+            ),
+        );
         assert!(nf.contains("pytest"), "names the command: {nf}");
-        assert!(nf.contains("not found") && nf.contains("PATH"), "actionable: {nf}");
+        assert!(
+            nf.contains("not found") && nf.contains("PATH"),
+            "actionable: {nf}"
+        );
         assert!(!nf.contains("os error"), "no raw errno: {nf}");
         // sibling: not-executable
-        let pd = describe_spawn_error("script.sh", &Error::new(ErrorKind::PermissionDenied, "denied"));
-        assert!(pd.contains("script.sh") && pd.contains("not executable"), "perm: {pd}");
+        let pd = describe_spawn_error(
+            "script.sh",
+            &Error::new(ErrorKind::PermissionDenied, "denied"),
+        );
+        assert!(
+            pd.contains("script.sh") && pd.contains("not executable"),
+            "perm: {pd}"
+        );
         // anything else falls through to the generic message (unchanged).
         let other = describe_spawn_error("x", &Error::other("weird failure"));
-        assert!(other.contains("failed to spawn command") && other.contains("weird failure"), "generic: {other}");
+        assert!(
+            other.contains("failed to spawn command") && other.contains("weird failure"),
+            "generic: {other}"
+        );
     }
 
     #[test]
@@ -952,29 +1307,114 @@ mod tests {
         assert_eq!(effective_timeout_ms(Some(5_000)), 5_000);
         assert_eq!(effective_timeout_ms(Some(0)), 1);
         assert_eq!(effective_timeout_ms(None), DEFAULT_TIMEOUT_MS);
-        assert_eq!(effective_max_output_bytes(Some(5_000_000_000)), MAX_OUTPUT_BYTES);
+        assert_eq!(
+            effective_max_output_bytes(Some(5_000_000_000)),
+            MAX_OUTPUT_BYTES
+        );
         assert_eq!(effective_max_output_bytes(Some(1024)), 1024);
         assert_eq!(effective_max_output_bytes(None), DEFAULT_MAX_OUTPUT_BYTES);
     }
 
     #[test]
     fn seatbelt_profile_has_the_version_header_and_denies_by_default() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/tmp", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/tmp",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
-        assert!(profile.starts_with("(version 1)\n"), "version header must lead the profile: {profile}");
-        assert!(profile.contains("(deny default)"), "profile must deny by default: {profile}");
+        assert!(
+            profile.starts_with("(version 1)\n"),
+            "version header must lead the profile: {profile}"
+        );
+        assert!(
+            profile.contains("(deny default)"),
+            "profile must deny by default: {profile}"
+        );
+    }
+
+    #[test]
+    fn strict_isolation_profile_reads_and_writes_only_the_fixture_plus_system_runtime() {
+        let profile =
+            build_strict_seatbelt_profile("/private/tmp/muse-fixture", "/usr/bin/node", false);
+        assert!(
+            profile.contains("(allow file-read* (subpath \"/private/tmp/muse-fixture\"))"),
+            "fixture contents must be readable: {profile}"
+        );
+        assert!(
+            profile.contains("(allow file-write* (subpath \"/private/tmp/muse-fixture\"))"),
+            "fixture contents must be writable: {profile}"
+        );
+        assert!(
+            !profile
+                .lines()
+                .any(|line| line.trim() == "(allow file-read*)"),
+            "strict isolation must not retain the broad external-read allowance: {profile}"
+        );
+        assert!(
+            profile.contains("(allow file-read-data (literal \"/\"))"),
+            "macOS runtime gets the root directory object only, never a root subpath allowance: {profile}"
+        );
+        assert!(
+            !profile.contains("(allow file-read* (subpath \"/\"))"),
+            "root descendants must remain denied: {profile}"
+        );
+        assert!(
+            !profile.contains("Library/pnpm/store"),
+            "strict isolation must not expose owner caches: {profile}"
+        );
+        assert!(
+            profile.contains("(allow process-exec (literal \"/usr/bin/node\"))"),
+            "only the resolved executable may run: {profile}"
+        );
+        assert!(
+            !profile.contains("process-exec*"),
+            "strict isolation must not execute arbitrary binaries: {profile}"
+        );
+        assert!(
+            !profile.contains("(allow mach-lookup)"),
+            "strict isolation must not expose arbitrary Mach services: {profile}"
+        );
+        for forbidden in [
+            "/opt/homebrew",
+            "/opt/local",
+            "/Library",
+            "/usr\"",
+            "/private/etc",
+            "/private/var/db",
+            "(subpath \"/dev\")",
+        ] {
+            assert!(
+                !profile.contains(forbidden),
+                "mutable or overly broad runtime root must stay denied ({forbidden}): {profile}"
+            );
+        }
     }
 
     #[test]
     fn seatbelt_profile_allows_file_reads_broadly() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/tmp", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/tmp",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
-        assert!(profile.contains("(allow file-read*)"), "reads are not the gated threat: {profile}");
+        assert!(
+            profile.contains("(allow file-read*)"),
+            "reads are not the gated threat: {profile}"
+        );
     }
 
     #[test]
     fn seatbelt_profile_allows_write_under_cwd_when_present() {
-        let spec = SeatbeltSpec { cwd: Some("/tmp/work"), tmpdir: "/var/tmp", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: Some("/tmp/work"),
+            tmpdir: "/var/tmp",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
         assert!(
             profile.contains("(allow file-write* (subpath \"/tmp/work\"))"),
@@ -984,17 +1424,30 @@ mod tests {
 
     #[test]
     fn seatbelt_profile_has_no_cwd_write_rule_when_cwd_absent() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/var/tmp", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/var/tmp",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
         // The tmpdir rule and the always-on /private/tmp rule should be present —
         // no other subpath rule (i.e. no cwd rule).
         let write_rule_count = profile.matches("(allow file-write*").count();
-        assert_eq!(write_rule_count, 2, "tmpdir + /private/tmp only, no cwd rule: {profile}");
+        assert_eq!(
+            write_rule_count, 2,
+            "tmpdir + /private/tmp only, no cwd rule: {profile}"
+        );
     }
 
     #[test]
     fn seatbelt_profile_always_allows_write_under_tmpdir() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/private/var/tmp", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/private/var/tmp",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
         assert!(
             profile.contains("(allow file-write* (subpath \"/private/var/tmp\"))"),
@@ -1004,17 +1457,29 @@ mod tests {
 
     #[test]
     fn seatbelt_profile_allows_dev_null_and_dtracehelper_writes() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/tmp", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/tmp",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
         assert!(
-            profile.contains("(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))"),
+            profile.contains(
+                "(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))"
+            ),
             "sh/git write to /dev/null and dtrace helper must be allowed: {profile}"
         );
     }
 
     #[test]
     fn seatbelt_profile_always_allows_write_under_private_tmp() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/var/folders/x/y", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/var/folders/x/y",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
         assert!(
             profile.contains("(allow file-write* (subpath \"/private/tmp\"))"),
@@ -1024,10 +1489,23 @@ mod tests {
 
     #[test]
     fn seatbelt_profile_denies_network_by_default_and_allows_when_requested() {
-        let denied = build_seatbelt_profile(&SeatbeltSpec { cwd: None, tmpdir: "/tmp", home: None, allow_network: false });
-        assert!(!denied.contains("(allow network*)"), "network must not be allowed by default: {denied}");
+        let denied = build_seatbelt_profile(&SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/tmp",
+            home: None,
+            allow_network: false,
+        });
+        assert!(
+            !denied.contains("(allow network*)"),
+            "network must not be allowed by default: {denied}"
+        );
 
-        let allowed = build_seatbelt_profile(&SeatbeltSpec { cwd: None, tmpdir: "/tmp", home: None, allow_network: true });
+        let allowed = build_seatbelt_profile(&SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/tmp",
+            home: None,
+            allow_network: true,
+        });
         assert_eq!(
             allowed.matches("(allow network*)").count(),
             1,
@@ -1037,22 +1515,56 @@ mod tests {
 
     #[test]
     fn seatbelt_profile_expands_home_into_absolute_cache_write_rules() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/tmp", home: Some("/Users/x"), allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/tmp",
+            home: Some("/Users/x"),
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
-        assert!(profile.contains("(allow file-write* (subpath \"/Users/x/Library/pnpm/store\"))"), "{profile}");
-        assert!(profile.contains("(allow file-write* (subpath \"/Users/x/.npm\"))"), "{profile}");
-        assert!(profile.contains("(allow file-write* (subpath \"/Users/x/.cache\"))"), "{profile}");
-        assert!(!profile.contains('~'), "no literal tilde — SBPL never expands it: {profile}");
+        assert!(
+            profile.contains("(allow file-write* (subpath \"/Users/x/Library/pnpm/store\"))"),
+            "{profile}"
+        );
+        assert!(
+            profile.contains("(allow file-write* (subpath \"/Users/x/.npm\"))"),
+            "{profile}"
+        );
+        assert!(
+            profile.contains("(allow file-write* (subpath \"/Users/x/.cache\"))"),
+            "{profile}"
+        );
+        assert!(
+            !profile.contains('~'),
+            "no literal tilde — SBPL never expands it: {profile}"
+        );
     }
 
     #[test]
     fn seatbelt_profile_omits_cache_write_rules_when_home_is_absent() {
-        let spec = SeatbeltSpec { cwd: None, tmpdir: "/tmp", home: None, allow_network: false };
+        let spec = SeatbeltSpec {
+            cwd: None,
+            tmpdir: "/tmp",
+            home: None,
+            allow_network: false,
+        };
         let profile = build_seatbelt_profile(&spec);
-        assert!(!profile.contains("pnpm/store"), "no pnpm cache rule without a home: {profile}");
-        assert!(!profile.contains(".npm"), "no npm cache rule without a home: {profile}");
-        assert!(!profile.contains(".cache"), "no generic cache rule without a home: {profile}");
-        assert!(!profile.contains('~'), "no literal tilde stand-in either: {profile}");
+        assert!(
+            !profile.contains("pnpm/store"),
+            "no pnpm cache rule without a home: {profile}"
+        );
+        assert!(
+            !profile.contains(".npm"),
+            "no npm cache rule without a home: {profile}"
+        );
+        assert!(
+            !profile.contains(".cache"),
+            "no generic cache rule without a home: {profile}"
+        );
+        assert!(
+            !profile.contains('~'),
+            "no literal tilde stand-in either: {profile}"
+        );
     }
 
     #[test]
@@ -1067,7 +1579,9 @@ mod tests {
         assert!(profile.starts_with("(version 1)\n(deny default)\n"));
         assert!(profile.contains("(allow process-exec*)"));
         assert!(profile.contains("(allow file-read*)"));
-        assert!(profile.contains("(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))"));
+        assert!(profile.contains(
+            "(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))"
+        ));
         assert!(profile.contains("(allow file-write* (subpath \"/tmp/work\"))"));
         assert!(profile.contains("(allow file-write* (subpath \"/var/tmp\"))"));
         assert!(profile.contains("(allow file-write* (subpath \"/private/tmp\"))"));
@@ -1080,20 +1594,25 @@ mod tests {
         let raw = r#"/tmp/evil"))(allow network*)(dummy "path\end"#;
         let escaped = escape_sbpl_string(raw);
         assert_eq!(
-            escaped,
-            r#"/tmp/evil\"))(allow network*)(dummy \"path\\end"#,
+            escaped, r#"/tmp/evil\"))(allow network*)(dummy \"path\\end"#,
             "every quote and backslash must be escaped exactly: {escaped}"
         );
         // Splicing the escaped form into a double-quoted SBPL literal must not
         // let an unescaped `"` close the string early.
-        assert!(!would_close_early(&escaped), "no unescaped quote should close the SBPL string early: {escaped}");
+        assert!(
+            !would_close_early(&escaped),
+            "no unescaped quote should close the SBPL string early: {escaped}"
+        );
     }
 
     #[test]
     fn escape_sbpl_string_strips_control_characters() {
         let raw = "/tmp/evil\n(allow network*)\t\r";
         let escaped = escape_sbpl_string(raw);
-        assert_eq!(escaped, "/tmp/evil(allow network*)", "control chars are stripped, not passed through: {escaped}");
+        assert_eq!(
+            escaped, "/tmp/evil(allow network*)",
+            "control chars are stripped, not passed through: {escaped}"
+        );
         assert!(!escaped.contains('\n') && !escaped.contains('\t') && !escaped.contains('\r'));
     }
 
@@ -1130,12 +1649,14 @@ mod tests {
             timeout_ms: None,
             max_output_bytes: None,
             allow_network: false,
+            isolation_root: None,
         }
     }
 
     #[test]
     fn disabled_plan_is_an_identical_passthrough() {
-        let plan = spawn_plan(&sample_request(), SandboxMode::Disabled).expect("disabled mode never fails to plan");
+        let plan = spawn_plan(&sample_request(), SandboxMode::Disabled)
+            .expect("disabled mode never fails to plan");
         assert_eq!(plan.program, "node");
         assert_eq!(plan.args, vec!["report.mjs".to_string()]);
         assert_eq!(plan.sandbox_warning, None);
@@ -1149,17 +1670,86 @@ mod tests {
             .expect("unsupported-platform mode falls back, it never fails to plan");
         assert_eq!(plan.program, "node");
         assert_eq!(plan.args, vec!["report.mjs".to_string()]);
-        assert!(!plan.sandbox_active, "unsupported platform never actually sandboxes");
-        let warning = plan.sandbox_warning.expect("a requested-but-unsupported sandbox must surface a warning");
-        assert!(warning.contains("seatbelt"), "names the requested mechanism: {warning}");
-        assert!(warning.to_lowercase().contains("unsandboxed") || warning.to_lowercase().contains("without"), "says the command still ran: {warning}");
+        assert!(
+            !plan.sandbox_active,
+            "unsupported platform never actually sandboxes"
+        );
+        let warning = plan
+            .sandbox_warning
+            .expect("a requested-but-unsupported sandbox must surface a warning");
+        assert!(
+            warning.contains("seatbelt"),
+            "names the requested mechanism: {warning}"
+        );
+        assert!(
+            warning.to_lowercase().contains("unsandboxed")
+                || warning.to_lowercase().contains("without"),
+            "says the command still ran: {warning}"
+        );
+    }
+
+    #[test]
+    fn strict_isolation_rejects_an_external_cwd_before_planning_a_child() {
+        let root =
+            std::env::temp_dir().join(format!("muse-runner-strict-root-{}", std::process::id()));
+        let outside =
+            std::env::temp_dir().join(format!("muse-runner-strict-outside-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("strict root must be creatable");
+        std::fs::create_dir_all(&outside).expect("outside cwd must be creatable");
+        let mut request = sample_request();
+        request.cwd = Some(outside.to_string_lossy().into_owned());
+        request.isolation_root = Some(root.to_string_lossy().into_owned());
+
+        let error = spawn_plan(&request, SandboxMode::Disabled).expect_err(
+            "strict isolation must reject cwd outside its canonical root before any spawn",
+        );
+        assert!(
+            error.contains("cwd") && error.contains("isolation root"),
+            "actionable boundary error: {error}"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn strict_isolation_rejects_a_cwd_symlink_to_outside_the_root() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "muse-runner-strict-link-root-{}",
+            std::process::id()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "muse-runner-strict-link-outside-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("strict root must be creatable");
+        std::fs::create_dir_all(&outside).expect("outside cwd must be creatable");
+        let escape = root.join("escape");
+        symlink(&outside, &escape).expect("symlink probe must be creatable");
+        let mut request = sample_request();
+        request.cwd = Some(escape.to_string_lossy().into_owned());
+        request.isolation_root = Some(root.to_string_lossy().into_owned());
+
+        let error = spawn_plan(&request, SandboxMode::Disabled)
+            .expect_err("canonical symlink target outside the root must fail before spawn");
+        assert!(
+            error.contains("cwd") && error.contains("isolation root"),
+            "actionable boundary error: {error}"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn seatbelt_plan_wraps_the_command_in_sandbox_exec_with_a_canonicalized_cwd_rule() {
         let dir = std::env::temp_dir();
-        let canonical_dir = std::fs::canonicalize(&dir).expect("temp dir must canonicalize on a real machine");
+        let canonical_dir =
+            std::fs::canonicalize(&dir).expect("temp dir must canonicalize on a real machine");
         let request = RunnerRequest {
             command: "node".to_string(),
             args: vec!["report.mjs".to_string(), "--flag".to_string()],
@@ -1168,8 +1758,10 @@ mod tests {
             timeout_ms: None,
             max_output_bytes: None,
             allow_network: false,
+            isolation_root: None,
         };
-        let plan = spawn_plan(&request, SandboxMode::Seatbelt).expect("a real temp dir must canonicalize");
+        let plan =
+            spawn_plan(&request, SandboxMode::Seatbelt).expect("a real temp dir must canonicalize");
         assert_eq!(plan.program, "/usr/bin/sandbox-exec");
         assert_eq!(plan.args[0], "-p");
         let profile = &plan.args[1];
@@ -1195,19 +1787,26 @@ mod tests {
             timeout_ms: None,
             max_output_bytes: None,
             allow_network: false,
+            isolation_root: None,
         };
         // On non-macOS this mode never actually resolves to Seatbelt via
         // `resolve_sandbox_mode`, but `spawn_plan` itself is exercised directly
         // here regardless of platform to prove the fail-close path.
         let result = spawn_plan(&request, SandboxMode::Seatbelt);
-        assert!(result.is_err(), "an unresolvable cwd must fail closed, never fall back to unsandboxed");
+        assert!(
+            result.is_err(),
+            "an unresolvable cwd must fail closed, never fall back to unsandboxed"
+        );
     }
 
     #[test]
     fn response_with_no_sandbox_warning_serializes_without_the_field() {
         let response = error_response("boom");
         let json = serde_json::to_string(&response).expect("response must serialize");
-        assert!(!json.contains("sandboxWarning"), "an absent warning must not appear in the JSON at all: {json}");
+        assert!(
+            !json.contains("sandboxWarning"),
+            "an absent warning must not appear in the JSON at all: {json}"
+        );
     }
 
     #[test]
@@ -1215,7 +1814,10 @@ mod tests {
         let mut response = error_response("boom");
         response.sandbox_warning = Some("seatbelt unsupported here".to_string());
         let json = serde_json::to_string(&response).expect("response must serialize");
-        assert!(json.contains("\"sandboxWarning\":\"seatbelt unsupported here\""), "warning must serialize camelCase: {json}");
+        assert!(
+            json.contains("\"sandboxWarning\":\"seatbelt unsupported here\""),
+            "warning must serialize camelCase: {json}"
+        );
     }
 }
 
@@ -1232,7 +1834,12 @@ mod macos_sandbox_contract_tests {
         Path::new("/usr/bin/sandbox-exec").exists()
     }
 
-    fn seatbelt_request(cwd: &Path, command: &str, args: Vec<String>, allow_network: bool) -> RunnerRequest {
+    fn seatbelt_request(
+        cwd: &Path,
+        command: &str,
+        args: Vec<String>,
+        allow_network: bool,
+    ) -> RunnerRequest {
         RunnerRequest {
             command: command.to_string(),
             args,
@@ -1241,7 +1848,139 @@ mod macos_sandbox_contract_tests {
             timeout_ms: Some(10_000),
             max_output_bytes: Some(1_000_000),
             allow_network,
+            isolation_root: None,
         }
+    }
+
+    fn strict_request(root: &Path, command: &str, args: Vec<String>) -> RunnerRequest {
+        let mut request = seatbelt_request(root, command, args, false);
+        request.isolation_root = Some(root.to_string_lossy().into_owned());
+        request
+    }
+
+    #[test]
+    fn strict_isolation_allows_fixture_execution_but_blocks_external_file_reads() {
+        if !sandbox_exec_available() {
+            eprintln!("skipping: /usr/bin/sandbox-exec not present on this machine");
+            return;
+        }
+        let base =
+            std::env::temp_dir().join(format!("muse-runner-strict-read-{}", std::process::id()));
+        let root = base.join("fixture");
+        let outside = base.join("owner-readme.md");
+        fs::create_dir_all(&root).expect("strict fixture must be creatable");
+        fs::write(root.join("inside.txt"), "fixture-visible")
+            .expect("inside fixture must be writable");
+        fs::write(&outside, "OWNER-PRIVATE-SENTINEL").expect("external probe must be writable");
+
+        let allowed = run_request(
+            strict_request(&root, "cat", vec!["inside.txt".to_string()]),
+            SandboxMode::Disabled,
+        );
+        assert!(
+            allowed.ok,
+            "fixture-local read must work under strict isolation: {allowed:?}"
+        );
+        assert!(
+            allowed.stdout.contains("fixture-visible"),
+            "fixture contents must reach the caller: {allowed:?}"
+        );
+
+        let denied = run_request(
+            strict_request(&root, "cat", vec![outside.to_string_lossy().into_owned()]),
+            SandboxMode::Disabled,
+        );
+        assert!(
+            !denied.ok,
+            "an absolute fixture-external read must be denied: {denied:?}"
+        );
+        assert!(
+            !denied.stdout.contains("OWNER-PRIVATE-SENTINEL"),
+            "external contents must never reach stdout: {denied:?}"
+        );
+
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn strict_isolation_runs_a_node_fixture_but_blocks_the_workspace_readme() {
+        if !sandbox_exec_available() {
+            eprintln!("skipping: /usr/bin/sandbox-exec not present on this machine");
+            return;
+        }
+        let root =
+            std::env::temp_dir().join(format!("muse-runner-strict-node-{}", std::process::id()));
+        fs::create_dir_all(&root).expect("strict node fixture must be creatable");
+        fs::write(
+            root.join("fixture.test.mjs"),
+            "import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('strict node fixture', () => { assert.equal(2 + 3, 5); });\n"
+        )
+            .expect("fixture script must be writable");
+
+        let allowed = run_request(
+            strict_request(
+                &root,
+                "node",
+                vec!["--test".to_string(), "fixture.test.mjs".to_string()],
+            ),
+            SandboxMode::Disabled,
+        );
+        assert!(
+            allowed.ok,
+            "node fixture must execute under strict isolation: {allowed:?}"
+        );
+        assert!(
+            allowed.stdout.contains("strict node fixture"),
+            "node test output must be grounded in the fixture: {allowed:?}"
+        );
+
+        let workspace_readme =
+            fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../README.md"))
+                .expect("workspace README probe must exist");
+        let script =
+            "process.stdout.write(require('node:fs').readFileSync(process.argv[1], 'utf8'))";
+        let denied = run_request(
+            strict_request(
+                &root,
+                "node",
+                vec![
+                    "-e".to_string(),
+                    script.to_string(),
+                    workspace_readme.to_string_lossy().into_owned(),
+                ],
+            ),
+            SandboxMode::Disabled,
+        );
+        assert!(
+            !denied.ok,
+            "node must not read the fixture-external workspace README: {denied:?}"
+        );
+        assert!(
+            denied.stdout.is_empty(),
+            "external README contents must never reach stdout: {denied:?}"
+        );
+
+        let homebrew_probe = Path::new("/opt/homebrew/README.md");
+        if homebrew_probe.exists() {
+            let denied_homebrew = run_request(
+                strict_request(
+                    &root,
+                    "cat",
+                    vec![homebrew_probe.to_string_lossy().into_owned()],
+                ),
+                SandboxMode::Disabled,
+            );
+            assert!(
+                !denied_homebrew.ok,
+                "owner-writable Homebrew contents must remain denied: {denied_homebrew:?}"
+            );
+            assert!(
+                denied_homebrew.stdout.is_empty(),
+                "Homebrew contents must never reach stdout: {denied_homebrew:?}"
+            );
+        }
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1250,7 +1989,8 @@ mod macos_sandbox_contract_tests {
             eprintln!("skipping: /usr/bin/sandbox-exec not present on this machine");
             return;
         }
-        let dir = std::env::temp_dir().join(format!("muse-runner-seatbelt-ok-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("muse-runner-seatbelt-ok-{}", std::process::id()));
         fs::create_dir_all(&dir).expect("test temp dir must be creatable");
         let marker = dir.join("marker.txt");
 
@@ -1262,7 +2002,10 @@ mod macos_sandbox_contract_tests {
         let request = seatbelt_request(&dir, "sh", vec!["-c".to_string(), script], false);
         let response = run_request(request, SandboxMode::Seatbelt);
 
-        assert!(response.ok, "a legitimate command must succeed under seatbelt: {response:?}");
+        assert!(
+            response.ok,
+            "a legitimate command must succeed under seatbelt: {response:?}"
+        );
         assert_eq!(response.status, Some(0));
         assert!(marker.exists(), "the cwd write must actually land on disk");
 
@@ -1275,15 +2018,32 @@ mod macos_sandbox_contract_tests {
             eprintln!("skipping: /usr/bin/sandbox-exec not present on this machine");
             return;
         }
-        let dir = std::env::temp_dir().join(format!("muse-runner-seatbelt-escape1-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "muse-runner-seatbelt-escape1-{}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).expect("test temp dir must be creatable");
-        let target = format!("/private/var/tmp/muse-runner-escape-{}.txt", std::process::id());
+        let target = format!(
+            "/private/var/tmp/muse-runner-escape-{}.txt",
+            std::process::id()
+        );
 
-        let request = seatbelt_request(&dir, "sh", vec!["-c".to_string(), format!("echo x > {target}")], false);
+        let request = seatbelt_request(
+            &dir,
+            "sh",
+            vec!["-c".to_string(), format!("echo x > {target}")],
+            false,
+        );
         let response = run_request(request, SandboxMode::Seatbelt);
 
-        assert!(!response.ok, "a write outside cwd/tmpdir must be denied: {response:?}");
-        assert!(!Path::new(&target).exists(), "the escape write must not have landed on disk");
+        assert!(
+            !response.ok,
+            "a write outside cwd/tmpdir must be denied: {response:?}"
+        );
+        assert!(
+            !Path::new(&target).exists(),
+            "the escape write must not have landed on disk"
+        );
 
         let _ = fs::remove_file(&target);
         let _ = fs::remove_dir_all(&dir);
@@ -1295,7 +2055,10 @@ mod macos_sandbox_contract_tests {
             eprintln!("skipping: /usr/bin/sandbox-exec not present on this machine");
             return;
         }
-        let dir = std::env::temp_dir().join(format!("muse-runner-seatbelt-escape2-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "muse-runner-seatbelt-escape2-{}",
+            std::process::id()
+        ));
         fs::create_dir_all(&dir).expect("test temp dir must be creatable");
 
         let home = env::var("HOME").expect("HOME must be set to run this test");
@@ -1306,11 +2069,25 @@ mod macos_sandbox_contract_tests {
             Path::new(&home).join(format!("muse-runner-escape-{}.txt", std::process::id()))
         };
 
-        let request = seatbelt_request(&dir, "sh", vec!["-c".to_string(), format!("echo x > {}", target.to_string_lossy())], false);
+        let request = seatbelt_request(
+            &dir,
+            "sh",
+            vec![
+                "-c".to_string(),
+                format!("echo x > {}", target.to_string_lossy()),
+            ],
+            false,
+        );
         let response = run_request(request, SandboxMode::Seatbelt);
 
-        assert!(!response.ok, "a write to a home-sensitive path must be denied: {response:?}");
-        assert!(!target.exists(), "the escape write must not have landed on disk");
+        assert!(
+            !response.ok,
+            "a write to a home-sensitive path must be denied: {response:?}"
+        );
+        assert!(
+            !target.exists(),
+            "the escape write must not have landed on disk"
+        );
 
         let _ = fs::remove_file(&target);
         let _ = fs::remove_dir_all(&dir);
@@ -1319,7 +2096,9 @@ mod macos_sandbox_contract_tests {
     fn accept_once_in_background(listener: TcpListener) -> Arc<AtomicBool> {
         let accepted = Arc::new(AtomicBool::new(false));
         let accepted_flag = Arc::clone(&accepted);
-        listener.set_nonblocking(false).expect("listener must support blocking accept");
+        listener
+            .set_nonblocking(false)
+            .expect("listener must support blocking accept");
         thread::spawn(move || {
             listener.set_nonblocking(true).ok();
             let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -1344,39 +2123,67 @@ mod macos_sandbox_contract_tests {
             eprintln!("skipping: /usr/bin/curl not present on this machine");
             return;
         }
-        let dir = std::env::temp_dir().join(format!("muse-runner-seatbelt-net-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("muse-runner-seatbelt-net-{}", std::process::id()));
         fs::create_dir_all(&dir).expect("test temp dir must be creatable");
 
         // Denied leg: no listener should ever see a connection attempt.
-        let denied_listener = TcpListener::bind("127.0.0.1:0").expect("must bind a local ephemeral port");
-        let denied_port = denied_listener.local_addr().expect("bound listener has a local addr").port();
+        let denied_listener =
+            TcpListener::bind("127.0.0.1:0").expect("must bind a local ephemeral port");
+        let denied_port = denied_listener
+            .local_addr()
+            .expect("bound listener has a local addr")
+            .port();
         let denied_accepted = accept_once_in_background(denied_listener);
         let denied_request = seatbelt_request(
             &dir,
             "curl",
-            vec!["-s".to_string(), "--max-time".to_string(), "2".to_string(), format!("http://127.0.0.1:{denied_port}/")],
-            false
+            vec![
+                "-s".to_string(),
+                "--max-time".to_string(),
+                "2".to_string(),
+                format!("http://127.0.0.1:{denied_port}/"),
+            ],
+            false,
         );
         let denied_response = run_request(denied_request, SandboxMode::Seatbelt);
         thread::sleep(Duration::from_millis(300));
-        assert!(!denied_response.ok, "curl must fail when network is denied: {denied_response:?}");
-        assert!(!denied_accepted.load(Ordering::SeqCst), "the denied listener must never observe a connection");
+        assert!(
+            !denied_response.ok,
+            "curl must fail when network is denied: {denied_response:?}"
+        );
+        assert!(
+            !denied_accepted.load(Ordering::SeqCst),
+            "the denied listener must never observe a connection"
+        );
 
         // Allowed leg: connection must be observed (curl's own exit code is not
         // asserted — the listener isn't real HTTP, so curl may still error on a
         // malformed response; what matters is the TCP connection itself lands).
-        let allowed_listener = TcpListener::bind("127.0.0.1:0").expect("must bind a second local ephemeral port");
-        let allowed_port = allowed_listener.local_addr().expect("bound listener has a local addr").port();
+        let allowed_listener =
+            TcpListener::bind("127.0.0.1:0").expect("must bind a second local ephemeral port");
+        let allowed_port = allowed_listener
+            .local_addr()
+            .expect("bound listener has a local addr")
+            .port();
         let allowed_accepted = accept_once_in_background(allowed_listener);
         let allowed_request = seatbelt_request(
             &dir,
             "curl",
-            vec!["-s".to_string(), "--max-time".to_string(), "2".to_string(), format!("http://127.0.0.1:{allowed_port}/")],
-            true
+            vec![
+                "-s".to_string(),
+                "--max-time".to_string(),
+                "2".to_string(),
+                format!("http://127.0.0.1:{allowed_port}/"),
+            ],
+            true,
         );
         let _allowed_response = run_request(allowed_request, SandboxMode::Seatbelt);
         thread::sleep(Duration::from_millis(300));
-        assert!(allowed_accepted.load(Ordering::SeqCst), "an opted-in request must be observed connecting");
+        assert!(
+            allowed_accepted.load(Ordering::SeqCst),
+            "an opted-in request must be observed connecting"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1400,7 +2207,10 @@ mod request_input_tests {
         let error = read_request_from(Cursor::new(oversized))
             .expect_err("oversized input must be rejected before parsing");
         assert!(error.contains("exceeds"), "unexpected error: {error}");
-        assert!(error.contains(&MAX_REQUEST_BYTES.to_string()), "missing limit: {error}");
+        assert!(
+            error.contains(&MAX_REQUEST_BYTES.to_string()),
+            "missing limit: {error}"
+        );
     }
 
     #[test]
@@ -1409,6 +2219,9 @@ mod request_input_tests {
         drop(sender);
         let (output, truncated) = recv_drained(receiver);
         assert!(output.is_empty());
-        assert!(truncated, "a missing drainer result must never look complete");
+        assert!(
+            truncated,
+            "a missing drainer result must never look complete"
+        );
     }
 }

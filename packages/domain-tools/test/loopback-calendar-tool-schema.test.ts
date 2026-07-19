@@ -47,6 +47,26 @@ describe("calendar loopback tools meet the one-shot tool-calling bar", () => {
     expect("groundedArgs" in (modelTool.inputSchema as object)).toBe(false);
   });
 
+  it("declares only the exact add time aliases as non-wire metadata across every projection", () => {
+    const server = createCalendarMcpServer({ registry: stubRegistry });
+    const add = server.tools.find((t) => t.name === "add")!;
+    const update = server.tools.find((t) => t.name === "update")!;
+    expect(add.argumentAliases).toEqual({ endTime: "endsAt", startTime: "startsAt" });
+    expect(update.argumentAliases).toBeUndefined();
+
+    const museTool = createLoopbackMcpMuseTools(server).find((t) => t.definition.name.endsWith(".add"))!;
+    expect(museTool.definition.argumentAliases).toEqual(add.argumentAliases);
+    const modelTool = toModelTool(museTool);
+    expect(modelTool.argumentAliases).toEqual(add.argumentAliases);
+
+    const schema = modelTool.inputSchema as { properties?: Record<string, unknown> };
+    expect(schema.properties).toHaveProperty("startsAt");
+    expect(schema.properties).toHaveProperty("endsAt");
+    expect(schema.properties).not.toHaveProperty("startTime");
+    expect(schema.properties).not.toHaveProperty("endTime");
+    expect("argumentAliases" in (modelTool.inputSchema as object)).toBe(false);
+  });
+
   it("marks the 'update' tool's location/notes as groundedArgs too", () => {
     const server = createCalendarMcpServer({ registry: stubRegistry });
     const update = server.tools.find((t) => t.name === "update")!;

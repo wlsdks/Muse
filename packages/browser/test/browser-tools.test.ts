@@ -779,6 +779,15 @@ describe("browser_look — describe the current page visually (local vision)", (
     expect(validateToolDefinitions([tool])).toEqual([]);
   });
 
+  it("describes the Korean visual-data boundary without widening ordinary text reads", () => {
+    const c = new FakeController();
+    const look = createBrowserLookTool({ controller: c, describeImage: async () => ({ ok: true, text: "x" }) });
+    const read = createBrowserReadTool({ controller: c });
+    expect(look.definition.description).toMatch(/^한국어 선택 규칙:.*차트.*그래프.*도표.*(?:무엇을 나타내는지|무엇을 보여주는지).*시각적으로.*없어도.*browser_look/iu);
+    expect(look.definition.description).toMatch(/대시보드.*추세.*패턴.*해석/iu);
+    expect(read.definition.description).toMatch(/not for describing visual content.*chart/iu);
+  });
+
   it("captures the page and returns the vision description", async () => {
     const c = new FakeController();
     let seenMime = "";

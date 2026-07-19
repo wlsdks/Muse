@@ -338,7 +338,9 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
   return {
     definition: {
       description:
-        "Read the CURRENT state of the Mac — read-only, changes nothing. `app` selects what to read: " +
+        "NO-TOOL CONTACT RULE: Statements, musings, and future intentions about adding or contacting someone " +
+        "are not reads; call no tool unless the user explicitly asks for a current lookup of an existing named " +
+        "contact's phone or email. Read the CURRENT state of the Mac — read-only, changes nothing. `app` selects what to read: " +
         "'clipboard' (clipboard text), 'music' (what Music is playing), 'frontmost_window' (the app + " +
         "window in focus), 'contacts' (look up a person by name — requires `query`), 'mail_unread' (inbox " +
         "unread count + recent subjects), 'safari_tab' / 'chrome_tab' (front browser tab URL + title), " +

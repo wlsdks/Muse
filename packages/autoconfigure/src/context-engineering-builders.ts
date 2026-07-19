@@ -7,7 +7,7 @@ import {
   StoreBackedEpisodicRecallProvider,
   createBackgroundReviewHook,
   selectPlanExemplarByRelevance,
-  RUN_TOOL_PLAN_EXEMPLAR_BANK,
+  DEFAULT_TOOL_EXEMPLAR_BANK,
   type ActiveContextProvider,
   type ToolExemplar,
   type BackgroundReviewInput,
@@ -473,10 +473,9 @@ export function buildPlaybookProvider(env: MuseEnvironment): PlaybookProvider | 
 }
 
 /**
- * Production wiring for Programmatic Tool Calling (PTC): supply the seed
- * few-shot bank that teaches the local 12B to select `run_tool_plan` for a
- * multi-step / data-flow task (a brand-new orchestrator tool is invisible to a
- * 12B without exemplars — Phase 4 measured 0/2 → 4/4). Default-on; opt out with
+ * Production wiring for few-shot tool selection: the shared default bank
+ * includes the established Programmatic Tool Calling seeds plus measured
+ * adjacent-selection boundaries. Default-on; opt out with
  * `MUSE_TOOL_EXEMPLARS=false`. Absent ⇒ the runtime injects no section, so the
  * wiring is conservative and fail-open by construction.
  */
@@ -484,7 +483,7 @@ export function buildToolExemplarBank(env: MuseEnvironment): readonly ToolExempl
   if (!parseBoolean(env.MUSE_TOOL_EXEMPLARS, true)) {
     return undefined;
   }
-  return RUN_TOOL_PLAN_EXEMPLAR_BANK;
+  return DEFAULT_TOOL_EXEMPLAR_BANK;
 }
 
 /**

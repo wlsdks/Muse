@@ -56,6 +56,7 @@ import {
   ToolExecutor,
   ToolRegistry,
   authorizeEgressForValue,
+  canonicalizeToolArgumentAliases,
   coerceToolArguments,
   coerceEnumArguments,
   collectNonUrlStringLeaves,
@@ -1242,21 +1243,21 @@ export class AgentRuntime {
 
   private async executeToolCall(
     context: AgentRunContext,
-    toolCall: ModelToolCall,
+    proposedToolCall: ModelToolCall,
     activeTools: readonly ModelTool[]
   ): Promise<ExecutedToolResult> {
-    if (!activeTools.some((tool) => tool.name === toolCall.name)) {
+    if (!activeTools.some((tool) => tool.name === proposedToolCall.name)) {
       // A small model HALLUCINATES tool names (`node_run` for `run_command`); a
       // bare "not exposed" is a dead-end. Suggest the nearest ACTIVE tool by
       // token overlap so the next turn self-corrects (the executor's
       // not-registered path already does this — this is its not-EXPOSED sibling).
-      const suggestion = nearestToolName(toolCall.name, activeTools.map((tool) => tool.name));
+      const suggestion = nearestToolName(proposedToolCall.name, activeTools.map((tool) => tool.name));
       // A small model sometimes emits a whole COMMAND LINE as the tool name
       // (`node --exec "…"`) — a name with whitespace is never a valid identifier,
       // and token-overlap won't match `run_command` (observed live in
       // eval:edit-run-verify). Point it at the active execute tool so it re-issues
       // the command through that tool's ARGUMENTS instead of as a bogus name.
-      const commandShaped = !suggestion && /\s/u.test(toolCall.name.trim());
+      const commandShaped = !suggestion && /\s/u.test(proposedToolCall.name.trim());
       const execTool = commandShaped ? activeTools.find((tool) => tool.risk === "execute") : undefined;
       const recovery = suggestion
         ? `. Did you mean '${suggestion}'? Call that exact name.`
@@ -1264,8 +1265,8 @@ export class AgentRuntime {
           ? `. A tool name must be a single identifier, not a command line — to run a command, call '${execTool.name}' with the command in its arguments.`
           : "";
       const executed = blockedToolResult(
-        toolCall,
-        `Error: tool was not exposed to the model: ${toolCall.name}${recovery}`
+        proposedToolCall,
+        `Error: tool was not exposed to the model: ${proposedToolCall.name}${recovery}`
       );
       await this.invokeHooks("afterTool", context, executed);
       return executed;
@@ -1284,9 +1285,23 @@ export class AgentRuntime {
     // many steps its plan runs — programmatic tool calling is one budget action, not N. The model
     // loop's toolCallCount is advanced once, for this single call, before this method ever runs; the
     // plan's steps execute inside runToolPlanTool below and never re-enter the loop's counter.
-    if (toolCall.name === RUN_TOOL_PLAN_TOOL_NAME) {
-      return this.runToolPlanTool(context, toolCall, activeTools);
+    if (proposedToolCall.name === RUN_TOOL_PLAN_TOOL_NAME) {
+      return this.runToolPlanTool(context, proposedToolCall, activeTools);
     }
+
+    const exposed = activeTools.find((tool) => tool.name === proposedToolCall.name);
+    const aliasRepair = canonicalizeToolArgumentAliases(
+      exposed?.argumentAliases,
+      proposedToolCall.arguments
+    );
+    if (!aliasRepair.ok) {
+      const executed = blockedToolResult(proposedToolCall, `Error: ${aliasRepair.reason}`);
+      await this.invokeHooks("afterTool", context, executed);
+      return executed;
+    }
+    const toolCall: ModelToolCall = aliasRepair.args === proposedToolCall.arguments
+      ? proposedToolCall
+      : { ...proposedToolCall, arguments: aliasRepair.args };
 
     await this.invokeHooks("beforeTool", context, toolCall);
 
@@ -1295,7 +1310,6 @@ export class AgentRuntime {
     // invalid-call gate count/order/results remain byte-identical. The pure
     // checks are computed early for observer eligibility, then their existing
     // results are consumed at the historical validation point below.
-    const exposed = activeTools.find((tool) => tool.name === toolCall.name);
     const coercedArguments = coerceEnumArguments(
       exposed?.inputSchema,
       coerceToolArguments(exposed?.inputSchema, toolCall.arguments)

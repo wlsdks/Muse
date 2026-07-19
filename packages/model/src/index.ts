@@ -69,6 +69,12 @@ export interface ModelTool {
    * read only `inputSchema`).
    */
   readonly groundedArgs?: readonly string[];
+  /**
+   * Exact argument-name aliases declared by the tool (`alias` → `canonical`).
+   * Muse runtime metadata only: provider adapters serialize `inputSchema`, not
+   * this repair contract. Values are copied losslessly; conflicts fail closed.
+   */
+  readonly argumentAliases?: Readonly<Record<string, string>>;
 }
 
 export interface ModelToolCall {

@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -6,6 +8,7 @@ import {
   createMuseTools,
   createRustRunnerTool,
   createDefaultToolExposurePolicy,
+  canonicalizeToolArgumentAliases,
   coerceToolArguments,
   coerceEnumArguments,
   nearestToolName,
@@ -497,6 +500,59 @@ describe("tool utilities", () => {
     expect(validateToolDefinitions([described])).toEqual([]);
   });
 
+  it("rejects unsafe argument-alias definitions before model exposure", () => {
+    const withAliases = (argumentAliases: Readonly<Record<string, string>>): MuseTool => ({
+      definition: {
+        argumentAliases,
+        description: "Create a synthetic calendar event from explicit timestamps.",
+        inputSchema: {
+          properties: {
+            endsAt: { description: "Event end time.", type: "string" },
+            startsAt: { description: "Event start time.", type: "string" }
+          },
+          required: ["startsAt"],
+          type: "object"
+        },
+        name: "calendar_add",
+        risk: "write"
+      },
+      execute: () => "unused"
+    });
+
+    expect(validateToolDefinitions([withAliases({ startTime: "startsAt" })])).toEqual([]);
+
+    for (const aliases of [
+      { "": "startsAt" },
+      { startTime: "" },
+      { startTime: "missing" },
+      { startsAt: "endsAt" },
+      { a: "b", b: "startsAt" },
+      { a: "b", b: "a" }
+    ]) {
+      const issues = validateToolDefinitions([withAliases(aliases)]);
+      expect(issues.map((issue) => issue.code), JSON.stringify(aliases)).toContain("invalid_argument_alias");
+    }
+  });
+
+  it("ToolRegistry enforces the argument-alias contract at the production exposure boundary", () => {
+    const invalid: MuseTool = {
+      definition: {
+        argumentAliases: { startTime: "missing" },
+        description: "Create a synthetic calendar event.",
+        inputSchema: {
+          properties: { startsAt: { description: "Event start time.", type: "string" } },
+          required: ["startsAt"],
+          type: "object"
+        },
+        name: "invalid_alias_tool",
+        risk: "write"
+      },
+      execute: () => "unused"
+    };
+
+    expect(() => new ToolRegistry([invalid])).toThrow(/unsafe argument alias.*startTime.*missing/iu);
+  });
+
   it("plans tool execution with declared dependencies first", () => {
     const authenticate: MuseTool = {
       definition: {
@@ -590,6 +646,56 @@ describe("tool utilities", () => {
     expect(coerceToolArguments(schema, { label: { a: 1 } })).toEqual({ label: { a: 1 } }); // object not stringified
     // no object schema → passthrough
     expect(coerceToolArguments(undefined, { x: "1" })).toEqual({ x: "1" });
+  });
+
+  it("canonicalizeToolArgumentAliases applies only exact tool-declared aliases and fails closed on conflicts", () => {
+    const aliases = { endTime: "endsAt", startTime: "startsAt" };
+
+    const canonical = { endsAt: "tomorrow 4pm", startsAt: "tomorrow 3pm", title: "Review" };
+    const canonicalOnly = canonicalizeToolArgumentAliases(aliases, canonical);
+    expect(canonicalOnly).toEqual({ args: canonical, ok: true });
+    if (canonicalOnly.ok) expect(canonicalOnly.args).toBe(canonical); // canonical-only is an exact no-op
+
+    expect(canonicalizeToolArgumentAliases(aliases, {
+      endTime: "tomorrow 4pm",
+      startTime: "tomorrow 3pm",
+      title: "Review"
+    })).toEqual({
+      args: { endsAt: "tomorrow 4pm", startsAt: "tomorrow 3pm", title: "Review" },
+      ok: true
+    });
+
+    const exactStart = "  내일 오후 3시  ";
+    const exactCopy = canonicalizeToolArgumentAliases(aliases, { startTime: exactStart });
+    expect(exactCopy).toEqual({ args: { startsAt: exactStart }, ok: true });
+    if (exactCopy.ok) expect(exactCopy.args["startsAt"]).toBe(exactStart); // no trim/parse/re-encode
+
+    expect(canonicalizeToolArgumentAliases(aliases, {
+      startTime: "tomorrow 3pm",
+      startsAt: "tomorrow 3pm",
+      title: "Review"
+    })).toEqual({ args: { startsAt: "tomorrow 3pm", title: "Review" }, ok: true });
+
+    expect(canonicalizeToolArgumentAliases(aliases, {
+      startTime: "tomorrow 5pm",
+      startsAt: "tomorrow 3pm"
+    })).toMatchObject({ alias: "startTime", canonical: "startsAt", ok: false });
+
+    const unknown = { beginTime: "tomorrow 3pm", title: "Review" };
+    const unknownResult = canonicalizeToolArgumentAliases(aliases, unknown);
+    expect(unknownResult).toEqual({ args: unknown, ok: true }); // no fuzzy/semantic guess
+    if (unknownResult.ok) {
+      expect(unknownResult.args).toBe(unknown);
+      expect(validateRequiredToolArguments({ type: "object", required: ["startsAt"] }, unknownResult.args))
+        .toEqual({ missing: ["startsAt"], ok: false });
+    }
+
+    const missing = canonicalizeToolArgumentAliases(aliases, {});
+    expect(missing).toEqual({ args: {}, ok: true });
+    if (missing.ok) {
+      expect(validateRequiredToolArguments({ type: "object", required: ["startsAt"] }, missing.args))
+        .toEqual({ missing: ["startsAt"], ok: false });
+    }
   });
 
   it("coerceToolArguments handles the realistic local-model arg forms: signed, whitespace-padded, bool→string", () => {
@@ -1308,6 +1414,73 @@ describe("Rust runner tool", () => {
   it("never grants the model network access — a model-supplied allowNetwork field is dropped, not passed through", () => {
     const req = parseRunnerCommandRequest({ allowNetwork: true, command: "curl" } as never);
     expect(req).not.toHaveProperty("allowNetwork");
+  });
+
+  it("rejects an isolated run_command cwd outside the fixture before invoking the runner", async () => {
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), "muse-runner-isolation-root-"));
+    const outsideRoot = await mkdtemp(path.join(tmpdir(), "muse-runner-isolation-outside-"));
+    let invocations = 0;
+    const tool = createRustRunnerTool({
+      isolationRoot: fixtureRoot,
+      invokeRunner: async () => {
+        invocations += 1;
+        throw new Error("runner must not be invoked");
+      }
+    });
+
+    try {
+      await expect(tool.execute({ command: "pwd", cwd: outsideRoot }, { runId: "outside-cwd-probe" }))
+        .rejects.toThrow(/cwd.*isolated root/iu);
+      expect(invocations).toBe(0);
+    } finally {
+      await rm(fixtureRoot, { force: true, recursive: true });
+      await rm(outsideRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("defaults isolated run_command cwd to the canonical fixture root and ignores a model isolationRoot", async () => {
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), "muse-runner-isolation-default-"));
+    const outsideRoot = await mkdtemp(path.join(tmpdir(), "muse-runner-isolation-model-root-"));
+    let captured;
+    const tool = createRustRunnerTool({
+      isolationRoot: fixtureRoot,
+      invokeRunner: async (request) => {
+        captured = request;
+        return { error: null, ok: true, status: 0, stderr: "", stdout: "", timedOut: false, truncated: false };
+      }
+    });
+
+    try {
+      await tool.execute({ command: "pwd", isolationRoot: outsideRoot } as never, { runId: "default-cwd-probe" });
+      expect(captured).toMatchObject({ cwd: await realpath(fixtureRoot), isolationRoot: await realpath(fixtureRoot) });
+    } finally {
+      await rm(fixtureRoot, { force: true, recursive: true });
+      await rm(outsideRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects an isolated run_command cwd that escapes through a symlink before invoking the runner", async () => {
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), "muse-runner-isolation-symlink-"));
+    const outsideRoot = await mkdtemp(path.join(tmpdir(), "muse-runner-isolation-symlink-outside-"));
+    const escape = path.join(fixtureRoot, "escape");
+    await symlink(outsideRoot, escape, "dir");
+    let invocations = 0;
+    const tool = createRustRunnerTool({
+      isolationRoot: fixtureRoot,
+      invokeRunner: async () => {
+        invocations += 1;
+        throw new Error("runner must not be invoked");
+      }
+    });
+
+    try {
+      await expect(tool.execute({ command: "pwd", cwd: escape }, { runId: "symlink-cwd-probe" }))
+        .rejects.toThrow(/cwd.*isolated root/iu);
+      expect(invocations).toBe(0);
+    } finally {
+      await rm(fixtureRoot, { force: true, recursive: true });
+      await rm(outsideRoot, { force: true, recursive: true });
+    }
   });
 
   it("clamps a model-supplied timeout / output cap to a sane maximum (no 11-day hang / memory blow-up)", () => {
