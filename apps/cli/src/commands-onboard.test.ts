@@ -90,8 +90,6 @@ describe("muse onboard — closing hints (R2-3)", () => {
     await program.parseAsync(["node", "muse", "onboard"]);
     const text = out.join("");
     expect(text).toContain("muse scheduler add");
-    expect(text).toContain("muse rollback");
-    expect(text).toContain("undoable");
   });
 
   it("without an injected confirm, a real (non-TTY) test run never calls the daemon install seams and prints the manual hint", async () => {

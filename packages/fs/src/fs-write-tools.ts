@@ -140,7 +140,7 @@ async function writeFileNoFollow(safePath: string, content: string): Promise<voi
  * engine (which decodes to a string itself, see `editExecutor`) or a
  * checkpoint snapshot — and a checkpoint of a binary file (or any file with a
  * byte sequence that isn't valid UTF-8) must survive a round-trip through
- * `muse rollback`, so this NEVER decodes through `"utf8"` itself; reading as
+ * a byte-exact restore, so this NEVER decodes through `"utf8"` itself; reading as
  * text first would silently replace invalid sequences with U+FFFD and
  * corrupt the snapshot forever.
  */

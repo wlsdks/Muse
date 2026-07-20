@@ -1,7 +1,7 @@
 /**
  * Undo substrate for `@muse/fs`'s write-tier tools — every file_write /
  * file_edit / file_multi_edit / file_delete / file_move snapshots the
- * target's CURRENT state here before mutating it, so `muse rollback` (CLI)
+ * target's CURRENT state here before mutating it, so a future undo surface
  * can restore it. Layout: `<dir>/<checkpoint-id>/manifest.json` +
  * `<dir>/<checkpoint-id>/content` (original bytes, present only when the
  * file existed and fit the per-snapshot cap). This module stays DUMB on
@@ -341,7 +341,7 @@ export class FileCheckpointStore implements CheckpointStore {
  * Ephemeral, process-local fallback — never touches disk. Used by the write
  * tools as `checkpointStore`'s default when a construction site doesn't
  * provide one (most existing unit tests): writes still succeed, but nothing
- * survives the process and `muse rollback` has nothing to see. The real
+ * survives the process and an undo surface would have nothing to see. The real
  * agent write path (CLI) always wires a `FileCheckpointStore` instead.
  */
 export function createInMemoryCheckpointStore(): CheckpointStore {

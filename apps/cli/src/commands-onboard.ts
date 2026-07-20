@@ -363,7 +363,6 @@ export function registerOnboardCommand(program: Command, io: ProgramIO, helpers:
       }
       io.stdout("\nVerify your setup any time (models, local-only posture, index):\n   $ muse doctor --local\n");
       io.stdout("\nSchedule a recurring prompt: `muse scheduler add \"...\" --every \"daily 9am\"`\n");
-      io.stdout("Every agent file write is undoable — `muse rollback`.\n");
       await offerBackgroundDaemon(io, helpers);
       await offerNativeNotifications(io, helpers);
     });

@@ -845,13 +845,6 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     "subcommands": []
   },
   {
-    "name": "rollback",
-    "description": "Undo an agent file write (file_write/file_edit/file_multi_edit/file_delete/file_move), or list undoable checkpoints",
-    "argsTerm": "[id]",
-    "hasOptions": true,
-    "subcommands": []
-  },
-  {
     "name": "routine",
     "description": "Aggregate ~/.muse/activity.jsonl into routine.active_hours + topDays; --apply writes the fact",
     "argsTerm": "",
