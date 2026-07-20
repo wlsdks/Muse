@@ -2,8 +2,8 @@ import type { AgentSpecTable, MuseDatabase } from "@muse/db";
 import { createRunId, toDate, type JsonValue } from "@muse/shared";
 import type { Insertable, Kysely, Selectable } from "kysely";
 
-import type { AgentSpec, AgentSpecInput, AgentSpecMode, AgentSpecRegistry } from "./index.js";
-import { normalizeAgentSpecInput } from "./index.js";
+import type { AgentSpecRegistry } from "./index.js";
+import { normalizeAgentSpecInput, type AgentSpec, type AgentSpecInput, type AgentSpecMode } from "./spec-model.js";
 
 type AgentSpecRow = Selectable<AgentSpecTable>;
 type AgentSpecInsert = Insertable<AgentSpecTable>;

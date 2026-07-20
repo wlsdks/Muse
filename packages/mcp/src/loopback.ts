@@ -1,6 +1,7 @@
 import { errorMessage, type JsonObject, type JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
-import { createMcpMuseTool, type McpConnection, type McpRemoteTool } from "./index.js";
+import { createMcpMuseTool } from "./mcp-tool-factory.js";
+import type { McpConnection, McpRemoteTool } from "./index.js";
 
 /**
  * Loopback MCP servers — provider-neutral built-in MCP surfaces.

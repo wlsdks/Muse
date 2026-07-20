@@ -1,35 +1,11 @@
 import { createRunId } from "@muse/shared";
 
+import { normalizeAgentSpecInput, type AgentSpec, type AgentSpecInput } from "./spec-model.js";
+
 export type Awaitable<T> = T | Promise<T>;
-export type AgentSpecMode = "react" | "standard" | "plan_execute";
 
-export interface AgentSpec {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  readonly toolNames: readonly string[];
-  readonly keywords: readonly string[];
-  readonly systemPrompt?: string;
-  readonly mode: AgentSpecMode;
-  readonly enabled: boolean;
-  readonly independentExecution: boolean;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
-}
-
-export interface AgentSpecInput {
-  readonly id?: string;
-  readonly name: string;
-  readonly description?: string;
-  readonly toolNames?: readonly string[];
-  readonly keywords?: readonly string[];
-  readonly systemPrompt?: string | null;
-  readonly mode?: AgentSpecMode;
-  readonly enabled?: boolean;
-  readonly independentExecution?: boolean;
-  readonly createdAt?: Date;
-  readonly updatedAt?: Date;
-}
+export { normalizeAgentSpecInput } from "./spec-model.js";
+export type { AgentSpec, AgentSpecInput, AgentSpecMode } from "./spec-model.js";
 
 /**
  * Two enabled workers seeded into a fresh in-memory registry so
@@ -226,29 +202,6 @@ export class RuleBasedAgentSpecResolver {
   }
 }
 
-export function normalizeAgentSpecInput(
-  input: AgentSpecInput,
-  identity: {
-    readonly createdAt: Date;
-    readonly id: string;
-    readonly updatedAt: Date;
-  }
-): AgentSpec {
-  return {
-    createdAt: identity.createdAt,
-    description: input.description ?? "",
-    enabled: input.enabled ?? true,
-    id: identity.id,
-    independentExecution: input.independentExecution ?? true,
-    keywords: uniqueStrings(input.keywords ?? []),
-    mode: input.mode ?? "react",
-    name: input.name,
-    systemPrompt: input.systemPrompt ?? undefined,
-    toolNames: uniqueStrings(input.toolNames ?? []),
-    updatedAt: identity.updatedAt
-  };
-}
-
 export function scoreAgentSpec(
   spec: AgentSpec,
   normalizedText: string
@@ -291,10 +244,6 @@ function compareAgentSpecResolution(left: AgentSpecResolution, right: AgentSpecR
 
 function normalizeText(text: string): string {
   return text.toLowerCase().trim();
-}
-
-function uniqueStrings(values: readonly string[]): readonly string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 export { KyselyAgentSpecRegistry } from "./kysely-store.js";
