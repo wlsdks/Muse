@@ -9,7 +9,7 @@ import { readDeveloperMode, writeDeveloperMode } from "../lib/developer-mode.js"
 
 import type { ApiClient } from "../api/client.js";
 import type { StringKey } from "../i18n/strings.js";
-import type { ContactsResponse, DaemonFlagsResponse, ModelsResponse, QuietHoursSettingsResponse } from "../api/types.js";
+import type { ActuatorMode, ActuatorModeStateResponse, ContactsResponse, DaemonFlagsResponse, ModelsResponse, QuietHoursSettingsResponse } from "../api/types.js";
 import { summarizeFlags } from "./settings-flags.js";
 
 interface SetupSection {
@@ -152,6 +152,7 @@ export function SettingsView({
 
       <DaemonsSection client={client} />
 
+      <ActuatorModeControl client={client} />
       <QuietHoursControl client={client} />
 
       <DeveloperModeControl />
@@ -455,5 +456,66 @@ function ContactsSection({ client }: { client: ApiClient }) {
         </AsyncBlock>
       </div>
     </Card>
+  );
+}
+
+/**
+ * The actuator-mode selector: how much Muse may do without asking.
+ *
+ * Three radio-style choices rather than a toggle, because the middle state
+ * (`ask`) is the safe default a user most often wants and a two-way switch
+ * would hide it. Each option carries its own consequence line — the setting
+ * decides whether Muse can email a real person, so the UI states that plainly
+ * instead of leaving it to a tooltip.
+ *
+ * PATCHes `/api/settings/actuators`, the same `~/.config/muse/config.json`
+ * block `muse chat` reads per turn, so a change here reaches the CLI too.
+ */
+export function ActuatorModeControl({ client }: { client: ApiClient }) {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+
+  const state = useQuery({
+    queryFn: () => client.get<ActuatorModeStateResponse>("/api/settings/actuators"),
+    queryKey: ["actuator-mode", client.baseUrl]
+  });
+  const mode = state.data?.mode ?? "off";
+  const modes = state.data?.modes ?? (["off", "ask", "auto"] as const);
+
+  const save = useMutation({
+    mutationFn: (next: ActuatorMode) =>
+      client.patch<ActuatorModeStateResponse>("/api/settings/actuators", { mode: next }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["actuator-mode", client.baseUrl] });
+    }
+  });
+
+  return (
+    <Section title={t("settings.actuators")} explain={t("settings.sec.actuators")}>
+      <div className="row" style={{ borderBottom: "none" }}>
+        <div className="row-main">
+          <div className="row-title">
+            {t("settings.actuators.current")}{" "}
+            <Badge tone={mode === "off" ? "neutral" : mode === "ask" ? "ok" : "warn"}>
+              {t(`settings.actuators.${mode}`)}
+            </Badge>
+          </div>
+          <div className="row-meta">{t(`settings.actuators.${mode}.hint`)}</div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {modes.map((option) => (
+            <Button
+              key={option}
+              variant={option === mode ? "primary" : "ghost"}
+              size="sm"
+              disabled={save.isPending || option === mode}
+              onClick={() => save.mutate(option)}
+            >
+              {t(`settings.actuators.${option}`)}
+            </Button>
+          ))}
+        </div>
+      </div>
+    </Section>
   );
 }

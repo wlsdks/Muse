@@ -806,6 +806,14 @@ export interface DaemonFlagsResponse {
   flags: DaemonFlagView[];
 }
 
+export type ActuatorMode = "off" | "ask" | "auto";
+
+export interface ActuatorModeStateResponse {
+  readonly mode: ActuatorMode;
+  /** Server-supplied so the UI never hardcodes the list. */
+  readonly modes: readonly ActuatorMode[];
+}
+
 export interface QuietHoursSettingsResponse {
   readonly enabled: boolean;
   readonly range?: string;

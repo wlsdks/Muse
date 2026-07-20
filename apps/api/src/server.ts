@@ -44,6 +44,7 @@ import { registerNotesRoutes } from "./notes-routes.js";
 import { registerMessagingRoutes } from "./messaging-routes.js";
 import { registerMessagingSetupRoutes } from "./messaging-setup-routes.js";
 import { registerDayRhythmRoutes } from "./day-rhythm-routes.js";
+import { registerActuatorModeRoutes } from "./actuator-mode-routes.js";
 import { registerConversationsRoutes } from "./conversations-routes.js";
 import { registerEmailStatusRoutes } from "./email-status-routes.js";
 import { lineWebhookPlugin } from "./messaging-webhooks-routes.js";
@@ -443,6 +444,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     channelOwnersFile: integrationEnv.messaging.ownersFile,
     configFile: resolveMuseCliConfigFilePath(options.env ?? process.env),
     ...(options.messaging ? { registry: options.messaging } : {})
+  });
+  registerActuatorModeRoutes(server, {
+    authService,
+    configFile: resolveMuseCliConfigFilePath(options.env ?? process.env)
   });
   registerEmailStatusRoutes(server, {
     authService,
