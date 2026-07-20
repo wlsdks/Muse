@@ -47,7 +47,7 @@ export function createHomeActionTool(deps: HomeActionToolDeps): MuseTool {
         required: ["service"],
         type: "object"
       },
-      keywords: ["home", "smart-home", "light", "lock", "device", "homeassistant", "scene", "scenes", "script", "routine", "activate"],
+      keywords: ["home", "smart-home", "light", "lock", "device", "homeassistant", "scene", "scenes", "script", "routine", "activate", "불", "조명", "켜", "꺼", "잠가", "열어", "온도", "에어컨", "보일러"],
       name: "home_action",
       risk: "execute"
     },
@@ -128,7 +128,7 @@ export function createHomeStateTool(deps: HomeStateToolDeps): MuseTool {
         required: ["entity"],
         type: "object"
       },
-      keywords: ["home", "smart-home", "state", "status", "temperature", "lock", "sensor", "homeassistant"],
+      keywords: ["home", "smart-home", "state", "status", "temperature", "lock", "sensor", "homeassistant", "불", "조명", "온도", "습도", "센서", "상태", "켜져", "꺼져"],
       name: "home_state",
       risk: "read"
     },
@@ -167,7 +167,7 @@ export function createHomeEntitiesTool(deps: HomeStateToolDeps): MuseTool {
         },
         type: "object"
       },
-      keywords: ["home", "smart-home", "devices", "entities", "list", "discover", "on", "off", "unlocked", "open", "homeassistant"],
+      keywords: ["home", "smart-home", "devices", "entities", "list", "discover", "on", "off", "unlocked", "open", "homeassistant", "기기", "장치", "목록", "스마트홈"],
       name: "home_entities",
       risk: "read"
     },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultToolExposurePolicy, type MuseTool, type ToolExposureContext } from "../src/index.js";
+import { createDefaultToolExposurePolicy, isWorkspaceMutationPrompt, keywordMatchesPromptTokens, type MuseTool, type ToolExposureContext } from "../src/index.js";
 
 const tool = (
   name: string,
@@ -174,5 +174,59 @@ describe("single-character CJK keywords match exactly, never by containment", ()
     const policy = createDefaultToolExposurePolicy();
     const selection = policy.select([notesish], { prompt: "비밀번호를 알려줘" });
     expect(selection.tools.map((t) => t.definition.name)).toEqual(["notesish"]);
+  });
+});
+
+/**
+ * Korean reachability. `isToolRelevantToPrompt` BLOCKS a tool that declares
+ * keywords when none match — so an English-only keyword list makes a tool
+ * invisible, not merely lower-ranked, and the model answers without it. These
+ * pin the two mechanisms that made that happen, both measured on the real
+ * 104-tool registry before the fix.
+ */
+describe("Korean prompts must be able to reach a tool", () => {
+  const tokenize = (prompt: string): ReadonlySet<string> =>
+    new Set(prompt.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0));
+
+  it("matches a spaced Korean keyword against the unspaced spelling", () => {
+    // "이번 주" and "이번주" are the same phrase to a reader. Per-word matching
+    // cannot bridge it: the second word "주" is one character, and single-char
+    // containment is refused as noise, so the tool was hard-blocked.
+    expect(keywordMatchesPromptTokens("이번 주", tokenize("이번주 뭐 있어?"))).toBe(true);
+    expect(keywordMatchesPromptTokens("이번 주", tokenize("이번 주 뭐 있어?"))).toBe(true);
+    expect(keywordMatchesPromptTokens("다음 주", tokenize("다음주 일정 알려줘"))).toBe(true);
+    // A Korean particle attaches to the stem ("살" → "살이야"), so a single-char
+    // word can never match by exact token; inside a phrase both words must
+    // still hit, which is what keeps it from firing on noise.
+    expect(keywordMatchesPromptTokens("몇 살", tokenize("나 몇 살이야?"))).toBe(true);
+    expect(keywordMatchesPromptTokens("몇 살", tokenize("비밀번호 알려줘"))).toBe(false);
+    expect(keywordMatchesPromptTokens("몇 살", tokenize("살빼는 법 알려줘"))).toBe(false);
+  });
+
+  it("still requires every word of an ASCII multi-word keyword", () => {
+    // The joined-form retry is non-ASCII only: "pay rent" must not degrade into
+    // a substring match that fires on any sentence mentioning rent.
+    expect(keywordMatchesPromptTokens("pay rent", tokenize("how much is the rent"))).toBe(false);
+    expect(keywordMatchesPromptTokens("pay rent", tokenize("rent 냈나"))).toBe(false);
+    // Both words present is a genuine hit — the guard above must not overreach.
+    expect(keywordMatchesPromptTokens("pay rent", tokenize("did I pay the rent"))).toBe(true);
+    // A non-ASCII keyword gets the joined retry; an ASCII one never does, so
+    // "payrent" as a single token stays a miss.
+    expect(keywordMatchesPromptTokens("pay rent", tokenize("payrent today"))).toBe(false);
+  });
+
+  it("treats saving a contact as a write, in both languages", () => {
+    // A write tool needs a workspace hint AND a verb AND a target. Contacts had
+    // the verb and target but no workspace hint, so add_contact stayed hidden
+    // and the model replied as though it had saved the person.
+    for (const prompt of ["지안 번호 저장해줘", "연락처에 지안 추가해줘", "Save Ada's number as a contact"]) {
+      expect(isWorkspaceMutationPrompt(prompt), prompt).toBe(true);
+    }
+  });
+
+  it("does not turn a contact LOOKUP into a write", () => {
+    for (const prompt of ["지안 연락처 찾아줘", "지안 번호 뭐야?", "내 번호 알려줘", "Find Jane's contact details"]) {
+      expect(isWorkspaceMutationPrompt(prompt), prompt).toBe(false);
+    }
   });
 });

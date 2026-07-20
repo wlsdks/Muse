@@ -42,7 +42,7 @@ export function createBrowsingSearchTool(deps: BrowsingSearchToolDeps): MuseTool
         required: ["query"],
         type: "object"
       },
-      keywords: ["browsing", "history", "visited", "page", "site", "방문", "봤던", "히스토리", "브라우저"],
+      keywords: ["browsing", "history", "visited", "page", "site", "방문", "봤던", "히스토리", "브라우저", "기록"],
       name: "browsing_search",
       risk: "read"
     },

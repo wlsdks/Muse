@@ -28,7 +28,7 @@ export function createMathEvalTool(): MuseTool {
         type: "object"
       },
       domain: "core",
-      keywords: ["math", "calculate", "arithmetic"],
+      keywords: ["math", "calculate", "arithmetic", "계산", "더하", "빼", "곱하", "나누", "수식"],
       name: "math_eval",
       risk: "read"
     },

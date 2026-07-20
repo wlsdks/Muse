@@ -372,7 +372,7 @@ export function createFileListTool(options: FsReadToolsOptions = {}, policyPromi
         required: ["pattern"],
         type: "object"
       },
-      keywords: ["list", "glob", "files", "목록", "어떤 파일", "패턴"],
+      keywords: ["list", "glob", "files", "목록", "어떤 파일", "패턴", "파일", "폴더", "디렉터리", "뭐 있"],
       name: "file_list",
       risk: "read"
     },
@@ -502,7 +502,7 @@ export function createFileGrepTool(options: FsReadToolsOptions = {}, policyPromi
         required: ["pattern"],
         type: "object"
       },
-      keywords: ["grep", "search", "contents", "contain", "find", "검색", "내용", "찾아", "code", "source", "bug", "fix", "test"],
+      keywords: ["grep", "search", "contents", "contain", "find", "검색", "내용", "찾아", "code", "source", "bug", "fix", "test", "파일"],
       name: "file_grep",
       risk: "read"
     },

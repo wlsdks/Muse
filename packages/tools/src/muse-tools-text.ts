@@ -19,12 +19,12 @@ export function createTextStatsTool(): MuseTool {
         "Returns word, character (user-perceived / grapheme), and line counts for a string. Whitespace-only inputs return zero counts across all dimensions.",
       inputSchema: {
         additionalProperties: false,
-        properties: { text: { type: "string" } },
+        properties: { text: { description: "The text to measure, e.g. the body of a note or a draft message.", type: "string" } },
         required: ["text"],
         type: "object"
       },
       domain: "core",
-      keywords: ["text", "count", "statistics"],
+      keywords: ["text", "count", "statistics", "글자", "단어", "글자수", "통계", "길이"],
       name: "text_stats",
       risk: "read"
     },

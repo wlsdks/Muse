@@ -80,7 +80,7 @@ export function createMacContactsWriteTool(deps: MacContactsWriteToolDeps): Muse
         required: ["name"],
         type: "object"
       },
-      keywords: ["contact", "연락처", "address book", "save number", "add contact"],
+      keywords: ["contact", "연락처", "address book", "save number", "add contact", "저장", "추가", "등록", "번호", "전화번호", "주소록"],
       name: "mac_contacts_write",
       risk: "execute"
     },

@@ -322,12 +322,35 @@ export function tokenMatchesKeywordWord(token: string, word: string): boolean {
 export function keywordMatchesPromptTokens(keyword: string, promptTokens: ReadonlySet<string>): boolean {
   const words = keyword.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 0);
   if (words.length === 0) return false;
-  return words.every((word) => {
+  const hits = (word: string): boolean => {
     for (const token of promptTokens) {
       if (tokenMatchesKeywordWord(token, word)) return true;
     }
     return false;
-  });
+  };
+  if (words.every(hits)) return true;
+  // Korean is written both spaced and unspaced for the same phrase — "이번 주"
+  // and "이번주" are one word to a reader. Per-word matching cannot bridge that:
+  // the second word "주" is a single character, and single-char containment is
+  // refused as noise, so the spaced keyword misses the unspaced prompt entirely
+  // and the tool is BLOCKED, not merely down-ranked. Retry the joined form for
+  // non-ASCII keywords only, so ASCII phrases ("pay rent") keep needing all
+  // their words and never collapse into a substring match.
+  if (words.length > 1 && /[^\u0000-\u007f]/u.test(keyword)) {
+    if (hits(words.join(""))) return true;
+    // Korean attaches particles to the stem, so "살" appears as "살이야" and a
+    // single-character word can never match by exact token. Containment is
+    // refused for a LONE single char because it is noise ("비" inside
+    // "비밀번호"), but inside a multi-word phrase every word must still hit —
+    // "몇 살" needs both "몇" AND "살", which noise does not supply.
+    return words.every((word) => {
+      for (const token of promptTokens) {
+        if (tokenMatchesKeywordWord(token, word) || token.includes(word)) return true;
+      }
+      return false;
+    });
+  }
+  return false;
 }
 
 function isToolRelevantToPrompt(tool: MuseTool, promptTokens: ReadonlySet<string>): boolean {
@@ -440,6 +463,17 @@ const workspaceHints = [
   "회의",
   "리마인더",
   "리마인드",
+  // Contacts are a first-class personal-write surface. A mutation prompt needs
+  // a workspace hint AND a verb AND a target; without these, "연락처에 지안
+  // 추가해줘" carries the verb and the target but no workspace, so add_contact
+  // stays hidden and the model replies as though it had saved the person.
+  "contact",
+  "contacts",
+  "address book",
+  "연락처",
+  "주소록",
+  "전화번호",
+  "번호",
   // Code/file edit targets — so a "fix the bug in the source file" task clears
   // the write-intent gate and file_edit can reach the model (it still passes the
   // relevance + approval gates before any write).
@@ -576,6 +610,20 @@ const mutationTargetHints = [
   "회의",
   "리마인더",
   "리마인드",
+  // People and places the assistant writes to on the user's behalf. Without
+  // these, "save Ada's number as a contact" carries a mutation VERB but no
+  // recognised target, so every write tool is blocked as
+  // write_without_mutation_intent and the model answers as if it had saved it.
+  "contact",
+  "contacts",
+  "address book",
+  "phone number",
+  "연락처",
+  "주소록",
+  "전화번호",
+  "번호",
+  "이메일",
+  "메일",
   // Code/file edit targets (paired with the workspaceHints + fix/debug verbs).
   "file",
   "source",

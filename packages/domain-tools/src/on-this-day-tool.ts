@@ -133,7 +133,7 @@ export function createOnThisDayTool(deps: OnThisDayToolDeps): MuseTool {
         required: [],
         type: "object"
       },
-      keywords: ["on this day", "anniversary", "past notes", "years ago", "오늘 같은 날", "예전", "그날", "journal"],
+      keywords: ["on this day", "anniversary", "past notes", "years ago", "오늘 같은 날", "예전", "그날", "journal", "작년", "오늘", "그때", "노트", "이맘때"],
       name: "on_this_day_notes",
       risk: "read"
     },

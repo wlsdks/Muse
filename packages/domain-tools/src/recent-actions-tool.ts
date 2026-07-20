@@ -38,7 +38,7 @@ export function createRecentActionsTool(deps: RecentActionsToolDeps): MuseTool {
         required: [],
         type: "object"
       },
-      keywords: ["action", "actions", "did", "done", "taken", "what did you do", "history", "log", "한 일", "뭘 했", "행동", "내역"],
+      keywords: ["action", "actions", "did", "done", "taken", "what did you do", "history", "log", "한 일", "뭘 했", "행동", "내역", "최근", "뭐 했", "했지", "기록", "활동"],
       name: "recent_actions",
       risk: "read"
     },

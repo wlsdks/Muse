@@ -102,7 +102,7 @@ export function createWorldTimeTool(deps: WorldTimeToolDeps = {}): MuseTool {
         required: ["place"],
         type: "object"
       },
-      keywords: ["time", "timezone", "clock", "hour", "시간", "몇시"],
+      keywords: ["time", "timezone", "clock", "hour", "시간", "몇시", "몇 시", "현지", "시차", "해외", "런던", "뉴욕", "도쿄"],
       name: "world_time",
       risk: "read"
     },

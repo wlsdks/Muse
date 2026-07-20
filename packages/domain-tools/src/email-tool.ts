@@ -42,7 +42,7 @@ export function createEmailSendTool(deps: EmailSendToolDeps): MuseTool {
         required: ["to", "subject", "body"],
         type: "object"
       },
-      keywords: ["email", "send", "reply", "mail"],
+      keywords: ["email", "send", "reply", "mail", "메일", "이메일", "보내", "발송"],
       name: "email_send",
       risk: "execute"
     },
@@ -101,7 +101,7 @@ export function createEmailReplyTool(deps: EmailReplyToolDeps): MuseTool {
         required: ["id", "body"],
         type: "object"
       },
-      keywords: ["reply", "respond", "answer", "reply to", "email", "write back"],
+      keywords: ["reply", "respond", "answer", "reply to", "email", "write back", "메일", "이메일", "답장", "회신"],
       name: "email_reply",
       risk: "execute"
     },
@@ -163,7 +163,7 @@ export function createEmailForwardTool(deps: EmailForwardToolDeps): MuseTool {
         required: ["id", "to"],
         type: "object"
       },
-      keywords: ["forward", "fwd", "email", "send on", "pass along"],
+      keywords: ["forward", "fwd", "email", "send on", "pass along", "메일", "이메일", "전달", "포워드", "포워딩", "넘겨"],
       name: "email_forward",
       risk: "execute"
     },
@@ -223,7 +223,7 @@ export function createEmailReadTool(deps: EmailReadToolDeps): MuseTool {
         },
         type: "object"
       },
-      keywords: ["email", "emails", "inbox", "unread", "mail", "mails", "messages", "read", "이메일", "메일"],
+      keywords: ["email", "emails", "inbox", "unread", "mail", "mails", "messages", "read", "이메일", "메일", "최근", "받은편지함", "온 거"],
       name: "email_recent",
       risk: "read"
     },
@@ -273,7 +273,7 @@ export function createEmailSearchTool(deps: EmailSearchToolDeps): MuseTool {
         required: ["query"],
         type: "object"
       },
-      keywords: ["email", "emails", "search", "find", "from", "about", "mail", "mails", "이메일", "메일", "찾아"],
+      keywords: ["email", "emails", "search", "find", "from", "about", "mail", "mails", "이메일", "메일", "찾아", "검색"],
       name: "search_email",
       risk: "read"
     },

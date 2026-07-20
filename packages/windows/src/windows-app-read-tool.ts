@@ -47,7 +47,7 @@ export function createWinAppReadTool(deps: WindowsToolDeps = {}): MuseTool {
         required: ["source"],
         type: "object"
       },
-      keywords: ["battery", "배터리", "wifi", "와이파이", "storage", "disk", "용량", "window", "창"],
+      keywords: ["battery", "배터리", "wifi", "와이파이", "storage", "disk", "용량", "window", "창", "저장공간", "상태"],
       name: "win_app_read",
       risk: "read"
     },

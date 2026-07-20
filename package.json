@@ -77,6 +77,7 @@
     "eval:continuity-provenance": "pnpm --filter @muse/attunement build && node scripts/eval-continuity-provenance.mjs",
     "eval:grounding-delta": "pnpm --filter \"@muse/autoconfigure...\" build && pnpm --filter @muse/cli build && node apps/cli/scripts/verify-grounding-delta.mjs",
     "eval:grounding-delta:squad": "pnpm --filter \"@muse/autoconfigure...\" build && pnpm --filter @muse/cli build && node apps/cli/scripts/verify-grounding-delta-squad.mjs",
+    "verify:tool-exposure": "pnpm --filter @muse/autoconfigure build && node scripts/verify-korean-tool-exposure.mjs",
     "eval:tool-arg-grounding": "pnpm --filter @muse/cli build && node apps/cli/scripts/verify-tool-arg-grounding.mjs",
     "mcp:stdio-contract": "pnpm --filter @muse/cli build && node apps/cli/scripts/verify-mcp-stdio-contract.mjs",
     "muse": "node apps/cli/dist/index.js",

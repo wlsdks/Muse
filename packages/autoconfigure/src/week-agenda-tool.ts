@@ -118,7 +118,7 @@ export function createWeekAgendaTool(deps: WeekAgendaToolDeps): MuseTool {
         required: [],
         type: "object"
       },
-      keywords: ["week", "agenda", "this week", "coming up", "what's on", "schedule", "주간", "이번 주", "일정", "다가오는"],
+      keywords: ["week", "agenda", "this week", "coming up", "what's on", "schedule", "주간", "이번 주", "일정", "다가오는", "이번주", "다음 주", "다음주", "주말", "일주일", "스케줄"],
       name: "week_agenda",
       risk: "read"
     },

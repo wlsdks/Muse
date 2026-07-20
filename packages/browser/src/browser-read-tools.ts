@@ -36,7 +36,7 @@ export function createBrowserOpenTool(deps: BrowserReadToolDeps): MuseTool {
         required: ["url"],
         type: "object"
       },
-      keywords: ["browser", "web", "page", "페이지", "site", "사이트", "open", "visit", "navigate", "url", "website", "브라우저"],
+      keywords: ["browser", "web", "page", "페이지", "site", "사이트", "open", "visit", "navigate", "url", "website", "브라우저", "열어", "접속", "가줘", "링크", "들어가"],
       name: "browser_open",
       risk: "read"
     },
@@ -78,7 +78,7 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
         required: [],
         type: "object"
       },
-      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "more", "브라우저"],
+      keywords: ["browser", "page", "페이지", "read", "읽어", "content", "내용", "find", "more", "브라우저", "본문", "요약"],
       name: "browser_read",
       risk: "read"
     },
@@ -165,7 +165,7 @@ export function createBrowserLookTool(deps: BrowserLookToolDeps): MuseTool {
         required: [],
         type: "object"
       },
-      keywords: ["browser", "look", "see", "chart", "그래프", "차트", "graph", "diagram", "그림", "보여", "시각", "visual", "브라우저"],
+      keywords: ["browser", "look", "see", "chart", "그래프", "차트", "graph", "diagram", "그림", "보여", "시각", "visual", "브라우저", "화면", "페이지"],
       name: "browser_look",
       risk: "read"
     },

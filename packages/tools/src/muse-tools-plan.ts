@@ -69,7 +69,7 @@ export function createRunToolPlanTool(): MuseTool {
         type: "object"
       },
       domain: "core",
-      keywords: ["plan", "chain", "multi", "step", "orchestrate", "pipeline"],
+      keywords: ["plan", "chain", "multi", "step", "orchestrate", "pipeline", "계획", "여러", "순서대로", "단계"],
       name: "run_tool_plan",
       risk: "execute"
     },

@@ -32,7 +32,7 @@ export function createContactsFindTool(deps: ContactsFindToolDeps): MuseTool {
         required: ["name"],
         type: "object"
       },
-      keywords: ["contact", "email", "address", "who", "whose", "person", "handle", "birthday", "phone", "number", "call", "text", "about", "allergic"],
+      keywords: ["contact", "email", "address", "who", "whose", "person", "handle", "birthday", "phone", "number", "call", "text", "about", "allergic", "연락처", "번호", "전화", "이메일", "주소", "누구"],
       name: "find_contact",
       risk: "read"
     },
@@ -109,7 +109,7 @@ export function createContactsAddTool(deps: ContactsAddToolDeps): MuseTool {
       // both false-drops and lets stray digits vouch. Domain-aware /
       // literal-@ / numeric-component matching makes all five groundable.
       groundedArgs: ["relationship", "phone:phone", "email:email", "handle:handle", "birthday:date"],
-      keywords: ["contact", "add", "save", "remember", "person", "phone", "number"],
+      keywords: ["contact", "add", "save", "remember", "person", "phone", "number", "연락처", "저장", "추가", "등록", "번호"],
       name: "add_contact",
       risk: "write"
     },
@@ -191,7 +191,7 @@ export function createUpcomingBirthdaysTool(deps: UpcomingBirthdaysToolDeps): Mu
         required: [],
         type: "object"
       },
-      keywords: ["birthday", "birthdays", "upcoming", "생일", "coming up", "this week", "anniversary"],
+      keywords: ["birthday", "birthdays", "upcoming", "생일", "coming up", "this week", "anniversary", "다가오는", "이번 주"],
       name: "upcoming_birthdays",
       risk: "read"
     },
@@ -229,7 +229,7 @@ export function createContactsRemoveTool(deps: ContactsRemoveToolDeps): MuseTool
         required: ["name"],
         type: "object"
       },
-      keywords: ["contact", "remove", "delete", "forget", "person"],
+      keywords: ["contact", "remove", "delete", "forget", "person", "연락처", "삭제", "지워", "제거"],
       name: "remove_contact",
       risk: "write"
     },
