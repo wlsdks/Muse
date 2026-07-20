@@ -162,6 +162,19 @@ export {
 } from "./background-review-arms.js";
 
 export {
+  ACTUATOR_MODES,
+  DEFAULT_ACTUATOR_MODE,
+  isActuatorMode,
+  normalizeActuatorConfig,
+  readActuatorConfig,
+  readActuatorConfigSafe,
+  resolveActuatorMode,
+  writeActuatorConfig,
+  type ActuatorConfig,
+  type ActuatorMode
+} from "./actuator-mode.js";
+
+export {
   DAY_RHYTHM_DEFAULT_EVENING_HOUR,
   DAY_RHYTHM_DEFAULT_MORNING_HOUR,
   normalizeDayRhythmConfig,

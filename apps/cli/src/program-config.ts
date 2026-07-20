@@ -22,6 +22,7 @@ import path from "node:path";
 
 import type { Command } from "commander";
 
+import { ACTUATOR_MODES, isActuatorMode, type ActuatorMode } from "@muse/autoconfigure";
 import { isRecord, readStoredToken } from "./credential-store.js";
 import { closestCommandName } from "./closest-command.js";
 import type { ProgramIO } from "./program.js";
@@ -36,6 +37,13 @@ export interface MuseCliConfig {
   readonly defaultModel?: string;
   /** UI/guidance language for the CLI surface — `resolveCliLanguage` (cli-i18n.ts) reads this when `MUSE_LANG` is unset. */
   readonly language?: "ko" | "en";
+  /**
+   * How much Muse may act on the world without asking (off | ask | auto).
+   * Read through `@muse/autoconfigure`'s `readActuatorConfigSafe`, which owns
+   * the normalisation and the fail-closed default — this field is only the
+   * on-disk shape so `muse config set/show` can reach it.
+   */
+  readonly actuators?: { readonly mode: ActuatorMode };
 }
 
 export interface ReadApiOptionsOptions {
@@ -149,7 +157,13 @@ export async function readConfigStore(io: ProgramIO): Promise<MuseCliConfig> {
       ...(typeof parsed.defaultModel === "string" && parsed.defaultModel.trim().length > 0
         ? { defaultModel: parsed.defaultModel }
         : {}),
-      ...(parsed.language === "ko" || parsed.language === "en" ? { language: parsed.language } : {})
+      ...(parsed.language === "ko" || parsed.language === "en" ? { language: parsed.language } : {}),
+      // Only a KNOWN mode survives the read. An unrecognised value drops the
+      // block entirely rather than being carried through, so `muse config show`
+      // and `readActuatorConfigSafe` agree: both report `off`.
+      ...(isRecord(parsed.actuators) && isActuatorMode(parsed.actuators.mode)
+        ? { actuators: { mode: parsed.actuators.mode } }
+        : {})
     };
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
@@ -183,7 +197,7 @@ export async function writeConfigStore(io: ProgramIO, config: MuseCliConfig): Pr
   await chmod(filePath, 0o600).catch(() => undefined);
 }
 
-const SUPPORTED_CONFIG_KEYS = ["apiUrl", "defaultModel", "language"] as const;
+const SUPPORTED_CONFIG_KEYS = ["apiUrl", "defaultModel", "language", "actuators.mode"] as const;
 
 export function setConfigValue(config: MuseCliConfig, key: string, value: string): MuseCliConfig {
   const trimmed = value.trim();
@@ -208,6 +222,17 @@ export function setConfigValue(config: MuseCliConfig, key: string, value: string
     return { ...config, language: lang };
   }
 
+  if (key === "actuators.mode") {
+    const mode = trimmed.toLowerCase();
+    // Reject an unknown mode loudly rather than storing it: `normalizeActuatorConfig`
+    // would silently read it back as `off`, so a typo would look accepted and
+    // then do nothing.
+    if (!isActuatorMode(mode)) {
+      throw new Error(`Invalid actuator mode '${trimmed}' (expected one of: ${ACTUATOR_MODES.join(", ")})`);
+    }
+    return { ...config, actuators: { mode } };
+  }
+
   const suggestion = closestCommandName(key, SUPPORTED_CONFIG_KEYS);
   const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
   throw new Error(`Unsupported config key '${key}' (expected one of: ${SUPPORTED_CONFIG_KEYS.join(", ")})${hint}`);
@@ -225,10 +250,15 @@ export function unsetConfigValue(
   config: MuseCliConfig,
   key: string
 ): { readonly config: MuseCliConfig; readonly wasSet: boolean } {
-  if (key !== "apiUrl" && key !== "defaultModel" && key !== "language") {
+  if (key !== "apiUrl" && key !== "defaultModel" && key !== "language" && key !== "actuators.mode") {
     const suggestion = closestCommandName(key, SUPPORTED_CONFIG_KEYS);
     const hint = suggestion ? ` — did you mean '${suggestion}'?` : "";
     throw new Error(`Unsupported config key '${key}' (expected one of: ${SUPPORTED_CONFIG_KEYS.join(", ")})${hint}`);
+  }
+  if (key === "actuators.mode") {
+    const wasSet = config.actuators !== undefined;
+    const { actuators: _removedActuators, ...rest } = config;
+    return { config: rest, wasSet };
   }
   const wasSet = config[key] !== undefined;
   const { [key]: _removed, ...rest } = config;

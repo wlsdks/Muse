@@ -19,6 +19,7 @@ import type { ProgramIO } from "./program.js";
 export interface MuseCliConfigShape {
   readonly apiUrl?: string;
   readonly defaultModel?: string;
+  readonly actuators?: { readonly mode: string };
 }
 
 export interface ConfigCommandHelpers {
@@ -46,12 +47,15 @@ export function registerConfigCommands(program: Command, io: ProgramIO, helpers:
 
       io.stdout(`apiUrl=${store.apiUrl ?? ""}\n`);
       io.stdout(`defaultModel=${store.defaultModel ?? ""}\n`);
+      // Show the EFFECTIVE default rather than a blank when unset — an empty
+      // value here would read as "no policy", when the real policy is `off`.
+      io.stdout(`actuators.mode=${store.actuators?.mode ?? "off"}\n`);
     });
 
   config
     .command("set")
     .description("Set a CLI config value")
-    .argument("<key>", "Config key: apiUrl, defaultModel, or language (ko/en)")
+    .argument("<key>", "Config key: apiUrl, defaultModel, language (ko/en), or actuators.mode (off|ask|auto)")
     .argument("<value>", "Config value")
     .option("--json", "Emit a structured payload instead of the human-readable confirmation")
     .action(async (key: string, value: string, options: { readonly json?: boolean }) => {
@@ -68,7 +72,7 @@ export function registerConfigCommands(program: Command, io: ProgramIO, helpers:
   config
     .command("unset")
     .description("Clear a CLI config value (reverts to the built-in default)")
-    .argument("<key>", "Config key: apiUrl, defaultModel, or language (ko/en)")
+    .argument("<key>", "Config key: apiUrl, defaultModel, language (ko/en), or actuators.mode (off|ask|auto)")
     .option("--json", "Emit a structured payload instead of the human-readable confirmation")
     .action(async (key: string, options: { readonly json?: boolean }) => {
       const current = await helpers.readConfigStore(io);

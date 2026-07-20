@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **585** variables.
+Total: **586** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -23,6 +23,7 @@ Total: **585** variables.
 | `MUSE_ACTIVE_CONTEXT_REMINDERS_ENABLED` | packages/autoconfigure |
 | `MUSE_ACTIVE_CONVERSATION_FILE` | packages/stores |
 | `MUSE_ACTIVITY_FILE` | apps/cli |
+| `MUSE_ACTUATOR_MODE` | packages/autoconfigure |
 | `MUSE_AGENTS_DIR` | apps/cli |
 | `MUSE_AGENT_CARD_DESCRIPTION` | packages/autoconfigure |
 | `MUSE_AGENT_CARD_NAME` | packages/autoconfigure |
@@ -101,8 +102,8 @@ Total: **585** variables.
 | `MUSE_BUDGET_MONTHLY_LIMIT_USD` | packages/autoconfigure |
 | `MUSE_BUDGET_WARNING_PERCENT` | packages/autoconfigure |
 | `MUSE_BUILD_ID` | apps/api, apps/cli, apps/desktop |
-| `MUSE_CACHE_BOUNDARY` | packages/prompts |
-| `MUSE_CACHE_BOUNDARY_MARKER` | apps/api, packages/prompts |
+| `MUSE_CACHE_BOUNDARY` | packages/agent-core, packages/prompts |
+| `MUSE_CACHE_BOUNDARY_MARKER` | apps/api, packages/agent-core, packages/prompts |
 | `MUSE_CACHE_ENABLED` | packages/autoconfigure |
 | `MUSE_CACHE_MAX_SIZE` | packages/autoconfigure |
 | `MUSE_CACHE_TTL_MS` | packages/autoconfigure |

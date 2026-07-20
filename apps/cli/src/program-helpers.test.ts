@@ -242,7 +242,25 @@ describe("setConfigValue", () => {
   });
 
   it("rejects an unknown key WITHOUT a guess when nothing is close (no random suggestion)", () => {
-    expect(() => setConfigValue({}, "totallydifferent", "x")).toThrow(/Unsupported config key 'totallydifferent'.*expected one of: apiUrl, defaultModel, language\)$/u);
+    expect(() => setConfigValue({}, "totallydifferent", "x")).toThrow(/Unsupported config key 'totallydifferent'.*expected one of: apiUrl, defaultModel, language, actuators\.mode\)$/u);
+  });
+
+  it("actuators.mode: normalizes case, rejects an unknown mode, and round-trips through unset", () => {
+    expect(setConfigValue({}, "actuators.mode", "ASK")).toMatchObject({ actuators: { mode: "ask" } });
+    expect(setConfigValue({}, "actuators.mode", " auto ")).toMatchObject({ actuators: { mode: "auto" } });
+    // Rejected LOUDLY rather than stored: normalizeActuatorConfig would read an
+    // unknown value back as `off`, so a silently-accepted typo would look set
+    // and then do nothing.
+    expect(() => setConfigValue({}, "actuators.mode", "automatic"))
+      .toThrow(/Invalid actuator mode 'automatic' \(expected one of: off, ask, auto\)/u);
+    expect(unsetConfigValue({ actuators: { mode: "auto" } }, "actuators.mode"))
+      .toEqual({ config: {}, wasSet: true });
+    expect(unsetConfigValue({}, "actuators.mode")).toEqual({ config: {}, wasSet: false });
+  });
+
+  it("actuators.mode: setting it leaves the other config keys intact", () => {
+    expect(setConfigValue({ apiUrl: "http://x", defaultModel: "ollama/gemma4:12b", language: "ko" }, "actuators.mode", "ask"))
+      .toEqual({ actuators: { mode: "ask" }, apiUrl: "http://x", defaultModel: "ollama/gemma4:12b", language: "ko" });
   });
 
   it("language: normalizes case and rejects anything other than ko/en (fail-close, lists the accepted values)", () => {
