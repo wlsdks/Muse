@@ -3,12 +3,13 @@
  * `Client` + transport classes (stdio / sse / streamable) into the
  * provider-neutral `McpConnection` shape Muse runs on.
  *
- * Companion to `packages/mcp/src/index.ts`: the abstractions
- * (`McpConnection`, `McpTransportConnector`,
- * `DefaultMcpTransportConnectorOptions`, the typed errors, the
- * `McpServer` / `McpSecurityPolicy` types) all live in `index.ts`;
- * this file imports them back so the SDK coupling stays in one
- * focused module.
+ * The abstractions (`McpConnection`, `McpTransportConnector`,
+ * `DefaultMcpTransportConnectorOptions`, `McpServer`,
+ * `McpSecurityPolicy`) are type-only imports from `index.ts` — erased
+ * at runtime. The two error classes it THROWS come from the leaves
+ * that own them (`in-memory-stores.js`, `transport-errors.js`);
+ * importing them back through the barrel would make `index.ts` and
+ * this file a runtime import cycle.
  *
  * What moved:
  *   - DefaultMcpTransportConnector class (~115 LOC)
@@ -45,15 +46,15 @@ import type { ToolRisk } from "@muse/tools";
 import { isCancellationLikeError } from "@muse/resilience";
 
 import { toErrorMessage } from "./error-utils.js";
-import {
-  McpConnectionError,
-  McpExternalTransportBlockedError,
-  type DefaultMcpTransportConnectorOptions,
-  type McpConnection,
-  type McpRemoteTool,
-  type McpSecurityPolicy,
-  type McpServer,
-  type McpTransportConnector
+import { McpConnectionError } from "./in-memory-stores.js";
+import { McpExternalTransportBlockedError } from "./transport-errors.js";
+import type {
+  DefaultMcpTransportConnectorOptions,
+  McpConnection,
+  McpRemoteTool,
+  McpSecurityPolicy,
+  McpServer,
+  McpTransportConnector
 } from "./index.js";
 import { MuseMcpOAuthProvider } from "./oauth-provider.js";
 import {

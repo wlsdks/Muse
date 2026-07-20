@@ -22,7 +22,7 @@ import {
   type PromptBuildInput,
   type PromptLayer,
   type PromptLayerContext
-} from "./index.js";
+} from "./system-prompt.js";
 
 export type MuseSurface =
   | "chat"

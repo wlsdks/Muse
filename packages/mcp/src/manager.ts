@@ -2,12 +2,13 @@
  * McpManager — the runtime registry that owns MCP server lifecycle:
  * register / connect / health / preflight / reconnect / tool catalog.
  *
- * Companion to `packages/mcp/src/index.ts`: the abstractions
- * (`McpConnection`, `McpServerStore`, `McpManagerOptions`, the typed
- * `McpServer*` / `McpHealth*` / `McpPreflight*` shapes), the
- * in-memory stores, the security policy provider, the normalisers,
- * the typed errors, and `createMcpMuseTool` all live in `index.ts`;
- * this file imports them back.
+ * The typed abstractions (`McpConnection`, `McpServerStore`,
+ * `McpManagerOptions`, the `McpServer*` / `McpHealth*` / `McpPreflight*`
+ * shapes) are type-only imports from `index.ts` — erased at runtime, so
+ * they carry no module edge. Every VALUE comes from the leaf that owns
+ * it (`in-memory-stores.js`, `transport-errors.js`,
+ * `mcp-tool-factory.js`), never round-tripped through the barrel, which
+ * would make `index.ts` and this file a runtime import cycle.
  *
  * One private helper comes over because it was only used by the
  * manager:
@@ -28,28 +29,30 @@ import type { MuseTool } from "@muse/tools";
 import { toErrorMessage } from "./error-utils.js";
 import {
   InMemoryMcpServerStore,
-  MCP_EXTERNAL_TRANSPORT_BLOCKED,
   McpConnectionError,
   McpSecurityPolicyProvider,
-  createMcpMuseTool,
   normalizeMcpServerInput,
-  normalizeReconnectPolicy,
-  type CheckPackageForMalwareAdvisoryOptions,
-  type McpConnection,
-  type McpConnectionResolution,
-  type McpHealthSnapshot,
-  type McpHealthStatus,
-  type McpManagerOptions,
-  type McpPreflightCheck,
-  type McpPreflightReport,
-  type McpReconnectPolicy,
-  type McpRemoteTool,
-  type McpServer,
-  type McpServerInput,
-  type McpServerStatus,
-  type McpServerStore,
-  type McpServerValidationOptions,
-  type McpTransportConnector
+  normalizeReconnectPolicy
+} from "./in-memory-stores.js";
+import { MCP_EXTERNAL_TRANSPORT_BLOCKED } from "./transport-errors.js";
+import { createMcpMuseTool } from "./mcp-tool-factory.js";
+import type {
+  CheckPackageForMalwareAdvisoryOptions,
+  McpConnection,
+  McpConnectionResolution,
+  McpHealthSnapshot,
+  McpHealthStatus,
+  McpManagerOptions,
+  McpPreflightCheck,
+  McpPreflightReport,
+  McpReconnectPolicy,
+  McpRemoteTool,
+  McpServer,
+  McpServerInput,
+  McpServerStatus,
+  McpServerStore,
+  McpServerValidationOptions,
+  McpTransportConnector
 } from "./index.js";
 import { auditMcpServerPackageForMalware } from "./osv-check.js";
 import { auditMcpServerConfig } from "./server-audit.js";

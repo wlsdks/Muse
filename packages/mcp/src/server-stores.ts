@@ -6,9 +6,10 @@
  * source file in the repo) so the persistence adapters live in
  * their own focused module. The shared types (`McpServer`,
  * `McpSecurityPolicy`, the store interfaces, the `Kysely*StoreOptions`
- * shapes), the in-memory stores, the manager, the transport
- * connector, and the validation/normalisation helpers all stay in
- * `index.ts`.
+ * shapes) are type-only imports from `index.ts` — erased at runtime.
+ * The normalisers it actually CALLS come from the leaf that owns them
+ * (`in-memory-stores.js`); importing them back through the barrel
+ * would make `index.ts` and this file a runtime import cycle.
  *
  * The classes + their insert/update/map helpers come over together
  * because the helpers are only used by the Kysely stores. The
@@ -28,15 +29,17 @@ import type { Insertable, Kysely, Selectable } from "kysely";
 import {
   McpRegistryError,
   normalizeMcpSecurityPolicy,
-  normalizeMcpServerInput,
-  type KyselyMcpSecurityPolicyStoreOptions,
-  type KyselyMcpServerStoreOptions,
-  type McpSecurityPolicy,
-  type McpSecurityPolicyInput,
-  type McpSecurityPolicyStore,
-  type McpServer,
-  type McpServerInput,
-  type McpServerStore
+  normalizeMcpServerInput
+} from "./in-memory-stores.js";
+import type {
+  KyselyMcpSecurityPolicyStoreOptions,
+  KyselyMcpServerStoreOptions,
+  McpSecurityPolicy,
+  McpSecurityPolicyInput,
+  McpSecurityPolicyStore,
+  McpServer,
+  McpServerInput,
+  McpServerStore
 } from "./index.js";
 
 type McpServerRow = Selectable<McpServerTable>;
