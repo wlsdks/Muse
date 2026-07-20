@@ -1,7 +1,7 @@
 import { errorMessage, type JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { defaultOsascriptRunner, escapeAppleScript, NETWORKSETUP_PATH, OSASCRIPT_TIMEOUT_MS, parseWifiDevice, PMSET_PATH, runChild, type MacCommandResult, type MacOsascriptRunner } from "./macos-exec.js";
+import { defaultOsascriptRunner, NETWORKSETUP_PATH, OSASCRIPT_TIMEOUT_MS, parseWifiDevice, PMSET_PATH, runChild, type MacCommandResult, type MacOsascriptRunner } from "./macos-exec.js";
 import { defaultShortcutsRunner, type ShortcutsRunner } from "./macos-shortcut-tool.js";
 
 // ── Tier 1: mac_system_set (volume / mute / sleep / Wi-Fi / Focus / quit app) ─────
@@ -233,13 +233,14 @@ export function createMacSystemSetTool(deps: MacSystemSetToolDeps = {}): MuseToo
         if (app.length === 0) {
           return { set: false, reason: "setting 'quit_app' requires a non-empty 'app' (the app name to quit), e.g. 'Safari'" };
         }
-        // The app name MUST pass through the shared escaper before embedding
-        // in the AppleScript string literal — a raw `"` would otherwise break
-        // out of `tell application "..."` and let injected script text run.
-        const script = `tell application "${escapeAppleScript(app)}" to quit`;
+        // The app name arrives as an ARGUMENT, never embedded in the source: a
+        // raw `"` in an interpolated name would break out of the string literal
+        // and run injected script text, and `tell application <variable>` is
+        // the documented form that accepts a name held in a variable.
+        const script = ["on run argv", "tell application (item 1 of argv) to quit", "end run"].join("\n");
         let result: MacCommandResult;
         try {
-          result = await osascript(script);
+          result = await osascript(script, [app]);
         } catch (cause) {
           return { reason: `osascript spawn failed: ${errorMessage(cause)}`, set: false };
         }

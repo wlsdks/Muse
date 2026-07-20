@@ -1,7 +1,7 @@
 import { errorMessage, type JsonObject, type JsonValue } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { defaultOsascriptRunner, escapeAppleScript, isPermissionError, NETWORKSETUP_PATH, OSASCRIPT_TIMEOUT_MS, parseWifiDevice, PMSET_PATH, runChild, type MacCommandResult, type MacOsascriptRunner } from "./macos-exec.js";
+import { defaultOsascriptRunner, isPermissionError, NETWORKSETUP_PATH, OSASCRIPT_TIMEOUT_MS, parseWifiDevice, PMSET_PATH, runChild, type MacCommandResult, type MacOsascriptRunner } from "./macos-exec.js";
 
 const DF_PATH = "/bin/df";
 const IPCONFIG_PATH = "/usr/sbin/ipconfig";
@@ -18,7 +18,9 @@ type MacReadApp = (typeof MAC_OSASCRIPT_READ_APPS)[number];
 const MAC_SHELL_READ_APPS = ["battery", "storage", "wifi_status", "ip_address"] as const;
 const MAC_APP_READ_APPS = [...MAC_OSASCRIPT_READ_APPS, ...MAC_SHELL_READ_APPS] as const;
 
-function buildReadScript(app: MacReadApp, query: string): string {
+/** Every branch is a CONSTANT: no caller input is ever embedded in the
+ *  script source, so there is no literal for an injected value to escape. */
+function buildReadScript(app: MacReadApp): string {
   switch (app) {
     case "clipboard":
       return `return (the clipboard as text)`;
@@ -49,11 +51,17 @@ function buildReadScript(app: MacReadApp, query: string): string {
         `end tell`
       ].join("\n");
     case "contacts":
+      // `on run argv` is Apple's documented way to pass a value into a script
+      // without embedding it in the source. The query is user-controlled text,
+      // so it must arrive as an ARGUMENT — an escaper is a denylist, and this
+      // is the path where a mistake would execute attacker script text.
       return [
+        `on run argv`,
+        `set nameQuery to item 1 of argv`,
         `set output to ""`,
         `tell application "Contacts"`,
         `  if it is not running then return "not running"`,
-        `  repeat with p in (people whose name contains "${escapeAppleScript(query)}")`,
+        `  repeat with p in (people whose name contains nameQuery)`,
         `    set pphones to ""`,
         `    repeat with ph in phones of p`,
         `      set pphones to pphones & (value of ph) & ";"`,
@@ -65,7 +73,8 @@ function buildReadScript(app: MacReadApp, query: string): string {
         `    set output to output & (name of p) & tab & pphones & tab & pemails & linefeed`,
         `  end repeat`,
         `end tell`,
-        `return output`
+        `return output`,
+        `end run`
       ].join("\n");
     case "mail_unread":
       return [
@@ -468,7 +477,7 @@ export function createMacAppReadTool(deps: MacAppReadToolDeps = {}): MuseTool {
       }
       let result: MacCommandResult;
       try {
-        result = await runner(buildReadScript(app as MacReadApp, query));
+        result = await runner(buildReadScript(app as MacReadApp), [query]);
       } catch (cause) {
         return { error: `osascript spawn failed: ${errorMessage(cause)}` };
       }

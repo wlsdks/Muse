@@ -183,16 +183,31 @@ describe("mac_app_read — Tier 0 read", () => {
     expect(await tool.execute({ app: "frontmost_window" }, ctx)).toEqual({ app: "frontmost_window", process: "Safari", windowTitle: "Apple — Start" });
   });
 
-  it("parses contacts into a people array and passes the query into the script", async () => {
+  it("parses contacts into a people array and passes the query as an ARGUMENT, never as script source", async () => {
     let script = "";
-    const runner: MacOsascriptRunner = async (s) => { script = s; return ok("Jane Doe\t+14155551212;\tjane@icloud.com;\n"); };
+    let argv: readonly string[] = [];
+    const runner: MacOsascriptRunner = async (s, a = []) => { script = s; argv = a; return ok("Jane Doe\t+14155551212;\tjane@icloud.com;\n"); };
     const tool = createMacAppReadTool({ runner });
     const out = await tool.execute({ app: "contacts", query: "Jane" }, ctx);
     expect(out).toEqual({
       app: "contacts",
       people: [{ emails: ["jane@icloud.com"], name: "Jane Doe", phones: ["+14155551212"] }]
     });
-    expect(script).toContain('name contains "Jane"');
+    expect(argv).toEqual(["Jane"]);
+    expect(script).toContain("name contains nameQuery");
+  });
+
+  it("keeps an injected contacts query OUT of the script text entirely", async () => {
+    // Stronger than escaping: the untrusted value never reaches the compiler as
+    // source, so there is no literal to break out of in the first place.
+    let script = "";
+    let argv: readonly string[] = [];
+    const runner: MacOsascriptRunner = async (s, a = []) => { script = s; argv = a; return ok(""); };
+    const query = '" & (do shell script "rm -rf ~") & "';
+    await createMacAppReadTool({ runner }).execute({ app: "contacts", query }, ctx);
+    expect(argv).toEqual([query]);
+    expect(script).not.toContain("do shell script");
+    expect(script).not.toContain("rm -rf");
   });
 
   it("parses mail_unread count + recent subjects", async () => {
@@ -613,21 +628,27 @@ describe("mac_system_set — Tier 1 volume / mute / display sleep", () => {
     expect(await tool.execute({ setting: "wifi_on" }, ctx)).toMatchObject({ set: false });
   });
 
-  it("quits the named app via osascript `tell application ... to quit`", async () => {
+  it("quits the named app by passing the name as an argument, not as script source", async () => {
     let script = "";
-    const tool = createMacSystemSetTool({ osascript: async (s) => { script = s; return ok(""); } });
+    let argv: readonly string[] = [];
+    const tool = createMacSystemSetTool({ osascript: async (s, a = []) => { script = s; argv = a; return ok(""); } });
     expect(await tool.execute({ setting: "quit_app", app: "Safari" }, ctx)).toEqual({ app: "Safari", set: true, setting: "quit_app" });
-    expect(script).toBe('tell application "Safari" to quit');
+    expect(script).toBe("on run argv\ntell application (item 1 of argv) to quit\nend run");
+    expect(argv).toEqual(["Safari"]);
   });
 
-  it("escapes an injected app name so it cannot break out of the AppleScript string literal", async () => {
+  it("keeps an injected app name OUT of the script text entirely", async () => {
+    // The old contract escaped the name into a string literal; this one never
+    // builds a literal at all. The assertion is therefore stronger: the script
+    // is a fixed constant no input can influence.
     let script = "";
-    const tool = createMacSystemSetTool({ osascript: async (s) => { script = s; return ok(""); } });
+    let argv: readonly string[] = [];
+    const tool = createMacSystemSetTool({ osascript: async (s, a = []) => { script = s; argv = a; return ok(""); } });
     const app = 'Safari" to (do shell script "rm -rf ~")';
     expect(await tool.execute({ setting: "quit_app", app }, ctx)).toMatchObject({ set: true });
-    expect(script).toContain('\\"');
-    expect(script).not.toContain('" to (do shell script "rm -rf ~")" to quit');
-    expect(script).toBe(`tell application "Safari\\" to (do shell script \\"rm -rf ~\\")" to quit`);
+    expect(script).toBe("on run argv\ntell application (item 1 of argv) to quit\nend run");
+    expect(script).not.toContain("do shell script");
+    expect(argv).toEqual([app]);
   });
 
   it("fails closed on a missing or blank app without calling osascript", async () => {
