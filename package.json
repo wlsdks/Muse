@@ -115,6 +115,7 @@
     "test:recall-dev-gate": "node --test scripts/eval-recall-dev-gate.test.mjs",
     "eval:recall-position-bias-dev40": "pnpm --filter @muse/agent-core build && pnpm --filter @muse/autoconfigure build && pnpm --filter @muse/recall build && pnpm --filter @muse/cli build && node scripts/eval-recall-position-bias-dev40.mjs",
     "test:recall-position-bias-dev40": "node --test scripts/eval-recall-position-bias-dev40.test.mjs",
+    "test:recall-sealed-qualification": "node --test scripts/recall-sealed-qualification.test.mjs",
     "evidence:dashboard:render": "node scripts/render-readme-evidence-dashboard.mjs",
     "evidence:dashboard:validate": "node scripts/render-readme-evidence-dashboard.mjs --validate",
     "eval:data:generate": "pnpm --filter @muse/eval-datasets build && node packages/eval-datasets/dist/cli.js generate",
