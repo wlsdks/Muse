@@ -28,6 +28,8 @@ import { clamp, redactSecretsInText, stripUntrustedTerminalChars } from "@muse/s
 import { classifyCommandTopology, emphasizeRiskyTokens } from "@muse/tools";
 
 import { needsContextualRewrite, type ChatGrounding } from "./chat-grounding.js";
+import { isAutoRunnableActuator } from "./actuator-auto-policy.js";
+import type { ActuatorMode } from "@muse/autoconfigure";
 import { displayWidth } from "./ink-input-state.js";
 import { MUSE_TAGLINE } from "./muse-identity.js";
 
@@ -384,7 +386,15 @@ export function chatToolApprovalGate(
   outbound: readonly string[],
   ask: (name: string, detail: string, kind: ApprovalKind) => Promise<ApprovalPromptDecision | boolean>,
   recordRuntimeDecision?: ExplicitRuntimeDecisionEvidenceRecorder,
-  now: () => Date = () => new Date()
+  now: () => Date = () => new Date(),
+  /**
+   * Actuator mode. `auto` skips the confirm for the allowlisted recoverable
+   * actuators ONLY (`isAutoRunnableActuator`); everything else — every
+   * third-party send, and anything whose reversibility cannot be established —
+   * behaves exactly as in `ask`. Defaults to `ask`, so a caller that has not
+   * been taught about modes never gets the permissive branch.
+   */
+  actuatorMode: ActuatorMode = "ask"
 ): (input: ApprovalGateCall) => Promise<ApprovalGateDecision> {
   return async ({ toolCall, risk, runId, userId, egressWarning, egressBlocked }) => {
     const isRunCommand = toolCall.name === "run_command";
@@ -398,6 +408,14 @@ export function chatToolApprovalGate(
 
     if (egressBlocked) {
       return { allowed: false, reason: `egress denied: ${egressWarning ?? "URL was not observed anywhere this run"}` };
+    }
+
+    // `auto` runs the recoverable actuators with no confirm. Deliberately placed
+    // AFTER the egress-denied check so it can never override it: an
+    // egress-blocked call is refused in every mode. The allowlist excludes every
+    // third-party send, so this branch cannot reach one.
+    if (actuatorMode === "auto" && isAutoRunnableActuator(toolCall.name)) {
+      return { allowed: true };
     }
 
     const kind: ApprovalKind = outbound.includes(toolCall.name) ? "outbound" : "tool";

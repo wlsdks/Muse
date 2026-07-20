@@ -6,7 +6,9 @@
  * (MuseChatApp) lives in chat-ink.ts; render-free logic lives in chat-ink-core.ts.
  */
 
-import { buildContextWindowOptions, createMuseRuntimeAssembly, createProgressiveAutonomyRuntimeDecisionRecorder, evaluateLocalOnlyPosture, parseBoolean, resolveAttunementFile, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolvePatternsFiredFile, resolveProgressiveAutonomyOpportunitiesFile, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
+import { buildChatActuatorWiring } from "./chat-actuator-wiring.js";
+import type { ProgramIO } from "./program.js";
+import { buildContextWindowOptions, createMuseRuntimeAssembly, createProgressiveAutonomyRuntimeDecisionRecorder, evaluateLocalOnlyPosture, parseBoolean, resolveAttunementFile, resolveEpisodesFile, resolveFollowupsFile, resolveLocalCalendarFile, resolvePatternsFiredFile, resolveProgressiveAutonomyOpportunitiesFile, resolveRemindersFile, resolveTasksFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { LocalCalendarProvider } from "@muse/calendar";
 import { isSkillAvoided, readEpisodes, readFollowups, readPatternsFired, readSkillRewards, readTasks, type ConversationSummary } from "@muse/stores";
 import { readCheckins } from "@muse/proactivity";
@@ -89,7 +91,19 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
     process.env.MUSE_MODEL_PROVIDER_ID = "ollama";
   }
 
-  const assembly = createMuseRuntimeAssembly();
+  // Actuator exposure + the auto-run policy both key off one mode, resolved
+  // once here so the tool set the model sees and the gate that judges its
+  // calls can never disagree.
+  const actuatorWiring = await buildChatActuatorWiring({
+    env: process.env as MuseEnvironment,
+    io: { stderr: (m: string) => process.stderr.write(m), stdout: (m: string) => process.stdout.write(m) } as unknown as ProgramIO,
+    userId: resolveDefaultUserKey({ override: options.userId })
+  });
+  const actuatorMode = actuatorWiring.mode;
+
+  const assembly = createMuseRuntimeAssembly(
+    actuatorWiring.tools.length > 0 ? { extraTools: actuatorWiring.tools } : {}
+  );
   if (!assembly.modelProvider) {
     process.stderr.write(formatNoModelMessage());
     process.exitCode = 1;
@@ -232,7 +246,7 @@ export async function runChatInk(options: RunChatInkOptions = {}): Promise<void>
       // (a separate slice), not a stale-persona skip.
       metadata: { localMode: true, userId },
       model: useModel,
-      toolApprovalGate: chatToolApprovalGate(OUTBOUND_ACTUATORS, requestApproval, recordRuntimeDecision)
+      toolApprovalGate: chatToolApprovalGate(OUTBOUND_ACTUATORS, requestApproval, recordRuntimeDecision, () => new Date(), actuatorMode)
     });
     // Record which playbook strategies this turn's prompt carried so the
     // end-of-session reward step credits an actually-injected strategy

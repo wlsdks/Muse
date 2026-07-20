@@ -190,14 +190,78 @@ Mutation check on the mode gate: forcing `allowed:true` must redden the
 deny-path tests. A gate whose tests only cover the confirmed path is not
 delivered.
 
-## Open questions for the owner
+## The three decisions (owner delegated, 2026-07-20)
 
-1. **Grant granularity.** Per action class (`email_send` broadly), or per
-   action+recipient (`email_send` to `kim@example.com`)? Narrower is safer and
-   more annoying. Recommend action+recipient for sends, action-only for
-   recoverable.
-2. **`mac_contacts_write`** — classified recoverable here (writes a local
-   record, undoable). Confirm that reading is right.
-3. **Default for a fresh install** — `off` is proposed. If the owner wants
-   `ask` out of the box, that is a one-line change but it means a fresh
-   checkout can prompt to send email.
+Decided against the ACTUAL tool inventory rather than in the abstract, because
+two of the three answers changed once the real descriptions were read.
+
+### 1. What `auto` may run without asking
+
+The question is not read/write/execute — that classification is about the
+runtime's own gating, and it groups `mac_say` with `mac_shortcut_run`, which
+are nothing alike. The question is: **if this fires wrongly, can the user put
+it back?**
+
+Three properties decide it, and ALL must hold to qualify as recoverable:
+- no third party receives anything,
+- the effect is visible (the user notices it happened),
+- the effect is undoable by the user, in seconds, without Muse.
+
+Applying that to the 13 tools `buildActuatorTools` can produce:
+
+**auto-runs (7)** — `mac_screen_read`, `mac_app_read`, `mac_spotlight_search`
+(all read-risk, nothing to undo), `mac_say`, `mac_screenshot`,
+`mac_media_control`, `mac_app_open`. A wrong call speaks a sentence, takes a
+screenshot, pauses music, or opens an app. Visible, trivially reversible, no
+one else sees it.
+
+**still confirms (6)**:
+- `web_action`, `mac_message_send` — third party. Already in
+  `OUTBOUND_SEND_TOOL_NAMES`.
+- `email_send` / `email_reply` / `email_forward` — third party.
+- `mac_shortcut_run` — **the decisive case.** Its own description calls it
+  "the bridge to anything the user has automated in Shortcuts (opening apps,
+  setting scenes, files, web requests)". Whether it is recoverable depends on
+  the Shortcut's CONTENTS, which Muse cannot inspect. A shortcut named
+  "Morning Routine" may send a message or POST to an API. Unknowable
+  reversibility is treated as irreversible.
+- `mac_system_set` — sleeps the Mac, toggles wifi, turns Focus on. Sleeping
+  the machine or dropping wifi mid-call is disruptive and NOT undoable by the
+  agent (Muse cannot wake a sleeping Mac to fix its own mistake).
+- `mac_clipboard_set` — destroys whatever the user had copied, with no undo.
+  Small, but it silently eats data the user was about to paste.
+
+**`mac_contacts_write` — confirms, reversing the earlier draft.** It was
+provisionally "recoverable (writes a local record)". That is wrong on the
+visibility property: a silently-edited contact is not noticed until the user
+messages the wrong number, and by then the original is gone. It also feeds
+`mac_message_send`'s recipient resolution — corrupting the contacts graph
+corrupts where a later send GOES. A local write that determines a future
+send's recipient is not a local write.
+
+### 2. Standing-grant granularity: per action + per recipient
+
+The existing grant machinery already binds to ONE specific artifact via
+`LocalTaskNextStepLinkFingerprint` — not to an action class. That precedent is
+right, and sends inherit it: a grant covers `email_send` **to one resolved
+recipient**, not `email_send` generally.
+
+The reason is what the grant is FOR. "Muse may email anyone for 24 hours"
+converts a bounded consent into an unbounded one that merely expires — the
+blast radius is every contact. "Muse may email kim@example.com about this
+thread, 5 times, for 24 hours" is a consent the user can actually reason
+about, and its worst case is bounded by a person they chose.
+
+This is more annoying, and that is the correct trade for an action with no
+undo.
+
+### 3. Fresh-install default: `off`
+
+Unchanged. A checkout that has never been configured must not be able to
+prompt about sending email.
+
+## Consequence for the build order
+
+Step 4 becomes narrower than originally written: `auto` skips the confirm for
+the 7 tools above only, and every other actuator behaves exactly as in `ask`.
+Step 5's grants apply to the 6 confirming tools, scoped per recipient.
