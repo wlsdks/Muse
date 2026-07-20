@@ -1,7 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const { retrieveCore } = vi.hoisted(() => ({
-  retrieveCore: vi.fn(async () => ({
+  retrieveCore: vi.fn(async (_params?: unknown): Promise<Record<string, unknown>> => ({
     notesUnavailable: false,
     preGapScored: [],
     queryVec: undefined,
@@ -15,9 +20,36 @@ vi.mock("@muse/recall", async (importOriginal) => ({
   ...await importOriginal<typeof import("@muse/recall")>(),
   retrieveAndRankNotes: retrieveCore
 }));
-vi.mock("./embed.js", () => ({ embed: vi.fn() }));
 
 import { createRecallRerankFn, createWarmedRecallRerankFn, parseCorrectionPairReply, parsePairAwareRerankReply, parseRerankReply, resolveRerankModel, retrieveAndRankNotes } from "./ask-note-retrieval.js";
+
+const eligibleIndexFiles = () => [{
+  chunks: [
+    { chunkIndex: 0, embedding: [1, 0], file: "current.md", text: "I now use the office gym." },
+    { chunkIndex: 1, embedding: [0.9, 0.1], file: "other.md", text: "A current unrelated note." },
+    { chunkIndex: 2, embedding: [0.8, 0.2], file: "old.md", text: "I used to use the home gym, but not anymore." },
+    { chunkIndex: 3, embedding: [0.7, 0.3], file: "extra.md", text: "Another note." }
+  ],
+  path: fileURLToPath(import.meta.url)
+}];
+
+let isolatedHome = "";
+
+function isolatedRerankEnv(values: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return {
+    HOME: isolatedHome,
+    MUSE_MODEL_KEYS_FILE: join(isolatedHome, "models.json"),
+    ...values
+  };
+}
+
+beforeAll(async () => {
+  isolatedHome = await mkdtemp(join(tmpdir(), "muse-recall-preload-test-"));
+});
+
+afterAll(async () => {
+  await rm(isolatedHome, { force: true, recursive: true });
+});
 
 afterEach(() => {
   retrieveCore.mockClear();
@@ -34,41 +66,235 @@ describe("retrieveAndRankNotes — production conflict-aware default", () => {
     notesDir: "/tmp/notes",
     onStderr: () => {},
     query: "what changed",
-    rerankFn: undefined,
     scope: undefined,
     topK: 3
   } as const;
 
   it("enables conflict-aware selection when omitted while preserving the explicit diagnostic opt-out", async () => {
-    await retrieveAndRankNotes(params);
+    const runtime = { env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }) };
+    await retrieveAndRankNotes(params, runtime);
     expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ conflictAwareSelection: true }));
 
-    await retrieveAndRankNotes({ ...params, conflictAwareSelection: false });
+    await retrieveAndRankNotes({ ...params, conflictAwareSelection: false }, runtime);
     expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ conflictAwareSelection: false }));
+  });
+
+  it("preloads the bound local reranker before an eligible first retrieval with the exact empty Ollama request", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetchFn = vi.fn(async () => ({
+      json: async () => ({ done: true, done_reason: "load", model: "qwen3:8b", response: "" }),
+      ok: true
+    })) as unknown as typeof fetch;
+    const indexFiles = eligibleIndexFiles();
+
+    await retrieveAndRankNotes(
+      { ...params, indexFiles },
+      {
+        env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445/" }),
+        fetchFn
+      }
+    );
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledWith("http://127.0.0.1:22445/api/generate", expect.objectContaining({
+      body: JSON.stringify({ keep_alive: "5m", model: "qwen3:8b", stream: false }),
+      headers: { "content-type": "application/json" },
+      method: "POST"
+    }));
+    expect(timeout).toHaveBeenCalledWith(30_000);
+    expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ rerankFn: expect.any(Function) }));
+  });
+
+  it("fails open to deterministic retrieval after one invalid preload without issuing a selector retry", async () => {
+    const fetchFn = vi.fn(async () => ({
+      json: async () => ({ done: true, done_reason: "stop", model: "qwen3:8b", response: "" }),
+      ok: true
+    })) as unknown as typeof fetch;
+    const indexFiles = eligibleIndexFiles();
+
+    await retrieveAndRankNotes(
+      { ...params, indexFiles },
+      { env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }), fetchFn }
+    );
+
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(retrieveCore).toHaveBeenLastCalledWith(expect.not.objectContaining({ rerankFn: expect.anything() }));
+  });
+
+  it("accepts preload success only for the exact load completion identity with an empty response", async () => {
+    const invalidReplies: readonly unknown[] = [
+      { done: false, done_reason: "load", model: "qwen3:8b", response: "" },
+      { done: true, done_reason: "stop", model: "qwen3:8b", response: "" },
+      { done: true, done_reason: "load", model: "other:latest", response: "" },
+      { done: true, done_reason: "load", model: "qwen3:8b", response: "generated text" },
+      ["not", "an", "object"]
+    ];
+
+    for (const reply of invalidReplies) {
+      const fetchMock = vi.fn(async () => ({ json: async () => reply, ok: true }));
+      await retrieveAndRankNotes(
+        { ...params, indexFiles: eligibleIndexFiles() },
+        {
+          env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }),
+          fetchFn: fetchMock as unknown as typeof fetch
+        }
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(retrieveCore).toHaveBeenLastCalledWith(expect.not.objectContaining({ rerankFn: expect.anything() }));
+    }
+  });
+
+  it("does not retry preload after timeout, HTTP error, or malformed JSON", async () => {
+    const behaviors: ReadonlyArray<() => Promise<unknown>> = [
+      async () => { throw new DOMException("timed out", "TimeoutError"); },
+      async () => ({ json: async () => ({ shouldNotBeRead: true }), ok: false }),
+      async () => ({ json: async () => { throw new SyntaxError("bad JSON"); }, ok: true })
+    ];
+
+    for (const behavior of behaviors) {
+      const fetchMock = vi.fn(behavior);
+      await retrieveAndRankNotes(
+        { ...params, indexFiles: eligibleIndexFiles() },
+        {
+          env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }),
+          fetchFn: fetchMock as unknown as typeof fetch
+        }
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(retrieveCore).toHaveBeenLastCalledWith(expect.not.objectContaining({ rerankFn: expect.anything() }));
+    }
+  });
+
+  it("does not preload when conflict-aware selection is explicitly disabled", async () => {
+    const fetchFn = vi.fn(async () => { throw new Error("ineligible preload must not issue HTTP"); }) as unknown as typeof fetch;
+    const indexFiles = eligibleIndexFiles();
+
+    await retrieveAndRankNotes(
+      { ...params, conflictAwareSelection: false, indexFiles },
+      { env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }), fetchFn }
+    );
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(retrieveCore).toHaveBeenLastCalledWith(expect.not.objectContaining({ rerankFn: expect.anything() }));
+  });
+
+  it("does not preload unless the corpus exceeds topK and contains both stale and non-stale chunks", async () => {
+    const fetchMock = vi.fn(async () => { throw new Error("ineligible preload must not issue HTTP"); });
+    const fetchFn = fetchMock as unknown as typeof fetch;
+    const chunk = (chunkIndex: number, text: string) => ({ chunkIndex, embedding: [1, 0], file: `${chunkIndex.toString()}.md`, text });
+    const cases = [
+      [chunk(0, "current"), chunk(1, "current"), chunk(2, "used to be old, not anymore")],
+      [chunk(0, "current"), chunk(1, "current"), chunk(2, "current"), chunk(3, "current")],
+      [chunk(0, "used to be old, not anymore"), chunk(1, "used to be old, not anymore"), chunk(2, "used to be old, not anymore"), chunk(3, "used to be old, not anymore")]
+    ];
+
+    for (const chunks of cases) {
+      await retrieveAndRankNotes(
+        { ...params, indexFiles: [{ chunks, path: "notes.md" }] },
+        { env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }), fetchFn }
+      );
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not preload for deleted or out-of-scope index entries that the selector cannot see", async () => {
+    const fetchMock = vi.fn(async () => { throw new Error("ineligible preload must not issue HTTP"); });
+    const fetchFn = fetchMock as unknown as typeof fetch;
+    const livePath = fileURLToPath(import.meta.url);
+
+    await retrieveAndRankNotes(
+      { ...params, indexFiles: eligibleIndexFiles().map((file) => ({ ...file, path: "/definitely-missing/muse-note.md" })) },
+      { env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }), fetchFn }
+    );
+    await retrieveAndRankNotes(
+      { ...params, indexFiles: eligibleIndexFiles(), notesDir: dirname(livePath), scope: "work" },
+      { env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }), fetchFn }
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("routes preload, embedding, and selector through one injected transport and returns the snapshot-bound reranker", async () => {
+    const seenBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+      seenBodies.push(body);
+      if (String(input).endsWith("/api/embeddings")) {
+        return { json: async () => ({ embedding: [1, 0] }), ok: true };
+      }
+      if (!("prompt" in body)) {
+        return { json: async () => ({ done: true, done_reason: "load", model: "qwen3:8b", response: "" }), ok: true };
+      }
+      return { json: async () => ({ response: '{"pair":null}' }), ok: true };
+    });
+    const fetchFn = fetchMock as unknown as typeof fetch;
+    let coreRerankFn: ((query: string, candidates: readonly string[]) => Promise<unknown>) | undefined;
+    let coreEnv: NodeJS.ProcessEnv | undefined;
+    retrieveCore.mockImplementationOnce(async (raw?: unknown) => {
+      const coreParams = raw as {
+        readonly embedFn: (text: string, model: string) => Promise<number[]>;
+        readonly env?: NodeJS.ProcessEnv;
+        readonly rerankFn?: (query: string, candidates: readonly string[]) => Promise<unknown>;
+      };
+      coreRerankFn = coreParams.rerankFn;
+      coreEnv = coreParams.env;
+      await coreParams.embedFn("private query", "nomic-embed-text-v2-moe");
+      await coreParams.rerankFn?.("private query", ["current", "used to be old, not anymore"]);
+      return {
+        notesUnavailable: false,
+        preGapScored: [],
+        queryVec: [1, 0],
+        scored: [],
+        snapshot: { identity: { test: "snapshot" }, rerankFn: coreParams.rerankFn, result: { scored: [] } },
+        splitClauses: [],
+        subqueryEmbeddings: []
+      };
+    });
+    const indexFiles = eligibleIndexFiles();
+    const runtimeEnv = isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" });
+
+    const result = await retrieveAndRankNotes(
+      { ...params, indexFiles, snapshotIdentity: { indexBuiltAtIso: "2026-07-21T00:00:00.000Z", notesIndexFile: "/trial/notes-index.json" } },
+      { env: runtimeEnv, fetchFn }
+    );
+
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "http://127.0.0.1:22445/api/generate",
+      "http://127.0.0.1:22445/api/embeddings",
+      "http://127.0.0.1:22445/api/generate"
+    ]);
+    expect(seenBodies[0]).toEqual({ keep_alive: "5m", model: "qwen3:8b", stream: false });
+    expect(seenBodies[1]).toEqual(expect.objectContaining({ model: "nomic-embed-text-v2-moe" }));
+    expect(seenBodies[2]).toEqual(expect.objectContaining({ model: "qwen3:8b", prompt: expect.any(String) }));
+    expect(result.snapshot?.rerankFn).toBe(coreRerankFn);
+    expect(coreEnv).toEqual(runtimeEnv);
+    expect(coreEnv).not.toBe(runtimeEnv);
+    expect(Object.isFrozen(coreEnv)).toBe(true);
   });
 });
 
 describe("resolveRerankModel — default ON for local-model users, off for cloud, MUSE_RECALL_RERANK overrides", () => {
   it("unset (and the bare 'true') defaults to the resolved LOCAL default model", () => {
-    expect(resolveRerankModel({})).toBe("gemma4:12b");
-    expect(resolveRerankModel({ MUSE_RECALL_RERANK: "true" })).toBe("gemma4:12b");
+    expect(resolveRerankModel(isolatedRerankEnv())).toBe("gemma4:12b");
+    expect(resolveRerankModel(isolatedRerankEnv({ MUSE_RECALL_RERANK: "true" }))).toBe("gemma4:12b");
   });
 
   it("a cloud default model disables reranking — the reranker never leaves the box", () => {
-    expect(resolveRerankModel({ GEMINI_API_KEY: "ambient-key" })).toBeUndefined();
+    expect(resolveRerankModel(isolatedRerankEnv({ GEMINI_API_KEY: "ambient-key" }))).toBeUndefined();
   });
 
   it("MUSE_LOCAL_ONLY forces local even with an ambient cloud key present", () => {
-    expect(resolveRerankModel({ GEMINI_API_KEY: "ambient-key", MUSE_LOCAL_ONLY: "true" })).toBe("gemma4:12b");
+    expect(resolveRerankModel(isolatedRerankEnv({ GEMINI_API_KEY: "ambient-key", MUSE_LOCAL_ONLY: "true" }))).toBe("gemma4:12b");
   });
 
   it("false / 0 opt out", () => {
-    expect(resolveRerankModel({ MUSE_RECALL_RERANK: "false" })).toBeUndefined();
-    expect(resolveRerankModel({ MUSE_RECALL_RERANK: "0" })).toBeUndefined();
+    expect(resolveRerankModel(isolatedRerankEnv({ MUSE_RECALL_RERANK: "false" }))).toBeUndefined();
+    expect(resolveRerankModel(isolatedRerankEnv({ MUSE_RECALL_RERANK: "0" }))).toBeUndefined();
   });
 
   it("an explicit model name overrides the default choice, trimmed", () => {
-    expect(resolveRerankModel({ MUSE_RECALL_RERANK: " qwen3:8b " })).toBe("qwen3:8b");
+    expect(resolveRerankModel(isolatedRerankEnv({ MUSE_RECALL_RERANK: " qwen3:8b " }))).toBe("qwen3:8b");
   });
 });
 
@@ -131,6 +357,20 @@ describe("parseRerankReply — strict, bounded best-first zero-based indices", (
 });
 
 describe("createRecallRerankFn — bounded request timeout", () => {
+  it("binds model and URL to one immutable env snapshot instead of ambient or later mutations", async () => {
+    const fetchFn = vi.fn(async () => ({ json: async () => ({ response: '{"pair":null}' }), ok: true })) as unknown as typeof fetch;
+    const env = isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445/" });
+    const rerank = createRecallRerankFn(env, { fetchFn })!;
+
+    env.MUSE_RECALL_RERANK = "mutated:latest";
+    env.OLLAMA_BASE_URL = "http://127.0.0.1:33556";
+    await rerank("query", ["current"]);
+
+    expect(fetchFn).toHaveBeenCalledWith("http://127.0.0.1:22445/api/generate", expect.objectContaining({
+      body: expect.stringContaining('"model":"qwen3:8b"')
+    }));
+  });
+
   it("offers an explicit post-embedder warm seam without changing normal construction", async () => {
     const events = ["embedder-ready"];
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
@@ -142,7 +382,7 @@ describe("createRecallRerankFn — bounded request timeout", () => {
     vi.stubEnv("OLLAMA_BASE_URL", "http://127.0.0.1:11434");
 
     const warmed = await createWarmedRecallRerankFn(
-      { MUSE_RECALL_RERANK: "qwen3:8b" },
+      isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:11434" }),
       { candidateTexts: ["current answer", "unrelated note"], query: "현재 답" }
     );
 
@@ -164,7 +404,8 @@ describe("createRecallRerankFn — bounded request timeout", () => {
     vi.stubEnv("MUSE_MODEL_KEYS_FILE", "/tmp/muse-rerank-structured-models.json");
     vi.stubEnv("OLLAMA_BASE_URL", "http://127.0.0.1:11434");
 
-    const result = await createRecallRerankFn({ MUSE_RECALL_RERANK: "qwen3:8b" })!(
+    const selectorEnv = isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:11434" });
+    const result = await createRecallRerankFn(selectorEnv)!(
       "월세는 언제 보내나요?",
       [
         ...Array.from({ length: 10 }, (_value, index) => `Current candidate ${index + 1}`),
@@ -172,7 +413,7 @@ describe("createRecallRerankFn — bounded request timeout", () => {
       ]
     );
 
-    expect(createRecallRerankFn({ MUSE_RECALL_RERANK: "qwen3:8b" })?.mode).toBe("correction-pair");
+    expect(createRecallRerankFn(selectorEnv)?.mode).toBe("correction-pair");
     expect(result).toEqual({ httpAttempts: 1, order: Array.from({ length: 20 }, (_value, index) => index), outcome: "success", pairHints: [{ current: 1, stale: 10 }] });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = fetchMock.mock.calls[0]![1]!;
@@ -195,7 +436,7 @@ describe("createRecallRerankFn — bounded request timeout", () => {
   it("classifies timeout, empty, and invalid replies without retrying", async () => {
     vi.stubEnv("MUSE_MODEL_KEYS_FILE", "/tmp/muse-rerank-outcomes-models.json");
     vi.stubEnv("OLLAMA_BASE_URL", "http://127.0.0.1:11434");
-    const rerank = createRecallRerankFn({ MUSE_RECALL_RERANK: "qwen3:8b" })!;
+    const rerank = createRecallRerankFn(isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:11434" }))!;
 
     const timeoutFetch = vi.fn(async () => { throw new DOMException("timed out", "TimeoutError"); });
     vi.stubGlobal("fetch", timeoutFetch);
@@ -218,7 +459,7 @@ describe("createRecallRerankFn — bounded request timeout", () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => ({ response: "1" }), ok: true })));
     vi.stubEnv("MUSE_MODEL_KEYS_FILE", "/tmp/muse-rerank-timeout-models.json");
     vi.stubEnv("OLLAMA_BASE_URL", "http://127.0.0.1:11434");
-    const env = { MUSE_RECALL_RERANK: "qwen3:8b" };
+    const env = isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:11434" });
 
     await createRecallRerankFn(env)!("query", ["candidate"]);
     expect(timeout).toHaveBeenLastCalledWith(4000);

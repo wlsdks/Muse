@@ -396,6 +396,48 @@ describe("retrieveAndRankNotes — confident-gated 1-hop link expansion (the gra
     }
   });
 
+  it("uses one explicit env snapshot for confidence and hop flags instead of ambient process.env", async () => {
+    const files = [
+      await noteFile("hub.md", "muse project hub [[detail]]", unit(0.6)),
+      await noteFile("detail.md", "linked project detail", unit(0.4))
+    ];
+    const previous = {
+      graph: process.env.MUSE_RECALL_GRAPH_HOP,
+      minimum: process.env.MUSE_GROUNDING_MIN_COSINE,
+      secondHop: process.env.MUSE_RECALL_SECOND_HOP
+    };
+    process.env.MUSE_GROUNDING_MIN_COSINE = "0.99";
+    process.env.MUSE_RECALL_GRAPH_HOP = "false";
+    process.env.MUSE_RECALL_SECOND_HOP = "false";
+    try {
+      const result = await retrieveAndRankNotes({
+        embedFn,
+        embedModel: "test-embed",
+        env: {
+          MUSE_GROUNDING_MIN_COSINE: "0.55",
+          MUSE_RECALL_GRAPH_HOP: "true",
+          MUSE_RECALL_SECOND_HOP: "false"
+        },
+        indexFiles: files,
+        json: true,
+        notesDir: dir,
+        onStderr: () => {},
+        query: "muse project hub",
+        scope: undefined,
+        topK: 1
+      });
+
+      expect(result.scored.map((item) => item.file)).toEqual([files[0]!.path, files[1]!.path]);
+    } finally {
+      if (previous.minimum === undefined) delete process.env.MUSE_GROUNDING_MIN_COSINE;
+      else process.env.MUSE_GROUNDING_MIN_COSINE = previous.minimum;
+      if (previous.graph === undefined) delete process.env.MUSE_RECALL_GRAPH_HOP;
+      else process.env.MUSE_RECALL_GRAPH_HOP = previous.graph;
+      if (previous.secondHop === undefined) delete process.env.MUSE_RECALL_SECOND_HOP;
+      else process.env.MUSE_RECALL_SECOND_HOP = previous.secondHop;
+    }
+  });
+
   it("an ambiguous seed promotes a linked neighbor ONLY above the calibrated floor (bar 0.55 → floor 0.35 for test-embed)", async () => {
     // Isolate the graph hop: the second-hop augment legitimately fires on
     // ambiguous verdicts and would re-add the same note through a different door.
@@ -503,6 +545,47 @@ describe("retrieveAndRankNotes — local-LLM rerank seam (opt-in via rerankFn)",
     }
   });
 
+  it("carries a validated correction pair as exact immutable chunk identities", async () => {
+    const stale = await noteFile("rent-stale.md", "I used to pay office rent 1200; no longer current.", unit(0.95));
+    const noise = await noteFile("agenda.md", "Tuesday meeting agenda.", unit(0.9));
+    const current = await noteFile("rent-current.md", "Office rent is 1300 now.", unit(0.4));
+    const tail = await noteFile("tail.md", "Unrelated archive.", unit(0.3));
+    const rerankFn = Object.assign(async (_query: string, texts: readonly string[]): Promise<RecallRerankExecution> => {
+      const staleIndex = texts.findIndex((text) => text.includes("used to pay"));
+      const currentIndex = texts.findIndex((text) => text.includes("1300 now"));
+      return {
+        httpAttempts: 1,
+        order: texts.map((_text, index) => index),
+        outcome: "success",
+        pairHints: [{ current: currentIndex, stale: staleIndex }]
+      };
+    }, { mode: "correction-pair" as const });
+
+    const result = await retrieveAndRankNotes({
+      conflictAwareSelection: false,
+      embedFn,
+      embedModel: "test-embed",
+      indexFiles: [stale, noise, current, tail],
+      json: true,
+      notesDir: dir,
+      onStderr: () => {},
+      query: "what is the office rent",
+      rerankFn,
+      scope: undefined,
+      snapshotIdentity: { indexBuiltAtIso: "2026-07-21T00:00:00.000Z", notesIndexFile: join(dir, "notes-index.json") },
+      topK: 3
+    });
+
+    expect(result.verifiedCorrectionPair).toEqual({
+      current: { chunkIndex: 0, file: current.path },
+      stale: { chunkIndex: 0, file: stale.path }
+    });
+    expect(result.snapshot?.result.verifiedCorrectionPair).toEqual(result.verifiedCorrectionPair);
+    expect(Object.isFrozen(result.snapshot?.result.verifiedCorrectionPair)).toBe(true);
+    expect(Object.isFrozen(result.snapshot?.result.verifiedCorrectionPair?.current)).toBe(true);
+    expect(Object.isFrozen(result.snapshot?.result.verifiedCorrectionPair?.stale)).toBe(true);
+  });
+
   it("gives an explicit pair-aware reranker a bounded 20-candidate window so a pair beyond legacy topK+4 remains available", async () => {
     const files = await Promise.all(Array.from({ length: 30 }, async (_value, index) => {
       const score = index < 10 ? 0.99 - index * 0.01 : 0.3 - index * 0.005;
@@ -589,6 +672,7 @@ describe("retrieveAndRankNotes — local-LLM rerank seam (opt-in via rerankFn)",
     ]) {
       expect(pairAware.scored).toEqual(baseline.scored);
       expect(pairAware.rerankPair).toBeUndefined();
+      expect(pairAware.verifiedCorrectionPair).toBeUndefined();
     }
   });
 

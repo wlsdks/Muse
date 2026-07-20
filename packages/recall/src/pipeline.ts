@@ -27,7 +27,15 @@ import { composeSurfacePrompt } from "@muse/prompts";
 
 import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
-import { noteRetrievalResultHash, retrieveAndRankNotes, type NoteRetrievalResult, type NoteRetrievalSnapshot, type RecallRerankFn } from "./ask-note-retrieval.js";
+import {
+  noteRetrievalResultHash,
+  retrieveAndRankNotes,
+  type NoteChunkIdentity,
+  type NoteRetrievalResult,
+  type NoteRetrievalSnapshot,
+  type RecallRerankFn,
+  type VerifiedCorrectionPair
+} from "./ask-note-retrieval.js";
 import { dedupNearDuplicateChunks, notesGroundingFraming, type ScoredChunk } from "./chunks.js";
 export type { ScoredChunk } from "./chunks.js";
 import { demoteStale } from "./conflict.js";
@@ -112,6 +120,8 @@ export interface GroundedRecallExtras {
    * reorder, then a SECOND stale-demotion pass (the reorder re-sorts by raw
    * cosine and can put an explicitly-superseded chunk back ahead of its
    * current counterpart — see the comment on `refineChunks` in `prepareRecall`).
+   * A selector-verified current is pinned first only when both exact opaque
+   * chunk identities survive dedup; identity loss fails closed.
    * Off by default: an extras-free caller gets the exact prior chunk order.
    */
   readonly refineChunks?: boolean;
@@ -372,9 +382,14 @@ async function prepareRecall(input: PrepareRecallInput): Promise<PreparedGrounde
   // `reorderForLongContext` re-sorts by raw cosine score, which would put a
   // higher-scoring but explicitly-superseded chunk back ahead of its current
   // counterpart — so the stale demotion `retrieveAndRankNotes` already applied
-  // once must run again on the reorder's OUTPUT, not before it.
+  // once must run again on the reorder's OUTPUT, not before it. A validated
+  // pair then pins only its exact current identity; both identities must still
+  // exist uniquely after dedup or the ordinary refined order is preserved.
   const contextChunks = extras?.refineChunks
-    ? demoteStale(reorderForLongContext(dedupedScored), (c) => c.chunk.text)
+    ? pinVerifiedCorrectionPair(
+        demoteStale(reorderForLongContext(dedupedScored), (c) => c.chunk.text),
+        retrieval.verifiedCorrectionPair
+      )
     : dedupedScored;
   const contradictions = await detectEvidenceContradictions(
     contextChunks.map((s: ScoredChunk) => ({ cosine: s.score, score: s.score, source: s.file, text: s.chunk.text })),
@@ -404,6 +419,22 @@ function normalizedScope(scope: string | undefined): string | undefined {
   return value ? value : undefined;
 }
 
+function pinVerifiedCorrectionPair(
+  chunks: readonly ScoredChunk[],
+  pair: VerifiedCorrectionPair | undefined
+): readonly ScoredChunk[] {
+  if (!pair) return chunks;
+  const currentMatches = chunks.filter((chunk) => matchesNoteChunkIdentity(chunk, pair.current));
+  const staleMatches = chunks.filter((chunk) => matchesNoteChunkIdentity(chunk, pair.stale));
+  if (currentMatches.length !== 1 || staleMatches.length !== 1 || currentMatches[0] === staleMatches[0]) return chunks;
+  const current = currentMatches[0]!;
+  return [current, ...chunks.filter((chunk) => chunk !== current)];
+}
+
+function matchesNoteChunkIdentity(chunk: ScoredChunk, identity: NoteChunkIdentity): boolean {
+  return chunk.file === identity.file && chunk.chunk.chunkIndex === identity.chunkIndex;
+}
+
 function cloneSnapshotResult(result: Omit<NoteRetrievalResult, "snapshot">): Omit<NoteRetrievalResult, "snapshot"> {
   return {
     ...result,
@@ -411,7 +442,10 @@ function cloneSnapshotResult(result: Omit<NoteRetrievalResult, "snapshot">): Omi
     queryVec: result.queryVec ? [...result.queryVec] : undefined,
     scored: [...result.scored],
     splitClauses: [...result.splitClauses],
-    subqueryEmbeddings: result.subqueryEmbeddings.map((embedding) => [...embedding])
+    subqueryEmbeddings: result.subqueryEmbeddings.map((embedding) => [...embedding]),
+    ...(result.verifiedCorrectionPair
+      ? { verifiedCorrectionPair: { current: { ...result.verifiedCorrectionPair.current }, stale: { ...result.verifiedCorrectionPair.stale } } }
+      : {})
   };
 }
 

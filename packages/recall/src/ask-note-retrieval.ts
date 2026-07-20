@@ -45,8 +45,20 @@ export interface NoteRetrievalResult {
   rerankDecision?: RecallRerankDecision;
   /** Validated pair chosen by rerank order; candidate indices are local to the immutable rerank window. */
   rerankPair?: RecallRerankPairHint;
+  /** Validated correction pair carried beyond the rerank window by exact opaque chunk identity. */
+  verifiedCorrectionPair?: VerifiedCorrectionPair;
   /** Immutable first-retrieval snapshot for an identity-matching prepare seam. */
   snapshot?: NoteRetrievalSnapshot;
+}
+
+export interface NoteChunkIdentity {
+  readonly file: string;
+  readonly chunkIndex: number;
+}
+
+export interface VerifiedCorrectionPair {
+  readonly current: NoteChunkIdentity;
+  readonly stale: NoteChunkIdentity;
 }
 
 export type RecallRerankOutcome = "ineligible-window" | "success" | "empty" | "invalid" | "timeout" | "error";
@@ -106,6 +118,8 @@ export async function retrieveAndRankNotes(params: {
   readonly onStderr: (text: string) => void;
   /** Embed via the caller's resolved endpoint (the CLI binds the models.json merge). */
   readonly embedFn: (text: string, model: string) => Promise<number[]>;
+  /** Optional frozen environment view. Omitted direct callers preserve ambient behavior. */
+  readonly env?: NodeJS.ProcessEnv;
   /**
    * Optional listwise reranker over the candidate window (the CLI binds a
    * local-LLM picker behind MUSE_RECALL_RERANK). Receives the query + candidate
@@ -119,6 +133,7 @@ export async function retrieveAndRankNotes(params: {
 }): Promise<NoteRetrievalResult> {
   const { query, embedModel, indexFiles, notesDir, scope, json, onStderr, embedFn, rerankFn } = params;
   const topK = normalizeRetrievalTopK(params.topK);
+  const env = params.env ?? process.env;
 
   let scored: ScoredChunk[] = [];
   let preGapScored: ScoredChunk[] = [];
@@ -128,6 +143,7 @@ export async function retrieveAndRankNotes(params: {
   let queryVec: number[] | undefined;
   let rerankDecision: RecallRerankDecision | undefined;
   let rerankPair: RecallRerankPairHint | undefined;
+  let verifiedCorrectionPair: VerifiedCorrectionPair | undefined;
   let rerankWindow: readonly ScoredChunk[] = [];
   try {
     // S3 narrate-the-wait: a REAL stage delta before the embed — on a 10-40s local
@@ -220,6 +236,7 @@ export async function retrieveAndRankNotes(params: {
           };
           if (outcome === "success" && valid.length > 0) {
             rerankPair = selectHighestValidRerankPair(execution?.pairHints, window, valid);
+            verifiedCorrectionPair = rerankPair ? toVerifiedCorrectionPair(rerankPair, window) : undefined;
             if (rerankFn.mode !== "correction-pair" || rerankPair) {
               const chosen = valid.slice(0, topK).map((i) => window[i]!);
               for (const s of window) {
@@ -248,12 +265,12 @@ export async function retrieveAndRankNotes(params: {
     // Graph-augmented recall (HippoRAG / GraphRAG): pull in chunks from notes 1-hop
     // LINKED from the CONFIDENT matches. Fabrication-SAFE: only the user's own real
     // notes, fires ONLY from a confident seed, the linked chunk keeps its real cosine.
-    const confidentAt = resolveRecallConfidentAt(process.env, embedModel);
+    const confidentAt = resolveRecallConfidentAt(env, embedModel);
     const singleHopVerdict = classifyRetrievalConfidence(
       scored.map((s) => ({ cosine: s.score, score: s.score, source: relativizeNoteSource(s.file, notesDir), text: s.chunk.text })),
       { confidentAt }
     );
-    const graphHopEnabled = process.env.MUSE_RECALL_GRAPH_HOP !== "false";
+    const graphHopEnabled = env.MUSE_RECALL_GRAPH_HOP !== "false";
     try {
       const seedMatches = scored.map((s) => ({ cosine: s.score, score: s.score, source: relativizeNoteSource(s.file, notesDir), text: s.chunk.text }));
       // From a CONFIDENT seed any linked neighbor may ride along; from an
@@ -287,7 +304,7 @@ export async function retrieveAndRankNotes(params: {
     // SAME in-memory chunks by cosine to the seed's embedding and APPEND the best
     // non-present chunk(s). CONFIDENCE-GATED (skipped when single-hop is confident);
     // MUSE_RECALL_SECOND_HOP=false overrides; the citation gate is the hard backstop.
-    const secondHopEnabled = process.env.MUSE_RECALL_SECOND_HOP !== "false";
+    const secondHopEnabled = env.MUSE_RECALL_SECOND_HOP !== "false";
     if (secondHopEnabled && shouldSecondHop(singleHopVerdict) && queryVec && scored.length > 0) {
       try {
         const additions = secondHopAugmentChunks(queryVec, cosine, allScored, scored.slice(0, 2), scored, 2);
@@ -318,6 +335,7 @@ export async function retrieveAndRankNotes(params: {
     queryVec: queryVec ? [...queryVec] : undefined,
     ...(rerankDecision ? { rerankDecision } : {}),
     ...(rerankPair ? { rerankPair: { ...rerankPair } } : {}),
+    ...(verifiedCorrectionPair ? { verifiedCorrectionPair: cloneVerifiedCorrectionPair(verifiedCorrectionPair) } : {}),
     scored: demoteStale(scored, (s) => s.chunk.text),
     splitClauses: [...splitClauses],
     subqueryEmbeddings: subqueryEmbeddings.map((embedding) => [...embedding])
@@ -329,7 +347,8 @@ export async function retrieveAndRankNotes(params: {
     queryVec: result.queryVec ? [...result.queryVec] : undefined,
     scored: [...result.scored],
     splitClauses: [...result.splitClauses],
-    subqueryEmbeddings: result.subqueryEmbeddings.map((embedding) => [...embedding])
+    subqueryEmbeddings: result.subqueryEmbeddings.map((embedding) => [...embedding]),
+    ...(result.verifiedCorrectionPair ? { verifiedCorrectionPair: cloneVerifiedCorrectionPair(result.verifiedCorrectionPair) } : {})
   };
   const identity: NoteRetrievalSnapshotIdentity = {
     conflictAwareSelection: params.conflictAwareSelection === true,
@@ -347,6 +366,11 @@ export async function retrieveAndRankNotes(params: {
   Object.freeze(snapshotResult.scored);
   Object.freeze(snapshotResult.splitClauses);
   if (snapshotResult.rerankPair) Object.freeze(snapshotResult.rerankPair);
+  if (snapshotResult.verifiedCorrectionPair) {
+    Object.freeze(snapshotResult.verifiedCorrectionPair.current);
+    Object.freeze(snapshotResult.verifiedCorrectionPair.stale);
+    Object.freeze(snapshotResult.verifiedCorrectionPair);
+  }
   for (const embedding of snapshotResult.subqueryEmbeddings) Object.freeze(embedding);
   Object.freeze(snapshotResult.subqueryEmbeddings);
   Object.freeze(snapshotResult);
@@ -395,6 +419,34 @@ function isClosedRerankPairHint(value: unknown): value is RecallRerankPairHint {
 
 function pairRank(pair: RecallRerankPairHint, rank: ReadonlyMap<number, number>): number {
   return Math.min(rank.get(pair.current) ?? Number.POSITIVE_INFINITY, rank.get(pair.stale) ?? Number.POSITIVE_INFINITY);
+}
+
+function toVerifiedCorrectionPair(
+  pair: RecallRerankPairHint,
+  window: readonly ScoredChunk[]
+): VerifiedCorrectionPair | undefined {
+  const current = toNoteChunkIdentity(window[pair.current]);
+  const stale = toNoteChunkIdentity(window[pair.stale]);
+  if (!current || !stale || sameNoteChunkIdentity(current, stale)) return undefined;
+  const identities = window.map((candidate) => toNoteChunkIdentity(candidate));
+  if (identities.filter((identity) => identity && sameNoteChunkIdentity(identity, current)).length !== 1) return undefined;
+  if (identities.filter((identity) => identity && sameNoteChunkIdentity(identity, stale)).length !== 1) return undefined;
+  return { current, stale };
+}
+
+function toNoteChunkIdentity(candidate: ScoredChunk | undefined): NoteChunkIdentity | undefined {
+  if (!candidate || candidate.file.length === 0 || !Number.isSafeInteger(candidate.chunk.chunkIndex) || candidate.chunk.chunkIndex < 0) {
+    return undefined;
+  }
+  return { chunkIndex: candidate.chunk.chunkIndex, file: candidate.file };
+}
+
+function sameNoteChunkIdentity(left: NoteChunkIdentity, right: NoteChunkIdentity): boolean {
+  return left.file === right.file && left.chunkIndex === right.chunkIndex;
+}
+
+function cloneVerifiedCorrectionPair(pair: VerifiedCorrectionPair): VerifiedCorrectionPair {
+  return { current: { ...pair.current }, stale: { ...pair.stale } };
 }
 
 function preserveRerankPair(
