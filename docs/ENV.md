@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **586** variables.
+Total: **585** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -49,7 +49,6 @@ Total: **586** variables.
 | `MUSE_APPROVALS_FILE` | apps/cli |
 | `MUSE_APPROVAL_VERIFY_MODEL` | apps/cli |
 | `MUSE_APP_NAME` | packages/autoconfigure |
-| `MUSE_ASK_MAX_TOOLS` | apps/cli |
 | `MUSE_ASK_REASONING_PRINCIPLES` | apps/cli |
 | `MUSE_ATTUNEMENT_FILE` | packages/autoconfigure |
 | `MUSE_AUTHORED_SKILLS_DIR` | apps/api, apps/cli, packages/autoconfigure |
@@ -224,9 +223,9 @@ Total: **586** variables.
 | `MUSE_FOLLOWUP_SUGGESTION_MAX_EVENTS` | packages/autoconfigure |
 | `MUSE_FOLLOWUP_SUGGESTION_RETENTION_MS` | packages/autoconfigure |
 | `MUSE_FOLLOWUP_TICK_MS` | apps/api, packages/proactivity |
-| `MUSE_FS_DENY` | apps/cli, packages/fs |
-| `MUSE_FS_DOC_ROOTS` | apps/cli, packages/fs |
-| `MUSE_FS_ROOTS` | apps/cli, packages/fs |
+| `MUSE_FS_DENY` | packages/fs |
+| `MUSE_FS_DOC_ROOTS` | packages/fs |
+| `MUSE_FS_ROOTS` | packages/fs |
 | `MUSE_FS_TOOLS` | packages/fs |
 | `MUSE_GCAL_CALENDAR_ID` | packages/autoconfigure |
 | `MUSE_GCAL_CLIENT_ID` | packages/autoconfigure |
@@ -234,15 +233,15 @@ Total: **586** variables.
 | `MUSE_GCAL_REFRESH_TOKEN` | packages/autoconfigure |
 | `MUSE_GITHUB_MCP_ENABLED` | apps/cli, packages/autoconfigure |
 | `MUSE_GIT_REFLOG_FILE` | packages/recall |
-| `MUSE_GMAIL_TOKEN` | apps/api, apps/cli, apps/web, packages/autoconfigure, packages/domain-tools, packages/prompts |
+| `MUSE_GMAIL_TOKEN` | apps/api, apps/cli, apps/web, packages/autoconfigure, packages/prompts |
 | `MUSE_GROUNDING_MIN_COSINE` | apps/cli, packages/agent-core |
 | `MUSE_HEAVY_MODEL` | apps/api, apps/cli |
 | `MUSE_HISTORY_SEARCH_EMBED_MODEL` | packages/autoconfigure |
 | `MUSE_HISTORY_SEARCH_ENABLED` | packages/autoconfigure |
 | `MUSE_HISTORY_SEARCH_HYBRID` | packages/autoconfigure |
 | `MUSE_HOME` | apps/cli |
-| `MUSE_HOMEASSISTANT_TOKEN` | apps/cli, packages/autoconfigure, packages/domain-tools, packages/prompts |
-| `MUSE_HOMEASSISTANT_URL` | apps/cli, packages/autoconfigure, packages/domain-tools, packages/prompts |
+| `MUSE_HOMEASSISTANT_TOKEN` | apps/cli, packages/autoconfigure, packages/prompts |
+| `MUSE_HOMEASSISTANT_URL` | apps/cli, packages/autoconfigure, packages/prompts |
 | `MUSE_HOME_WATCH_CONFIG` | apps/api, apps/cli |
 | `MUSE_HOME_WATCH_DESTINATION` | apps/api |
 | `MUSE_HOME_WATCH_ENABLED` | apps/api |

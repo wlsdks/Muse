@@ -43,27 +43,6 @@ export interface SelectPlanExemplarOptions {
 
 const DEFAULT_MIN_SCORE = 0.3;
 
-export function selectPlanExemplar(
-  entries: readonly CachedPlan[],
-  prompt: string,
-  options?: SelectPlanExemplarOptions
-): CachedPlan | undefined {
-  const minScore = options?.minScore ?? DEFAULT_MIN_SCORE;
-  let best: CachedPlan | undefined;
-  let bestScore = minScore;
-  for (const entry of entries) {
-    if (entry.steps.length === 0) {
-      continue;
-    }
-    const score = strategyTextSimilarity(prompt, entry.prompt);
-    if (score >= bestScore) {
-      bestScore = score;
-      best = entry;
-    }
-  }
-  return best;
-}
-
 /**
  * Cosine floor for embedding-based plan reuse — deliberately high-precision:
  * a wrongly reused plan steers the small model's whole tool sequence, so only

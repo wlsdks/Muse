@@ -146,7 +146,6 @@ export async function rotateProactiveHistoryFiles(file: string, archiveMaxFiles:
       // Source missing — fine, that slot's empty.
     }
   }
-  // Rename the live file to `.1`.
   try {
     await fs.rename(file, `${file}.1`);
   } catch {

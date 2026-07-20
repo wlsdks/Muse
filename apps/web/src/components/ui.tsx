@@ -355,7 +355,6 @@ export const Icon = {
         <path d="M12 7v5l4 2" />
       </>
     ),
-  menu: (p: IconProps) => base(p, <path d="M4 6h16M4 12h16M4 18h16" />),
   panel: (p: IconProps) =>
     base(
       p,

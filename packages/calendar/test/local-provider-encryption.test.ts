@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { decryptCalendarEnvelope, encryptCalendarEnvelope, isEncryptedCalendarEnvelope } from "./calendar-encryption.js";
-import { LocalCalendarProvider } from "./local-provider.js";
+import { decryptCalendarEnvelope, encryptCalendarEnvelope, isEncryptedCalendarEnvelope } from "../src/calendar-encryption.js";
+import { LocalCalendarProvider } from "../src/local-provider.js";
 
 // Behavioral round-trip coverage for calendar encryption-at-rest (D2-S5):
 // event titles / locations / notes are private, so the store must be

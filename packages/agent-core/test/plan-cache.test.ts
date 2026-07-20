@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { exemplarFitsToolset, exemplarIsSelfConsistent, renderPlanExemplar, selectPlanExemplar, selectSuccessfulPlanSteps, type CachedPlan } from "../src/index.js";
-
-const plan = (prompt: string, tool: string): CachedPlan => ({
-  prompt,
-  steps: [{ args: {}, description: "step", tool }]
-});
+import { exemplarFitsToolset, exemplarIsSelfConsistent, renderPlanExemplar, selectSuccessfulPlanSteps, type CachedPlan } from "../src/index.js";
 
 describe("selectSuccessfulPlanSteps — outcome-conditioned step filter (AWM, arXiv:2409.07429)", () => {
   const step = (tool: string) => ({ args: {}, description: tool, tool });
@@ -43,26 +38,6 @@ describe("selectSuccessfulPlanSteps — outcome-conditioned step filter (AWM, ar
 
   it("returns empty array for empty input", () => {
     expect(selectSuccessfulPlanSteps([])).toHaveLength(0);
-  });
-});
-
-describe("selectPlanExemplar — retrieve the most similar past plan (Agentic Plan Caching, arXiv 2506.14852)", () => {
-  it("returns the most similar past plan above the threshold", () => {
-    const entries = [
-      plan("summarize my Q3 budget notes", "notes_search"),
-      plan("book a dentist appointment", "calendar_create")
-    ];
-    const out = selectPlanExemplar(entries, "summarize my Q4 budget notes");
-    expect(out?.steps[0]!.tool).toBe("notes_search");
-  });
-
-  it("returns undefined when nothing is similar enough", () => {
-    const entries = [plan("book a dentist appointment", "calendar_create")];
-    expect(selectPlanExemplar(entries, "deploy the backend to production")).toBeUndefined();
-  });
-
-  it("returns undefined for an empty cache", () => {
-    expect(selectPlanExemplar([], "anything at all here")).toBeUndefined();
   });
 });
 

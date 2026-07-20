@@ -78,7 +78,6 @@ function codepoints(value: string): string[] {
 }
 
 
-/** Index of the line start (after the previous `\n`) for a cursor index. */
 function lineStart(chars: readonly string[], cursor: number): number {
   let i = cursor;
   while (i > 0 && chars[i - 1] !== "\n") i -= 1;
@@ -91,7 +90,6 @@ function lineEnd(chars: readonly string[], cursor: number): number {
   return i;
 }
 
-/** Start index of the word before the cursor (skips spaces, then word chars). */
 function wordStart(chars: readonly string[], cursor: number): number {
   let i = cursor;
   while (i > 0 && chars[i - 1] === " ") i -= 1;

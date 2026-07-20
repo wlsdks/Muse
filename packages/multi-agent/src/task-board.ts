@@ -289,8 +289,8 @@ export function lastFailureReason(task: AgentTask): string | undefined {
 }
 
 /**
- * The board's decomposition depth ceiling from `MUSE_BOARD_MAX_DEPTH`. Unlike
- * `resolveAskMaxTools`'s `0`/`"off"` escape hatch, a max-depth of 0 would forbid ALL
+ * The board's decomposition depth ceiling from `MUSE_BOARD_MAX_DEPTH`. A
+ * max-depth of 0 would forbid ALL
  * decomposition (a top-level task could never expand), which isn't what an operator
  * asking for a lower ceiling wants — so this floors at 1 instead of treating 0 as
  * "disabled". Absent, non-integer, or non-positive → `DEFAULT_BOARD_MAX_DEPTH`.
