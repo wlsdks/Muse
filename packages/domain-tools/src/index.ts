@@ -67,7 +67,6 @@ export type { ActivityKind } from "./personal-activity-feed.js";
 export { summariseEpisodesRows, summariseFollowupsRows, summariseObjectivesRows, summarisePatternsFiredRows, summariseRemindersRows } from "./personal-status-summary.js";
 export { createRecentActionsTool } from "./recent-actions-tool.js";
 export { createRememberFactTool } from "./remember-fact-tool.js";
-export { runActuatorByName } from "./run-actuator-by-name.js";
 export { runDueSituationalBriefing } from "./situational-briefing-loop.js";
 export {
   HOME_ASSISTANT_LOCAL_ONLY_REASON,

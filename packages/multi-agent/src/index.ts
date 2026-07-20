@@ -46,7 +46,6 @@ export type {
 } from "./lead-worker.js";
 export { dedupeSubtasks, detectFanInConflicts, detectFanInRedundancy, detectSubtaskConflicts, detectSubtaskRedundancies, runLeadWorkerTask, verifySequencedDependencyUse, verifySynthesisCoverage } from "./lead-worker.js";
 export { resolveSubAgentToolBudget, SUB_AGENT_BUDGET_RATIO, SUB_AGENT_MIN_BUDGET, SUB_AGENT_UNCAPPED_DEFAULT } from "./sub-agent-budget.js";
-export { inheritParentToolDeny } from "./sub-agent-tools.js";
 
 export type { AgentWorker } from "./workers.js";
 export {
