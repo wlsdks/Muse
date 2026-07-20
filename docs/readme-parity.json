@@ -1,197 +1,312 @@
 {
-  "schemaVersion": "muse-readme-parity.v1",
+  "schemaVersion": "muse-readme-parity.v2",
   "locales": [
     {
       "id": "en",
       "file": "README.md",
       "title": "Muse",
-      "languageSwitch": ["README.ko.md", "README.ja.md", "README.zh-CN.md"],
-      "metricFieldLabels": ["What", "Example", "How to read", "Current", "What it proves", "What it does not prove"],
-      "forbiddenPatterns": ["see the English README instead"]
+      "languageSwitch": [
+        "README.ko.md",
+        "README.ja.md",
+        "README.zh-CN.md"
+      ],
+      "forbiddenPatterns": [
+        "see the English README instead"
+      ],
+      "boundaryTokens": [
+        "Controlled synthetic integrity is not personal learning.",
+        "Controlled evidence is not organic effectiveness.",
+        "1,111,000 records are not 1,111,000 agent runs."
+      ]
     },
     {
       "id": "ko",
       "file": "README.ko.md",
       "title": "Muse",
-      "languageSwitch": ["README.md", "README.ja.md", "README.zh-CN.md"],
-      "metricFieldLabels": ["무엇을 재나", "예시", "읽는 법", "현재 값", "증명하는 것", "증명하지 못하는 것"],
-      "forbiddenPatterns": ["영문 README를 대신 참고"]
+      "languageSwitch": [
+        "README.md",
+        "README.ja.md",
+        "README.zh-CN.md"
+      ],
+      "forbiddenPatterns": [
+        "영문 README를 대신 참고"
+      ],
+      "boundaryTokens": [
+        "통제 합성 무결성은 개인 학습이 아닙니다.",
+        "통제 근거는 실제 사용 효과가 아닙니다.",
+        "1,111,000개 레코드는 1,111,000번의 에이전트 실행이 아닙니다."
+      ]
     },
     {
       "id": "ja",
       "file": "README.ja.md",
       "title": "Muse",
-      "languageSwitch": ["README.md", "README.ko.md", "README.zh-CN.md"],
-      "metricFieldLabels": ["意味", "例", "読み方", "現在", "示せること", "示せないこと"],
-      "forbiddenPatterns": ["英語版を参照してください", "英語版を正とします"]
+      "languageSwitch": [
+        "README.md",
+        "README.ko.md",
+        "README.zh-CN.md"
+      ],
+      "forbiddenPatterns": [
+        "英語版を参照してください",
+        "英語版を正とします"
+      ],
+      "boundaryTokens": [
+        "管理下の合成完全性は個人学習ではありません。",
+        "管理下の証拠は organic effectiveness ではありません。",
+        "1,111,000 レコードは 1,111,000 回のエージェント実行ではありません。"
+      ]
     },
     {
       "id": "zh-CN",
       "file": "README.zh-CN.md",
       "title": "Muse",
-      "languageSwitch": ["README.md", "README.ko.md", "README.ja.md"],
-      "metricFieldLabels": ["定义", "例子", "怎么看", "当前", "能证明", "不能证明"],
-      "forbiddenPatterns": ["请参阅英文版", "以英文版为准"]
+      "languageSwitch": [
+        "README.md",
+        "README.ko.md",
+        "README.ja.md"
+      ],
+      "forbiddenPatterns": [
+        "请参阅英文版",
+        "以英文版为准"
+      ],
+      "boundaryTokens": [
+        "受控合成完整性不代表个人学习。",
+        "受控证据不代表真实使用效果。",
+        "1,111,000 条记录不等于 1,111,000 次智能体运行。"
+      ]
     }
   ],
   "sections": [
     {
       "id": "numbers",
       "headings": {
-        "en": ["Muse in numbers"],
-        "ko": ["숫자로 보는 Muse"],
-        "ja": ["数字で見る Muse"],
-        "zh-CN": ["用数字看 Muse"]
+        "en": [
+          "Muse in numbers"
+        ],
+        "ko": [
+          "숫자로 보는 Muse"
+        ],
+        "ja": [
+          "数字で見る Muse"
+        ],
+        "zh-CN": [
+          "用数字看 Muse"
+        ]
       }
     },
     {
       "id": "install",
       "headings": {
-        "en": ["Install and quick start"],
-        "ko": ["설치와 빠른 시작"],
-        "ja": ["インストールとクイックスタート"],
-        "zh-CN": ["安装与快速开始"]
+        "en": [
+          "Install and quick start"
+        ],
+        "ko": [
+          "설치와 빠른 시작"
+        ],
+        "ja": [
+          "インストールとクイックスタート"
+        ],
+        "zh-CN": [
+          "安装与快速开始"
+        ]
       }
     },
     {
       "id": "capabilities",
       "headings": {
-        "en": ["Core capabilities"],
-        "ko": ["핵심 기능"],
-        "ja": ["主な機能"],
-        "zh-CN": ["核心能力"]
+        "en": [
+          "Core capabilities"
+        ],
+        "ko": [
+          "핵심 기능"
+        ],
+        "ja": [
+          "主な機能"
+        ],
+        "zh-CN": [
+          "核心能力"
+        ]
       }
     },
     {
       "id": "boundaries",
       "headings": {
-        "en": ["What Muse will not do (boundaries)"],
-        "ko": ["Muse가 하지 않는 일"],
-        "ja": ["Muse がしないこと（境界）"],
-        "zh-CN": ["Muse 不会做什么（边界）"]
+        "en": [
+          "What Muse will not do (boundaries)"
+        ],
+        "ko": [
+          "Muse가 하지 않는 일"
+        ],
+        "ja": [
+          "Muse がしないこと（境界）"
+        ],
+        "zh-CN": [
+          "Muse 不会做什么（边界）"
+        ]
       }
     },
     {
       "id": "providers",
       "headings": {
-        "en": ["Providers and local path"],
-        "ko": ["모델 제공자와 로컬 사용"],
-        "ja": ["プロバイダーとローカル実行"],
-        "zh-CN": ["模型提供方与本地运行"]
+        "en": [
+          "Providers and local path"
+        ],
+        "ko": [
+          "모델 제공자와 로컬 사용"
+        ],
+        "ja": [
+          "プロバイダーとローカル実行"
+        ],
+        "zh-CN": [
+          "模型提供方与本地运行"
+        ]
       }
     },
     {
       "id": "verification",
       "headings": {
-        "en": ["Verification"],
-        "ko": ["검증"],
-        "ja": ["検証"],
-        "zh-CN": ["验证"]
+        "en": [
+          "Verification"
+        ],
+        "ko": [
+          "검증"
+        ],
+        "ja": [
+          "検証"
+        ],
+        "zh-CN": [
+          "验证"
+        ]
       }
     },
     {
       "id": "documentation",
       "headings": {
-        "en": ["Documentation"],
-        "ko": ["문서"],
-        "ja": ["ドキュメント"],
-        "zh-CN": ["文档"]
+        "en": [
+          "Documentation"
+        ],
+        "ko": [
+          "문서"
+        ],
+        "ja": [
+          "ドキュメント"
+        ],
+        "zh-CN": [
+          "文档"
+        ]
       }
     },
     {
       "id": "community",
       "headings": {
-        "en": ["Community and support"],
-        "ko": ["커뮤니티와 지원"],
-        "ja": ["コミュニティとサポート"],
-        "zh-CN": ["社区与支持"]
+        "en": [
+          "Community and support"
+        ],
+        "ko": [
+          "커뮤니티와 지원"
+        ],
+        "ja": [
+          "コミュニティとサポート"
+        ],
+        "zh-CN": [
+          "社区与支持"
+        ]
       }
     },
     {
       "id": "contributing",
       "headings": {
-        "en": ["Contributing"],
-        "ko": ["기여하기"],
-        "ja": ["コントリビューション"],
-        "zh-CN": ["参与贡献"]
+        "en": [
+          "Contributing"
+        ],
+        "ko": [
+          "기여하기"
+        ],
+        "ja": [
+          "コントリビューション"
+        ],
+        "zh-CN": [
+          "参与贡献"
+        ]
       }
     },
     {
       "id": "license",
       "headings": {
-        "en": ["License"],
-        "ko": ["라이선스"],
-        "ja": ["ライセンス"],
-        "zh-CN": ["许可证"]
+        "en": [
+          "License"
+        ],
+        "ko": [
+          "라이선스"
+        ],
+        "ja": [
+          "ライセンス"
+        ],
+        "zh-CN": [
+          "许可证"
+        ]
       }
     }
   ],
   "metricSections": [
     {
-      "id": "effect-deltas",
+      "id": "qualified-grounding",
       "headings": {
-        "en": ["Component effect deltas"],
-        "ko": ["구성 요소를 켰을 때의 변화"],
-        "ja": ["コンポーネント効果の差分"],
-        "zh-CN": ["组件效果增量"]
+        "en": [
+          "Qualified grounding"
+        ],
+        "ko": [
+          "자격이 확인된 grounding"
+        ],
+      "ja": [
+        "根拠づけ（grounding）の限定結果"
+      ],
+      "zh-CN": [
+        "通过受控检查的 grounding 结果"
+      ]
       },
-      "requiredTokens": ["+0.94", "+0.63", "+0.00"],
-      "evidenceLink": "docs/benchmarks/evidence-dashboard.json"
+      "requiredTokens": [
+        "+0.94",
+        "16/17",
+        "0/17",
+        "+0.63",
+        "5/8",
+        "0/8",
+        "+0.00",
+        "0/12"
+      ],
+      "evidenceLink": "docs/benchmarks/readme-qualified-evidence-v1.json",
+      "chartFile": "readme-qualified-grounding-v1.svg"
     },
     {
-      "id": "evidence-coverage",
+      "id": "controlled-scale",
       "headings": {
-        "en": ["Evidence coverage"],
-        "ko": ["확보된 근거의 범위"],
-        "ja": ["エビデンスの範囲"],
-        "zh-CN": ["证据覆盖范围"]
+        "en": [
+          "Controlled synthetic integrity at scale"
+        ],
+        "ko": [
+          "통제 합성 데이터 규모 무결성"
+        ],
+        "ja": [
+          "管理下の合成データ規模と完全性"
+        ],
+        "zh-CN": [
+          "受控合成数据的规模完整性"
+        ]
       },
-      "requiredTokens": ["10/11", "8/80", "10,080/10,080", "0/1,000"],
-      "evidenceLink": "docs/benchmarks/evidence-dashboard.json"
-    },
-    {
-      "id": "production-recall",
-      "headings": {
-        "en": ["Production recall"],
-        "ko": ["실제 프로덕션 경로의 회상"],
-        "ja": ["プロダクション経路のリコール"],
-        "zh-CN": ["生产路径召回"]
-      },
-      "requiredTokens": ["prepareGroundedRecall", "0/20", "1/20"],
-      "evidenceLink": "docs/benchmarks/recall-production-path.json"
-    },
-    {
-      "id": "freshness-ablation",
-      "headings": {
-        "en": ["Freshness ablation"],
-        "ko": ["최신성 재정렬 분리 실험"],
-        "ja": ["鮮度処理のアブレーション"],
-        "zh-CN": ["新鲜度消融实验"]
-      },
-      "requiredTokens": ["UNCHANGED", "72", "80", "PAIR_MISSING"],
-      "evidenceLink": "docs/benchmarks/recall-freshness-ablation.json"
-    },
-    {
-      "id": "candidate-pool",
-      "headings": {
-        "en": ["Candidate-pool diagnostic"],
-        "ko": ["후보 수 진단"],
-        "ja": ["候補プール診断"],
-        "zh-CN": ["候选池诊断"]
-      },
-      "requiredTokens": ["topK", "4", "8", "12"],
-      "evidenceLink": "docs/benchmarks/recall-candidate-pool.json"
-    },
-    {
-      "id": "project-surface",
-      "headings": {
-        "en": ["Project surface"],
-        "ko": ["프로젝트가 제공하는 범위"],
-        "ja": ["プロジェクトの実装面"],
-        "zh-CN": ["项目实现面"]
-      },
-      "requiredTokens": ["NOT_RUN"],
-      "evidenceLink": "docs/benchmarks/evidence-dashboard.json"
+      "requiredTokens": [
+        "1K",
+        "10K",
+        "100K",
+        "1M",
+        "1,111,000/1,111,000",
+        "768/768",
+        "96",
+        "0 / 0 / 0",
+        "byte-stable"
+      ],
+      "evidenceLink": "docs/benchmarks/readme-qualified-evidence-v1.json",
+      "chartFile": "readme-controlled-scale-v1.svg"
     }
   ],
   "requiredCommands": [
@@ -211,11 +326,7 @@
     "pnpm test:changed",
     "pnpm check",
     "pnpm smoke:broad",
-    "pnpm smoke:live",
-    "pnpm evidence:dashboard:render",
-    "pnpm evidence:dashboard:validate",
-    "pnpm eval:recall-production-path",
-    "pnpm eval:recall-production-path:validate"
+    "pnpm smoke:live"
   ],
   "requiredLinks": [
     "LICENSE",
@@ -227,84 +338,35 @@
     "docs/SYSTEM-MAP.md",
     "docs/feature-catalog/INDEX.md",
     "docs/benchmarks/EVIDENCE.md",
-    "docs/benchmarks/evidence-dashboard.json",
-    "docs/benchmarks/recall-production-path.json",
-    "docs/benchmarks/recall-freshness-ablation.json",
-    "docs/benchmarks/recall-candidate-pool.json",
     "docs/benchmarks/eval-datasets-scale-v1.json",
-    "docs/benchmarks/eval-datasets-scale-v1.md",
-    "docs/setup-local-llm.md"
+    "docs/setup-local-llm.md",
+    "docs/benchmarks/readme-qualified-evidence-v1.json"
   ],
   "evidence": {
-    "dashboardPath": "docs/benchmarks/evidence-dashboard.json",
     "evidenceIndexPath": "docs/benchmarks/EVIDENCE.md",
-    "requiredMetrics": [
+    "publicationManifestPath": "docs/benchmarks/readme-qualified-evidence-v1.json",
+    "expectedCharts": [
       {
-        "metricId": "grounding.self-authored.faithfulness-delta",
-        "value": 0.94,
-        "denominator": null,
-        "status": "qualified component result"
+        "file": "readme-qualified-grounding-v1.svg",
+        "status": "QUALIFIED_CONTROLLED_COMPONENT"
       },
       {
-        "metricId": "grounding.squad.faithfulness-delta",
-        "value": 0.63,
-        "denominator": null,
-        "status": "qualified component result"
-      },
-      {
-        "metricId": "recall.correction-pass-delta",
-        "value": 0,
-        "denominator": null,
-        "status": "UNCHANGED"
-      },
-      {
-        "metricId": "agent.capability-axes",
-        "value": 10,
-        "denominator": 11,
-        "status": "aggregate FAILED"
-      },
-      {
-        "metricId": "recall.raw-top4-pair-retained",
-        "value": 8,
-        "denominator": 80,
-        "status": "diagnostic"
-      },
-      {
-        "metricId": "continuity.provenance-exact-pairs",
-        "value": 10080,
-        "denominator": 10080,
-        "status": "technical-only"
-      },
-      {
-        "metricId": "organic.personal-effectiveness",
-        "value": 0,
-        "denominator": 1000,
-        "status": "NOT_PROVEN classification"
-      },
-      {
-        "metricId": "surface.live-roundtrip",
-        "value": null,
-        "denominator": null,
-        "status": "NOT_RUN"
+        "file": "readme-controlled-scale-v1.svg",
+        "status": "QUALIFIED_CONTROLLED_SYNTHETIC_INTEGRITY"
       }
     ],
-    "artifactStatuses": [
-      {
-        "path": "docs/benchmarks/recall-production-path.json",
-        "pointer": "/payload/executionStatus",
-        "expected": "COMPLETE"
-      },
-      {
-        "path": "docs/benchmarks/recall-freshness-ablation.json",
-        "pointer": "/payload/status",
-        "expected": "UNCHANGED"
-      },
-      {
-        "path": "docs/benchmarks/recall-candidate-pool.json",
-        "pointer": "/payload/executionStatus",
-        "expected": "COMPLETE"
-      }
+    "forbiddenReadmeCharts": [
+      "evidence-effect-deltas.svg",
+      "evidence-coverage.svg",
+      "recall-production-path.svg",
+      "recall-freshness-ablation.svg",
+      "recall-candidate-pool.svg",
+      "evidence-project-surface.svg"
     ],
-    "requiredReadmeStatuses": ["10/11", "FAILED", "NOT_PROVEN", "0/1,000", "8/80", "10,080/10,080", "UNCHANGED", "NOT_RUN"]
+    "requiredReadmeStatuses": [
+      "10/11 FAILED",
+      "NOT_PROVEN",
+      "UNQUALIFIED"
+    ]
   }
 }

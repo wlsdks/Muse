@@ -28,70 +28,25 @@ Muse は仕事専用のアシスタントではなく、一人の生活と仕事
 
 ## 📊 数字で見る Muse
 
-ここにある六つの図は、すべて別の問いに答えます。テスト件数はエージェントの効果を証明しません。合成データでの結果を、実生活での効果に読み替えることもできません。最新のエージェント評価は **10/11** ですが、総合判定は **FAILED** のままです。個人の生活で役立つことは **NOT_PROVEN**（未証明）です。
+README に掲載するのは、管理された条件で確認できた二つの結果だけです。失敗、変化なし、診断用の証拠は図に昇格させず、[エビデンス索引](docs/benchmarks/EVIDENCE.md)で公開し続けます。
 
-### コンポーネント効果の差分
+### 根拠づけ（grounding）の限定結果
 
-**意味:** 特定の部品を有効にしたとき、その部品だけで測定値がどれだけ変わったかを示します。 **例:** 通院準備のノートや仕事上の決定メモについて質問したとき、根拠のない断言を減らせるかを管理されたローカルモデル用コーパスで比較します。 **読み方:** 正の値はその行の指標が改善したという意味ですが、行ごとに尺度とコーパスが違うため足したり大小を直接比較したりできません。 **現在:** grounding の faithfulness 差分は **+0.94** と **+0.63**、recall correction の差分は **+0.00** です。 **示せること:** 限定条件では grounding コンポーネントが根拠整合性を改善したこと。 **示せないこと:** Muse 全体の品質、日常での有用性、モデル間の優劣、organic な効果。
+**例:** 同じ架空の予約質問に対し、grounding は根拠のない推測ではなくリンク済みノートを引用すべきです。独立した二つの管理下チェックで、faithfulness は自作ケースの **ON 16/17 対 OFF 0/17**で **+0.94**、squad ケースの **ON 5/8 対 OFF 0/8**で **+0.63**でした。False-refusal コストは **0/12 対 0/12** と **0/8 対 0/8**で、どちらも **+0.00**です。分母が異なるため合算スコアではありません。
 
-![コンポーネント効果の差分](docs/benchmarks/evidence-effect-deltas.svg)
+![独立した二つの grounding チェックにおける faithfulness の実数と false-refusal コスト](docs/benchmarks/readme-qualified-grounding-v1.svg)
 
-出典: [canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json) · 再生成 <code>pnpm evidence:dashboard:render</code> · 検証 <code>pnpm evidence:dashboard:validate</code>
+出典: [公開範囲を固定した README エビデンス一覧（manifest）](docs/benchmarks/readme-qualified-evidence-v1.json) · [全エビデンス索引](docs/benchmarks/EVIDENCE.md)
 
-### エビデンスの範囲
+### 管理下の合成データ規模と完全性
 
-**意味:** ソフトウェア保証、管理された合成評価、ローカル実行、個人の実利用という異なる証拠クラスに、どれだけの観測があるかを示します。 **例:** <code>life</code> の通院準備と <code>work</code> の設計作業でテストが通っても、それだけで日常の助けが有用だったとは数えません。 **読み方:** 各棒は固有の分母に対する分子で、別の行とは比較できません。 **現在:** エージェント軸 **10/11**、raw top-4 pair retention **8/80**、provenance isolation **10,080/10,080**、organic classification **0/1,000** です。 **示せること:** 各証拠クラスに何があり、どこが不足しているか。 **示せないこと:** 件数の多さから user benefit を結論づけること、technical evidence を organic effectiveness に昇格すること。
+**例:** 架空の予約訂正レコードで、個人データに触れず現在時刻と以前の時刻を区別できるかを検査します。独立した **1K / 10K / 100K / 1M** コーパスの全体では、生成・直列化・解析 + スキーマ検証がそれぞれ **1,111,000/1,111,000件**でした。全コーパスとは別の runtime 標本は **96** セルで、名前を明記した Muse の公開境界 **768/768件**を通過しました。LLM・ツール・ネットワーク呼び出しは **0 / 0 / 0**で、所有者状態はバイト単位で不変でした（**byte-stable**）。
 
-![証拠クラスごとのカバレッジ](docs/benchmarks/evidence-coverage.svg)
+![管理下の全合成コーパスと別枠の768件runtime標本を区別した規模結果](docs/benchmarks/readme-controlled-scale-v1.svg)
 
-出典: [canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json)
+出典: [正本 scale JSON](docs/benchmarks/eval-datasets-scale-v1.json) · [公開範囲を固定した README エビデンス一覧（manifest）](docs/benchmarks/readme-qualified-evidence-v1.json) · [全エビデンス索引](docs/benchmarks/EVIDENCE.md)
 
-### プロダクション経路のリコール
-
-**意味:** 実際の <code>prepareGroundedRecall</code> 経路で、通常質問、答えがない質問、古い情報を訂正する質問を処理した結果です。 **例:** 「今の歯科予約は 15 時」というノートと「以前は 14 時だった」というノートがあるとき、両方を候補に残し、現在の情報を先頭にできるかを測ります。 **読み方:** 色付きの棒は一つの埋め込みモデルにつき 20 件中何件通ったかを表します。 **現在:** correction pair retention は **0/20、0/20、1/20、1/20**、current top-1 は四モデルすべて **0/20** でした。 **示せること:** 凍結した synthetic v1 を production seam に通したときの候補保持と判定の弱点。 **示せないこと:** held-out 性、エージェント全体の能力、生成回答の品質、個人データでの効果。生成回答リクエストは 0 件です。
-
-![プロダクション経路のリコール結果](docs/benchmarks/recall-production-path.svg)
-
-出典: [canonical production-path JSON](docs/benchmarks/recall-production-path.json) · 再実行 <code>pnpm eval:recall-production-path</code> · 検証 <code>pnpm eval:recall-production-path:validate</code>
-
-<details>
-<summary><b>詳細な診断</b></summary>
-
-### 鮮度処理のアブレーション
-
-**意味:** 同じ raw top-4 候補に対し、そのままの順位と Muse の freshness 並べ替えを比較します。 **例:** 昔の出張便と現在の出張便が候補に両方残っていれば古い方を下げられますが、現在の便が top-4 から消えていれば並べ替えでは戻せません。 **読み方:** ペアの棒は同一ケースの raw と Muse を示し、平均だけでモデル別の悪化を隠せません。 **現在:** 四モデルとも差分 0 で **UNCHANGED**、correction 観測の **72/80** が <code>PAIR_MISSING</code> でした。 **示せること:** 測定されたボトルネックが stale reordering より前の retrieval/MMR pair retention にあること。 **示せないこと:** freshness の考え方が常に無効であること、この synthetic component 診断が agent evaluation であること。
-
-![freshness アブレーション](docs/benchmarks/recall-freshness-ablation.svg)
-
-出典: [canonical freshness JSON](docs/benchmarks/recall-freshness-ablation.json)
-
-### 候補プール診断
-
-**意味:** <code>topK</code> を **4、8、12** と広げたとき、current/stale の組を候補に残しやすくなるかを調べます。 **例:** 家族旅行の最新ホテル候補と取り消した旧候補を一緒に確認したいとき、候補枠が狭すぎて最新情報が落ちる問題を切り分けます。 **読み方:** correction pass は pair が残り、かつ current が top-1 の場合だけです。 **現在:** pair retention は概して topK とともに増加し、例えば v2-moe は 5/20 → 13/20 → 17/20。一方、各 topK で raw と Muse の current-top1 は同数でした。 **示せること:** 候補幅を増やすと pair retention が改善し得ること。 **示せないこと:** freshness 並べ替え固有の効果、最適な production topK、個人利用での正答率。
-
-![候補プール診断](docs/benchmarks/recall-candidate-pool.svg)
-
-出典: [canonical candidate-pool JSON](docs/benchmarks/recall-candidate-pool.json)
-
-### プロジェクトの実装面
-
-**意味:** 公開されている機能面と、ある時点のソフトウェア保証スナップショットを並べた在庫表です。 **例:** ローカルのカレンダー接続方式が複数あることは分かりますが、誕生日計画の再開を上手に助けた回数ではありません。 **読み方:** 各カードは単位が異なり、<code>NOT_RUN</code> は失敗率ではなく未実行の状態です。 **現在:** 図にはエンドポイント、パッケージ／アプリ、MCP サーバー、プロバイダー分類、過去に通過したテストのスナップショット、ライブコマンドの利用可否が記録され、実 LLM の往復実行は **NOT_RUN** です。 **示せること:** 実装の広さ、コマンドの存在、履歴時点でのソフトウェア保証。 **示せないこと:** 機能数やテスト数が利用者への効果、品質、信頼性を直接保証すること。
-
-![プロジェクト実装面](docs/benchmarks/evidence-project-surface.svg)
-
-出典: [canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json)
-
-</details>
-
-証拠クラスと昇格禁止ルールは [エビデンス索引](docs/benchmarks/EVIDENCE.md) にあります。canonical JSON だけが数値の正本で、CSV、Markdown、SVG はそこから派生し、照合されます。
-
-**管理された合成データの規模:** 6 種類のテスト群 × 4 言語 × 4 段階の複雑さを、互いに独立した 1千・1万・10万・100万件のコーパスで検証しました。たとえば、架空の通院予定について古い時刻と訂正後の時刻を区別するケースや、答えのない質問には推測で答えないケースを含みます。合計 **1,111,000件**を生成・直列化・再読込・スキーマ検証し、層別抽出した **768/768件**が名前を明記した Muse の公開境界と最終不変条件を通過しました。LLM・ツール・ネットワーク呼び出しは 0 回、bulk データは 1,338,728,855 bytes、peak RSS は 429,572,096 bytes で、所有者の状態は byte-stable でした。生成器の fixture 修正後に別枠で実行した fresh-seed replay も **1,000/1,000件**のスキーマ検証と **192/192件**の公開境界を通過しましたが、これは `robustnessReplay=true`、`heldOut=false` であり、111万1千件の合計には含みません。ここで示せるのはストリーミング／コーパス完全性、公開境界の標本実行、再現性までです。個人学習、held-out 一般化、organic effectiveness、あるいは 111万1千回のエージェント実行を示すものではありません。[正本 JSON](docs/benchmarks/eval-datasets-scale-v1.json) · [読みやすいレポート](docs/benchmarks/eval-datasets-scale-v1.md)
-
-### 今、Muse を使う理由
-
-現在の価値は、Muse に生活や仕事を勝手に推測させることではありません。自分で <code>life</code> / <code>work</code> のテーマを作り、再開に必要なローカルのタスクやノートだけを正確に結び付け、外部への作用は承認の範囲内に止められることです。たとえば通院準備や中断した設計作業に戻るとき、関係のない記憶を混ぜずに「どこまで進んだか」と次の一歩を確認できます。
-
-一方、長期的に役立つこと、自然なタイミングを学べること、使うほど生活に合うことは **NOT_PROVEN** です。現在提供するのは、ユーザーが主導権を保ったまま試せる明示的で監査可能な Continuity 経路です。
+境界: エージェント総合は **10/11 FAILED**、実利用での有効性（organic effectiveness）は **NOT_PROVEN**、訂正情報のリコール（recall correction）は **UNQUALIFIED**です。管理下の合成完全性は個人学習ではありません。管理下の証拠は organic effectiveness ではありません。**1,111,000 レコードは 1,111,000 回のエージェント実行ではありません。**
 
 ---
 

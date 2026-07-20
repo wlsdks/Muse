@@ -35,76 +35,25 @@ Muse는 업무만 처리하는 비서가 아니라, 한 사람의 삶과 일을 
 
 ## 📊 숫자로 보는 Muse
 
-아래 여섯 그래프는 서로 다른 질문에 답합니다. 막대가 길거나 테스트 건수가 많다고 해서 Muse가 사람에게 더 도움이 된다는 뜻은 아닙니다. 통제된 합성 데이터와 실제 사용 결과도 섞지 않습니다. 현재 라이브 에이전트 기준선은 **10/11**이며 종합 판정은 여전히 **FAILED**입니다. 실제 개인 사용에서의 효과는 **NOT_PROVEN**입니다.
+README에는 자격이 확인된 통제 결과 두 개만 싣습니다. 실패·변화 없음·진단용 근거는 그래프로 승격하지 않고 [근거 색인](docs/benchmarks/EVIDENCE.md)에 그대로 공개합니다.
 
-### 구성 요소를 켰을 때의 변화
+### 자격이 확인된 grounding
 
-**무엇을 재나:** 한 구성 요소를 켜기 전과 후의 차이입니다. **생활 예시:** “내일 병원 예약이 몇 시야?”라는 같은 질문에 grounding을 켜기 전과 후로 답하게 하고, 로컬 일정 메모를 정확히 인용하는 비율이 얼마나 달라지는지 봅니다. **읽는 법:** 양수면 해당 실험에서 좋아졌다는 뜻이지만, 각 줄은 기준과 단위가 달라 서로 더하거나 크기를 비교하면 안 됩니다. **현재 값:** 두 통제된 로컬 모델 데이터 묶음에서 grounding 변화는 +0.94와 +0.63, recall correction 변화는 +0.00입니다. **증명하는 것:** 명시된 통제 사례에서 두 grounding 구성 요소가 개선을 만들었습니다. **증명하지 못하는 것:** 에이전트 전체 성능이나 실제 생활에서의 장기 효과는 아닙니다.
+**예시:** 같은 가상 예약 질문에서 grounding은 근거 없는 추측 대신 연결된 메모를 인용해야 합니다. 서로 독립적인 두 통제 검사에서 faithfulness는 자체 작성 사례 **ON 16/17, OFF 0/17**로 **+0.94**, squad 사례 **ON 5/8, OFF 0/8**로 **+0.63**이었습니다. False-refusal 비용은 각각 **0/12 대 0/12**, **0/8 대 0/8**로 둘 다 **+0.00**이었습니다. 두 검사는 분모가 다르며 합산 점수가 아닙니다.
 
-![서로 다른 세 구성 요소 효과 변화](docs/benchmarks/evidence-effect-deltas.svg)
+![서로 독립적인 두 grounding 검사의 faithfulness 원시 건수와 false-refusal 비용](docs/benchmarks/readme-qualified-grounding-v1.svg)
 
-원본: [대시보드 기준 JSON](docs/benchmarks/evidence-dashboard.json) · 재생성 `pnpm evidence:dashboard:render` · 검증 `pnpm evidence:dashboard:validate`
+원본: [닫힌 README 근거 manifest](docs/benchmarks/readme-qualified-evidence-v1.json) · [전체 근거 색인](docs/benchmarks/EVIDENCE.md)
 
-### 확보된 근거의 범위
+### 통제 합성 데이터 규모 무결성
 
-**무엇을 재나:** 서로 다른 네 종류의 검증에서 근거가 얼마나 채워졌는지 보여 줍니다. **업무 예시:** 10/11은 에이전트 능력 11개 축 가운데 10개가 통과했다는 뜻입니다. 8/80은 오래된 메모와 수정 메모가 검색 결과에 함께 남았는지를 묻는 별도 실험이므로, 두 비율은 경쟁 점수가 아닙니다. **읽는 법:** 각 막대는 자기 분모 안에서만 읽어야 합니다. **현재 값:** 에이전트 기준선 10/11, top-4 교정 쌍 보존 8/80, 통제된 출처 격리 10,080/10,080, 실제 사용 효과 분류 0/1,000입니다. **증명하는 것:** 표시된 계약과 검사를 뒷받침하는 근거가 존재합니다. **증명하지 못하는 것:** 근거의 양과 구현 안정성만으로 사용자에게 유용하다고 말할 수는 없습니다.
+**예시:** 가상의 예약 교정 레코드는 개인 데이터를 건드리지 않고 현재 시간과 이전 시간을 구분하는지 검사합니다. 서로 독립적인 **1K / 10K / 100K / 1M** corpus 전체에서 생성·직렬화·파싱 + 스키마 검증은 각각 **1,111,000/1,111,000건**이었습니다. 이 전체 corpus와 별도로 뽑은 runtime 표본은 **96**개 셀에서 이름이 명시된 Muse 공개 경계 **768/768건**을 통과했습니다. LLM·도구·네트워크 호출은 **0 / 0 / 0**이었고 사용자 상태는 **byte-stable**이었습니다.
 
-![서로 다른 분모를 가진 근거 범위](docs/benchmarks/evidence-coverage.svg)
+![전체 통제 합성 corpus와 별도의 768건 runtime 표본을 구분한 규모 결과](docs/benchmarks/readme-controlled-scale-v1.svg)
 
-원본: [대시보드 기준 JSON](docs/benchmarks/evidence-dashboard.json) · 재생성 `pnpm evidence:dashboard:render` · 검증 `pnpm evidence:dashboard:validate`
+원본: [기준 scale JSON](docs/benchmarks/eval-datasets-scale-v1.json) · [닫힌 README 근거 manifest](docs/benchmarks/readme-qualified-evidence-v1.json) · [전체 근거 색인](docs/benchmarks/EVIDENCE.md)
 
-### 실제 프로덕션 경로의 회상
-
-**무엇을 재나:** 테스트용 우회 함수가 아니라 프로덕션의 `prepareGroundedRecall` 경계를 통과시켜 회상을 확인합니다. **생활 예시:** 예전 메모에는 “헬스장 7시”, 나중 수정 메모에는 “헬스장 6시”라고 적혀 있다고 해봅시다. ‘교정 쌍 보존’은 두 메모가 최종 문맥에 함께 들어왔는지를, ‘최신 정보 1위’는 6시 메모가 가장 먼저 선택됐는지를 뜻합니다. **읽는 법:** 색 막대 하나는 모델 하나에서 20건 중 통과한 수입니다. **현재 값:** 일반·정보 없음 사례는 대부분 통과하지만, 교정 쌍 보존은 0/20, 0/20, 1/20, 1/20이고 최신 정보 1위는 네 모델 모두 0/20입니다. **증명하는 것:** 실제 prepare-only 프로덕션 경로에 재현 가능한 교정 실패가 있습니다. **증명하지 못하는 것:** 이 고정 합성 데이터 v1은 held-out이나 실제 사용 근거가 아니며 생성형 모델 요청도 0회입니다.
-
-![프로덕션 회상 경로 결과](docs/benchmarks/recall-production-path.svg)
-
-원본: [프로덕션 경로 기준 JSON](docs/benchmarks/recall-production-path.json) · 재실행 `pnpm eval:recall-production-path` · 검증 `pnpm eval:recall-production-path:validate`
-
-<details>
-<summary><b>세부 진단 보기</b></summary>
-
-### 최신성 재정렬 분리 실험
-
-**무엇을 재나:** 같은 top-4 후보를 원래 순서로 썼을 때와 Muse의 최신성 재정렬을 거쳤을 때를 비교합니다. **생활 예시:** 6시 수정 메모가 처음부터 네 후보 안에 들어오지 않았다면, 재정렬기는 전달받은 메모의 순서만 바꿀 수 있을 뿐 사라진 수정 메모를 되살릴 수 없습니다. **읽는 법:** 모델별 쌍 막대가 같은 범주의 통과 수를 보여 줍니다. **현재 값:** 네 모델 모두 변화 없음(**UNCHANGED**, delta 0)이며 교정 관측 80건 중 72건이 `PAIR_MISSING`입니다. **증명하는 것:** 이 후보 집합 실패는 재정렬만으로 고쳐지지 않았습니다. **증명하지 못하는 것:** 합성 회상 구성 요소 진단이지 에이전트 전체나 실제 사용자 평가가 아닙니다.
-
-![네 로컬 임베딩 모델의 최신성 분리 실험](docs/benchmarks/recall-freshness-ablation.svg)
-
-원본: [최신성 기준 JSON](docs/benchmarks/recall-freshness-ablation.json) · 재실행 `pnpm eval:recall-freshness-ablation` · 검증 `pnpm eval:recall-freshness-ablation:validate`
-
-### 후보 수 진단
-
-**무엇을 재나:** topK를 4에서 8 또는 12로 늘리면 교정 쌍이 더 많이 남는지 확인합니다. **생활 예시:** 최종 판단자에게 메모 4개짜리 선반 대신 12개짜리 선반을 건네는 것과 같습니다. 예전·최신 메모가 함께 있을 가능성은 커지지만 최신 메모가 여전히 뒤에 놓일 수 있습니다. **읽는 법:** 교정 통과는 두 메모가 모두 남고 최신 출처가 1위여야 합니다. **현재 값:** topK가 커질수록 쌍 보존은 대체로 늘지만 원본과 Muse의 교정 통과 수는 같습니다. **증명하는 것:** 후보 공간이 병목 중 하나입니다. **증명하지 못하는 것:** 한 회상 구성 요소만 떼어 본 결과라 전체 에이전트나 실제 효과를 말하지 못합니다.
-
-![topK 4, 8, 12의 교정 쌍 보존과 통과](docs/benchmarks/recall-candidate-pool.svg)
-
-원본: [후보 수 기준 JSON](docs/benchmarks/recall-candidate-pool.json) · 재실행 `pnpm eval:recall-candidate-pool` · 검증 `pnpm eval:recall-candidate-pool:validate`
-
-### 프로젝트가 제공하는 범위
-
-**무엇을 재나:** 기능 목록, 소프트웨어 검증 시점, 라이브 명령 제공 여부를 모아 보여 줍니다. **생활 예시:** “캘린더 백엔드 5개”는 다섯 종류 연결 방식을 지원한다는 뜻이지, 일정 도움을 다섯 번 유용하게 줬다는 뜻이 아닙니다. **읽는 법:** 카드마다 단위가 다르며 `NOT_RUN`은 점수가 아니라 실행하지 않았다는 상태입니다. **현재 값:** 엔드포인트, 패키지와 앱, MCP 서버, 모델 제공자 계열, 과거 통과 테스트 스냅샷, 사용 가능한 라이브 명령을 기록합니다. **증명하는 것:** 표시된 기능 표면과 검사가 존재합니다. **증명하지 못하는 것:** 코드 규모와 테스트 수는 에이전트 효과가 아닙니다.
-
-![프로젝트 기능 목록과 검증 상태](docs/benchmarks/evidence-project-surface.svg)
-
-원본: [대시보드 기준 JSON](docs/benchmarks/evidence-dashboard.json) · 재생성 `pnpm evidence:dashboard:render` · 검증 `pnpm evidence:dashboard:validate`
-
-</details>
-
-근거 종류, 원본 선택 규칙, 서로 다른 근거를 승격하지 않는 원칙은 [근거 색인](docs/benchmarks/EVIDENCE.md)에 있습니다. 기준 JSON만 지표의 원본이며 CSV, Markdown, SVG는 여기서 만들어져 바이트 단위로 검증됩니다.
-
-### 지금 Muse를 쓸 이유
-
-삶과 업무의 한 주제를 메모·할 일·캘린더·모델 제공자 사이에서 계속 이어가되, 정확한 로컬 출처를 직접 확인하고 중요한 행동 전에는 승인을 받고 싶을 때 Muse가 가장 잘 맞습니다. 예를 들어 ‘생일 준비’라는 삶의 주제에 아이디어 메모와 다음 할 일을 직접 연결하고, 며칠 뒤 이어서 본 다음 그 도움이 실제로 쓰였는지 또는 거절됐는지 기록할 수 있습니다.
-
-현재 근거는 이 경로들이 존재하고 안전 계약을 지키는지, 일부 구성 요소가 통제 실험에서 나아졌는지를 보여 줍니다. 반면 Muse가 몇 주 동안 한 사람의 삶을 실제로 개선하는지, 자연스러운 사용을 통해 알맞은 도움 타이밍을 배우는지는 아직 증명하지 못했습니다. 10/11 종합 실패와 교정 회상 실패를 숨기지 않는 이유도 다음 개선 지점을 정확히 보여 주기 위해서입니다.
-
-### 통제 합성 데이터 규모 검증
-
-데이터셋 harness는 여섯 테스트군, 네 언어, 네 난이도를 조합해 서로 독립적인 1천·1만·10만·100만 건 corpus를 만들었습니다. 합계 **1,111,000건**을 생성하고 JSONL로 기록한 뒤 다시 읽어 스키마까지 검증했습니다. 한 레코드는 오래된 병원 예약과 수정된 시간을 구분하게 하고, 다른 레코드는 답이 없는 질문에 답을 삼가게 하거나 사용자의 금지 사항을 보존하고, 승인 없는 행동을 거절하거나 긴 대화를 안전한 길이로 줄이게 합니다. 96개 조건에서 뽑은 **768/768건**은 이름이 명시된 공개 Muse 경계와 최종 불변식을 통과했습니다. LLM·도구·네트워크 호출은 모두 0회였고, 사용자 `~/.muse` 상태도 바이트 단위로 같았습니다.
-
-이 결과가 증명하는 것은 대규모 스트리밍, corpus 무결성, 격리, 공개 경계 표본 실행입니다. 111만 1천 번의 에이전트 실행, 개인 학습, held-out 일반화, 사람의 실제 결과, organic effectiveness를 뜻하지 않습니다. [기준 JSON](docs/benchmarks/eval-datasets-scale-v1.json)과 [읽기 쉬운 보고서](docs/benchmarks/eval-datasets-scale-v1.md)에서 결과를 확인할 수 있으며, 대용량 JSONL 원본은 Git에 올리지 않고 로컬에만 둡니다.
-
-생성기 fixture를 고친 뒤에는 기존 합계와 분리한 새 seed 재생도 실행했습니다. 스키마 **1,000/1,000건**과 공개 경계 표본 **192/192건**이 통과했으며 `robustnessReplay=true`, `heldOut=false`입니다. 이 수치는 111만 1천 건 합계에 포함되지 않고, 반복해도 같은 계약을 지켰다는 근거일 뿐 일반화 성능의 증거는 아닙니다.
+경계: 에이전트 종합은 **10/11 FAILED**, 실제 사용 효과는 **NOT_PROVEN**, recall correction은 **UNQUALIFIED**입니다. 통제 합성 무결성은 개인 학습이 아닙니다. 통제 근거는 실제 사용 효과가 아닙니다. **1,111,000개 레코드는 1,111,000번의 에이전트 실행이 아닙니다.**
 
 ---
 

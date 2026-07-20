@@ -4,13 +4,14 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { validateReadmeEvidenceResult } from "./render-readme-qualified-evidence.mjs";
+
 const ROOT_FIELDS = ["evidence", "locales", "metricSections", "requiredCommands", "requiredLinks", "schemaVersion", "sections"];
-const LOCALE_FIELDS = ["file", "forbiddenPatterns", "id", "languageSwitch", "metricFieldLabels", "title"];
+const LOCALE_FIELDS = ["boundaryTokens", "file", "forbiddenPatterns", "id", "languageSwitch", "title"];
 const SECTION_FIELDS = ["headings", "id"];
-const METRIC_SECTION_FIELDS = ["evidenceLink", "headings", "id", "requiredTokens"];
-const EVIDENCE_FIELDS = ["artifactStatuses", "dashboardPath", "evidenceIndexPath", "requiredMetrics", "requiredReadmeStatuses"];
-const REQUIRED_METRIC_FIELDS = ["denominator", "metricId", "status", "value"];
-const ARTIFACT_STATUS_FIELDS = ["expected", "path", "pointer"];
+const METRIC_SECTION_FIELDS = ["chartFile", "evidenceLink", "headings", "id", "requiredTokens"];
+const EVIDENCE_FIELDS = ["evidenceIndexPath", "expectedCharts", "forbiddenReadmeCharts", "publicationManifestPath", "requiredReadmeStatuses"];
+const EXPECTED_CHART_FIELDS = ["file", "status"];
 const EXPECTED_LOCALES = ["en", "ja", "ko", "zh-CN"];
 
 function exactKeys(value, expected, label) {
@@ -48,11 +49,6 @@ function sectionText(text, allowedHeadings) {
   return lines.slice(start.index, end).join("\n");
 }
 
-function pointerValue(value, pointer) {
-  if (pointer === "") return value;
-  return pointer.split("/").slice(1).reduce((current, part) => current?.[part.replaceAll("~1", "/").replaceAll("~0", "~")], value);
-}
-
 function localTargets(markdown) {
   const targets = [];
   for (const match of markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) targets.push(match[1].trim().split(/\s+["']/u)[0]);
@@ -72,16 +68,16 @@ async function assertLocalLinks({ filePath, markdown, root }) {
   }
 }
 
-function validateManifestShape(manifest) {
+export function validateManifestShape(manifest) {
   exactKeys(manifest, ROOT_FIELDS, "manifest");
-  if (manifest.schemaVersion !== "muse-readme-parity.v1") throw new Error("manifest schemaVersion mismatch");
+  if (manifest.schemaVersion !== "muse-readme-parity.v2") throw new Error("manifest schemaVersion mismatch");
   if (!Array.isArray(manifest.locales) || !Array.isArray(manifest.sections) || !Array.isArray(manifest.metricSections)) throw new Error("manifest arrays missing");
   for (const locale of manifest.locales) exactKeys(locale, LOCALE_FIELDS, `locale ${locale?.id ?? "unknown"}`);
   for (const section of manifest.sections) exactKeys(section, SECTION_FIELDS, `section ${section?.id ?? "unknown"}`);
   for (const section of manifest.metricSections) exactKeys(section, METRIC_SECTION_FIELDS, `metric section ${section?.id ?? "unknown"}`);
   exactKeys(manifest.evidence, EVIDENCE_FIELDS, "evidence");
-  for (const metric of manifest.evidence.requiredMetrics) exactKeys(metric, REQUIRED_METRIC_FIELDS, `evidence metric ${metric?.metricId ?? "unknown"}`);
-  for (const artifact of manifest.evidence.artifactStatuses) exactKeys(artifact, ARTIFACT_STATUS_FIELDS, `artifact status ${artifact?.path ?? "unknown"}`);
+  for (const chart of manifest.evidence.expectedCharts) exactKeys(chart, EXPECTED_CHART_FIELDS, `expected chart ${chart?.file ?? "unknown"}`);
+  if (manifest.metricSections.length !== 2 || manifest.evidence.expectedCharts.length !== 2) throw new Error("README publication must contain exactly two charts");
   const localeIds = manifest.locales.map((item) => item.id).sort();
   if (JSON.stringify(localeIds) !== JSON.stringify(EXPECTED_LOCALES)) throw new Error("manifest locale set mismatch");
   for (const section of [...manifest.sections, ...manifest.metricSections]) {
@@ -90,17 +86,18 @@ function validateManifestShape(manifest) {
 }
 
 async function validateCanonicalEvidence({ manifest, root }) {
-  const dashboard = JSON.parse(await readFile(join(root, manifest.evidence.dashboardPath), "utf8"));
-  const metrics = new Map(dashboard.payload?.metrics?.map((item) => [item.metricId, item]));
-  for (const expected of manifest.evidence.requiredMetrics) {
-    const actual = metrics.get(expected.metricId);
-    if (!actual || actual.value !== expected.value || actual.denominator !== expected.denominator || actual.status !== expected.status) throw new Error(`canonical evidence mismatch: ${expected.metricId}`);
-  }
+  const publication = validateReadmeEvidenceResult(JSON.parse(await readFile(join(root, manifest.evidence.publicationManifestPath), "utf8")));
+  const actualCharts = publication.payload.charts.map(({ file, status }) => ({ file, status }));
+  if (JSON.stringify(actualCharts) !== JSON.stringify(manifest.evidence.expectedCharts)) throw new Error("README publication chart/status set mismatch");
   const evidenceIndex = await readFile(join(root, manifest.evidence.evidenceIndexPath), "utf8");
-  for (const token of ["10/11", "FAILED", "NOT_PROVEN"]) if (!evidenceIndex.toUpperCase().includes(token)) throw new Error(`evidence index status missing: ${token}`);
-  for (const artifact of manifest.evidence.artifactStatuses) {
-    const value = JSON.parse(await readFile(join(root, artifact.path), "utf8"));
-    if (pointerValue(value, artifact.pointer) !== artifact.expected) throw new Error(`canonical artifact status mismatch: ${artifact.path}`);
+  for (const token of ["10/11", "FAILED", "NOT_PROVEN", ...manifest.evidence.expectedCharts.map(({ file }) => file), ...manifest.evidence.forbiddenReadmeCharts]) {
+    if (!evidenceIndex.toUpperCase().includes(token.toUpperCase())) throw new Error(`evidence index publication/history missing: ${token}`);
+  }
+  for (const { file } of manifest.evidence.expectedCharts) {
+    const svg = await readFile(join(root, "docs", "benchmarks", file), "utf8");
+    if (!/^<svg[^>]+width="1200"[^>]+viewBox="0 0 1200 [67]00"[^>]+role="img"[^>]+aria-labelledby="title desc"/u.test(svg)) throw new Error(`README chart layout/accessibility shell mismatch: ${file}`);
+    if (!/<title id="title">[^<]+<\/title><desc id="desc">[^<]+<\/desc>/u.test(svg)) throw new Error(`README chart accessible text missing: ${file}`);
+    if (/x="(?:0|1200)" y=|y="(?:0|600|700)"[^>]*>[^<]*\S/u.test(svg)) throw new Error(`README chart content exceeds measured padding: ${file}`);
   }
 }
 
@@ -121,16 +118,24 @@ export async function validateReadmeParity({ manifestPath = join(process.cwd(), 
       const allowed = section.headings[locale.id];
       if (!allowed.some((heading) => headings.includes(normalizeHeading(heading)))) throw new Error(`${locale.file} required section missing: ${section.id}`);
     }
+    const numbersHeadings = manifest.sections.find(({ id }) => id === "numbers")?.headings[locale.id].map(normalizeHeading) ?? [];
+    const numbers = sectionText(markdown, numbersHeadings);
+    if (!numbers) throw new Error(`${locale.file} numbers section missing`);
+    const chartFiles = [...numbers.matchAll(/!\[[^\]]+\]\(docs\/benchmarks\/([^\)]+\.svg)\)/gu)].map((match) => match[1]);
+    const expectedChartFiles = manifest.evidence.expectedCharts.map(({ file }) => file);
+    if (JSON.stringify(chartFiles) !== JSON.stringify(expectedChartFiles)) throw new Error(`${locale.file} README chart set/order mismatch`);
+    for (const forbidden of manifest.evidence.forbiddenReadmeCharts) if (numbers.includes(forbidden)) throw new Error(`${locale.file} diagnostic chart promoted into README: ${forbidden}`);
     for (const metric of manifest.metricSections) {
       const body = sectionText(markdown, metric.headings[locale.id].map(normalizeHeading));
       if (!body) throw new Error(`${locale.file} metric section missing: ${metric.id}`);
-      for (const label of locale.metricFieldLabels) if (!body.includes(label)) throw new Error(`${locale.file} ${metric.id} narrative field missing: ${label}`);
       for (const token of metric.requiredTokens) if (!body.includes(token)) throw new Error(`${locale.file} ${metric.id} value missing: ${token}`);
-      if (!markdown.includes(`(${metric.evidenceLink})`)) throw new Error(`${locale.file} metric evidence link missing: ${metric.evidenceLink}`);
+      if (!body.includes(`(${metric.evidenceLink})`)) throw new Error(`${locale.file} metric evidence link missing: ${metric.evidenceLink}`);
+      if (!body.includes(`(docs/benchmarks/${metric.chartFile})`)) throw new Error(`${locale.file} metric chart link missing: ${metric.chartFile}`);
     }
     for (const command of manifest.requiredCommands) if (!markdown.includes(command)) throw new Error(`${locale.file} required command missing: ${command}`);
     for (const link of manifest.requiredLinks) if (!markdown.includes(`(${link})`)) throw new Error(`${locale.file} canonical link missing: ${link}`);
-    for (const status of manifest.evidence.requiredReadmeStatuses) if (!markdown.includes(status)) throw new Error(`${locale.file} evidence status missing: ${status}`);
+    for (const status of manifest.evidence.requiredReadmeStatuses) if (!numbers.includes(status)) throw new Error(`${locale.file} evidence status missing: ${status}`);
+    for (const boundary of locale.boundaryTokens) if (!numbers.includes(boundary)) throw new Error(`${locale.file} evidence boundary missing: ${boundary}`);
     await assertLocalLinks({ filePath, markdown, root });
     reports.push({ file: locale.file, headings: headings.length, locale: locale.id, status: "PASS" });
   }

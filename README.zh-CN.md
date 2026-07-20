@@ -28,70 +28,25 @@ Muse 不只是办公助手，而是面向一个人的生活与工作的持续型
 
 ## 📊 用数字看 Muse
 
-下面六张图回答的是六个不同问题。测试数量不能证明智能体对用户有效，受控合成数据也不能冒充真实生活证据。最近一次合格的智能体基线通过了 **10/11** 个能力轴，但总评仍为 **FAILED**；真实个人使用效果仍是 **NOT_PROVEN**。
+README 只发布两项通过受控检查的结果。失败、无变化和诊断性证据不会升级为图表，仍完整保留在[证据索引](docs/benchmarks/EVIDENCE.md)中。
 
-### 组件效果增量
+### 通过受控检查的 grounding 结果
 
-**定义：** 单独开启某个组件后，该组件对应的测量值发生了多少变化。 **例子：** 对“明天复诊是几点”或“这次设计评审决定了什么”提出同一个问题，比较开启 grounding 前后是否更常引用正确的本地记录；这里使用的是受控语料，不是你的私人笔记。 **怎么看：** 正数只表示这一行的指标在这一项实验中变好；各行的语料、单位不同，不能相加或直接比较大小。 **当前：** 两组受控本地模型语料中的 grounding faithfulness 增量为 **+0.94** 和 **+0.63**，recall correction 增量为 **+0.00**。 **能证明：** 指定的 grounding 组件在对应受控场景中改善了依据一致性。 **不能证明：** Muse 整体更好、某个模型全面胜出，或真实生活中长期有效。
+**例子：** 对同一个虚构预约问题，grounding 应引用已链接的笔记，而不是无依据地猜测。两项相互独立的受控检查中，faithfulness 在自编案例为 **ON 16/17 对 OFF 0/17**，增量 **+0.94**；在 squad 案例为 **ON 5/8 对 OFF 0/8**，增量 **+0.63**。False-refusal 成本分别为 **0/12 对 0/12**、**0/8 对 0/8**，增量均为 **+0.00**。两项检查的分母不同，不能合并成一个总分。
 
-![组件效果增量](docs/benchmarks/evidence-effect-deltas.svg)
+![两项独立grounding检查的faithfulness原始数量与false-refusal成本](docs/benchmarks/readme-qualified-grounding-v1.svg)
 
-来源：[canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json) · 重新生成 <code>pnpm evidence:dashboard:render</code> · 校验 <code>pnpm evidence:dashboard:validate</code>
+来源：[范围固定的 README 证据清单（manifest）](docs/benchmarks/readme-qualified-evidence-v1.json) · [完整证据索引](docs/benchmarks/EVIDENCE.md)
 
-### 证据覆盖范围
+### 受控合成数据的规模完整性
 
-**定义：** 分别展示软件保证、受控合成实验、本地真实运行、个人真实使用等不同证据类别目前积累了多少观测。 **例子：** 医院准备这个生活主题和版本发布这个工作主题都通过软件测试，并不等于两次帮助都让用户受益；用户明确反馈属于另一类证据。 **怎么看：** 每根柱子只能在自己的分母内阅读，不能拿不同类别的柱长互相比高低。 **当前：** 智能体能力轴 **10/11**，raw top-4 同时保留旧信息与修正信息 **8/80**，来源隔离 **10,080/10,080**，organic classification **0/1,000**。 **能证明：** 仓库中确实有支持这些特定检查的证据，也能看出哪些证据仍然缺失。 **不能证明：** 证据条目越多就越有用，或把技术验证直接升级为真实个人效果。
+**例子：** 虚构的预约修正记录用于检查能否在不接触个人数据的情况下区分当前时间与旧时间。四个相互独立的 **1K / 10K / 100K / 1M** 语料在全量范围内分别完成 **1,111,000/1,111,000 条**生成、序列化、解析 + schema 校验。与全量语料分开的 runtime 抽样在 **96** 个单元中通过了 **768/768 条**具名 Muse 公共边界；LLM、工具和网络调用为 **0 / 0 / 0**，所有者状态在字节层面保持不变（**byte-stable**）。
 
-![不同证据类别的覆盖范围](docs/benchmarks/evidence-coverage.svg)
+![区分受控合成全量语料与独立768条runtime抽样的规模结果](docs/benchmarks/readme-controlled-scale-v1.svg)
 
-来源：[canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json)
+来源：[基准 scale JSON](docs/benchmarks/eval-datasets-scale-v1.json) · [范围固定的 README 证据清单（manifest）](docs/benchmarks/readme-qualified-evidence-v1.json) · [完整证据索引](docs/benchmarks/EVIDENCE.md)
 
-### 生产路径召回
-
-**定义：** 不走测试捷径，直接通过生产代码的 <code>prepareGroundedRecall</code> 边界检查普通问题、无答案问题和信息修正问题。 **例子：** 旧笔记写着“健身房 7 点”，后来的修正笔记写着“改为 6 点”。pair retention 检查两条是否都进入最终上下文，current top-1 检查 6 点那条是否排在最前。 **怎么看：** 每根彩色柱表示一个嵌入模型在 20 个案例中通过了多少个。 **当前：** correction pair retention 分别为 **0/20、0/20、1/20、1/20**，四个模型的 current top-1 都是 **0/20**。 **能证明：** 冻结的 synthetic v1 通过真实 prepare-only seam 时存在可重复的候选保留与排序缺陷。 **不能证明：** 该数据是 held-out 或真实使用证据，也不能说明生成回答质量和智能体整体能力；生成请求数为 0。
-
-![生产路径召回结果](docs/benchmarks/recall-production-path.svg)
-
-来源：[canonical production-path JSON](docs/benchmarks/recall-production-path.json) · 重新运行 <code>pnpm eval:recall-production-path</code> · 校验 <code>pnpm eval:recall-production-path:validate</code>
-
-<details>
-<summary><b>详细诊断</b></summary>
-
-### 新鲜度消融实验
-
-**定义：** 对完全相同的 raw top-4 候选，比较原始顺序与 Muse 的新鲜度重排。 **例子：** 如果最新的出差航班记录一开始就没进入四条候选，重排器只能调整收到的旧记录，无法凭空找回缺失的新记录。 **怎么看：** 成对柱子表示同一案例在 raw 与 Muse 两个分支中的结果；不允许用平均值掩盖某个模型的退步。 **当前：** 四个模型的差值都是 0，状态为 **UNCHANGED**；80 个修正观测中有 **72/80** 是 <code>PAIR_MISSING</code>。 **能证明：** 本次测量的主要瓶颈发生在重排之前的 retrieval/MMR pair retention。 **不能证明：** 新鲜度处理永远无效，也不能把这项合成召回组件诊断称作智能体或真实用户评估。
-
-![新鲜度消融实验](docs/benchmarks/recall-freshness-ablation.svg)
-
-来源：[canonical freshness JSON](docs/benchmarks/recall-freshness-ablation.json)
-
-### 候选池诊断
-
-**定义：** 把 <code>topK</code> 从 **4** 扩大到 **8**、**12** 时，旧信息与修正信息是否更容易同时留下。 **例子：** 规划家庭旅行时，同时保留已经取消的旧酒店和刚确认的新酒店，能帮助后续判断区分“曾经考虑过”和“当前有效”；候选架太小可能先丢掉新记录。 **怎么看：** correction pass 必须同时满足 pair retained 和 current source top-1；重复试验只验证稳定性，不会增加独立真相数量。 **当前：** pair retention 通常随 topK 增大，例如 v2-moe 为 5/20 → 13/20 → 17/20；但每个 topK 下 raw 与 Muse 的 current-top1 数量相同。 **能证明：** 候选容量是其中一个瓶颈，扩大候选池可能改善 pair retention。 **不能证明：** 新鲜度重排本身有效、12 是最佳生产配置，或真实个人资料上的正确率。
-
-![候选池诊断](docs/benchmarks/recall-candidate-pool.svg)
-
-来源：[canonical candidate-pool JSON](docs/benchmarks/recall-candidate-pool.json)
-
-### 项目实现面
-
-**定义：** 把公开功能清单、某个历史时点的软件检查以及 live command 是否可用放在一起展示。 **例子：** 支持多种日历连接方式，只说明你有不同适配器可选，不等于 Muse 已经五次成功帮你安排日程。 **怎么看：** 每张卡片的单位都不同；<code>NOT_RUN</code> 是“这个快照中没有执行”的状态，不是得分或失败率。 **当前：** 图中记录 endpoint、package/app、MCP server、模型提供方类别、历史通过测试快照与 live command availability；real-LLM round-trip 为 **NOT_RUN**。 **能证明：** 对应实现面、命令和历史软件检查确实存在。 **不能证明：** 代码规模、功能数或测试数会直接带来用户效果、质量或可靠性。
-
-![项目实现面](docs/benchmarks/evidence-project-surface.svg)
-
-来源：[canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json)
-
-</details>
-
-完整的证据类别与禁止升级规则见 [证据索引](docs/benchmarks/EVIDENCE.md)。canonical JSON 是指标唯一真值；CSV、Markdown 和 SVG 都是经过逐字节校验的派生结果。
-
-**受控合成数据规模：** 这次检查把 6 类测试 × 4 种语言 × 4 个复杂度，分别放进互相独立的 1 千、1 万、10 万和 100 万条语料中；例如用虚构的复诊记录检查能否区分旧时间与修正后的时间，或在笔记没有答案时是否拒绝猜测。合计 **1,111,000 条**记录全部完成生成、序列化、重新读取与 schema 校验，分层抽样的 **768/768 条**通过了具名的 Muse 公共边界和最终不变量。LLM、工具、网络调用均为 0，bulk 数据为 1,338,728,855 bytes，peak RSS 为 429,572,096 bytes，所有者状态保持 byte-stable。修正生成器 fixture 后另行执行的 fresh-seed replay 也通过了 **1,000/1,000 条** schema 校验和 **192/192 条**公共边界，但它明确是 `robustnessReplay=true`、`heldOut=false`，不计入 111.1 万条主结果。它只能证明流式处理、语料完整性、抽样公共边界执行和可重复性，不能证明个人学习、held-out 泛化、organic effectiveness，也不代表执行了 111.1 万次智能体任务。[基准 JSON](docs/benchmarks/eval-datasets-scale-v1.json) · [易读报告](docs/benchmarks/eval-datasets-scale-v1.md)
-
-### 为什么现在使用 Muse
-
-Muse 目前的价值不是替你猜“这件事属于生活还是工作”，而是让你自己建立明确的 <code>life</code> / <code>work</code> 主题，只关联真正需要的本地任务和笔记，并把任何对外动作限制在你的批准范围内。比如回到就诊准备或中断的设计工作时，可以在不混入无关记忆的前提下查看上次进度和一个安全的下一步。
-
-长期真实有用、学会自然介入时机、越用越贴合个人生活，这些仍是 **NOT_PROVEN**。当前可用的是一条由用户掌握主导权、来源可核对、动作受审批约束的明确 Continuity 路径。
+边界：智能体总评为 **10/11 FAILED**，真实使用效果为 **NOT_PROVEN**，信息修正召回（recall correction）仍为 **UNQUALIFIED**。受控合成完整性不代表个人学习。受控证据不代表真实使用效果。**1,111,000 条记录不等于 1,111,000 次智能体运行。**
 
 ---
 

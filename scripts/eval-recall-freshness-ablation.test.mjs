@@ -123,7 +123,8 @@ test("canonical JSON is the only truth for CSV, MD, and SVG and rejects private/
 
 test("evidence index and README preserve qualified links and 10/11 boundary", async () => {
   const [readme, evidence] = await Promise.all([readFile(new URL("../README.md", import.meta.url), "utf8"), readFile(new URL("../docs/benchmarks/EVIDENCE.md", import.meta.url), "utf8")]);
-  for (const text of [readme, evidence]) { assert.match(text, /recall-freshness-ablation/iu); assert.match(text, /local-live retrieval component/iu); assert.match(text, /NOT_PROVEN/u); }
-  assert.match(readme, /10\/11/); assert.match(readme, /test counts.*not.*agent-effect proof/iu); assert.match(evidence, /software assurance/iu); assert.match(evidence, /organic personal effectiveness/iu);
-  assert.match(readme, /UNCHANGED.*four.*delta 0/iu); assert.match(evidence, /8\/80/); assert.match(evidence, /controlled local-model component/iu);
+  assert.match(evidence, /recall-freshness-ablation/iu); assert.match(evidence, /local-live retrieval component/iu); assert.match(evidence, /UNCHANGED/iu);
+  assert.match(readme, /10\/11 FAILED/u); assert.match(readme, /NOT_PROVEN/u); assert.match(readme, /UNQUALIFIED/u); assert.match(readme, /docs\/benchmarks\/EVIDENCE\.md/u);
+  assert.doesNotMatch(readme.slice(readme.indexOf("## 📊 Muse in numbers"), readme.indexOf("\n## ", readme.indexOf("## 📊 Muse in numbers") + 4)), /recall-freshness-ablation\.svg/iu);
+  assert.match(evidence, /software assurance/iu); assert.match(evidence, /organic personal effectiveness/iu); assert.match(evidence, /8\/80/); assert.match(evidence, /controlled local-model component/iu);
 });

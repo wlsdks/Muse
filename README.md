@@ -35,76 +35,25 @@ The first proof point is **Personal Continuity**. You choose a life or work thre
 
 ## 📊 Muse in numbers
 
-Every retained chart answers a different question. Test counts are **not agent-effect proof**; controlled synthetic evidence is not organic evidence. The live agent baseline is 10/11 and its aggregate remains **FAILED**. Organic personal effectiveness is **NOT_PROVEN**.
+The README publishes two qualified controlled results. Failed, unchanged, and diagnostic evidence remains visible in the [evidence index](docs/benchmarks/EVIDENCE.md), not promoted into charts here.
 
-### Component effect deltas
+### Qualified grounding
 
-**What:** the isolated change after one component is enabled. **Example:** if the same question about tomorrow's appointment is answered before and after grounding is enabled, this measures whether the grounded version cites the right local note more often. **How to read:** positive means better, but each row has a different outcome and its own scale. **Current:** grounding changed by +0.94 and +0.63 in two controlled local-model corpora; recall correction changed by +0.00. **What it proves:** those grounding components helped on their stated controlled cases. **What it does not prove:** the rows cannot be added or compared, and they do not establish whole-agent or real-life impact.
+**Example:** for the same fictional appointment question, grounding should cite the linked note instead of answering from an unsupported assumption. Two independent controlled checks measured faithfulness: self-authored cases were **16/17 ON vs 0/17 OFF** (**+0.94**), and squad cases were **5/8 ON vs 0/8 OFF** (**+0.63**). False-refusal cost was unchanged in both checks: **0/12 vs 0/12** and **0/8 vs 0/8**, each **+0.00**. The checks have different denominators and are not an aggregate.
 
-![Component effect deltas in three full-width independent rows](docs/benchmarks/evidence-effect-deltas.svg)
+![Two independent qualified grounding checks with raw faithfulness counts and false-refusal cost](docs/benchmarks/readme-qualified-grounding-v1.svg)
 
-Source: [canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json) · reproduce with `pnpm evidence:dashboard:render` · validate with `pnpm evidence:dashboard:validate`.
+Source: [closed README evidence manifest](docs/benchmarks/readme-qualified-evidence-v1.json) · [full evidence index](docs/benchmarks/EVIDENCE.md)
 
-### Evidence coverage
+### Controlled synthetic integrity at scale
 
-**What:** how much evidence exists inside four separate evidence classes. **Example:** 10/11 means ten agent-capability axes passed and one failed; 8/80 asks a different question—whether both an old and corrected note survived retrieval—so the two fractions are not competing scores. **How to read:** each bar is numerator over its own denominator; do not compare bar lengths across rows. **Current:** the agent baseline is 10/11, raw top-4 retained both correction sources in 8/80 model-cases, controlled provenance isolation is 10,080/10,080, and organic classification is 0/1,000. **What it proves:** the repository has evidence for the stated checks. **What it does not prove:** coverage and implementation assurance are not user benefit.
+**Example:** fictional correction records test whether a current appointment can remain distinguishable from an older time without touching personal data. Four independent corpora—**1K / 10K / 100K / 1M**—produced a full-corpus total of **1,111,000/1,111,000** generated, serialized, and parsed + schema-validated records. A separate stratified runtime sample passed **768/768** named public Muse seams across **96** cells, with **0 / 0 / 0** LLM, tool, and network calls; owner state remained **byte-stable**.
 
-![Evidence coverage ratios with independent denominators](docs/benchmarks/evidence-coverage.svg)
+![Full-corpus controlled synthetic integrity totals separated from the 768-case runtime sample](docs/benchmarks/readme-controlled-scale-v1.svg)
 
-Source: [canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json) · reproduce with `pnpm evidence:dashboard:render` · validate with `pnpm evidence:dashboard:validate`.
+Source: [canonical scale JSON](docs/benchmarks/eval-datasets-scale-v1.json) · [closed README evidence manifest](docs/benchmarks/readme-qualified-evidence-v1.json) · [full evidence index](docs/benchmarks/EVIDENCE.md)
 
-### Production recall
-
-**What:** recall exercised through the production `prepareGroundedRecall` seam. **Example:** an older note says “gym at 7:00,” while a later correction says “gym at 6:00.” Pair retention asks whether both notes reach the final context; current top-1 asks whether the 6:00 note ranks first. **How to read:** each colored bar is a pass count out of 20 within one model. **Current:** ordinary and absent cases largely pass, but correction pair retention is 0/20, 0/20, 1/20, and 1/20; current top-1 is 0/20 for all four models. **What it proves:** the real prepare-only production seam has a measurable correction failure. **What it does not prove:** frozen synthetic v1 is not held-out or organic evidence, repeats are collapsed, and zero generative requests were made.
-
-![Recall results through the production prepareGroundedRecall seam](docs/benchmarks/recall-production-path.svg)
-
-Source: [canonical production-path JSON](docs/benchmarks/recall-production-path.json) · reproduce with `pnpm eval:recall-production-path` · validate with `pnpm eval:recall-production-path:validate`.
-
-<details>
-<summary><b>Detailed diagnostics</b></summary>
-
-### Freshness ablation
-
-**What:** raw retrieval versus Muse freshness reordering on the same top-4 candidates. **Example:** if the 6:00 correction never enters the four retrieved notes, a reranker can shuffle only the notes it received—it cannot recover that missing correction. **How to read:** paired bars show within-category pass counts for each model. **Current:** **UNCHANGED** across all four models, each with delta 0; 72/80 correction observations were `PAIR_MISSING`. **What it proves:** reordering alone did not fix this candidate-set failure. **What it does not prove:** this is a synthetic retrieval-component diagnostic, not an agent or real-user evaluation.
-
-![Recall freshness ablation across four local embedding models](docs/benchmarks/recall-freshness-ablation.svg)
-
-Source: [canonical freshness JSON](docs/benchmarks/recall-freshness-ablation.json) · reproduce with `pnpm eval:recall-freshness-ablation` · validate with `pnpm eval:recall-freshness-ablation:validate`.
-
-### Candidate-pool diagnostic
-
-**What:** whether increasing topK from 4 to 8 or 12 retains more correction pairs. **Example:** it is like giving the final reader a shelf of 12 candidate notes instead of 4: the old/current pair is more likely to be present, but the current note can still be ordered incorrectly. **How to read:** a correction pass requires both pair retention and current-source top-1. **Current:** retention generally rises with topK, while raw and Muse correction-pass counts remain equal. **What it proves:** candidate capacity is one bottleneck. **What it does not prove:** it isolates one retrieval component, collapses repeat trials, and makes no whole-agent or organic claim.
-
-![Candidate-pool pair retention and correction pass at top K four, eight, and twelve](docs/benchmarks/recall-candidate-pool.svg)
-
-Source: [canonical candidate-pool JSON](docs/benchmarks/recall-candidate-pool.json) · reproduce with `pnpm eval:recall-candidate-pool` · validate with `pnpm eval:recall-candidate-pool:validate`.
-
-### Project surface
-
-**What:** inventory, software-assurance snapshots, and live-command availability. **Example:** “five calendar backends” means Muse can connect through five adapter types; it does not mean calendar help was useful five times. **How to read:** every card has its own unit; `NOT_RUN` is a status, not a score. **Current:** the chart records endpoints, packages and apps, MCP servers, provider families, a historical passing-test snapshot, and the available live command. **What it proves:** those surfaces exist and the listed checks ran. **What it does not prove:** size and test volume do not demonstrate agent effect.
-
-![Project inventory, assurance snapshots, and live-command status](docs/benchmarks/evidence-project-surface.svg)
-
-Source: [canonical dashboard JSON](docs/benchmarks/evidence-dashboard.json) · reproduce with `pnpm evidence:dashboard:render` · validate with `pnpm evidence:dashboard:validate`.
-
-</details>
-
-Full evidence classes, source selectors, and non-promotion rules live in the [evidence index](docs/benchmarks/EVIDENCE.md). Canonical JSON is the only metric truth; CSV, Markdown, and SVG are derived and validated byte-for-byte.
-
-### Why use Muse today?
-
-Muse is most useful when you want one local-first agent to carry an explicitly chosen life or work thread across notes, tasks, calendars, and model providers—while keeping exact sources visible and asking before consequential actions. For example, you can link a birthday-planning note and next task to one life thread, resume it later, and record whether the delivered help was used or rejected.
-
-The current evidence supports the existence and safety contracts of those paths, plus several controlled component gains. It does **not** yet show that Muse improves a person's life over weeks or learns the right timing from organic use. The failed 10/11 aggregate and the recall-correction results above stay visible because they identify the next work to do, rather than being hidden behind a large test count.
-
-### Controlled scale evidence
-
-The dataset harness generated, serialized, parsed, and schema-validated **1,111,000** fictional Muse-shaped records across six families, four languages, and four complexity levels in independent 1K, 10K, 100K, and 1M corpora. A record might ask Muse to distinguish an old appointment from its correction, abstain when no note answers a question, preserve a user veto, deny an unapproved action, or trim a long conversation safely. A stratified **768/768** sample then passed the named public Muse seams and terminal invariants with zero LLM, tool, or network calls; owner `~/.muse` state remained byte-stable.
-
-This qualifies streaming, corpus integrity, isolation, and sampled public-boundary execution—not 1.111 million agent runs, personal learning, held-out generalization, human outcomes, or organic effectiveness. See the [canonical JSON](docs/benchmarks/eval-datasets-scale-v1.json) and [readable report](docs/benchmarks/eval-datasets-scale-v1.md); the bulk JSONL stays local and ignored.
-
-After a generator fixture was corrected, a separately accounted fresh-seed replay also passed **1,000/1,000** schema checks and **192/192** sampled public seams. It is explicitly `robustnessReplay=true` and `heldOut=false`, is not included in the 1,111,000 totals, and is evidence of repeatability—not generalization.
+Boundaries: the agent aggregate is **10/11 FAILED**; organic effectiveness is **NOT_PROVEN**; recall correction remains **UNQUALIFIED**. Controlled synthetic integrity is not personal learning. Controlled evidence is not organic effectiveness. **1,111,000 records are not 1,111,000 agent runs.**
 
 ---
 
