@@ -274,7 +274,20 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
           return { kind: "image", path: safe, read: true, source: safe, text: described.text, truncated: false };
         }
         if (kind === "unsupported") {
-          return { path: safe, read: false, reason: `'${basename(safe)}' is not a readable document (PDF, Word, text, or image files only)` };
+          // HEIC is the DEFAULT camera format on macOS and iPhone, so it is the
+          // single most likely thing a user points at — and the local vision
+          // model cannot decode it (verified: Ollama returns "Failed to load
+          // image or audio file" on a real .heic). Saying so, with the one
+          // command that fixes it, beats a generic refusal.
+          const extension = basename(safe).toLowerCase().split(".").pop() ?? "";
+          const heic = extension === "heic" || extension === "heif";
+          return {
+            path: safe,
+            read: false,
+            reason: heic
+              ? `'${basename(safe)}' is a HEIC image, which the local vision model cannot decode. Convert it first: sips -s format jpeg '${safe}' --out '${safe.replace(/\.[^.]+$/u, ".jpg")}'`
+              : `'${basename(safe)}' is not a readable document (PDF, Word, text, or image files only)`
+          };
         }
 
         if (kind === "pdf" || kind === "docx") {
