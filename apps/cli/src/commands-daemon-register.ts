@@ -107,6 +107,7 @@ import type { ProgramIO } from "./program.js";
 import { isGmailConfigured } from "./resolve-gmail-provider.js";
 import { DaemonStopSignal, DEFAULT_DAEMON_INTERVAL_MS, runDaemonLoop } from "./commands-daemon-loop.js";
 import { defaultChromeConnection, defaultFollowupModel, defaultKnowledgeEnrich, type FollowupModel } from "./commands-daemon-connections.js";
+import { lockDaemonMessagingRegistry, resolveDaemonProviderLock } from "./daemon-messaging-safety.js";
 
 const DEFAULT_INTERRUPTION_HOURLY_CAP = 2;
 const DEFAULT_INTERRUPTION_DAILY_CAP = 6;
@@ -190,6 +191,10 @@ export interface DaemonHelpers {
    * a capturing fake provider.
    */
   readonly buildMessagingRegistry?: (env: NodeJS.ProcessEnv) => MessagingProviderRegistry;
+  /** Test seam proving the delivery brake runs before calendar-provider construction. */
+  readonly buildCalendarRegistry?: typeof buildCalendarRegistry;
+  /** Test seam proving the delivery brake runs before daemon-config reads. */
+  readonly readDaemonConfig?: typeof readDaemonConfig;
   /**
    * Test seam — fully resolve the model the followup tick synthesizes
    * with, instead of building the runtime assembly (which reads the
@@ -437,13 +442,26 @@ export async function installDaemonAutostart(
   const logDir = join(home, ".muse", "logs");
   // launchd does not inherit the invoking shell's environment reliably, and
   // KeepAlive restarts happen long after that shell is gone. Persist only the
-  // two explicit safety switches needed for a controlled local activation.
+  // explicit safety switches needed for a controlled local activation.
   // This is intentionally an allowlist: provider credentials, model keys,
   // arbitrary MUSE_* paths, and every other ambient value stay out of plist.
   const safetyEnvironment: Record<string, string> = {};
+  let providerLock: ReturnType<typeof resolveDaemonProviderLock>;
+  try {
+    providerLock = resolveDaemonProviderLock(e);
+  } catch {
+    io.stderr("refusing to install daemon autostart: MUSE_DAEMON_PROVIDER_LOCK must be unset or 'log'.\n");
+    return { ok: false };
+  }
   if (isLocalOnlyEnabled(e)) safetyEnvironment.MUSE_LOCAL_ONLY = "true";
   if (!parseBoolean(e.MUSE_SELFLEARN_ENABLED, true)) {
     safetyEnvironment.MUSE_SELFLEARN_ENABLED = "false";
+  }
+  if (!parseBoolean(e.MUSE_DAEMON_DELIVERY_ENABLED, true)) {
+    safetyEnvironment.MUSE_DAEMON_DELIVERY_ENABLED = "false";
+  }
+  if (providerLock === "log") {
+    safetyEnvironment.MUSE_DAEMON_PROVIDER_LOCK = "log";
   }
   const plist = buildLaunchAgentPlist({
     environmentVariables: safetyEnvironment,
@@ -528,16 +546,59 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       readonly destination?: string;
     }) => {
       const e = env();
+      const deliveryBrakeEngaged = !parseBoolean(e.MUSE_DAEMON_DELIVERY_ENABLED, true);
       // `helpers.env` is a test/composition seam, not an escape hatch. A
       // supplied false cannot downgrade the ambient local-only posture.
       const localOnly = isLocalOnlyEnabled(process.env) || isLocalOnlyEnabled(e);
       const interval = parseBoundedFlag(options.interval, "--interval", 5, 86_400, DEFAULT_DAEMON_INTERVAL_MS / 1000);
       const leadMinutes = parseBoundedFlag(options.leadMinutes, "--lead-minutes", 1, 1_440, 10);
+
+      // The master brake is deliberately before daemon config, registries,
+      // credentials, models, calendars, store paths, and every sub-tick. The
+      // only authorized mutation in this branch is the daemon-loop heartbeat.
+      // Administrative/status commands keep their own existing behavior.
+      if (deliveryBrakeEngaged && !options.init && !options.install && !options.uninstall && !options.status) {
+        const heartbeatDir = defaultProactiveHeartbeatDir(e);
+        const heartbeatOnlyTick = async (): Promise<void> => {
+          await recordProactiveHeartbeat(heartbeatDir, "daemon-loop").catch(() => false);
+        };
+        io.stdout("muse daemon — delivery brake engaged (heartbeat-only)\n");
+        if (options.once) {
+          await heartbeatOnlyTick();
+          io.stdout("daemon --once complete (heartbeat-only)\n");
+          return;
+        }
+
+        const signal = new DaemonStopSignal();
+        const stop = (): void => {
+          if (signal.stopped) return;
+          io.stdout("\n(stopping)\n");
+          signal.stop();
+        };
+        process.on("SIGINT", stop);
+        process.on("SIGTERM", stop);
+        try {
+          io.stdout(`  running heartbeat every ${interval.toString()} s — ctrl-c to stop\n`);
+          await (helpers.runDaemonLoop ?? runDaemonLoop)({
+            intervalMs: interval * 1000,
+            onError: (cause) => {
+              io.stderr(`heartbeat error: ${errorMessage(cause)}\n`);
+            },
+            signal,
+            tick: heartbeatOnlyTick
+          });
+        } finally {
+          process.off("SIGINT", stop);
+          process.off("SIGTERM", stop);
+        }
+        return;
+      }
+
       // Precedence: flag > env > config file > hardcoded default. The
       // config file (muse daemon --init) lets the user persist
       // provider/destination once instead of exporting env vars.
       const configFile = resolveDaemonConfigFile(e);
-      const fileConfig = readDaemonConfig(configFile);
+      const fileConfig = (helpers.readDaemonConfig ?? readDaemonConfig)(configFile);
       const provider = (options.provider ?? e.MUSE_PROACTIVE_PROVIDER ?? fileConfig.provider ?? "log").trim();
       const destination = (options.destination ?? e.MUSE_PROACTIVE_DESTINATION ?? fileConfig.destination ?? "@me").trim();
 
@@ -619,6 +680,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const messagingEnv = provider === "macos-notification" && e.MUSE_MESSAGING_MACOS_NOTIFICATION_ENABLED === undefined
         ? { ...e, MUSE_MESSAGING_MACOS_NOTIFICATION_ENABLED: "true" }
         : e;
+      const providerLock = resolveDaemonProviderLock(e);
       const baseMessagingRegistry = makeMessaging(messagingEnv);
       if (!baseMessagingRegistry.has(provider)) {
         const known = baseMessagingRegistry.list().map((p) => p.id);
@@ -631,7 +693,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       // --print echoes every delivered notice to stdout too, so a
       // user running `muse daemon` in the foreground watches it work
       // inline.
-      const messagingRegistry: MessagingProviderRegistry = options.print
+      const observableMessagingRegistry: MessagingProviderRegistry = options.print
         ? new Proxy(baseMessagingRegistry, {
             get(target, prop, receiver) {
               if (prop === "send") {
@@ -645,6 +707,10 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
             }
           })
         : baseMessagingRegistry;
+      const messagingRegistry = lockDaemonMessagingRegistry(
+        observableMessagingRegistry,
+        providerLock
+      );
 
       const trustLedgerFile = resolveProactiveTrustFile(e);
 
@@ -664,7 +730,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const dayRhythmConfigFile = resolveMuseCliConfigFilePath(e);
       const channelOwnersFile = resolveIntegrationEnvironment(e).messaging.ownersFile;
 
-      const calendarRegistry = buildCalendarRegistry(e);
+      const calendarRegistry = (helpers.buildCalendarRegistry ?? buildCalendarRegistry)(e);
       const tasksFile = resolveTasksFile(e);
       const historyFile = resolveProactiveHistoryFile(e);
       const sidecarFile = e.MUSE_PROACTIVE_SIDECAR_FILE?.trim()?.length
@@ -829,6 +895,8 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       if (options.status) {
         await resolveCliLanguage(e, () => readConfigStore(io));
         io.stdout(`muse daemon — readiness (provider=${provider}, destination=${destination}):\n`);
+        io.stdout(`  delivery:   ${deliveryBrakeEngaged ? "heartbeat-only (brake engaged)" : "enabled"}\n`);
+        io.stdout(`  route-lock: ${providerLock === "log" ? "log-only" : "disabled"}\n`);
         io.stdout(`  proactive:  enabled\n`);
         io.stdout(`  reminders:  enabled\n`);
         io.stdout(`  scheduler:  enabled (recurring \`muse scheduler add\` jobs; \`muse scheduler pause\` suspends)\n`);

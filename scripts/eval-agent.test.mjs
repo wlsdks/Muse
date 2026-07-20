@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -25,6 +34,27 @@ function result(stdout, overrides = {}) {
     durationMs: 17,
     ...overrides,
   };
+}
+
+function verifiedPipeline(overrides = {}) {
+  return {
+    buildRunnerArtifact: () => ({ ok: true, runnerPath: "/fixed/private/muse-runner" }),
+    captureArtifacts: () => ({ count: 41, digest: "a".repeat(64), status: "ok" }),
+    captureSource: () => ({ revision: "a".repeat(40), tree: "clean" }),
+    runTypeScriptBuild: () => ({ ok: true }),
+    ...overrides,
+  };
+}
+
+function passingRows() {
+  return CAPABILITIES.map((capability) => ({
+    durationMs: 1,
+    executed: capability.repeats,
+    id: capability.id,
+    requested: capability.repeats,
+    required: capability.required,
+    status: "passed",
+  }));
 }
 
 test("capability matrix is stable, ordered, and uses strict pass^3 where required", () => {
@@ -128,7 +158,15 @@ test("overall status considers every executed failure and JSON output contains n
   const report = createCapabilityReport(rows);
   assert.equal(report.status, "passed");
   assert.deepEqual(report.counts, { passed: 9, failed: 0, unverified: 2, total: 11 });
-  assert.deepEqual(Object.keys(report), ["version", "status", "counts", "capabilities"]);
+  assert.deepEqual(Object.keys(report), [
+    "version",
+    "matrixId",
+    "generatedAt",
+    "status",
+    "counts",
+    "capabilities",
+    "provenance",
+  ]);
 
   const encoded = JSON.stringify(report);
   assert.doesNotMatch(encoded, /prompt|output|payload|secret spawn details/iu);
@@ -153,6 +191,28 @@ test("overall status considers every executed failure and JSON output contains n
     reason: "terminal-state-failed",
   };
   assert.equal(createCapabilityReport(otherwisePassing).status, "failed");
+});
+
+test("report creation fails closed on canonical matrix omission, duplication, or field mutation", () => {
+  const valid = passingRows();
+  const mutations = [
+    valid.slice(1),
+    [...valid, valid[0]],
+    valid.map((row, index) => index === 0 ? { ...row, required: false } : row),
+    valid.map((row, index) => index === 0 ? { ...row, requested: 1 } : row),
+    valid.map((row, index) => index === 0 ? { ...row, executed: 0 } : row),
+    valid.map((row, index) => index === 0 ? { ...row, privatePath: "/Users/private-owner" } : row),
+    valid.map((row, index) => index === 0
+      ? { ...row, executed: 0, reason: "private-owner-name", status: "failed" }
+      : row),
+  ];
+
+  for (const rows of mutations) {
+    const report = createCapabilityReport(rows);
+    assert.equal(report.status, "failed");
+    assert.equal(report.capabilities.length, CAPABILITIES.length);
+    assert.ok(report.capabilities.every((row) => row.reason === "report-integrity-failed"));
+  }
 });
 
 test("marker mutation: fail and environmental skip cannot be mistaken for pass", () => {
@@ -192,12 +252,12 @@ test("--json keeps stdout JSON-only, redirects safe progress, and enforces repea
     };
   };
 
-  const report = main(["--json"], {
+  const report = main(["--json"], verifiedPipeline({
     spawn: fakeSpawn,
     stdout: { write: (chunk) => { stdout += chunk; } },
     stderr: { write: (chunk) => { stderr += chunk; } },
     now: () => clock++,
-  });
+  }));
 
   assert.deepEqual(JSON.parse(stdout), report);
   assert.deepEqual(repeats, [3, 3, 3, 3, 3, 1, 1, 3, 3, 3, 3]);
@@ -209,15 +269,291 @@ test("--json keeps stdout JSON-only, redirects safe progress, and enforces repea
   assert.match(stderr, /eval:agent running tool-selection-arguments/u);
 });
 
+test("default orchestration binds every battery to one freshly built source and runner artifact", () => {
+  const order = [];
+  const runnerPaths = [];
+  const sourceSnapshots = [
+    { revision: "a".repeat(40), tree: "clean" },
+    { revision: "a".repeat(40), tree: "clean" },
+    { revision: "a".repeat(40), tree: "clean" },
+  ];
+  const artifactSnapshots = [
+    { count: 41, digest: "a".repeat(64), status: "ok" },
+    { count: 41, digest: "a".repeat(64), status: "ok" },
+  ];
+
+  const report = main(["--json"], {
+    buildRunnerArtifact: () => {
+      order.push("runner-build");
+      return { ok: true, runnerPath: "/fixed/private/muse-runner" };
+    },
+    captureArtifacts: () => {
+      order.push("artifacts");
+      return artifactSnapshots.shift();
+    },
+    captureSource: () => {
+      order.push("source");
+      return sourceSnapshots.shift();
+    },
+    now: () => 0,
+    runTypeScriptBuild: () => {
+      order.push("typescript-build");
+      return { ok: true };
+    },
+    spawn: (_command, _args, options) => {
+      order.push("battery");
+      runnerPaths.push(options.env.MUSE_RUNNER_PATH);
+      const requested = Number(options.env.MUSE_EVAL_REPEAT);
+      return {
+        signal: null,
+        status: 0,
+        stderr: "",
+        stdout: completionLine({ executed: requested, requested, status: "passed" }),
+      };
+    },
+    stderr: { write: () => {} },
+    stdout: { write: () => {} },
+  });
+
+  assert.deepEqual(order, [
+    "source",
+    "typescript-build",
+    "runner-build",
+    "source",
+    "artifacts",
+    ...Array(CAPABILITIES.length).fill("battery"),
+    "source",
+    "artifacts",
+  ]);
+  assert.deepEqual(runnerPaths, Array(CAPABILITIES.length).fill("/fixed/private/muse-runner"));
+  assert.equal(report.version, 2);
+  assert.equal(report.matrixId, "muse-agent-capability-v1");
+  assert.deepEqual(Object.keys(report.provenance), [
+    "sourceBeforeBuild",
+    "sourceAfterBuild",
+    "sourceAtEnd",
+    "artifactsAfterBuild",
+    "artifactsAtEnd",
+  ]);
+  assert.deepEqual(report.provenance, {
+    sourceBeforeBuild: { revision: "a".repeat(40), tree: "clean" },
+    sourceAfterBuild: { revision: "a".repeat(40), tree: "clean" },
+    sourceAtEnd: { revision: "a".repeat(40), tree: "clean" },
+    artifactsAfterBuild: { count: 41, digest: "a".repeat(64), status: "ok" },
+    artifactsAtEnd: { count: 41, digest: "a".repeat(64), status: "ok" },
+  });
+});
+
+test("a failed forced TypeScript build replaces an old pass report without using stale artifacts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "muse-agent-build-failure-"));
+  const reportPath = join(dir, "latest.json");
+  writeFileSync(reportPath, JSON.stringify({ status: "passed", version: 1 }), "utf8");
+  const previousExitCode = process.exitCode;
+  let artifactReads = 0;
+  let batteryRuns = 0;
+  try {
+    process.exitCode = undefined;
+    const report = main(["--json"], {
+      buildRunnerArtifact: () => {
+        throw new Error("runner build must not run after TypeScript failure");
+      },
+      captureArtifacts: () => {
+        artifactReads += 1;
+        return { count: 99, digest: "b".repeat(64), status: "ok" };
+      },
+      captureSource: () => ({ revision: "a".repeat(40), tree: "clean" }),
+      now: () => 0,
+      runTypeScriptBuild: () => ({ ok: false, reason: "typescript-build-failed" }),
+      spawn: () => {
+        batteryRuns += 1;
+        throw new Error("battery must not run after build failure");
+      },
+      stderr: { write: () => {} },
+      stdout: { write: () => {} },
+      writeReport: (value) => persistCapabilityReport(value, reportPath, { allowedRoot: dir }),
+    });
+
+    assert.equal(report.status, "failed");
+    assert.ok(report.capabilities.every((row) => row.reason === "typescript-build-failed"));
+    assert.deepEqual(report.provenance.artifactsAfterBuild, { count: 0, status: "unknown" });
+    assert.deepEqual(report.provenance.artifactsAtEnd, { count: 0, status: "unknown" });
+    assert.equal(artifactReads, 0);
+    assert.equal(batteryRuns, 0);
+    assert.deepEqual(JSON.parse(readFileSync(reportPath, "utf8")), report);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = previousExitCode;
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+test("source drift or runtime artifact mutation cannot retain a passing report", () => {
+  const previousExitCode = process.exitCode;
+  const run = ({ artifacts, sources }) => main(["--json"], verifiedPipeline({
+    captureArtifacts: () => artifacts.shift(),
+    captureSource: () => sources.shift(),
+    now: () => 0,
+    spawn: (_command, _args, options) => {
+      const requested = Number(options.env.MUSE_EVAL_REPEAT);
+      return {
+        signal: null,
+        status: 0,
+        stderr: "",
+        stdout: completionLine({ executed: requested, requested, status: "passed" }),
+      };
+    },
+    stderr: { write: () => {} },
+    stdout: { write: () => {} },
+  }));
+
+  try {
+    process.exitCode = undefined;
+    const sourceDrift = run({
+      artifacts: [
+        { count: 41, digest: "a".repeat(64), status: "ok" },
+        { count: 41, digest: "a".repeat(64), status: "ok" },
+      ],
+      sources: [
+        { revision: "a".repeat(40), tree: "clean" },
+        { revision: "a".repeat(40), tree: "clean" },
+        { revision: "b".repeat(40), tree: "clean" },
+      ],
+    });
+    assert.equal(sourceDrift.status, "unverified");
+    assert.ok(sourceDrift.capabilities.every((row) => row.reason === "source-provenance-unverified"));
+
+    process.exitCode = undefined;
+    const artifactMutation = run({
+      artifacts: [
+        { count: 41, digest: "a".repeat(64), status: "ok" },
+        { count: 41, digest: "b".repeat(64), status: "ok" },
+      ],
+      sources: [
+        { revision: "c".repeat(40), tree: "clean" },
+        { revision: "c".repeat(40), tree: "clean" },
+        { revision: "c".repeat(40), tree: "clean" },
+      ],
+    });
+    assert.equal(artifactMutation.status, "unverified");
+    assert.ok(artifactMutation.capabilities.every((row) => row.reason === "artifact-provenance-unverified"));
+  } finally {
+    process.exitCode = previousExitCode;
+  }
+});
+
+test("invalid source and artifact probe payloads are reduced to path-free unknown provenance", () => {
+  const previousExitCode = process.exitCode;
+  try {
+    process.exitCode = undefined;
+    const report = main(["--json"], verifiedPipeline({
+      captureArtifacts: () => ({
+        count: 1,
+        digest: "/Users/private-owner/secret-runner",
+        status: "ok",
+      }),
+      captureSource: () => ({
+        revision: "/Users/private-owner/worktree",
+        tree: "clean",
+      }),
+      now: () => 0,
+      spawn: (_command, _args, options) => {
+        const requested = Number(options.env.MUSE_EVAL_REPEAT);
+        return {
+          signal: null,
+          status: 0,
+          stderr: "",
+          stdout: completionLine({ executed: requested, requested, status: "passed" }),
+        };
+      },
+      stderr: { write: () => {} },
+      stdout: { write: () => {} },
+    }));
+
+    const encoded = JSON.stringify(report);
+    assert.doesNotMatch(encoded, /Users|private-owner|secret-runner|worktree/u);
+    assert.deepEqual(report.provenance.sourceBeforeBuild, { tree: "unknown" });
+    assert.deepEqual(report.provenance.artifactsAfterBuild, { count: 0, status: "unknown" });
+  } finally {
+    process.exitCode = previousExitCode;
+  }
+});
+
 test("privacy-safe aggregate evidence is persisted atomically with owner-only permissions", () => {
   const dir = mkdtempSync(join(tmpdir(), "muse-agent-report-"));
   const reportPath = join(dir, "nested", "latest.json");
-  const report = createCapabilityReport([]);
-  persistCapabilityReport(report, reportPath);
+  const report = createCapabilityReport(passingRows());
+  persistCapabilityReport(report, reportPath, { allowedRoot: dir });
 
   assert.deepEqual(JSON.parse(readFileSync(reportPath, "utf8")), report);
   assert.equal(statSync(reportPath).mode & 0o777, 0o600);
   assert.equal(statSync(join(dir, "nested")).mode & 0o077, 0);
+});
+
+test("report persistence rejects parent symlink redirects without touching external state", () => {
+  const allowedRoot = mkdtempSync(join(tmpdir(), "muse-agent-report-root-"));
+  const outside = mkdtempSync(join(tmpdir(), "muse-agent-report-outside-"));
+  const externalReport = join(outside, "latest.json");
+  const reportPath = join(allowedRoot, "redirect", "latest.json");
+  try {
+    writeFileSync(externalReport, "external sentinel", "utf8");
+    symlinkSync(outside, join(allowedRoot, "redirect"), process.platform === "win32" ? "junction" : "dir");
+
+    assert.throws(
+      () => persistCapabilityReport(createCapabilityReport(passingRows()), reportPath, { allowedRoot }),
+      (error) => error instanceof Error && error.message === "capability-report-persistence-failed",
+    );
+    assert.equal(readFileSync(externalReport, "utf8"), "external sentinel");
+  } finally {
+    rmSync(allowedRoot, { force: true, recursive: true });
+    rmSync(outside, { force: true, recursive: true });
+  }
+});
+
+test("a failed safe atomic replace removes the prior pass and main reports static failure", () => {
+  const allowedRoot = mkdtempSync(join(tmpdir(), "muse-agent-report-failure-"));
+  const reportPath = join(allowedRoot, "nested", "latest.json");
+  mkdirSync(join(allowedRoot, "nested"), { recursive: true });
+  writeFileSync(reportPath, JSON.stringify({ status: "passed", version: 2 }), "utf8");
+  try {
+    assert.throws(
+      () => persistCapabilityReport(createCapabilityReport(passingRows()), reportPath, {
+        allowedRoot,
+        rename: () => { throw new Error("/Users/private-owner/rename-failed"); },
+      }),
+      (error) => error instanceof Error && error.message === "capability-report-persistence-failed",
+    );
+    assert.equal(existsSync(reportPath), false, "a failed replace must not leave a stale passing report");
+
+    let stdout = "";
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      const report = main(["--json"], verifiedPipeline({
+        now: () => 0,
+        spawn: (_command, _args, options) => {
+          const requested = Number(options.env.MUSE_EVAL_REPEAT);
+          return {
+            signal: null,
+            status: 0,
+            stderr: "",
+            stdout: completionLine({ executed: requested, requested, status: "passed" }),
+          };
+        },
+        stderr: { write: () => {} },
+        stdout: { write: (chunk) => { stdout += chunk; } },
+        writeReport: () => { throw new Error("/Users/private-owner/report-path"); },
+      }));
+      assert.equal(report.status, "failed");
+      assert.ok(report.capabilities.every((row) => row.reason === "report-persistence-failed"));
+      assert.deepEqual(JSON.parse(stdout), report);
+      assert.doesNotMatch(stdout, /Users|private-owner|report-path/u);
+      assert.equal(process.exitCode, 1);
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  } finally {
+    rmSync(allowedRoot, { force: true, recursive: true });
+  }
 });
 
 test("a required environmental skip makes the strict aggregate process exit nonzero", () => {
@@ -226,7 +562,7 @@ test("a required environmental skip makes the strict aggregate process exit nonz
   const previousExitCode = process.exitCode;
   try {
     process.exitCode = undefined;
-    const report = main(["--json"], {
+    const report = main(["--json"], verifiedPipeline({
       spawn: (_command, _args, options) => {
         const capability = CAPABILITIES[invocation++];
         assert.ok(capability);
@@ -244,7 +580,7 @@ test("a required environmental skip makes the strict aggregate process exit nonz
       stdout: { write: (chunk) => { stdout += chunk; } },
       stderr: { write: () => {} },
       now: () => 0,
-    });
+    }));
 
     assert.equal(report.status, "unverified");
     assert.equal(JSON.parse(stdout).status, "unverified");

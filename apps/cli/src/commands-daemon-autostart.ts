@@ -58,18 +58,143 @@ export interface InspectDaemonAutostartOptions {
   readonly schtasksQueryArgs: (taskName: string) => readonly string[];
 }
 
-function xmlUnescape(value: string): string {
-  return value
-    .replace(/&lt;/gu, "<")
-    .replace(/&gt;/gu, ">")
-    .replace(/&amp;/gu, "&");
+function xmlText(value: string): string | undefined {
+  if (value.includes("<")) return undefined;
+  if (value.replace(/&(amp|lt|gt|quot|apos);/gu, "").includes("&")) return undefined;
+  return value.replace(/&(amp|lt|gt|quot|apos);/gu, (_entity, name: string) => {
+    switch (name) {
+      case "amp": return "&";
+      case "lt": return "<";
+      case "gt": return ">";
+      case "quot": return "\"";
+      case "apos": return "'";
+      default: return "";
+    }
+  });
+}
+
+/**
+ * Parse the narrow EnvironmentVariables dictionary emitted by
+ * {@link buildLaunchAgentPlist}. Missing means a valid empty dictionary;
+ * malformed XML, duplicate dictionaries/keys, or non-string values are
+ * rejected as `undefined` so a qualification probe cannot invent defaults.
+ */
+export function parseLaunchAgentEnvironmentVariables(plist: string): Readonly<Record<string, string>> | undefined {
+  const keyPattern = /<key>\s*EnvironmentVariables\s*<\/key>/gu;
+  const keyCount = [...plist.matchAll(keyPattern)].length;
+  if (keyCount === 0) return {};
+  if (keyCount !== 1) return undefined;
+
+  const dictionaryPattern = /<key>\s*EnvironmentVariables\s*<\/key>\s*(?:<dict\s*\/>|<dict>([\s\S]*?)<\/dict>)/gu;
+  const dictionaries = [...plist.matchAll(dictionaryPattern)];
+  if (dictionaries.length !== 1) return undefined;
+  const body = dictionaries[0]?.[1] ?? "";
+  const pairPattern = /<key>([\s\S]*?)<\/key>\s*<string>([\s\S]*?)<\/string>/gu;
+  const variables: Record<string, string> = {};
+  let cursor = 0;
+  for (const match of body.matchAll(pairPattern)) {
+    const index = match.index ?? 0;
+    if (body.slice(cursor, index).trim().length > 0) return undefined;
+    const key = xmlText(match[1] ?? "");
+    const value = xmlText(match[2] ?? "");
+    if (key === undefined || key.length === 0 || key.trim() !== key || value === undefined || Object.hasOwn(variables, key)) {
+      return undefined;
+    }
+    variables[key] = value;
+    cursor = index + match[0].length;
+  }
+  if (body.slice(cursor).trim().length > 0) return undefined;
+  return variables;
+}
+
+export interface LaunchctlPrintSnapshot {
+  readonly arguments: readonly string[];
+  readonly environment: Readonly<Record<string, string>>;
+  readonly pid: number;
+}
+
+function launchctlBlock(
+  output: string,
+  label: string,
+  options: { readonly required?: boolean } = {}
+): readonly string[] | undefined {
+  const lines = output.split(/\r?\n/u);
+  const starts = lines.flatMap((line, index) => line.trim() === `${label} = {` ? [index] : []);
+  if (starts.length === 0 && options.required === false) {
+    return lines.some((line) => line.trim().startsWith(`${label} =`)) ? undefined : [];
+  }
+  if (starts.length !== 1) return undefined;
+  const start = starts[0]!;
+  const body: string[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index]!.trim();
+    if (line === "}") return body;
+    if (line.endsWith("= {") || line.includes("{")) return undefined;
+    if (line.length > 0) body.push(line);
+  }
+  return undefined;
+}
+
+function parseLaunchctlEnvironment(lines: readonly string[]): Readonly<Record<string, string>> | undefined {
+  const environment: Record<string, string> = {};
+  for (const line of lines) {
+    const match = /^([A-Za-z_][A-Za-z\d_]*)\s*=>\s*(.*)$/u.exec(line);
+    if (!match) return undefined;
+    const key = match[1]!;
+    if (Object.hasOwn(environment, key)) return undefined;
+    environment[key] = match[2] ?? "";
+  }
+  return environment;
+}
+
+/**
+ * Parse the live, already-loaded job state from `launchctl print`. Every
+ * identity-bearing field is mandatory and unique. A service inherits manager
+ * environment before its own job dictionary is applied, so all three blocks
+ * are parsed conservatively with launchd precedence: inherited, then default,
+ * then job-specific. Optional manager blocks may be absent; malformed or
+ * duplicate blocks make the whole snapshot unverified.
+ */
+export function parseLaunchctlPrintSnapshot(output: string): LaunchctlPrintSnapshot | undefined {
+  const argumentLines = launchctlBlock(output, "arguments");
+  const inheritedEnvironmentLines = launchctlBlock(output, "inherited environment", { required: false });
+  const defaultEnvironmentLines = launchctlBlock(output, "default environment", { required: false });
+  const environmentLines = launchctlBlock(output, "environment");
+  if (!argumentLines || argumentLines.length === 0 || !inheritedEnvironmentLines
+    || !defaultEnvironmentLines || !environmentLines) return undefined;
+
+  const inheritedEnvironment = parseLaunchctlEnvironment(inheritedEnvironmentLines);
+  const defaultEnvironment = parseLaunchctlEnvironment(defaultEnvironmentLines);
+  const jobEnvironment = parseLaunchctlEnvironment(environmentLines);
+  if (!inheritedEnvironment || !defaultEnvironment || !jobEnvironment) return undefined;
+  const environment = { ...inheritedEnvironment, ...defaultEnvironment, ...jobEnvironment };
+
+  const pidMatches = [...output.matchAll(/^\s*pid\s*=\s*(\d+)\s*$/gmu)];
+  if (pidMatches.length !== 1) return undefined;
+  const pid = Number(pidMatches[0]?.[1]);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return undefined;
+  return { arguments: argumentLines, environment, pid };
 }
 
 /** Parse the ProgramArguments array from the narrow plist shape Muse writes. */
 export function parseLaunchAgentProgramArguments(plist: string): readonly string[] | undefined {
-  const array = /<key>\s*ProgramArguments\s*<\/key>\s*<array>([\s\S]*?)<\/array>/u.exec(plist)?.[1];
-  if (array === undefined) return undefined;
-  return [...array.matchAll(/<string>([\s\S]*?)<\/string>/gu)].map((match) => xmlUnescape(match[1] ?? ""));
+  const keyPattern = /<key>\s*ProgramArguments\s*<\/key>/gu;
+  if ([...plist.matchAll(keyPattern)].length !== 1) return undefined;
+  const arrays = [...plist.matchAll(/<key>\s*ProgramArguments\s*<\/key>\s*<array>([\s\S]*?)<\/array>/gu)];
+  if (arrays.length !== 1) return undefined;
+  const body = arrays[0]?.[1] ?? "";
+  const args: string[] = [];
+  let cursor = 0;
+  for (const match of body.matchAll(/<string>([\s\S]*?)<\/string>/gu)) {
+    const index = match.index ?? 0;
+    if (body.slice(cursor, index).trim().length > 0) return undefined;
+    const value = xmlText(match[1] ?? "");
+    if (value === undefined) return undefined;
+    args.push(value);
+    cursor = index + match[0].length;
+  }
+  if (body.slice(cursor).trim().length > 0 || args.length === 0) return undefined;
+  return args;
 }
 
 function inspectLaunchAgentArtifact(plistFile: string): LaunchAgentArtifactStatus {

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,13 +26,13 @@ function fakeChromeTools(snapshotText: string): MuseTool[] {
   return [mk("navigate_page", "ok"), mk("take_snapshot", snapshotText)];
 }
 
-function capturingProvider(sent: OutboundMessage[]): MessagingProvider {
+function capturingProvider(sent: OutboundMessage[], id = "telegram"): MessagingProvider {
   return {
-    describe: () => ({ description: "t", displayName: "T", id: "telegram" }),
-    id: "telegram",
+    describe: () => ({ description: "t", displayName: "T", id }),
+    id,
     async send(message: OutboundMessage): Promise<OutboundReceipt> {
       sent.push(message);
-      return { destination: message.destination, messageId: "m1", providerId: "telegram" };
+      return { destination: message.destination, messageId: "m1", providerId: id };
     }
   };
 }
@@ -48,7 +48,7 @@ function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonH
 
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; contradictionClassify?: DaemonHelpers["contradictionClassify"]; emailSyncProvider?: DaemonHelpers["emailSyncProvider"]; makeEmailSyncTick?: DaemonHelpers["makeEmailSyncTick"]; messagingPoll?: DaemonHelpers["messagingPoll"]; consolidateMerge?: DaemonHelpers["consolidateMerge"]; consolidateValidate?: DaemonHelpers["consolidateValidate"]; conflictWatchCalendarLister?: DaemonHelpers["conflictWatchCalendarLister"]; browsingSync?: DaemonHelpers["browsingSync"]; schtasksRun?: DaemonHelpers["schtasksRun"]; runLaunchctl?: DaemonHelpers["runLaunchctl"]; platform?: DaemonHelpers["platform"]; daemonCliEntry?: DaemonHelpers["daemonCliEntry"]; daemonTemporaryRoots?: DaemonHelpers["daemonTemporaryRoots"] }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; buildCalendarRegistry?: DaemonHelpers["buildCalendarRegistry"]; buildMessagingRegistry?: DaemonHelpers["buildMessagingRegistry"]; readDaemonConfig?: DaemonHelpers["readDaemonConfig"]; runDaemonLoop?: DaemonHelpers["runDaemonLoop"]; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; contradictionClassify?: DaemonHelpers["contradictionClassify"]; emailSyncProvider?: DaemonHelpers["emailSyncProvider"]; makeEmailSyncTick?: DaemonHelpers["makeEmailSyncTick"]; messagingPoll?: DaemonHelpers["messagingPoll"]; consolidateMerge?: DaemonHelpers["consolidateMerge"]; consolidateValidate?: DaemonHelpers["consolidateValidate"]; conflictWatchCalendarLister?: DaemonHelpers["conflictWatchCalendarLister"]; browsingSync?: DaemonHelpers["browsingSync"]; schtasksRun?: DaemonHelpers["schtasksRun"]; runLaunchctl?: DaemonHelpers["runLaunchctl"]; platform?: DaemonHelpers["platform"]; daemonCliEntry?: DaemonHelpers["daemonCliEntry"]; daemonTemporaryRoots?: DaemonHelpers["daemonTemporaryRoots"] }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -63,7 +63,9 @@ async function runDaemon(
     const program = new Command();
     program.exitOverride();
     registerDaemonCommands(program, io, {
-      buildMessagingRegistry: () => opts.registry,
+      buildMessagingRegistry: opts.buildMessagingRegistry ?? (() => opts.registry),
+      ...(opts.buildCalendarRegistry ? { buildCalendarRegistry: opts.buildCalendarRegistry } : {}),
+      ...(opts.readDaemonConfig ? { readDaemonConfig: opts.readDaemonConfig } : {}),
       env: () => opts.env,
       ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
       ...(opts.ambientMacosRun ? { ambientMacosRun: opts.ambientMacosRun } : {}),
@@ -74,6 +76,7 @@ async function runDaemon(
       ...(opts.contradictionClassify ? { contradictionClassify: opts.contradictionClassify } : {}),
       ...(opts.emailSyncProvider ? { emailSyncProvider: opts.emailSyncProvider } : {}),
       ...(opts.makeEmailSyncTick ? { makeEmailSyncTick: opts.makeEmailSyncTick } : {}),
+      ...(opts.runDaemonLoop ? { runDaemonLoop: opts.runDaemonLoop } : {}),
       ...(opts.messagingPoll ? { messagingPoll: opts.messagingPoll } : {}),
       ...(opts.consolidateMerge ? { consolidateMerge: opts.consolidateMerge } : {}),
       ...(opts.consolidateValidate ? { consolidateValidate: opts.consolidateValidate } : {}),
@@ -161,7 +164,7 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
   });
 
   it("--once also fires a DUE reminder through the same launcher + sink", async () => {
-    const env = tmpEnv();
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_DAEMON_DELIVERY_ENABLED: "true" };
     writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
     writeFileSync(env.MUSE_REMINDERS_FILE!, JSON.stringify({
       reminders: [
@@ -178,6 +181,33 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(res.stdout).toMatch(/reminders: fired 1\/1 due/);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain("Take the bread out of the oven");
+  });
+
+  it("provider lock rejects a reminder's per-record non-log route at the shared daemon send chokepoint", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_DAEMON_PROVIDER_LOCK: "log" };
+    writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");
+    writeFileSync(env.MUSE_REMINDERS_FILE!, JSON.stringify({
+      reminders: [{
+        createdAt: "2026-01-01T00:00:00Z",
+        dueAt: "1970-01-01T00:00:00Z",
+        id: "rem-override",
+        status: "pending",
+        text: "must stay local",
+        via: { destination: "external", providerId: "telegram" }
+      }]
+    }), "utf8");
+    const logSent: OutboundMessage[] = [];
+    const telegramSent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([
+      capturingProvider(logSent, "log"),
+      capturingProvider(telegramSent)
+    ]);
+
+    const result = await runDaemon(["--once", "--provider", "log"], { env, registry });
+
+    expect(result.stdout).toMatch(/provider lock/iu);
+    expect(logSent).toHaveLength(0);
+    expect(telegramSent).toHaveLength(0);
   });
 
   it("--once also fires a DUE followup through the same launcher + sink", async () => {
@@ -472,6 +502,20 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("--status exposes the master delivery brake and log-only provider lock", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...tmpEnv(),
+      MUSE_DAEMON_DELIVERY_ENABLED: "false",
+      MUSE_DAEMON_PROVIDER_LOCK: "log"
+    };
+    const registry = new MessagingProviderRegistry([capturingProvider([], "log")]);
+
+    const result = await runDaemon(["--status", "--provider", "log"], { env, registry });
+
+    expect(result.stdout).toContain("delivery:   heartbeat-only (brake engaged)");
+    expect(result.stdout).toContain("route-lock: log-only");
+  });
+
   it("--status groups the optional-feature lines under a header and states what each feature DOES, not just the raw env var (E4b audit #3/#9)", async () => {
     const env = tmpEnv();
     const registry = new MessagingProviderRegistry([capturingProvider([])]);
@@ -743,6 +787,8 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     const env: NodeJS.ProcessEnv = {
       ...tmpEnv(),
       MUSE_DAEMON_PLIST_FILE: plistFile,
+      MUSE_DAEMON_DELIVERY_ENABLED: "false",
+      MUSE_DAEMON_PROVIDER_LOCK: "log",
       MUSE_LOCAL_ONLY: "true",
       MUSE_PROACTIVE_PROVIDER: "telegram",
       MUSE_SELFLEARN_ENABLED: "false",
@@ -770,6 +816,8 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(plist).toContain("<key>EnvironmentVariables</key>");
     expect(plist).toContain("<key>MUSE_LOCAL_ONLY</key>\n    <string>true</string>");
     expect(plist).toContain("<key>MUSE_SELFLEARN_ENABLED</key>\n    <string>false</string>");
+    expect(plist).toContain("<key>MUSE_DAEMON_DELIVERY_ENABLED</key>\n    <string>false</string>");
+    expect(plist).toContain("<key>MUSE_DAEMON_PROVIDER_LOCK</key>\n    <string>log</string>");
     expect(plist).not.toContain("MUSE_PROACTIVE_PROVIDER");
     expect(plist).not.toContain("must-not-enter-plist");
     // The exact argv passed to the seam, IN ORDER — unload adopts the fresh
@@ -805,6 +853,27 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(res.exitCode).toBe(1);
     expect(res.stderr).toContain("inside a temporary directory");
     expect(res.stderr).toContain("stable installed Muse CLI");
+    expect(calls).toHaveLength(0);
+    expect(existsSync(plistFile)).toBe(false);
+  });
+
+  it("--install rejects an unsupported provider lock before writing or loading autostart state", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-install-invalid-lock-"));
+    const plistFile = join(dir, "com.muse.daemon.plist");
+    const calls: (readonly string[])[] = [];
+    const result = await runDaemon(["--install"], {
+      env: { ...tmpEnv(), MUSE_DAEMON_PLIST_FILE: plistFile, MUSE_DAEMON_PROVIDER_LOCK: "telegram" },
+      platform: "darwin",
+      registry: new MessagingProviderRegistry([capturingProvider([])]),
+      runLaunchctl: async (args) => {
+        calls.push(args);
+        return { code: 0, stderr: "", stdout: "" };
+      }
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("must be unset or 'log'");
+    expect(result.stderr).not.toContain("telegram");
     expect(calls).toHaveLength(0);
     expect(existsSync(plistFile)).toBe(false);
   });
@@ -1318,6 +1387,73 @@ describe("muse daemon — macos-notification env overlay (onboard's config must 
 });
 
 describe("muse daemon — daemon-loop heartbeat (R2-1)", () => {
+  it("delivery brake --once records only the daemon-loop heartbeat before poisoned initialization seams", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_DAEMON_DELIVERY_ENABLED: "false" };
+    const sidecarDir = dirname(env.MUSE_PROACTIVE_SIDECAR_FILE!);
+    const buildMessagingRegistry = vi.fn((): MessagingProviderRegistry => {
+      throw new Error("registry must not initialize while delivery is braked");
+    });
+    const buildCalendarRegistry = vi.fn((): never => {
+      throw new Error("calendar must not initialize while delivery is braked");
+    });
+    const readDaemonConfig = vi.fn((): never => {
+      throw new Error("config must not be read while delivery is braked");
+    });
+    const resolveFollowupModel = vi.fn(async () => {
+      throw new Error("model must not initialize while delivery is braked");
+    });
+
+    const result = await runDaemon(["--once"], {
+      buildMessagingRegistry,
+      buildCalendarRegistry,
+      env,
+      readDaemonConfig,
+      registry: new MessagingProviderRegistry(),
+      resolveFollowupModel
+    });
+
+    expect(result.exitCode).toBeUndefined();
+    expect(result.stdout).toContain("delivery brake engaged");
+    expect(buildMessagingRegistry).not.toHaveBeenCalled();
+    expect(buildCalendarRegistry).not.toHaveBeenCalled();
+    expect(readDaemonConfig).not.toHaveBeenCalled();
+    expect(resolveFollowupModel).not.toHaveBeenCalled();
+    expect(readdirSync(sidecarDir).sort()).toEqual(["proactive-heartbeat-daemon-loop.json"]);
+  });
+
+  it("delivery brake resident mode gives runDaemonLoop a heartbeat-only tick and restores signal listeners", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_DAEMON_DELIVERY_ENABLED: "false" };
+    const buildMessagingRegistry = vi.fn((): MessagingProviderRegistry => {
+      throw new Error("registry must not initialize while delivery is braked");
+    });
+    const resolveFollowupModel = vi.fn(async () => {
+      throw new Error("model must not initialize while delivery is braked");
+    });
+    const runDaemonLoop = vi.fn<NonNullable<DaemonHelpers["runDaemonLoop"]>>(async ({ tick }) => {
+      await tick();
+      await tick();
+      return 2;
+    });
+    const sigintBefore = process.listenerCount("SIGINT");
+    const sigtermBefore = process.listenerCount("SIGTERM");
+
+    const result = await runDaemon([], {
+      buildMessagingRegistry,
+      env,
+      registry: new MessagingProviderRegistry(),
+      resolveFollowupModel,
+      runDaemonLoop
+    });
+
+    expect(result.exitCode).toBeUndefined();
+    expect(runDaemonLoop).toHaveBeenCalledOnce();
+    expect(buildMessagingRegistry).not.toHaveBeenCalled();
+    expect(resolveFollowupModel).not.toHaveBeenCalled();
+    expect(readdirSync(dirname(env.MUSE_PROACTIVE_SIDECAR_FILE!)).sort()).toEqual(["proactive-heartbeat-daemon-loop.json"]);
+    expect(process.listenerCount("SIGINT")).toBe(sigintBefore);
+    expect(process.listenerCount("SIGTERM")).toBe(sigtermBefore);
+  });
+
   it("--once records a fresh daemon-loop heartbeat mark, distinct from proactive's own alive/fired", async () => {
     const env = tmpEnv();
     writeFileSync(env.MUSE_TASKS_FILE!, JSON.stringify({ tasks: [] }), "utf8");

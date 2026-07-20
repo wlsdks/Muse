@@ -10,6 +10,14 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Personal-agent qualification is now explicit and fail-closed.** `muse
+  qualify` combines a provenance-bound canonical capability report with the
+  live LaunchAgent identity, heartbeat/process binding, orphan-process scan,
+  local-only provider lock, and overdue-delivery counts without mutating owner
+  state. The resident daemon also supports a persisted heartbeat-only delivery
+  brake that initializes no models, credentials, calendars, registries, or
+  personal stores.
+
 - **Progressive Autonomy shadow review is now available on the web.** The
   existing Autonomy page shows the oldest organic opportunity and records only
   counterfactual decisions through the shared local/authenticated review API.

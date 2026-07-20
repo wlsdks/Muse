@@ -26,7 +26,10 @@ export {
   formatDaemonAutostartStatus,
   inspectDaemonAutostart,
   isDaemonAutostartHealthy,
+  parseLaunchAgentEnvironmentVariables,
   parseLaunchAgentProgramArguments,
+  parseLaunchctlPrintSnapshot,
   validateDaemonCliEntry,
-  type DaemonAutostartStatus
+  type DaemonAutostartStatus,
+  type LaunchctlPrintSnapshot
 } from "./commands-daemon-autostart.js";

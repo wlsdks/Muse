@@ -1,0 +1,234 @@
+import assert from "node:assert/strict";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
+import test from "node:test";
+
+import {
+  buildAndPublishRunner,
+  captureGitSourceSnapshot,
+  captureRuntimeArtifacts,
+  defaultEvalRunnerPath,
+  runForcedTypeScriptBuild,
+} from "./eval-agent-provenance.mjs";
+
+test("runtime digest binds emitted TS content to an executable owner-only fixed runner", () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), "muse-eval-artifacts-"));
+  const runnerPath = defaultEvalRunnerPath(repoRoot);
+  try {
+    writeFileSync(join(repoRoot, "tsconfig.json"), JSON.stringify({
+      files: [],
+      references: [{ path: "./packages/example" }],
+    }), "utf8");
+    mkdirSync(join(repoRoot, "packages", "example", "dist"), { recursive: true });
+    writeFileSync(join(repoRoot, "packages", "example", "dist", "index.js"), "export const value = 1;\n", "utf8");
+    mkdirSync(dirname(runnerPath), { recursive: true });
+    writeFileSync(runnerPath, "runner-binary", "utf8");
+    chmodSync(runnerPath, 0o700);
+
+    const first = captureRuntimeArtifacts({ repoRoot, runnerPath });
+    assert.equal(first.status, "ok");
+    assert.equal(first.count, 2);
+    assert.match(first.digest, /^[a-f0-9]{64}$/u);
+    assert.doesNotMatch(JSON.stringify(first), /packages|example|muse-runner/u);
+
+    writeFileSync(join(repoRoot, "packages", "example", "dist", "index.js"), "export const value = 2;\n", "utf8");
+    const changed = captureRuntimeArtifacts({ repoRoot, runnerPath });
+    assert.equal(changed.status, "ok");
+    assert.notEqual(changed.digest, first.digest);
+
+    chmodSync(runnerPath, 0o600);
+    assert.deepEqual(captureRuntimeArtifacts({ repoRoot, runnerPath }), { count: 0, status: "unknown" });
+  } finally {
+    rmSync(repoRoot, { force: true, recursive: true });
+  }
+});
+
+test("source and TypeScript probes use no-lock Git and a forced project build", () => {
+  const gitCalls = [];
+  const source = captureGitSourceSnapshot({
+    repoRoot: "/workspace",
+    sourceEnv: { PATH: "/bin" },
+    spawn: (command, args, options) => {
+      gitCalls.push({ args, command, options });
+      return args.includes("rev-parse")
+        ? { signal: null, status: 0, stderr: "", stdout: `${"a".repeat(40)}\n` }
+        : { signal: null, status: 0, stderr: "", stdout: "" };
+    },
+  });
+  assert.deepEqual(source, { revision: "a".repeat(40), tree: "clean" });
+  assert.equal(gitCalls.length, 2);
+  assert.ok(gitCalls.every((call) => call.command === "git"));
+  assert.ok(gitCalls.every((call) => call.args[0] === "--no-optional-locks"));
+  assert.ok(gitCalls.every((call) => call.options.env.GIT_OPTIONAL_LOCKS === "0"));
+
+  const buildRepo = mkdtempSync(join(tmpdir(), "muse-eval-ts-build-"));
+  try {
+    const project = join(buildRepo, "packages", "example");
+    const staleFile = join(project, "dist", "deleted-source.js");
+    mkdirSync(dirname(staleFile), { recursive: true });
+    writeFileSync(staleFile, "stale runtime", "utf8");
+    writeFileSync(join(buildRepo, "tsconfig.json"), JSON.stringify({
+      files: [],
+      references: [{ path: "./packages/example" }],
+    }), "utf8");
+
+    let buildCall;
+    const build = runForcedTypeScriptBuild({
+      repoRoot: buildRepo,
+      sourceEnv: { PATH: "/bin" },
+      spawn: (command, args, options) => {
+        assert.equal(existsSync(staleFile), false, "stale dist must be gone before tsc starts");
+        buildCall = { args, command, options };
+        return { signal: null, status: 0, stderr: "", stdout: "" };
+      },
+    });
+    assert.deepEqual(build, { ok: true });
+    assert.deepEqual(buildCall.args, ["exec", "tsc", "-b", "--force", "--pretty", "false"]);
+    assert.equal(buildCall.options.cwd, buildRepo);
+  } finally {
+    rmSync(buildRepo, { force: true, recursive: true });
+  }
+});
+
+test("TypeScript cleanup rejects escaped or symlinked dist targets before deleting anything", () => {
+  for (const unsafeKind of ["escaped-reference", "symlinked-dist"]) {
+    const repoRoot = mkdtempSync(join(tmpdir(), "muse-eval-ts-safety-"));
+    const outside = mkdtempSync(join(tmpdir(), "muse-eval-ts-outside-"));
+    try {
+      const goodProject = join(repoRoot, "packages", "good");
+      const goodSentinel = join(goodProject, "dist", "keep.js");
+      const outsideDist = join(outside, "dist");
+      const outsideSentinel = join(outsideDist, "outside.js");
+      mkdirSync(dirname(goodSentinel), { recursive: true });
+      mkdirSync(outsideDist, { recursive: true });
+      writeFileSync(goodSentinel, "good", "utf8");
+      writeFileSync(outsideSentinel, "outside", "utf8");
+
+      const unsafeReference = unsafeKind === "escaped-reference"
+        ? relative(repoRoot, outside)
+        : "./packages/unsafe";
+      if (unsafeKind === "symlinked-dist") {
+        const unsafeProject = join(repoRoot, "packages", "unsafe");
+        mkdirSync(unsafeProject, { recursive: true });
+        symlinkSync(outsideDist, join(unsafeProject, "dist"), "dir");
+      }
+      writeFileSync(join(repoRoot, "tsconfig.json"), JSON.stringify({
+        files: [],
+        references: [{ path: "./packages/good" }, { path: unsafeReference }],
+      }), "utf8");
+      const runnerPath = defaultEvalRunnerPath(repoRoot);
+      mkdirSync(dirname(runnerPath), { recursive: true });
+      writeFileSync(runnerPath, "runner", "utf8");
+      chmodSync(runnerPath, 0o700);
+
+      let spawnCalls = 0;
+      const result = runForcedTypeScriptBuild({
+        repoRoot,
+        spawn: () => {
+          spawnCalls += 1;
+          return { signal: null, status: 0, stderr: "", stdout: "" };
+        },
+      });
+      assert.deepEqual(result, { ok: false, reason: "typescript-build-failed" });
+      assert.equal(spawnCalls, 0);
+      assert.equal(existsSync(goodSentinel), true, "all refs must validate before any cleanup");
+      assert.equal(existsSync(outsideSentinel), true, "cleanup must stay inside the repo");
+      assert.deepEqual(
+        captureRuntimeArtifacts({ repoRoot, runnerPath }),
+        { count: 0, status: "unknown" },
+        "artifact manifests must reject the same unsafe reference graph",
+      );
+    } finally {
+      rmSync(repoRoot, { force: true, recursive: true });
+      rmSync(outside, { force: true, recursive: true });
+    }
+  }
+});
+
+test("runner build uses a fresh locked Cargo target and atomically publishes mode 0700", () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), "muse-eval-runner-build-"));
+  const runnerPath = defaultEvalRunnerPath(repoRoot);
+  let cargoCall;
+  let cargoTarget;
+  try {
+    mkdirSync(dirname(runnerPath), { recursive: true });
+    writeFileSync(runnerPath, "old-runner", "utf8");
+    const result = buildAndPublishRunner({
+      repoRoot,
+      runnerPath,
+      sourceEnv: { PATH: "/bin" },
+      spawn: (command, args, options) => {
+        cargoCall = { args, command, options };
+        cargoTarget = options.env.CARGO_TARGET_DIR;
+        const built = join(cargoTarget, "debug", "muse-runner");
+        mkdirSync(dirname(built), { recursive: true });
+        writeFileSync(built, "fresh-runner", "utf8");
+        chmodSync(built, 0o755);
+        return { signal: null, status: 0, stderr: "", stdout: "" };
+      },
+    });
+
+    assert.deepEqual(result, { ok: true, runnerPath });
+    assert.equal(cargoCall.command, "cargo");
+    assert.ok(cargoCall.args.includes("--locked"));
+    assert.ok(cargoCall.args.includes(join(repoRoot, "crates", "runner", "Cargo.toml")));
+    assert.notEqual(cargoTarget, dirname(runnerPath));
+    assert.equal(existsSync(cargoTarget), false);
+    assert.equal(readFileSync(runnerPath, "utf8"), "fresh-runner");
+    if (process.platform !== "win32") assert.equal(statSync(runnerPath).mode & 0o777, 0o700);
+  } finally {
+    rmSync(repoRoot, { force: true, recursive: true });
+  }
+});
+
+test("runner parent symlinks cannot redirect fixed publish or artifact qualification", () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), "muse-eval-runner-symlink-"));
+  const outside = mkdtempSync(join(tmpdir(), "muse-eval-runner-outside-"));
+  const runnerPath = defaultEvalRunnerPath(repoRoot);
+  const outsideRunner = join(outside, "muse-runner");
+  try {
+    writeFileSync(join(repoRoot, "tsconfig.json"), JSON.stringify({
+      files: [],
+      references: [{ path: "./packages/example" }],
+    }), "utf8");
+    const dist = join(repoRoot, "packages", "example", "dist");
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(dist, "index.js"), "export {};\n", "utf8");
+
+    const runtimeParent = dirname(dirname(runnerPath));
+    mkdirSync(runtimeParent, { recursive: true });
+    symlinkSync(outside, dirname(runnerPath), "dir");
+
+    const build = buildAndPublishRunner({
+      repoRoot,
+      runnerPath,
+      spawn: (_command, _args, options) => {
+        const builtRunner = join(options.env.CARGO_TARGET_DIR, "debug", "muse-runner");
+        mkdirSync(dirname(builtRunner), { recursive: true });
+        writeFileSync(builtRunner, "fresh-runner", "utf8");
+        chmodSync(builtRunner, 0o755);
+        return { signal: null, status: 0, stderr: "", stdout: "" };
+      },
+    });
+    assert.deepEqual(build, { ok: false, reason: "runner-publish-failed" });
+    assert.equal(existsSync(outsideRunner), false);
+
+    writeFileSync(outsideRunner, "external-runner", "utf8");
+    chmodSync(outsideRunner, 0o700);
+    assert.deepEqual(captureRuntimeArtifacts({ repoRoot, runnerPath }), { count: 0, status: "unknown" });
+  } finally {
+    rmSync(repoRoot, { force: true, recursive: true });
+    rmSync(outside, { force: true, recursive: true });
+  }
+});

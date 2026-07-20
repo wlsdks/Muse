@@ -765,6 +765,13 @@ export const COMMAND_STUBS: readonly CommandStub[] = [
     ]
   },
   {
+    "name": "qualify",
+    "description": "Read-only, fail-closed personal-agent qualification (capability, runtime, delivery safety)",
+    "argsTerm": "",
+    "hasOptions": true,
+    "subcommands": []
+  },
+  {
     "name": "quiet",
     "description": "Show or set quiet hours (do-not-disturb window) for background daemons — reminders and the daily brief are never affected",
     "argsTerm": "[range]",

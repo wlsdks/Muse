@@ -99,13 +99,19 @@ agent-capability attempts, so they are not added to the live aggregate.
   for normal CI.
 - `pnpm eval:agent -- --json` runs the long local live aggregate. It belongs in
   a **nightly/self-hosted or explicit manual verification run**, not in the
-  pre-push hook.
+  pre-push hook. The orchestrator itself performs a forced TypeScript re-emit,
+  a fresh locked Rust-runner build, and forces every battery to the newly
+  published runner before it writes a provenance-bearing v2 report.
+- `pnpm qualify:personal-agent` revalidates that report against the current
+  clean source and artifact digest, then combines it with read-only resident
+  runtime and delivery-safety evidence. See
+  [`personal-agent-qualification.md`](personal-agent-qualification.md).
 - Pre-push remains a fast compile and affected deterministic-check boundary. A
   developer must not need a local model, Chrome, or a multi-hour live run to
   publish an otherwise verified branch.
 - A recognized missing environment produces `unverified`; an executed failure,
   including an optional-environment axis, fails the aggregate.
-- Every child has a 90-minute hard timeout. A privacy-safe aggregate is written
+- Every child has a 90-minute hard timeout. A privacy-safe v2 aggregate is written
   atomically with owner-only permissions to the ignored
   `.muse-dev/evals/agent-capability/latest.json` path for local re-audit.
 - Capability suites may remain below 100% while exposing a real gap.

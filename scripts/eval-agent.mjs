@@ -7,16 +7,34 @@
  * copies prompts, model output, or tool payloads into the report.
  */
 
+import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { classifySkip, parseCompletion } from "./eval-skip.mjs";
+import {
+  buildAndPublishRunner,
+  captureGitSourceSnapshot,
+  captureRuntimeArtifacts,
+  runForcedTypeScriptBuild,
+} from "./eval-agent-provenance.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CAPABILITY_TIMEOUT_MS = 90 * 60 * 1000;
 const DEFAULT_REPORT_PATH = resolve(here, "../.muse-dev/evals/agent-capability/latest.json");
+const REPO_ROOT = resolve(here, "..");
+export const CAPABILITY_MATRIX_ID = "muse-agent-capability-v1";
 
 export const CAPABILITIES = Object.freeze([
   { id: "tool-selection-arguments", battery: "eval-tool-selection.mjs", required: true, repeats: 3 },
@@ -40,6 +58,41 @@ const RECOGNIZED_ENVIRONMENT_SKIPS = new Set([
   "runner-missing",
   "runtime-unavailable",
   "sandbox-missing",
+]);
+
+const REPORT_REASON_CODES = new Set([
+  "artifact-provenance-unverified",
+  "battery-reported-failure",
+  "chrome-missing",
+  "duplicate-completion",
+  "embed-model-missing",
+  "exit-nonzero",
+  "invalid-completion",
+  "missing-completion",
+  "missing-skip-evidence",
+  "model-missing",
+  "ollama-unreachable",
+  "orchestration-invariant-failed",
+  "regression",
+  "report-integrity-failed",
+  "report-persistence-failed",
+  "requested-repeat-mismatch",
+  "runner-build-failed",
+  "runner-missing",
+  "runner-publish-failed",
+  "runtime-execution-failed",
+  "runtime-unavailable",
+  "sandbox-missing",
+  "signal",
+  "skip-reason-mismatch",
+  "source-provenance-unverified",
+  "spawn-error",
+  "terminal-state-assertion-failed",
+  "terminal-state-failed",
+  "threshold-not-met",
+  "typescript-build-failed",
+  "unexpected-skip",
+  "unrecognized-skip",
 ]);
 
 function failedRow(capability, durationMs, reason, executed = 0) {
@@ -120,28 +173,98 @@ export function classifyCapabilityResult(capability, child) {
 }
 
 /** Build the stable JSON schema and compute the required-row gate. */
-export function createCapabilityReport(capabilities) {
+export function createCapabilityReport(capabilities, options = {}) {
+  const canonicalRows = canonicalCapabilityRows(capabilities);
   const counts = {
-    passed: capabilities.filter((row) => row.status === "passed").length,
-    failed: capabilities.filter((row) => row.status === "failed").length,
-    unverified: capabilities.filter((row) => row.status === "unverified").length,
-    total: capabilities.length,
+    passed: canonicalRows.filter((row) => row.status === "passed").length,
+    failed: canonicalRows.filter((row) => row.status === "failed").length,
+    unverified: canonicalRows.filter((row) => row.status === "unverified").length,
+    total: canonicalRows.length,
   };
-  const required = capabilities.filter((row) => row.required);
-  const status = capabilities.some((row) => row.status === "failed")
+  const required = canonicalRows.filter((row) => row.required);
+  const status = canonicalRows.some((row) => row.status === "failed")
     ? "failed"
     : required.some((row) => row.status !== "passed")
       ? "unverified"
       : "passed";
-  return { version: 1, status, counts, capabilities };
+  return {
+    version: 2,
+    matrixId: CAPABILITY_MATRIX_ID,
+    generatedAt: options.generatedAt ?? new Date(0).toISOString(),
+    status,
+    counts,
+    capabilities: canonicalRows,
+    provenance: sanitizeProvenance(options.provenance),
+  };
+}
+
+function canonicalCapabilityRows(rows) {
+  if (!Array.isArray(rows) || rows.length !== CAPABILITIES.length) {
+    return integrityFailureRows();
+  }
+  const byId = new Map();
+  for (const row of rows) {
+    if (!row || typeof row !== "object" || typeof row.id !== "string" || byId.has(row.id)) {
+      return integrityFailureRows();
+    }
+    byId.set(row.id, row);
+  }
+
+  const canonical = [];
+  for (const capability of CAPABILITIES) {
+    const row = byId.get(capability.id);
+    if (!isCanonicalCapabilityRow(row, capability)) return integrityFailureRows();
+    canonical.push({ ...row });
+  }
+  return canonical;
+}
+
+function isCanonicalCapabilityRow(row, capability) {
+  if (!row || row.id !== capability.id || row.required !== capability.required || row.requested !== capability.repeats) {
+    return false;
+  }
+  const expectedKeys = row.reason === undefined
+    ? ["durationMs", "executed", "id", "requested", "required", "status"]
+    : ["durationMs", "executed", "id", "reason", "requested", "required", "status"];
+  const keys = Object.keys(row).sort();
+  if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) return false;
+  if (!Number.isSafeInteger(row.executed) || row.executed < 0 || row.executed > capability.repeats) return false;
+  if (!Number.isSafeInteger(row.durationMs) || row.durationMs < 0) return false;
+  if (row.status !== "passed" && row.status !== "failed" && row.status !== "unverified") return false;
+  if (row.status === "passed") return row.executed === capability.repeats && row.reason === undefined;
+  return REPORT_REASON_CODES.has(row.reason);
+}
+
+function integrityFailureRows() {
+  return CAPABILITIES.map((capability) => failedRow(capability, 0, "report-integrity-failed"));
 }
 
 /** Persist only the privacy-safe aggregate, atomically, under the ignored eval tree. */
-export function persistCapabilityReport(report, reportPath = DEFAULT_REPORT_PATH) {
-  mkdirSync(dirname(reportPath), { recursive: true, mode: 0o700 });
-  const temporary = `${reportPath}.${process.pid.toString()}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  renameSync(temporary, reportPath);
+export function persistCapabilityReport(report, reportPath = DEFAULT_REPORT_PATH, options = {}) {
+  let location;
+  try {
+    location = prepareCapabilityReportLocation(reportPath, options.allowedRoot);
+  } catch {
+    throw capabilityReportPersistenceError();
+  }
+
+  const temporary = `${location.reportPath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    if (process.platform !== "win32") chmodSync(temporary, 0o600);
+    const rename = options.rename ?? renameSync;
+    rename(temporary, location.reportPath);
+    if (process.platform !== "win32") chmodSync(location.reportPath, 0o600);
+  } catch {
+    try {
+      rmSync(location.reportPath, { force: true });
+    } catch {
+      // The caller still fails closed even if the filesystem is unavailable.
+    }
+    throw capabilityReportPersistenceError();
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 function printHumanReport(report, stdout) {
@@ -162,6 +285,46 @@ export function main(args = process.argv.slice(2), dependencies = {}) {
   const stderr = dependencies.stderr ?? process.stderr;
   const now = dependencies.now ?? Date.now;
   const json = args.includes("--json");
+  const captureSource = dependencies.captureSource
+    ?? (() => captureGitSourceSnapshot({ repoRoot: REPO_ROOT }));
+  const runTypeScriptBuild = dependencies.runTypeScriptBuild
+    ?? (() => runForcedTypeScriptBuild({ repoRoot: REPO_ROOT }));
+  const buildRunnerArtifact = dependencies.buildRunnerArtifact
+    ?? (() => buildAndPublishRunner({ repoRoot: REPO_ROOT }));
+  const captureArtifacts = dependencies.captureArtifacts
+    ?? ((runnerPath) => captureRuntimeArtifacts({ repoRoot: REPO_ROOT, runnerPath }));
+
+  const sourceBeforeBuild = safeSourceSnapshot(captureSource);
+  const typeScriptBuild = safeBuildStep(runTypeScriptBuild, "typescript-build-failed");
+  if (!typeScriptBuild.ok) {
+    return finishBuildFailure(typeScriptBuild.reason, {
+      captureArtifacts,
+      captureSource,
+      dependencies,
+      json,
+      now,
+      sourceBeforeBuild,
+      stderr,
+      stdout,
+    });
+  }
+
+  const runnerBuild = safeBuildStep(buildRunnerArtifact, "runner-build-failed");
+  if (!runnerBuild.ok || typeof runnerBuild.runnerPath !== "string") {
+    return finishBuildFailure(runnerBuild.reason ?? "runner-build-failed", {
+      captureArtifacts,
+      captureSource,
+      dependencies,
+      json,
+      now,
+      sourceBeforeBuild,
+      stderr,
+      stdout,
+    });
+  }
+  const runnerPath = runnerBuild.runnerPath;
+  const sourceAfterBuild = safeSourceSnapshot(captureSource);
+  const artifactsAfterBuild = safeArtifactSnapshot(() => captureArtifacts(runnerPath));
   const rows = [];
 
   for (const capability of CAPABILITIES) {
@@ -173,7 +336,11 @@ export function main(args = process.argv.slice(2), dependencies = {}) {
     }
     const child = spawn(process.execPath, [join(here, capability.battery)], {
       encoding: "utf8",
-      env: { ...process.env, MUSE_EVAL_REPEAT: String(capability.repeats) },
+      env: {
+        ...process.env,
+        MUSE_EVAL_REPEAT: String(capability.repeats),
+        MUSE_RUNNER_PATH: runnerPath,
+      },
       killSignal: "SIGKILL",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: CAPABILITY_TIMEOUT_MS,
@@ -190,17 +357,206 @@ export function main(args = process.argv.slice(2), dependencies = {}) {
     }
   }
 
-  const report = createCapabilityReport(rows);
-  dependencies.writeReport?.(report);
-  if (json) {
-    stdout.write(`${JSON.stringify(report)}\n`);
-  } else {
-    printHumanReport(report, stdout);
+  const sourceAtEnd = safeSourceSnapshot(captureSource);
+  const artifactsAtEnd = safeArtifactSnapshot(() => captureArtifacts(runnerPath));
+  const provenance = {
+    sourceBeforeBuild,
+    sourceAfterBuild,
+    sourceAtEnd,
+    artifactsAfterBuild,
+    artifactsAtEnd,
+  };
+  const report = createCapabilityReport(applyProvenanceGate(rows, provenance), {
+    generatedAt: generatedAt(now),
+    provenance,
+  });
+  return emitReport(report, { dependencies, json, stderr, stdout });
+}
+
+function finishBuildFailure(reason, context) {
+  const sourceAfterBuild = safeSourceSnapshot(context.captureSource);
+  const sourceAtEnd = safeSourceSnapshot(context.captureSource);
+  const artifactsAfterBuild = { count: 0, status: "unknown" };
+  const artifactsAtEnd = { count: 0, status: "unknown" };
+  const rows = CAPABILITIES.map((capability) => failedRow(capability, 0, reason));
+  const report = createCapabilityReport(rows, {
+    generatedAt: generatedAt(context.now),
+    provenance: {
+      sourceBeforeBuild: context.sourceBeforeBuild,
+      sourceAfterBuild,
+      sourceAtEnd,
+      artifactsAfterBuild,
+      artifactsAtEnd,
+    },
+  });
+  return emitReport(report, context);
+}
+
+function emitReport(report, { dependencies, json, stdout }) {
+  let emittedReport = report;
+  try {
+    dependencies.writeReport?.(report);
+  } catch {
+    emittedReport = createCapabilityReport(
+      CAPABILITIES.map((capability) => failedRow(capability, 0, "report-persistence-failed")),
+      { generatedAt: report.generatedAt, provenance: report.provenance },
+    );
   }
-  if (report.status !== "passed") {
-    process.exitCode = 1;
+  if (json) stdout.write(`${JSON.stringify(emittedReport)}\n`);
+  else printHumanReport(emittedReport, stdout);
+  if (emittedReport.status !== "passed") process.exitCode = 1;
+  return emittedReport;
+}
+
+function safeBuildStep(step, fallbackReason) {
+  try {
+    const result = step();
+    return result && typeof result === "object" ? result : { ok: false, reason: fallbackReason };
+  } catch {
+    return { ok: false, reason: fallbackReason };
   }
-  return report;
+}
+
+function safeSourceSnapshot(capture) {
+  try {
+    const snapshot = capture();
+    if (snapshot?.tree === "clean" || snapshot?.tree === "dirty" || snapshot?.tree === "unknown") {
+      const revision = typeof snapshot.revision === "string" && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(snapshot.revision)
+        ? snapshot.revision
+        : undefined;
+      return {
+        ...(revision ? { revision } : {}),
+        tree: snapshot.tree === "clean" && !revision ? "unknown" : snapshot.tree,
+      };
+    }
+  } catch {
+    // Closed below.
+  }
+  return { tree: "unknown" };
+}
+
+function safeArtifactSnapshot(capture) {
+  try {
+    const snapshot = capture();
+    if (
+      snapshot?.status === "ok"
+      && typeof snapshot.digest === "string"
+      && /^[a-f0-9]{64}$/u.test(snapshot.digest)
+      && Number.isSafeInteger(snapshot.count)
+      && snapshot.count > 0
+    ) {
+      return { count: snapshot.count, digest: snapshot.digest, status: "ok" };
+    }
+  } catch {
+    // Closed below.
+  }
+  return { count: 0, status: "unknown" };
+}
+
+function applyProvenanceGate(rows, provenance) {
+  const sources = [
+    provenance.sourceBeforeBuild,
+    provenance.sourceAfterBuild,
+    provenance.sourceAtEnd,
+  ];
+  const revisions = sources.map((snapshot) => snapshot.revision);
+  const sourceOk = sources.every((snapshot) => snapshot.tree === "clean")
+    && revisions.every((revision) => typeof revision === "string" && revision.length > 0)
+    && revisions.every((revision) => revision === revisions[0]);
+  if (!sourceOk) return downgradePassedRows(rows, "source-provenance-unverified");
+
+  const afterBuild = provenance.artifactsAfterBuild;
+  const atEnd = provenance.artifactsAtEnd;
+  const artifactOk = afterBuild.status === "ok"
+    && atEnd.status === "ok"
+    && afterBuild.count > 0
+    && atEnd.count === afterBuild.count
+    && typeof afterBuild.digest === "string"
+    && /^[a-f0-9]{64}$/u.test(afterBuild.digest)
+    && atEnd.digest === afterBuild.digest;
+  return artifactOk ? rows : downgradePassedRows(rows, "artifact-provenance-unverified");
+}
+
+function downgradePassedRows(rows, reason) {
+  return rows.map((row) => row.status === "passed" ? { ...row, reason, status: "unverified" } : row);
+}
+
+function generatedAt(now) {
+  try {
+    return new Date(now()).toISOString();
+  } catch {
+    return new Date(0).toISOString();
+  }
+}
+
+function unknownProvenance() {
+  return {
+    sourceBeforeBuild: { tree: "unknown" },
+    sourceAfterBuild: { tree: "unknown" },
+    sourceAtEnd: { tree: "unknown" },
+    artifactsAfterBuild: { count: 0, status: "unknown" },
+    artifactsAtEnd: { count: 0, status: "unknown" },
+  };
+}
+
+function sanitizeProvenance(provenance) {
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    return unknownProvenance();
+  }
+  return {
+    sourceBeforeBuild: safeSourceSnapshot(() => provenance.sourceBeforeBuild),
+    sourceAfterBuild: safeSourceSnapshot(() => provenance.sourceAfterBuild),
+    sourceAtEnd: safeSourceSnapshot(() => provenance.sourceAtEnd),
+    artifactsAfterBuild: safeArtifactSnapshot(() => provenance.artifactsAfterBuild),
+    artifactsAtEnd: safeArtifactSnapshot(() => provenance.artifactsAtEnd),
+  };
+}
+
+function prepareCapabilityReportLocation(reportPath, allowedRoot) {
+  const target = resolve(reportPath);
+  const usesDefaultPath = target === DEFAULT_REPORT_PATH;
+  if (!usesDefaultPath && typeof allowedRoot !== "string") {
+    throw capabilityReportPersistenceError();
+  }
+  const root = usesDefaultPath ? REPO_ROOT : resolve(allowedRoot);
+  const rootStat = lstatSync(root);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw capabilityReportPersistenceError();
+  if (!isStrictDescendantPath(root, target)) throw capabilityReportPersistenceError();
+  const rootRealPath = realpathSync(root);
+  const parent = dirname(target);
+  let current = root;
+  for (const segment of relative(root, parent).split(sep)) {
+    if (!segment) continue;
+    current = join(current, segment);
+    const existed = existsSync(current);
+    if (!existed) mkdirSync(current, { mode: 0o700 });
+    const stat = lstatSync(current);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw capabilityReportPersistenceError();
+    if (!existed && process.platform !== "win32") chmodSync(current, 0o700);
+    if (!isStrictDescendantPath(rootRealPath, realpathSync(current))) {
+      throw capabilityReportPersistenceError();
+    }
+  }
+  if (existsSync(target)) {
+    const stat = lstatSync(target);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw capabilityReportPersistenceError();
+    if (!isStrictDescendantPath(rootRealPath, realpathSync(target))) {
+      throw capabilityReportPersistenceError();
+    }
+  }
+  return { reportPath: target };
+}
+
+function isStrictDescendantPath(root, candidate) {
+  const pathFromRoot = relative(root, candidate);
+  return pathFromRoot.length > 0
+    && pathFromRoot !== ".."
+    && !pathFromRoot.startsWith(`..${sep}`)
+    && !isAbsolute(pathFromRoot);
+}
+
+function capabilityReportPersistenceError() {
+  return new Error("capability-report-persistence-failed");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

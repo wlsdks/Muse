@@ -146,13 +146,14 @@ pnpm smoke:broad
 pnpm smoke:live
 ```
 
-`smoke:live` deliberately uses local Ollama and skips when it is unreachable. The longer `pnpm eval:agent` suite is nightly/manual. The latest qualified agent result is **10 passed, 1 failed, 0 unverified**; the aggregate remains **FAILED**. Software test counts are not agent-effect proof.
+`smoke:live` deliberately uses local Ollama and skips when it is unreachable. The longer `pnpm eval:agent` suite is nightly/manual. The latest recorded live aggregate is **10 passed, 1 failed, 0 unverified**, so it remains **FAILED**. Run `pnpm qualify:personal-agent` for a read-only, fail-closed check of current capability, resident runtime, and delivery safety. Software test counts are not agent-effect proof.
 
 ## 📖 Documentation
 
 - [Attunement product contract](docs/strategy/attunement.md)
 - [Attunement architecture and current gaps](docs/design/attunement.md)
 - [Attunement implementation plan](docs/goals/attunement-implementation-plan.md)
+- [Personal-agent qualification](docs/development/personal-agent-qualification.md)
 - [System map](docs/SYSTEM-MAP.md)
 - [Verified feature catalog](docs/feature-catalog/INDEX.md)
 - [Evidence index](docs/benchmarks/EVIDENCE.md)
