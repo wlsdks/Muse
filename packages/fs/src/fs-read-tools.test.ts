@@ -255,6 +255,33 @@ describe("file_read / file_list / file_grep", () => {
       expect(text.split("\n")[0]).toMatch(/^\s+2\t/u);
       expect(text).toContain("b");
     });
+
+    it("reads a .pptx deck as slide text through the tool's own routing", async () => {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      zip.file("[Content_Types].xml", "<?xml version=\"1.0\"?><Types/>");
+      zip.file("ppt/slides/slide1.xml", "<?xml version=\"1.0\"?><p:sld xmlns:a=\"x\"><a:t>Quarterly plan</a:t></p:sld>");
+      const path = join(root, "deck.pptx");
+      await writeFile(path, await zip.generateAsync({ type: "nodebuffer" }));
+
+      const out = (await createFileReadTool(opts()).execute({ path }, ctx)) as JsonObject;
+      expect(out["read"]).toBe(true);
+      expect(out["kind"]).toBe("pptx");
+      expect(out["text"]).toContain("Quarterly plan");
+    });
+
+    it("reads a .eml file as decoded headers + body through the tool's own routing", async () => {
+      const path = join(root, "note.eml");
+      await writeFile(path,
+        "From: Ada <ada@example.com>\r\nSubject: Ship it\r\n" +
+        "Content-Type: text/plain; charset=utf-8\r\n\r\nLooks good to me.\r\n");
+
+      const out = (await createFileReadTool(opts()).execute({ path }, ctx)) as JsonObject;
+      expect(out["read"]).toBe(true);
+      expect(out["kind"]).toBe("eml");
+      expect(out["text"]).toContain("Subject: Ship it");
+      expect(out["text"]).toContain("Looks good to me.");
+    });
   });
 
   describe("file_list", () => {
@@ -523,4 +550,5 @@ describe("compileGrepPattern — never throws, degrades gracefully", () => {
   it("never throws for a pile of metacharacters", () => {
     expect(() => compileGrepPattern("*+?{[(\\")).not.toThrow();
   });
+
 });

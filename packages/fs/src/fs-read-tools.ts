@@ -19,7 +19,9 @@ import type { MuseTool } from "@muse/tools";
 import { createIgnoreFilter, type IgnoreFilter } from "./fs-gitignore.js";
 import {
   extractDocxTextWithMammoth,
+  extractEmlText,
   extractPdfTextWithPdfjs,
+  extractPptxText,
   imageMimeType,
   rankFileCandidates,
   resolveFileKind,
@@ -76,6 +78,10 @@ export interface FsReadToolsOptions extends PathSafetyOptions {
   readonly extractPdfText?: (data: Buffer) => Promise<string>;
   /** DOCX text extractor; defaults to the lazy mammoth implementation. */
   readonly extractDocxText?: (data: Buffer) => Promise<string>;
+  /** PPTX text extractor; defaults to the lazy jszip slide-XML implementation. */
+  readonly extractPptxText?: (data: Buffer) => Promise<string>;
+  /** EML text extractor; defaults to the dependency-free RFC822 parser. */
+  readonly extractEmlText?: (data: Buffer) => string | Promise<string>;
   /** Cap on returned characters for a text/PDF/DOCX read. Default 200,000. */
   readonly maxTextChars?: number;
   /**
@@ -160,6 +166,8 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
   const docRoots = (options.docRoots ?? []).slice();
   const extractPdf = options.extractPdfText ?? extractPdfTextWithPdfjs;
   const extractDocx = options.extractDocxText ?? extractDocxTextWithMammoth;
+  const extractPptx = options.extractPptxText ?? extractPptxText;
+  const extractEml = options.extractEmlText ?? extractEmlText;
   const maxTextChars = requirePositiveSafeInteger(options.maxTextChars, DEFAULT_MAX_TEXT_CHARS, "maxTextChars");
   const maxFileBytes = requirePositiveSafeInteger(options.maxFileBytes, DEFAULT_MAX_FILE_BYTES, "maxFileBytes");
 
@@ -201,8 +209,9 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
   return {
     definition: {
       description:
-        "Read ONE local file and return its text — plain text/code, plus PDF, Word (.docx), and images " +
-        "(read with the local vision model). Give a path ('~/notes/todo.md', '/Users/me/x.ts') OR, for your " +
+        "Read ONE local file and return its text — plain text/code, PDF, Word (.docx), PowerPoint (.pptx), " +
+        "email (.eml), and images (read with the local vision model). Give a path ('~/notes/todo.md', " +
+        "'/Users/me/x.ts') OR, for your " +
         "everyday folders, a filename fragment ('invoice pdf', '계약서 워드', '영수증 사진') and Muse reads the " +
         "newest match. This is the right tool whenever the user names ONE file to open/read/summarize, even " +
         "if a folder is mentioned ('다운로드에 있는 invoice.pdf 읽어줘' → file_read). Use offset/limit to page " +
@@ -286,12 +295,15 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
             read: false,
             reason: heic
               ? `'${basename(safe)}' is a HEIC image, which the local vision model cannot decode. Convert it first: sips -s format jpeg '${safe}' --out '${safe.replace(/\.[^.]+$/u, ".jpg")}'`
-              : `'${basename(safe)}' is not a readable document (PDF, Word, text, or image files only)`
+              : `'${basename(safe)}' is not a readable document (text, PDF, Word, PowerPoint, email, or image files only)`
           };
         }
 
-        if (kind === "pdf" || kind === "docx") {
-          const extracted = kind === "pdf" ? await extractPdf(data) : await extractDocx(data);
+        if (kind === "pdf" || kind === "docx" || kind === "pptx" || kind === "eml") {
+          const extracted = kind === "pdf" ? await extractPdf(data)
+            : kind === "docx" ? await extractDocx(data)
+              : kind === "pptx" ? await extractPptx(data)
+                : await extractEml(data);
           const truncated = extracted.length > maxTextChars;
           options.onPathRead?.(safe);
           if (!truncated) options.onFullRead?.(safe);
@@ -303,7 +315,7 @@ export function createFileReadTool(options: FsReadToolsOptions = {}, policyPromi
         // model gets corrupted, edit-poisoning output if we hand it back as text,
         // so refuse with a clear signal — the same binary skip file_grep applies.
         if (isProbablyBinary(rawText)) {
-          return { path: safe, read: false, reason: `'${basename(safe)}' looks like a binary file (contains a NUL byte), not text — file_read reads text, PDF, Word, and image files.` };
+          return { path: safe, read: false, reason: `'${basename(safe)}' looks like a binary file (contains a NUL byte), not text — file_read reads text, PDF, Word, PowerPoint, email, and image files.` };
         }
         const lines = rawText.split("\n");
         const totalLines = lines.length;
