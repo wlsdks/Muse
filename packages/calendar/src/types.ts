@@ -1,5 +1,7 @@
 export interface CalendarEvent {
   readonly id: string;
+  /** Provider mutation identity before any list-only recurrence suffixing. */
+  readonly providerEventId?: string;
   readonly providerId: string;
   readonly title: string;
   readonly startsAt: Date;

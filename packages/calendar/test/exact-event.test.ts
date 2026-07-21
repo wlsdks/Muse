@@ -38,6 +38,16 @@ describe("calendar event Continuity references", () => {
     expect(encodeCalendarEventReference(first)).not.toBe(encodeCalendarEventReference(second));
   });
 
+  it("uses the raw provider mutation id for a list-suffixed occurrence", () => {
+    const occurrence = event({ id: "series/opaque-id-2", providerEventId: "series/opaque-id" });
+    expect(decodeCalendarEventReference(encodeCalendarEventReference(occurrence))).toEqual({
+      eventId: "series/opaque-id",
+      startsAt: "2026-07-22T09:00:00.000Z"
+    });
+    expect(selectExactCalendarEvent([occurrence], { eventId: "series/opaque-id", startsAt: "2026-07-22T09:00:00.000Z" }, "local"))
+      .toBe(occurrence);
+  });
+
   it.each([
     "",
     "cev1_not-json",

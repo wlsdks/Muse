@@ -73,6 +73,10 @@ export class MacOsCalendarProvider implements CalendarProvider {
   }
 
   async listEvents(range: CalendarRange): Promise<readonly CalendarEvent[]> {
+    return this.readEvents(range, false);
+  }
+
+  private async readEvents(range: CalendarRange, strict: boolean): Promise<readonly CalendarEvent[]> {
     const calendarRef = this.calendarRef();
     const startIso = isoForOsascript(range.from);
     const endIso = isoForOsascript(range.to);
@@ -95,12 +99,12 @@ export class MacOsCalendarProvider implements CalendarProvider {
       return output
     `;
     const stdout = await this.runScript(script);
-    return parseListOutput(stdout, this.id);
+    return parseListOutput(stdout, this.id, strict);
   }
 
   async resolveExactEvent(locator: CalendarEventLocator): Promise<CalendarEvent | undefined> {
     const instant = new Date(locator.startsAt);
-    return selectExactCalendarEvent(await this.listEvents({ from: instant, to: instant }), locator, this.id);
+    return selectExactCalendarEvent(await this.readEvents({ from: instant, to: instant }, true), locator, this.id);
   }
 
   async createEvent(input: CalendarEventInput): Promise<CalendarEvent> {
@@ -232,7 +236,7 @@ export class MacOsCalendarProvider implements CalendarProvider {
   }
 }
 
-function parseListOutput(output: string, providerId: string): readonly CalendarEvent[] {
+function parseListOutput(output: string, providerId: string, strict = false): readonly CalendarEvent[] {
   return output
     .split(/\r?\n/u)
     .map((line) => line.trim())
@@ -240,12 +244,14 @@ function parseListOutput(output: string, providerId: string): readonly CalendarE
     .flatMap((line): readonly CalendarEvent[] => {
       const [id, startIso, endIso, title, location, allDayRaw] = line.split("\t");
       if (!id || !title || !startIso || !endIso) {
+        if (strict) throw new CalendarProviderError(providerId, "MALFORMED_RESPONSE", "macOS exact lookup received a malformed event row");
         return [];
       }
 
       const startsAt = new Date(startIso);
       const endsAt = new Date(endIso);
       if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+        if (strict) throw new CalendarProviderError(providerId, "MALFORMED_RESPONSE", "macOS exact lookup received an invalid event timestamp");
         return [];
       }
 

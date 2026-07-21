@@ -21,8 +21,8 @@ function assertLocator(locator: CalendarEventLocator): void {
 }
 
 /** Stable, copyable Continuity identity; separate from provider mutation IDs. */
-export function encodeCalendarEventReference(event: Pick<CalendarEvent, "id" | "startsAt">): string {
-  const locator = { eventId: event.id, startsAt: event.startsAt.toISOString() };
+export function encodeCalendarEventReference(event: Pick<CalendarEvent, "id" | "providerEventId" | "startsAt">): string {
+  const locator = { eventId: event.providerEventId ?? event.id, startsAt: event.startsAt.toISOString() };
   assertLocator(locator);
   return `${PREFIX}${Buffer.from(JSON.stringify([locator.eventId, locator.startsAt]), "utf8").toString("base64url")}`;
 }
@@ -56,7 +56,7 @@ export function selectExactCalendarEvent(
   providerId: string
 ): CalendarEvent | undefined {
   const matches = events.filter((event) => event.providerId === providerId
-    && event.id === locator.eventId
+    && (event.providerEventId ?? event.id) === locator.eventId
     && event.startsAt.toISOString() === locator.startsAt);
   if (matches.length > 1) {
     throw new CalendarProviderError(providerId, "AMBIGUOUS_EVENT", `Calendar event reference is ambiguous: ${locator.eventId}`);
