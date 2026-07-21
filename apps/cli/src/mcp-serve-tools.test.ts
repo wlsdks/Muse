@@ -75,6 +75,21 @@ describe("buildMcpServeTools", () => {
     }
   });
 
+  it("knowledge_search and muse_recall each disambiguate against the OTHER, so a connected agent picks the right one", () => {
+    // Both search the user's notes; the difference is knowledge_search returns
+    // raw ranked passages while muse_recall composes a cited answer. Without an
+    // explicit cross-reference the two read as interchangeable (tool-calling.md
+    // rule 4), which is exactly the confusion this asserts against.
+    const byName = new Map(buildMcpServeTools(baseDeps({}, notesDir)).map((tool) => [tool.definition.name, tool.definition.description] as const));
+    const knowledge = byName.get("knowledge_search") ?? "";
+    const recall = byName.get("muse_recall") ?? "";
+
+    expect(knowledge).toContain("muse_recall");
+    expect(knowledge).toMatch(/passages|snippets/iu);
+    expect(recall).toContain("knowledge_search");
+    expect(recall).toMatch(/compose|composes|answer/iu);
+  });
+
   describe("knowledge_search", () => {
     it("returns source-tagged snippets for a seeded note even with the embedder unreachable (lexical fallback)", async () => {
       writeFileSync(join(notesDir, "embedder.md"), "We decided to use nomic-embed-text-v2-moe as the embedder model.\n");

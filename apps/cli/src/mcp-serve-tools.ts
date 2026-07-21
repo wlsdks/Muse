@@ -174,7 +174,7 @@ function buildKnowledgeSearchTool(deps: McpServeDependencies): MuseTool {
   return {
     definition: {
       description:
-        "Search the user's notes and the facts/preferences Muse has learned about them, returning ranked passages each tagged with its [source] (cite the source in your own answer). Use when a connected agent needs grounded context about the user (e.g. 'what does the user know about X', 'find their note on Y', 'what preferences has the user stated'). Do not use for general world knowledge unrelated to the user, and never use to write or change anything (read-only).",
+        "Search the user's notes and the facts/preferences Muse has learned about them, returning ranked PASSAGES each tagged with its [source] for YOU to read and reason over (cite the source in your own answer). Use when you want the raw grounded context (e.g. 'what does the user know about X', 'find their note on Y', 'what preferences has the user stated'). Do NOT use it when you want Muse to compose the answer itself — that is muse_recall, which generates a cited answer through the local model. Not for general world knowledge unrelated to the user, and never to write or change anything (read-only).",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -185,7 +185,7 @@ function buildKnowledgeSearchTool(deps: McpServeDependencies): MuseTool {
             type: "integer"
           },
           query: {
-            description: "What to look up, in natural language — e.g. 'my health insurance policy number' or 'what embedder model did I decide to use'.",
+            description: "What to look up, in natural language — e.g. 'my health insurance policy number' or 'the Postgres migration notes'.",
             type: "string"
           }
         },
@@ -242,12 +242,12 @@ function buildMuseRecallTool(deps: McpServeDependencies): MuseTool {
   return {
     definition: {
       description:
-        "Answer a question by grounding it in the user's notes: retrieves the most relevant passages, generates through the local model, then passes the answer through Muse's citation gate — a weak or missing match returns an honest \"I'm not sure\" instead of a guess, and any fabricated citation is stripped by code before you ever see it. Use when a connected agent needs a SOURCED answer to a question about the user's own notes. Do not use for general knowledge unrelated to the user's notes; requires the local model (Ollama) to be running.",
+        "Answer a question by grounding it in the user's notes: retrieves the most relevant passages, generates through the local model, then passes the answer through Muse's citation gate — a weak or missing match returns an honest \"I'm not sure\" instead of a guess, and any fabricated citation is stripped by code before you ever see it. Use when you want Muse to COMPOSE a sourced answer for you (e.g. 'what did I decide about the embedder model?'). Do NOT use it when you want the raw passages to reason over yourself — that is knowledge_search, which returns ranked snippets without generating an answer. Not for general knowledge unrelated to the user's notes; requires the local model (Ollama) to be running.",
       inputSchema: {
         additionalProperties: false,
         properties: {
           question: {
-            description: "The question to answer from the user's notes, e.g. 'what embedder model did I decide to use?'",
+            description: "The question to answer from the user's notes, e.g. 'what did I decide about the embedder model?'",
             type: "string"
           }
         },

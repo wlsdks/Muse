@@ -45,7 +45,7 @@ export function createHistorySearchTool(options: HistorySearchToolOptions): Muse
   return {
     definition: {
       description:
-        "Search the user's OWN past — earlier chat conversations/episodes, notes, and remembered facts — to find where a topic was discussed before. Returns matching excerpts, each labelled with its [source:ref]; cite the source you use. Use when the user refers to a PRIOR discussion ('what did we decide about X', 'when did I mention Y', 'find that conversation about Z'). Do NOT use for general knowledge, live web data, or the current conversation.",
+        "Search the user's OWN PAST CONVERSATIONS — earlier chat sessions and episodes — to find where a topic was DISCUSSED before. Returns matching excerpts, each labelled with its [source:ref]; cite the source you use. Use when the user refers to a PRIOR discussion ('what did we decide about X', 'when did I mention Y', 'find that conversation about Z'). Do NOT use for something the user WROTE DOWN in a note or document (that is knowledge_search), for pages they visited in the browser (browsing_search), for general knowledge, live web data, or the current conversation.",
       domain: "core",
       inputSchema: {
         additionalProperties: false,
