@@ -10,6 +10,15 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Recall can honor an explicit, user-authored temporal correction.** Notes
+  may link one current fact to one stale fact through a provenance-bound local
+  relation. Recall activates only an unambiguous exact pair, keeps the current
+  source ahead of the stale source, and re-audits the graph, note index, and
+  prepared snapshot before reuse. The path fails closed on ties, missing or
+  duplicate sources, stale provenance, and concurrent index changes. Its
+  controlled implementation matrix passes, but sealed and organic personal
+  effectiveness remain **NOT_PROVEN**; no historical recall result is promoted.
+
 - **Personal-agent qualification is now explicit and fail-closed.** `muse
   qualify` combines a provenance-bound canonical capability report with the
   live LaunchAgent identity, heartbeat/process binding, orphan-process scan,
