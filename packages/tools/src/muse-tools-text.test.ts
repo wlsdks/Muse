@@ -72,14 +72,24 @@ describe("slugify", () => {
     // who asked for maxLength: 0 and got the untruncated slug back would
     // never learn their cap had no effect.
     expect(call(createSlugifyTool(), { maxLength: 0, text: "one two three" })).toEqual({
-      error: "maxLength must be a positive integer number, e.g. 5"
+      error: "maxLength must be a positive integer, e.g. 5"
     });
     expect(call(createSlugifyTool(), { maxLength: -5, text: "one two three" })).toEqual({
-      error: "maxLength must be a positive integer number, e.g. 5"
+      error: "maxLength must be a positive integer, e.g. 5"
     });
-    expect(call(createSlugifyTool(), { maxLength: "5", text: "one two three" })).toEqual({
-      error: "maxLength must be a positive integer number, e.g. 5"
+    expect(call(createSlugifyTool(), { maxLength: "abc", text: "one two three" })).toEqual({
+      error: "maxLength must be a positive integer, e.g. 5"
     });
+  });
+
+  it("REPAIRS a quoted number rather than refusing it", () => {
+    // The small local model quotes numbers routinely. Refusing "5" here while
+    // time_add / muse.tasks.list / upcoming_birthdays all accept their quoted
+    // form would make the same model output succeed against one tool and fail
+    // against its sibling; apps/cli/src/tool-numeric-string-repair.test.ts
+    // pins the rule across the registry.
+    expect(call(createSlugifyTool(), { maxLength: "5", text: "one two three" }))
+      .toEqual(call(createSlugifyTool(), { maxLength: 5, text: "one two three" }));
   });
 
   it("errors on a missing/non-string text", () => {

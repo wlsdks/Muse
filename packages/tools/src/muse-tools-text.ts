@@ -76,10 +76,18 @@ export function createSlugifyTool(): MuseTool {
       const rawMaxLength = args["maxLength"];
       let maxLength: number | undefined;
       if (rawMaxLength !== undefined) {
-        if (typeof rawMaxLength !== "number" || !Number.isInteger(rawMaxLength) || rawMaxLength <= 0) {
-          return { error: "maxLength must be a positive integer number, e.g. 5" };
+        // A numeric STRING is repaired, not refused. The small local model
+        // routinely quotes numbers, and the sibling tools that take a numeric
+        // argument (time_add, upcoming_birthdays, muse.tasks.list, browser_read)
+        // all accept it — refusing here would cost a round trip for a value we
+        // can read perfectly well.
+        const parsed = typeof rawMaxLength === "string" && /^\d+$/u.test(rawMaxLength.trim())
+          ? Number(rawMaxLength.trim())
+          : rawMaxLength;
+        if (typeof parsed !== "number" || !Number.isInteger(parsed) || parsed <= 0) {
+          return { error: "maxLength must be a positive integer, e.g. 5" };
         }
-        maxLength = rawMaxLength;
+        maxLength = parsed;
       }
       return { slug: slugify(text, maxLength) } satisfies JsonObject;
     }

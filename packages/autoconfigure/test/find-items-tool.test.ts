@@ -49,7 +49,7 @@ describe("createFindItemsTool", () => {
 
   it("a blank query names the missing parameter instead of returning a bare zero-hit result", async () => {
     // Byte-identical {hits:[],total:0} for "no query given" vs "genuine zero-hit search" let the
-    // model report "nothing anywhere" after a call it never ran (finding 45).
+    // model report "nothing anywhere" after a call it never ran.
     const tool = createFindItemsTool({ find: () => SOURCES });
     const result = (await tool.execute({ query: "" }, { runId: "t", userId: "u" })) as {
       found: boolean;

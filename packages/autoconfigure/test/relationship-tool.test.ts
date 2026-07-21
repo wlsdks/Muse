@@ -42,7 +42,7 @@ describe("createOverdueContactsTool — who you've lost touch with", () => {
     expect(out.overdue.length).toBeLessThanOrEqual(1);
   });
 
-  it("echoes the applied limit — the default when omitted, the supplied value otherwise (finding 49)", async () => {
+  it("echoes the applied limit — the default when omitted, the supplied value otherwise", async () => {
     const defaulted = await tool().execute({}) as { limit: number };
     expect(defaulted.limit).toBe(10);
     const explicit = await tool().execute({ limit: 3 }) as { limit: number };

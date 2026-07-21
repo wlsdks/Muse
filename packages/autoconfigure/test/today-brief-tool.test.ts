@@ -113,7 +113,7 @@ describe("createTodayBriefTool", () => {
 
   it("echoes the applied lookaheadHours so the model knows what window it actually got", async () => {
     // A clamped/omitted lookaheadHours request is silently answered with a rest-of-today window
-    // unless the tool names what it actually used (finding 49).
+    // unless the tool names what it actually used.
     const tool = createTodayBriefTool({ now: () => NOW, todayInput: () => ({ tasks: [], reminders: [], followups: [], events: [] }) });
     const omitted = (await tool.execute({}, { runId: "t", userId: "u" })) as { lookaheadHours: unknown };
     expect(omitted.lookaheadHours).toBe("rest-of-today");

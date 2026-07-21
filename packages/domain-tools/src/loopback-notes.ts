@@ -297,7 +297,14 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
             return { error: safe };
           }
 
-          const offsetArg = args["offset"];
+          // A numeric STRING is repaired, not refused, matching every sibling
+          // that takes a numeric argument (time_add, muse.tasks.list,
+          // browser_read): the small local model routinely quotes numbers, and
+          // refusing a value we can read costs a round trip it cannot spare.
+          const readNumericArg = (raw: unknown): unknown =>
+            typeof raw === "string" && /^\d+$/u.test(raw.trim()) ? Number(raw.trim()) : raw;
+
+          const offsetArg = readNumericArg(args["offset"]);
           let offset = 0;
           if (offsetArg !== undefined) {
             if (typeof offsetArg === "number" && Number.isFinite(offsetArg) && offsetArg >= 0) {
@@ -306,7 +313,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               return { error: `offset must be a non-negative number, e.g. 0 (got ${describeArgType(offsetArg)})` };
             }
           }
-          const maxCharsArg = args["maxChars"];
+          const maxCharsArg = readNumericArg(args["maxChars"]);
           let maxChars = DEFAULT_READ_MAX_CHARS;
           if (maxCharsArg !== undefined) {
             if (typeof maxCharsArg === "number" && Number.isFinite(maxCharsArg) && maxCharsArg >= 1) {

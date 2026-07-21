@@ -94,7 +94,7 @@ describe("createHistorySearchTool — agent-callable history search (Gap1-S2)", 
 
   it("returns a distinct usage error (not the no-match verdict) for an empty / whitespace query", async () => {
     // A blank query is a malformed call, not a genuine zero-hit search — conflating the two would
-    // let the model report "your history is empty" after a search it never ran (Gap1-S2 finding 44).
+    // let the model report "your history is empty" after a search it never ran.
     const tool = createHistorySearchTool({ records: () => [rec("ep-1", "anything")] });
     const out = await tool.execute({ query: "   " }, ctx);
     const text = typeof out === "string" ? out : JSON.stringify(out);
