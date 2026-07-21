@@ -63,6 +63,22 @@ describe("convertUnit", () => {
   it("throws on an unknown unit", () => {
     expect(() => convertUnit(5, "km", "furlong")).toThrow();
   });
+
+  it("accepts the Korean aliases the tool's own description advertises", () => {
+    expect(convertUnit(20, "섭씨", "화씨")).toBeCloseTo(68, 9);
+    expect(convertUnit(0, "섭씨", "켈빈")).toBeCloseTo(273.15, 9);
+    expect(convertUnit(1, "킬로미터", "미터")).toBeCloseTo(1000, 9);
+    expect(convertUnit(1, "킬로그램", "파운드")).toBeCloseTo(2.2046226, 6);
+  });
+
+  it("names an unrecognized unit's expected form instead of a bare 'unknown unit'", () => {
+    expect(() => convertUnit(5, "km", "furlong")).toThrow(/expected a unit symbol like/);
+  });
+
+  it("tells the caller currency is out of scope instead of leaving it to guess spellings", () => {
+    expect(() => convertUnit(5, "usd", "eur")).toThrow(/web search tool/);
+    expect(() => convertUnit(5, "USD", "km")).toThrow(/web search tool/);
+  });
 });
 
 describe("createUnitConvertTool", () => {

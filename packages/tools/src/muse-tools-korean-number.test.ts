@@ -53,6 +53,15 @@ describe("fromKoreanNumber (Korean 만/억/조 expression → integer)", () => {
     expect(fromKoreanNumber("hello")).toBeUndefined();
     expect(fromKoreanNumber("")).toBeUndefined();
   });
+
+  it("rejects repeated or out-of-order big units instead of quietly summing them", () => {
+    // "만만" previously hit the implicit-1 default on EACH occurrence and
+    // summed to a confident 20000 — a non-number silently read as an amount.
+    // Units must appear strictly 조 > 억 > 만, never repeated.
+    expect(fromKoreanNumber("만만")).toBeUndefined();
+    expect(fromKoreanNumber("만억")).toBeUndefined(); // 만 before 억 is out of order
+    expect(fromKoreanNumber("억억")).toBeUndefined();
+  });
 });
 
 describe("createKoreanNumberTool", () => {
@@ -80,5 +89,30 @@ describe("createKoreanNumberTool", () => {
     const tool = createKoreanNumberTool();
     expect(tool.execute({ value: 12.5 }, { runId: "r", userId: "u" })).toHaveProperty("error");
     expect(tool.execute({ value: "not a number" }, { runId: "r", userId: "u" })).toHaveProperty("error");
+  });
+
+  it("names the accepted FORM and a valid example when a Korean expression fails to parse", () => {
+    const out = createKoreanNumberTool().execute({ value: "삼천만" }, { runId: "r", userId: "u" }) as { error: string };
+    expect(out.error).toContain("삼천만");
+    expect(out.error).toContain("3000만"); // a concrete valid example, not just the rejected value
+    expect(out.error).toContain("Sino-Korean");
+  });
+
+  it("rejects repeated big units (reverse direction) instead of returning a silently coerced amount", () => {
+    const out = createKoreanNumberTool().execute({ value: "만만" }, { runId: "r", userId: "u" }) as { error: string };
+    expect(out.error).toContain("만만");
+    expect(out.error).toContain("descending");
+  });
+
+  it("errors instead of losing precision beyond Number.isSafeInteger", () => {
+    // 12345678901234567890 loses its trailing digits to float rounding once
+    // it round-trips through `Number(...)` — the tool must say so rather
+    // than present the rounded value as an exact conversion.
+    const tool = createKoreanNumberTool();
+    const out = tool.execute({ value: "12345678901234567890" }, { runId: "r", userId: "u" }) as { error: string };
+    expect(out.error).toContain("9,007,199,254,740,991");
+    // Still exact right at the boundary.
+    const boundary = tool.execute({ value: String(Number.MAX_SAFE_INTEGER) }, { runId: "r", userId: "u" }) as { value: number };
+    expect(boundary.value).toBe(Number.MAX_SAFE_INTEGER);
   });
 });

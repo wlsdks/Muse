@@ -29,6 +29,30 @@ export interface FeedsSearchToolDeps {
   readonly feedEntries: () => Promise<readonly FeedEntryLike[]> | readonly FeedEntryLike[];
 }
 
+// A small model forwards the user's phrasing near-verbatim ("any news about Mars"),
+// not a distilled keyword — a whole-phrase substring match answers that with a
+// false "nothing found". Tokenising and matching on ANY non-stopword token fixes it.
+const STOPWORDS = new Set([
+  "a", "an", "the", "of", "in", "on", "at", "is", "are", "was", "were", "to", "for",
+  "and", "or", "any", "about", "some", "that", "this", "these", "those", "with",
+  "from", "there", "have", "has", "had", "do", "does", "did", "what", "when",
+  "where", "who", "how"
+]);
+
+function tokenize(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length > 0 && !STOPWORDS.has(t));
+}
+
+const MAX_SUMMARY_CHARS = 300;
+const MAX_RESPONSE_BYTES = 4096;
+
+function truncateSummary(summary: string): string {
+  return summary.length > MAX_SUMMARY_CHARS ? `${summary.slice(0, MAX_SUMMARY_CHARS)}…` : summary;
+}
+
 export function createFeedsSearchTool(deps: FeedsSearchToolDeps): MuseTool {
   return {
     definition: {
@@ -39,7 +63,11 @@ export function createFeedsSearchTool(deps: FeedsSearchToolDeps): MuseTool {
         additionalProperties: false,
         properties: {
           limit: { description: "Max entries to return, e.g. 5. Defaults to 10.", maximum: 50, minimum: 1, type: "integer" },
-          query: { description: "Keyword(s) to match against feed entry titles and summaries, e.g. 'Mars mission'.", type: "string" }
+          query: {
+            description:
+              "Word(s) to match against feed entry titles and summaries, e.g. 'Mars mission'. A full sentence works too — matching is per-word (any distinctive word hits), not whole-phrase.",
+            type: "string"
+          }
         },
         required: ["query"],
         type: "object"
@@ -55,19 +83,51 @@ export function createFeedsSearchTool(deps: FeedsSearchToolDeps): MuseTool {
       if (query.length === 0) {
         return { count: 0, found: false, hits: [], reason: "query is required (e.g. 'Mars mission')" };
       }
-      const needle = query.toLowerCase();
+      const tokens = tokenize(query);
+      // If every word in the query was a stopword, fall back to the whole
+      // trimmed phrase rather than matching everything.
+      const effectiveTokens = tokens.length > 0 ? tokens : [query.toLowerCase()];
       const entries = await deps.feedEntries();
-      const hits = entries
-        .filter((e) => `${e.title} ${e.summary}`.toLowerCase().includes(needle))
-        .slice(0, limit)
-        .map((e) => ({
+      const scored = entries
+        .map((e) => {
+          const haystack = `${e.title} ${e.summary}`.toLowerCase();
+          const score = effectiveTokens.filter((t) => haystack.includes(t)).length;
+          return { entry: e, score };
+        })
+        .filter((s) => s.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      if (scored.length === 0) {
+        const example = effectiveTokens[effectiveTokens.length - 1] ?? query;
+        return {
+          count: 0,
+          hits: [],
+          limit,
+          query,
+          reason: `no entry matched any word in '${query}' — try a single distinctive keyword, e.g. '${example}'`
+        };
+      }
+
+      const capped = scored.slice(0, limit);
+      const hits: JsonObject[] = [];
+      let bytes = 0;
+      for (const { entry: e } of capped) {
+        const hit: JsonObject = {
           id: e.id,
-          summary: e.summary,
+          summary: truncateSummary(e.summary),
           title: e.title,
           ...(e.feedName ? { feedName: e.feedName } : {}),
           ...(e.publishedAt ? { publishedAt: e.publishedAt } : {})
-        }));
-      return { count: hits.length, hits, limit, query };
+        };
+        const size = Buffer.byteLength(JSON.stringify(hit), "utf-8");
+        if (bytes + size > MAX_RESPONSE_BYTES && hits.length > 0) {
+          break;
+        }
+        hits.push(hit);
+        bytes += size;
+      }
+      const truncatedCount = capped.length - hits.length;
+      return { count: hits.length, hits, limit, query, ...(truncatedCount > 0 ? { truncated: truncatedCount } : {}) };
     }
   };
 }

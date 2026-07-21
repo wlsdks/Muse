@@ -187,8 +187,28 @@ function buildReadScript(app: MacReadApp): string {
   }
 }
 
+/**
+ * Every one of these branches guards its script with `if it is not running
+ * then return "not running"` — an app the user hasn't opened is a real,
+ * distinct condition, never an empty calendar / zero unread mail / no notes.
+ * `safari_tab`/`chrome_tab` report the same sentinel through their OWN branch
+ * (their `running: false` shape predates this map and callers already depend
+ * on it), so they're deliberately not listed here.
+ */
+const NOT_RUNNING_APP_NAMES: Partial<Record<MacReadApp, string>> = {
+  calendar: "Calendar.app",
+  contacts: "Contacts.app",
+  mail_unread: "Mail.app",
+  notes: "Notes.app",
+  reminders: "Reminders.app"
+};
+
 function parseReadOutput(app: MacReadApp, stdout: string): JsonObject {
   const raw = stdout.replace(/\n$/u, "");
+  const notRunningName = NOT_RUNNING_APP_NAMES[app];
+  if (notRunningName && raw.trim() === "not running") {
+    return { app, error: `${notRunningName} is not running — open it and ask again`, running: false };
+  }
   switch (app) {
     case "clipboard":
       return { app, text: raw };
@@ -222,7 +242,13 @@ function parseReadOutput(app: MacReadApp, stdout: string): JsonObject {
     }
     case "mail_unread": {
       const lines = raw.split(/\r?\n/u);
-      const unreadCount = Number.parseInt(lines[0] ?? "0", 10);
+      const unreadCount = Number.parseInt(lines[0] ?? "", 10);
+      // An unparseable count means the script's output didn't match the
+      // expected shape (a Mail.app prompt, a localized string, …) — reporting
+      // 0 would tell the user "no unread mail" when the truth is "unreadable".
+      if (!Number.isFinite(unreadCount)) {
+        return { app, error: "could not read Mail's unread count — unexpected output from Mail.app" };
+      }
       const recent: JsonValue[] = lines.slice(1)
         .map((line) => line.trim())
         .filter((line) => line.length > 0)
@@ -230,7 +256,7 @@ function parseReadOutput(app: MacReadApp, stdout: string): JsonObject {
           const [subject = "", sender = ""] = line.split("\t");
           return { sender, subject };
         });
-      return { app, recent, unreadCount: Number.isFinite(unreadCount) ? unreadCount : 0 };
+      return { app, recent, unreadCount };
     }
     case "safari_tab":
     case "chrome_tab": {

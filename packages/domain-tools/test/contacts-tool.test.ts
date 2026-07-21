@@ -62,6 +62,20 @@ describe("createContactsFindTool — look up a person", () => {
     expect(await tool().execute({ name: "bob@acme.com" })).toMatchObject({ found: true, name: "Bob Acme" });
     expect(await tool().execute({ name: "@jane" })).toMatchObject({ found: true, name: "Jane Doe" });
   });
+
+  // A phone number with no quotes is emitted as a bare JSON number, not a string —
+  // it must resolve the same reverse lookup, not report the argument as "missing".
+  it("coerces a bare numeric `name` (unquoted phone literal) instead of reporting it as missing", async () => {
+    const withNumericPhone = createContactsFindTool({ contacts: () => [{ id: "c9", name: "Bob Numeric", phone: "4155550101" }] });
+    expect(await withNumericPhone.execute({ name: 4155550101 })).toMatchObject({ found: true, name: "Bob Numeric", phone: "4155550101" });
+  });
+
+  it("still reports a genuinely missing name with a message naming the accepted forms", async () => {
+    const out = await tool().execute({}) as { found: boolean; reason: string };
+    expect(out.found).toBe(false);
+    expect(out.reason).toContain("name");
+    expect(out.reason.toLowerCase()).toContain("phone");
+  });
 });
 
 describe("createContactsAddTool — capture a person", () => {
@@ -250,13 +264,33 @@ describe("createUpcomingBirthdaysTool — list whose birthday is coming up", () 
     expect(out.upcoming).toEqual([]);
   });
 
-  it("defaults to a 30-day window when withinDays is omitted or out of range (never throws)", async () => {
+  it("defaults to a 30-day window when withinDays is omitted (never throws)", async () => {
     // omitted → 30: includes both December birthdays, still excludes June.
     const def = await bdayTool().execute({}) as { withinDays: number; upcoming: { name: string }[] };
     expect(def.withinDays).toBe(30);
     expect(def.upcoming.map((u) => u.name)).toEqual(["Zoe Park", "Bob Acme"]);
-    // invalid (0) → clamps back to the 30-day default rather than an empty/NaN window.
-    const zero = await bdayTool().execute({ withinDays: 0 }) as { withinDays: number };
-    expect(zero.withinDays).toBe(30);
+  });
+
+  // A SUPPLIED-but-invalid withinDays used to silently clamp to the 30-day
+  // default — "this week" (withinDays:0 or a bad value) would then silently
+  // answer with a 30-day window and no disclosure. An omitted argument still
+  // keeps its default; a supplied-but-unusable one is now a named error instead.
+  it("errors on a supplied withinDays that isn't a whole number >= 1, without silently widening the window", async () => {
+    const zero = await bdayTool().execute({ withinDays: 0 }) as { count: number; upcoming: unknown[]; error: string };
+    expect(zero.error).toContain("withinDays");
+    expect(zero.count).toBe(0);
+    expect(zero.upcoming).toEqual([]);
+
+    const negative = await bdayTool().execute({ withinDays: -5 }) as { error: string };
+    expect(negative.error).toContain("withinDays");
+
+    const nonNumeric = await bdayTool().execute({ withinDays: "this week" }) as { error: string };
+    expect(nonNumeric.error).toContain("withinDays");
+  });
+
+  it("accepts a numeric string withinDays (the common tool-call shape for a small model)", async () => {
+    const out = await bdayTool().execute({ withinDays: "7" }) as { withinDays: number; count: number };
+    expect(out.withinDays).toBe(7);
+    expect(out.count).toBe(2);
   });
 });

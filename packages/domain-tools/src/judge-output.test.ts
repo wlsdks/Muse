@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseJudgeStringArray } from "./judge-output.js";
+import { parseJudgeStringArray, parseJudgeStringArrayDiagnostic } from "./judge-output.js";
 
 describe("parseJudgeStringArray", () => {
   it("extracts a bare JSON array of strings", () => {
@@ -33,5 +33,23 @@ describe("parseJudgeStringArray", () => {
 
   it("filters out empty-string elements", () => {
     expect(parseJudgeStringArray("[\"a\", \"\", \"b\"]")).toEqual(["a", "b"]);
+  });
+});
+
+describe("parseJudgeStringArrayDiagnostic", () => {
+  it("reports parsed:true with the values on a well-formed array", () => {
+    expect(parseJudgeStringArrayDiagnostic("[\"a\", \"b\"]")).toEqual({ parsed: true, values: ["a", "b"] });
+  });
+
+  it("reports parsed:true on a genuinely empty selection (the model looked and found nothing)", () => {
+    expect(parseJudgeStringArrayDiagnostic("[]")).toEqual({ parsed: true, values: [] });
+  });
+
+  it("reports parsed:false — distinct from a genuine empty match — when there is no array at all", () => {
+    expect(parseJudgeStringArrayDiagnostic("no brackets here")).toEqual({ parsed: false, values: [] });
+  });
+
+  it("reports parsed:false on malformed JSON inside the brackets", () => {
+    expect(parseJudgeStringArrayDiagnostic("[\"a\", \"b\"")).toEqual({ parsed: false, values: [] });
   });
 });

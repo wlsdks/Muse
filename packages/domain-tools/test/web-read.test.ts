@@ -119,6 +119,19 @@ describe("createWebReadMcpServer.read (contract-faithful fake fetch)", () => {
     expect(fetched).toBe(false);
   });
 
+  // The live tool response was "invalid URL: Invalid URL" — the doubled raw
+  // WHATWG DOMException text, naming neither the rejected value nor the
+  // expected form. This goes through fetchPublicHttpWithRedirects's OWN initial
+  // `new URL()` parse (not web-url-guard's), so it needs its own fix.
+  it("gives a self-correcting message for a scheme-less URL, not the raw DOMException text", async () => {
+    const server = createWebReadMcpServer({ lookup: publicLookup, fetch: async () => htmlResponse("unused") });
+    const out = await callRead(server, "example.com");
+    expect(String(out.error)).toContain("http(s)");
+    expect(String(out.error)).toContain("scheme");
+    expect(String(out.error)).toContain("example.com");
+    expect(String(out.error)).not.toBe("invalid URL: Invalid URL");
+  });
+
   it("rejects a non-readable content-type", async () => {
     const server = createWebReadMcpServer({
       lookup: publicLookup,
@@ -250,5 +263,23 @@ describe("createWebReadMcpServer.read — image URLs are described via local vis
     });
     const out = await callRead(server, "https://example.com/a");
     expect(String(out.text)).toContain("html body");
+  });
+
+  // The vision callback's error can carry doubly-escaped provider JSON, an
+  // internal endpoint path, and a resolved model id — none of it actionable for
+  // the model. It must never reach the tool's output.
+  it("never forwards the vision callback's raw provider error text", async () => {
+    const rawProviderError =
+      'vision description failed: Ollama /api/chat [qwen3:8b] failed with 400: {"error":"{\\"error\\":{\\"code\\":400}}"}';
+    const server = createWebReadMcpServer({
+      lookup: publicLookup,
+      describeImage: async () => ({ error: rawProviderError, ok: false }),
+      fetch: async () => new Response(new Uint8Array([0xff, 0xd8, 0xff]), { status: 200, headers: { "content-type": "image/jpeg" } })
+    });
+    const out = await callRead(server, "https://files.example.com/photo.jpg");
+    expect(String(out.error)).not.toContain("Ollama");
+    expect(String(out.error)).not.toContain("/api/chat");
+    expect(String(out.error)).not.toContain("qwen3:8b");
+    expect(String(out.error)).toMatch(/multimodal model|cannot read images/i);
   });
 });

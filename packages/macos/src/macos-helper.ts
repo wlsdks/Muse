@@ -86,12 +86,22 @@ function parseHelperOutput(stdout: string): MacHelperResult {
  * a permission denial all arrive as a typed `{ ok: false, code }` so a caller
  * can decide whether to fall back or to explain.
  */
+// There is no AppleScript equivalent for windows/focus/permissions — System
+// Events gives a process list, never geometry — so a message claiming a
+// fallback exists would assert a recovery that never happens. This is the
+// one accurate, actionable summary of what a caller loses and what to do
+// about it instead.
+const HELPER_UNAVAILABLE_MESSAGE =
+  "muse-mac-helper is not installed — window layout, focus, and app-permission state are unavailable. " +
+  "Use mac_app_read for the frontmost app or running-app list, or build the helper " +
+  "(swift build -c release in apps/mac-helper).";
+
 export async function readMacHelper(read: MacHelperRead, deps: MacHelperDeps = {}): Promise<MacHelperResult> {
   const binaryPath = deps.binaryPath;
   if (!binaryPath || binaryPath.trim().length === 0) {
     return {
       code: "helper_unavailable",
-      message: "muse-mac-helper is not installed — falling back to the AppleScript path",
+      message: HELPER_UNAVAILABLE_MESSAGE,
       ok: false
     };
   }
@@ -108,9 +118,7 @@ export async function readMacHelper(read: MacHelperRead, deps: MacHelperDeps = {
     const missing = /ENOENT|no such file/iu.test(detail);
     return {
       code: missing ? "helper_unavailable" : "helper_spawn_failed",
-      message: missing
-        ? `muse-mac-helper is not installed at ${binaryPath} — falling back to the AppleScript path`
-        : detail,
+      message: missing ? `${HELPER_UNAVAILABLE_MESSAGE} (looked for it at ${binaryPath})` : detail,
       ok: false
     };
   }

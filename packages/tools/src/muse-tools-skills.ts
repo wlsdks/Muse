@@ -23,14 +23,6 @@ import { errorMessage, redactSecretsInText, runCommandWithTimeout, type JsonObje
 import type { MuseTool } from "./index.js";
 import { readOptionalNumber, readOptionalString } from "./muse-tools-helpers.js";
 
-function readRequiredString(args: JsonObject, key: string): string {
-  const value = args[key];
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`missing required string field: ${key}`);
-  }
-  return value;
-}
-
 export interface SkillCatalogToolEntry {
   readonly name: string;
   readonly description: string;
@@ -41,8 +33,8 @@ export interface SkillCatalogToolEntry {
 }
 
 export interface SkillRegistryView {
-  list(): readonly SkillCatalogToolEntry[];
-  get(name: string): SkillCatalogToolEntry | undefined;
+  list(): readonly SkillCatalogToolEntry[] | Promise<readonly SkillCatalogToolEntry[]>;
+  get(name: string): SkillCatalogToolEntry | undefined | Promise<SkillCatalogToolEntry | undefined>;
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -66,8 +58,8 @@ export function createSkillListTool(registry: SkillRegistryView): MuseTool {
       name: "muse.skills.list",
       risk: "read"
     },
-    execute: (): JsonObject => ({
-      skills: registry.list().map((skill) => ({
+    execute: async (): Promise<JsonObject> => ({
+      skills: (await registry.list()).map((skill) => ({
         ...(skill.emoji ? { emoji: skill.emoji } : {}),
         description: skill.description,
         name: skill.name,
@@ -96,9 +88,12 @@ export function createSkillReadTool(registry: SkillRegistryView): MuseTool {
       name: "muse.skills.read",
       risk: "read"
     },
-    execute: (args): JsonObject => {
-      const name = readRequiredString(args, "name");
-      const skill = registry.get(name);
+    execute: async (args): Promise<JsonObject> => {
+      const name = args["name"];
+      if (typeof name !== "string" || name.trim().length === 0) {
+        return { error: "muse.skills.read requires 'name': a non-empty skill name as listed by muse.skills.list, e.g. 'release'" };
+      }
+      const skill = await registry.get(name);
       if (!skill) {
         return { error: `skill not found: ${name}` };
       }
@@ -157,7 +152,7 @@ export function createSkillRunTool(registry: SkillRegistryView, options: SkillRu
       }
       const name = nameRaw;
       const command = commandRaw;
-      const skill = registry.get(name);
+      const skill = await registry.get(name);
       if (!skill) {
         return { error: `skill not found: ${name}` };
       }

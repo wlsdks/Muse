@@ -44,6 +44,51 @@ import { errorMessage } from "@muse/shared";
 export type { NoteMirror };
 export { deriveMirrorNoteTitle };
 
+/** Default entries returned by `list` when `limit` is omitted. */
+const DEFAULT_LIST_LIMIT = 25;
+/** Default chars returned by `read` when `maxChars` is omitted — bounds a single read so a large note can't flood a small model's turn. */
+const DEFAULT_READ_MAX_CHARS = 8_000;
+/** Cap on matches counted per note in `search` (substring mode) so `limit` spreads across distinct notes instead of being consumed by the first match-heavy file. */
+const SEARCH_PER_FILE_MATCH_CAP = 2;
+
+function describeArgType(value: unknown): string {
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  return typeof value;
+}
+
+/**
+ * Distinguishes "key absent" from "key present but the wrong type" — the two
+ * read as the same failure to a small model unless the message says which one
+ * happened. `formDescription`/`example` name the expected shape so the model
+ * can repair its own call in one step.
+ */
+function requireStringArg(
+  args: JsonObject,
+  key: string,
+  formDescription: string,
+  example: string
+): { readonly value: string } | { readonly error: string } {
+  const raw = args[key];
+  if (raw === undefined) {
+    return { error: `${key} is required` };
+  }
+  if (typeof raw !== "string") {
+    return { error: `${key} must be ${formDescription}, e.g. '${example}' (got ${describeArgType(raw)})` };
+  }
+  return { value: raw };
+}
+
+/** Maps a Node ENOENT/EACCES-class error to a short stable code — never the raw errno message, which carries the absolute host path. */
+function ioErrorCode(error: unknown): string | undefined {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === "string" ? code : undefined;
+}
+
 export interface NotesMcpServerOptions {
   readonly notesDir: string;
   readonly defaultSearchLimit?: number;
@@ -123,9 +168,10 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
     tools: [
       {
         description:
-          "List entries inside the notes directory (or `subdir` relative to it). " +
-          "Returns up to `maxListEntries` items with `name`, `isDirectory`, `sizeBytes` (files), and `modifiedAtIso`. " +
-          "Pass `sort: 'recent'` to order newest-modified first — answers 'what did I note recently / my latest notes'. " +
+          `List entries inside the notes directory (or \`subdir\` relative to it). Returns up to \`limit\` items ` +
+          `(default ${DEFAULT_LIST_LIMIT.toString()}, max ${maxListEntries.toString()}) with \`name\` and \`isDirectory\`; \`total\` and ` +
+          "`truncated` say how many more exist. Pass `sort: 'recent'` to order newest-modified first — answers " +
+          "'what did I note recently / my latest notes' — which also adds `sizeBytes` (files) and `modifiedAtIso` per entry. " +
           "Hidden entries (dotfiles) are skipped. Non-recursive — pass deeper subdirs explicitly.",
         execute: async (args): Promise<JsonObject> => {
           const subdirInput = readString(args, "subdir");
@@ -134,11 +180,41 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           if (typeof safe === "string") {
             return { error: safe };
           }
+
+          const sortRaw = args["sort"];
+          let wantsRecent = false;
+          let sortNote: string | undefined;
+          if (sortRaw !== undefined) {
+            if (sortRaw === "recent") {
+              wantsRecent = true;
+            } else if (typeof sortRaw === "string") {
+              sortNote = `'${sortRaw}' is not a valid sort — the only supported value is 'recent'. Listed in directory order instead.`;
+            } else {
+              sortNote = `sort must be a string ('recent'), got ${describeArgType(sortRaw)}. Listed in directory order instead.`;
+            }
+          }
+
+          const limitArg = args["limit"];
+          let requestedLimit = DEFAULT_LIST_LIMIT;
+          let limitNote: string | undefined;
+          if (limitArg !== undefined) {
+            if (typeof limitArg === "number" && Number.isFinite(limitArg) && limitArg >= 1) {
+              requestedLimit = Math.trunc(limitArg);
+            } else {
+              limitNote = `limit must be a positive number (max ${maxListEntries.toString()}) — using the default ${DEFAULT_LIST_LIMIT.toString()} instead.`;
+            }
+          }
+          const appliedLimit = Math.min(requestedLimit, maxListEntries);
+
           let dirents: Array<{ name: string; isDirectory(): boolean }>;
           try {
             dirents = await nodeReaddir(safe.absolute, { withFileTypes: true });
           } catch (error) {
-            return { error: `cannot list directory: ${errorMessage(error)}` };
+            if (ioErrorCode(error) === "ENOENT") {
+              return { error: `no such note directory '${safe.relative}' — call muse.notes.list with no subdir to see what exists` };
+            }
+            const code = ioErrorCode(error);
+            return { error: `cannot list directory '${safe.relative}'${code ? ` (${code})` : ""}` };
           }
           const collected: Array<{ row: JsonObject; mtimeMs: number }> = [];
           for (const entry of dirents) {
@@ -146,19 +222,21 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               continue;
             }
             const isDirectory = entry.isDirectory();
-            const childAbs = nodePathResolve(safe.absolute, entry.name);
             let sizeBytes: number | undefined;
             let modifiedAtIso: string | undefined;
             let mtimeMs = 0;
-            try {
-              const stat = await nodeStat(childAbs);
-              mtimeMs = stat.mtimeMs;
-              modifiedAtIso = new Date(stat.mtimeMs).toISOString();
-              if (!isDirectory) {
-                sizeBytes = stat.size;
+            if (wantsRecent) {
+              const childAbs = nodePathResolve(safe.absolute, entry.name);
+              try {
+                const stat = await nodeStat(childAbs);
+                mtimeMs = stat.mtimeMs;
+                modifiedAtIso = new Date(stat.mtimeMs).toISOString();
+                if (!isDirectory) {
+                  sizeBytes = stat.size;
+                }
+              } catch {
+                modifiedAtIso = undefined;
               }
-            } catch {
-              modifiedAtIso = undefined;
             }
             collected.push({
               mtimeMs,
@@ -170,19 +248,29 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               }
             });
           }
-          if (readString(args, "sort") === "recent") {
+          if (wantsRecent) {
             collected.sort((a, b) => b.mtimeMs - a.mtimeMs);
           }
-          const truncated = collected.length > maxListEntries;
+          const total = collected.length;
+          const truncated = total > appliedLimit;
+          const note = [sortNote, limitNote].filter((entry): entry is string => Boolean(entry)).join(" ");
           return {
             dir: safe.relative,
-            entries: collected.slice(0, maxListEntries).map((item) => item.row) as JsonValue,
-            truncated
+            entries: collected.slice(0, appliedLimit).map((item) => item.row) as JsonValue,
+            sort: wantsRecent ? "recent" : "directory",
+            total,
+            truncated,
+            ...(note ? { note } : {})
           } satisfies JsonObject;
         },
         inputSchema: {
           additionalProperties: false,
           properties: {
+            limit: {
+              description: `Max entries to return. Defaults to ${DEFAULT_LIST_LIMIT.toString()}; capped at ${maxListEntries.toString()}.`,
+              minimum: 1,
+              type: "number"
+            },
             sort: { description: "Order: omit for directory order, or 'recent' for newest-modified first (answers 'my recent notes').", enum: ["recent"], type: "string" },
             subdir: { description: "Subdirectory relative to the notes root. Defaults to the root.", type: "string" }
           },
@@ -194,39 +282,93 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
         risk: "read"
       },
       {
-        description: "Read a markdown / text note as UTF-8. Bounded at `maxFileBytes`; returns an error for binary or oversized files.",
+        description:
+          `Read a markdown / text note as UTF-8. Returns at most \`maxChars\` characters (default ${DEFAULT_READ_MAX_CHARS.toString()}) ` +
+          "starting at `offset` (default 0, 0-based); a truncated result carries `nextOffset` — pass it back as `offset` " +
+          "to read the next slice of a long note. Bounded at `maxFileBytes` overall; returns an error for binary files.",
         execute: async (args): Promise<JsonObject> => {
-          const path = readString(args, "path");
-          if (path === undefined) {
-            return { error: "path is required" };
+          const pathResult = requireStringArg(args, "path", "a string relative to the notes directory", "daily/2026-07-21.md");
+          if ("error" in pathResult) {
+            return { error: pathResult.error };
           }
+          const path = pathResult.value;
           const safe = resolveSafe(path);
           if (typeof safe === "string") {
             return { error: safe };
           }
+
+          const offsetArg = args["offset"];
+          let offset = 0;
+          if (offsetArg !== undefined) {
+            if (typeof offsetArg === "number" && Number.isFinite(offsetArg) && offsetArg >= 0) {
+              offset = Math.trunc(offsetArg);
+            } else {
+              return { error: `offset must be a non-negative number, e.g. 0 (got ${describeArgType(offsetArg)})` };
+            }
+          }
+          const maxCharsArg = args["maxChars"];
+          let maxChars = DEFAULT_READ_MAX_CHARS;
+          if (maxCharsArg !== undefined) {
+            if (typeof maxCharsArg === "number" && Number.isFinite(maxCharsArg) && maxCharsArg >= 1) {
+              maxChars = Math.trunc(maxCharsArg);
+            } else {
+              return { error: `maxChars must be a positive number, e.g. ${DEFAULT_READ_MAX_CHARS.toString()} (got ${describeArgType(maxCharsArg)})` };
+            }
+          }
+          // A caller that explicitly windows the read (offset/maxChars) is asking
+          // for a bounded slice regardless of the file's total size, so it may
+          // still page through a note over maxFileBytes one piece at a time.
+          const explicitWindow = offsetArg !== undefined || maxCharsArg !== undefined;
+
           let stat: Awaited<ReturnType<typeof nodeStat>>;
           try {
             stat = await nodeStat(safe.absolute);
           } catch (error) {
-            return { error: `cannot read note: ${errorMessage(error)}` };
+            if (ioErrorCode(error) === "ENOENT") {
+              return { error: `no such note '${safe.relative}' — use muse.notes.search or muse.notes.list to find the right path` };
+            }
+            const code = ioErrorCode(error);
+            return { error: `cannot read note '${safe.relative}'${code ? ` (${code})` : ""}` };
           }
           if (stat.isDirectory()) {
             return { error: "path is a directory, not a file" };
           }
-          if (stat.size > maxFileBytes) {
-            return { error: `file is ${stat.size} bytes, exceeds maxFileBytes ${maxFileBytes}` };
+          if (stat.size > maxFileBytes && !explicitWindow) {
+            return {
+              error: `file is ${stat.size.toString()} bytes, exceeds maxFileBytes ${maxFileBytes.toString()} — read it in pieces, ` +
+                `e.g. {"path":"${safe.relative}","offset":0,"maxChars":${DEFAULT_READ_MAX_CHARS.toString()}}`
+            };
           }
-          let content: string;
+          let fullContent: string;
           try {
-            content = await nodeReadFile(safe.absolute, "utf8");
+            fullContent = await nodeReadFile(safe.absolute, "utf8");
           } catch (error) {
-            return { error: `cannot read note: ${errorMessage(error)}` };
+            const code = ioErrorCode(error);
+            return { error: `cannot read note '${safe.relative}'${code ? ` (${code})` : ""}` };
           }
-          return { content, path: safe.relative, sizeBytes: stat.size } satisfies JsonObject;
+          const totalChars = fullContent.length;
+          const start = Math.min(offset, totalChars);
+          const window = sliceWithoutLoneSurrogate(fullContent.slice(start), maxChars);
+          const truncated = start + window.length < totalChars;
+          return {
+            content: window,
+            offset: start,
+            path: safe.relative,
+            returnedChars: window.length,
+            sizeBytes: stat.size,
+            truncated,
+            ...(truncated ? { nextOffset: start + window.length } : {})
+          } satisfies JsonObject;
         },
         inputSchema: {
           additionalProperties: false,
           properties: {
+            maxChars: {
+              description: `Max characters to return. Defaults to ${DEFAULT_READ_MAX_CHARS.toString()}; a truncated result carries \`nextOffset\`.`,
+              minimum: 1,
+              type: "number"
+            },
+            offset: { description: "0-based character offset to resume from (page through a long note via the previous result's `nextOffset`). Defaults to 0.", minimum: 0, type: "number" },
             path: { description: "Note path relative to the notes directory (e.g. `daily/2026-05-09.md`).", type: "string" }
           },
           required: ["path"],
@@ -245,7 +387,11 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           "useful for paraphrase queries (\"the Notion thing\" → matches a note tagged Notion); follow up with " +
           "`muse.notes.read` on each returned path. llm-judge mode requires modelProvider + model wired into createNotesMcpServer.",
         execute: async (args): Promise<JsonObject> => {
-          const query = readString(args, "query")?.trim();
+          const queryRaw = args["query"];
+          if (queryRaw !== undefined && typeof queryRaw !== "string") {
+            return { error: `query must be a string, e.g. 'budget' (got ${describeArgType(queryRaw)})` };
+          }
+          const query = (typeof queryRaw === "string" ? queryRaw : "").trim();
           if (!query) {
             return { error: "query is required" };
           }
@@ -273,7 +419,12 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
                 query,
                 root
               });
+              if (!judged.judgeParsed) {
+                return { error: `llm-judge could not select over ${judged.candidatesConsidered.toString()} candidate notes — re-run with mode: 'substring'` };
+              }
               return {
+                candidatesConsidered: judged.candidatesConsidered,
+                judgeParsed: true,
                 matches: judged.paths.map((p) => ({ path: p })) as JsonValue,
                 mode: "llm-judge",
                 query,
@@ -290,10 +441,9 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           const files: string[] = [];
           await walkMarkdown(root, (rel) => { files.push(rel); }, new Set());
           const matches: JsonObject[] = [];
+          let totalMatches = 0;
+          const filesMatched = new Set<string>();
           for (const rel of files) {
-            if (matches.length >= limit) {
-              break;
-            }
             const abs = nodePathResolve(root, rel);
             let stat: Awaited<ReturnType<typeof nodeStat>>;
             try {
@@ -311,21 +461,33 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
               continue;
             }
             const lines = body.split(/\r?\n/u);
+            let matchesInFile = 0;
             for (let index = 0; index < lines.length; index += 1) {
               const line = lines[index] ?? "";
               if (line.toLowerCase().includes(needle)) {
-                matches.push({
-                  line: index + 1,
-                  path: rel,
-                  snippet: line.length > 240 ? `${sliceWithoutLoneSurrogate(line, 240)}...` : line
-                });
-                if (matches.length >= limit) {
-                  break;
+                totalMatches += 1;
+                filesMatched.add(rel);
+                // Cap per-file so `limit` spreads across distinct notes instead
+                // of being exhausted by the first alphabetically-early match.
+                if (matches.length < limit && matchesInFile < SEARCH_PER_FILE_MATCH_CAP) {
+                  matches.push({
+                    line: index + 1,
+                    path: rel,
+                    snippet: line.length > 240 ? `${sliceWithoutLoneSurrogate(line, 240)}...` : line
+                  });
+                  matchesInFile += 1;
                 }
               }
             }
           }
-          return { matches: matches as JsonValue, mode: "substring" } satisfies JsonObject;
+          return {
+            filesMatched: filesMatched.size,
+            matches: matches as JsonValue,
+            mode: "substring",
+            query,
+            totalMatches,
+            truncated: totalMatches > matches.length
+          } satisfies JsonObject;
         },
         inputSchema: {
           additionalProperties: false,

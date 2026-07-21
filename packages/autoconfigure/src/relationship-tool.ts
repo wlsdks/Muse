@@ -93,6 +93,8 @@ export function createOverdueContactsTool(deps: OverdueContactsToolDeps): MuseTo
       const overdue = overdueContacts(interactions, { nowMs, ...(maxResults ? { maxResults } : {}) });
       return {
         count: overdue.length,
+        // Mirrors overdueContacts' internal DEFAULT_MAX_RESULTS (agent-core/relationship-decay.ts) — kept in sync manually since it isn't exported.
+        limit: maxResults ?? 10,
         overdue: overdue.map((o) => ({
           cadenceDays: Math.round(o.cadenceDays),
           gapDays: Math.round(o.gapDays),

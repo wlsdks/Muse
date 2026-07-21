@@ -95,6 +95,8 @@ export function composeTodayBrief(data: TodayBriefInput, now: Date, lookaheadHou
   return { overdue: overdue.map((x) => x.text), today: today.map((x) => x.text) };
 }
 
+const MAX_BUCKET_ITEMS = 20;
+
 export interface TodayBriefToolDeps {
   readonly todayInput: () => Promise<TodayBriefInput> | TodayBriefInput;
   /** Injected clock so the window is deterministic in tests. */
@@ -124,7 +126,13 @@ export function createTodayBriefTool(deps: TodayBriefToolDeps): MuseTool {
       const lookaheadHours = typeof rawHours === "number" && Number.isFinite(rawHours) && rawHours >= 1 ? Math.min(24, Math.trunc(rawHours)) : undefined;
       const now = deps.now ? deps.now() : new Date();
       const brief = composeTodayBrief(await deps.todayInput(), now, lookaheadHours);
-      return { overdue: [...brief.overdue], today: [...brief.today] };
+      return {
+        lookaheadHours: lookaheadHours ?? "rest-of-today",
+        overdue: brief.overdue.slice(0, MAX_BUCKET_ITEMS),
+        overdueTotal: brief.overdue.length,
+        today: brief.today.slice(0, MAX_BUCKET_ITEMS),
+        todayTotal: brief.today.length
+      };
     }
   };
 }

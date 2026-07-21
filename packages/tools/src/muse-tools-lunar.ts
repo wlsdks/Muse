@@ -36,6 +36,25 @@ export function solarToLunar(date: Date): LunarDate {
 }
 
 /**
+ * The solar calendar date in the SAME zone (Asia/Seoul) `solarToLunar` used to
+ * derive its answer. `date.toISOString()` slices the UTC date instead — for a
+ * date-only input parsed in the process's local zone (or any input whose
+ * local-Seoul day differs from its UTC day, e.g. Seoul's first ~9 hours of a
+ * day), that silently echoes the WRONG day next to a lunar answer computed
+ * for the right one.
+ */
+function seoulIsoDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric"
+  }).formatToParts(date);
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/**
  * Inverse of `solarToLunar`: find the solar date for a Korean lunar date by
  * scanning forward from solar Jan 1 and matching the ICU dangi value. Returns the
  * solar ISO date (YYYY-MM-DD) or `undefined` for a lunar date that doesn't occur
@@ -81,6 +100,18 @@ export function createLunarToSolarTool(now: () => Date): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
+      if (args["month"] !== undefined && typeof args["month"] !== "number") {
+        return { error: "month must be a JSON number, not a string — e.g. month: 8" };
+      }
+      if (args["day"] !== undefined && typeof args["day"] !== "number") {
+        return { error: "day must be a JSON number, not a string — e.g. day: 5" };
+      }
+      if (args["year"] !== undefined && (typeof args["year"] !== "number" || !Number.isFinite(args["year"]))) {
+        return { error: "year must be a JSON number, e.g. 2030 (omit it for the current year)" };
+      }
+      if (args["leap"] !== undefined && typeof args["leap"] !== "boolean") {
+        return { error: 'leap must be a JSON boolean true/false (not the string "true"), e.g. leap: true for a 윤달 date' };
+      }
       const month = typeof args["month"] === "number" ? Math.trunc(args["month"]) : Number.NaN;
       const day = typeof args["day"] === "number" ? Math.trunc(args["day"]) : Number.NaN;
       const year = typeof args["year"] === "number" ? Math.trunc(args["year"]) : now().getFullYear();
@@ -118,6 +149,9 @@ export function createLunarDateTool(now: () => Date): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
+      if (args["date"] !== undefined && typeof args["date"] !== "string") {
+        return { error: "date must be an ISO-8601 string, e.g. '2026-09-25' (omit it for today)" };
+      }
       const raw = typeof args["date"] === "string" ? args["date"].trim() : "";
       let date: Date;
       if (raw.length > 0) {
@@ -134,7 +168,7 @@ export function createLunarDateTool(now: () => Date): MuseTool {
         lunarDay: lunar.day,
         lunarMonth: lunar.month,
         lunarYear: lunar.year,
-        solar: date.toISOString().slice(0, 10)
+        solar: seoulIsoDate(date)
       };
     }
   };

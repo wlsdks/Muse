@@ -1753,9 +1753,11 @@ describe("createMuseTools", () => {
       error: "mode must be 'encode' or 'decode'"
     });
 
+    // Message now names the expected alphabet + a concrete valid example
+    // (repair-instruction contract) instead of a bare "not valid" verdict.
     expect(
       await tool.execute({ mode: "decode", text: "!!!not-base64!!!" }, { runId: "r" })
-    ).toEqual({ error: "input is not valid base64" });
+    ).toEqual({ error: "`text` is not valid base64 (expected A-Z a-z 0-9 + / with optional '=' padding, e.g. 'aGVsbG8=')" });
   });
 
   it("cron_for_datetime returns once/daily/weekly/monthly cron expressions for an ISO datetime", async () => {
@@ -1993,6 +1995,34 @@ describe("createMuseTools", () => {
 
     const empty = await tool.execute({ pattern: "", text: "x" }, { runId: "r" });
     expect(empty).toEqual({ error: "pattern is required" });
+
+    // A missing/non-string `text` is a different sentence than "found
+    // nothing" — an empty match list for a dropped required argument reads
+    // as a real negative result.
+    expect(await tool.execute({ pattern: "a" }, { runId: "r" })).toEqual({
+      error: "text is required and must be a string — pass the text to scan, e.g. text: 'mail me at a@b.com'"
+    });
+    expect(await tool.execute({ pattern: "a", text: 123 }, { runId: "r" })).toEqual({
+      error: "text is required and must be a string — pass the text to scan, e.g. text: 'mail me at a@b.com'"
+    });
+
+    // A pattern given in JS-literal form ("/…/flags") compiles fine as
+    // regex SOURCE (the slashes become literal characters) and silently
+    // matches nothing — reject the shape instead of returning a false negative.
+    const literalForm = await tool.execute(
+      { pattern: "/[a-z]+@[a-z.]+/g", text: "a@b.com" },
+      { runId: "r" }
+    );
+    expect(literalForm).toEqual({
+      error: "pattern must be the regex SOURCE without / delimiters — use '[a-z]+@[a-z.]+' and put flags in the 'flags' argument"
+    });
+    // The un-delimited source still matches, proving the rejection is about
+    // the literal-form shape, not the underlying pattern.
+    const sourceForm = await tool.execute(
+      { pattern: "[a-z]+@[a-z.]+", text: "a@b.com" },
+      { runId: "r" }
+    );
+    expect(sourceForm).toEqual({ matches: ["a@b.com"] });
   });
 
   it("url_parts decomposes an absolute URL into protocol/host/port/path/query/hash/origin", async () => {
@@ -2114,8 +2144,8 @@ describe("createMuseTools", () => {
   });
 
   it("time_add returns a clean error when a finite-but-huge offset overflows the Date range, instead of throwing RangeError from toISOString", async () => {
-    // `days: 1e20` is finite (so readOptionalNumber's NaN/Infinity
-    // clamp passes it through) but `base.getTime() + 1e20 * 86_400_000`
+    // `days: 1e20` is finite (so readOptionalNumericField passes it
+    // through as a usable value) but `base.getTime() + 1e20 * 86_400_000`
     // pushes the result past ±8.64e15 ms, the valid Date range.
     // `new Date(out-of-range)` yields an Invalid Date; pre-fix
     // `result.toISOString()` then threw RangeError out of the tool —
@@ -2133,23 +2163,33 @@ describe("createMuseTools", () => {
       .toEqual({ iso: "2026-05-08T00:00:00.000Z", offsetMs: 86_400_000 });
   });
 
-  it("time_add returns a clean error for an unparseable base and never throws on non-numeric offsets", async () => {
+  it("time_add returns a clean error for an unparseable base, and never silently drops an unparseable offset", async () => {
+    // Updated (was: "never throws on non-numeric offsets") — the old
+    // assertion PINNED the exact bug: a quoted/garbage offset ("2", NaN,
+    // Infinity, "junk") coerced to 0 and the tool returned the UNCHANGED
+    // base in the exact success shape of a valid call, with nothing
+    // flagging that the supplied offset was ignored. A present-but-unusable
+    // offset must now error naming the field, never silently vanish.
     const tool = getTool("time_add");
     // Unparseable base → structured {error}, not a thrown exception.
     expect(await tool.execute({ base: "not-a-timestamp", hours: 2 }, { runId: "run-1" }))
       .toMatchObject({ error: expect.stringContaining("ISO-8601") });
-    // Reasoning-off models routinely stringify numeric tool args
-    // ("2") or emit NaN/Infinity; these must coerce to 0, NOT make
-    // `new Date(base + NaN)` → Invalid Date → toISOString() throw.
     const base = "2026-05-07T00:00:00.000Z";
+    // A quoted number ("2") IS a usable offset — a thinking-off model
+    // routinely stringifies numeric args — so it applies, not drops to 0.
+    expect(await tool.execute({ base, hours: "2" }, { runId: "run-1" }))
+      .toEqual({ iso: "2026-05-07T02:00:00.000Z", offsetMs: 7_200_000 });
+    // NaN / Infinity / non-numeric text are all present-but-unusable —
+    // each now errors naming the offending field instead of silently
+    // coercing to 0.
     expect(await tool.execute({ base, hours: "2", minutes: Number.NaN }, { runId: "run-1" }))
-      .toEqual({ iso: base, offsetMs: 0 });
+      .toMatchObject({ error: expect.stringContaining("minutes") });
     expect(await tool.execute({ base, days: Number.POSITIVE_INFINITY }, { runId: "run-1" }))
-      .toEqual({ iso: base, offsetMs: 0 });
-    // A valid numeric field still applies even when a sibling field
-    // is garbage (partial coercion, not all-or-nothing).
+      .toMatchObject({ error: expect.stringContaining("days") });
+    // Even with a VALID sibling field present, an invalid field still
+    // errors — never a partial "apply what parsed, drop the rest" result.
     expect(await tool.execute({ base, days: "junk", hours: 1 }, { runId: "run-1" }))
-      .toEqual({ iso: "2026-05-07T01:00:00.000Z", offsetMs: 3_600_000 });
+      .toMatchObject({ error: expect.stringContaining("days") });
   });
 
   it("text_stats counts words, characters, and lines (treating whitespace-only as zero)", async () => {
@@ -2279,7 +2319,7 @@ describe("createMuseTools", () => {
     expect(atLimit).toMatchObject({ expression: "9".repeat(256) });
     expect(typeof (atLimit as { result: unknown }).result).toBe("number");
 
-    // Empty / whitespace-only / non-string all collapse to the same
+    // Empty / whitespace-only / absent all collapse to the same
     // actionable required-error (the `typeof === "string"` guard:
     // a non-string must not be String()-coerced into "42" → 42).
     for (const empty of ["", "   ", "\t\n"]) {
@@ -2287,11 +2327,14 @@ describe("createMuseTools", () => {
         error: "expression is required"
       });
     }
-    expect(await tool.execute({ expression: 42 }, { runId: "run-1" })).toEqual({
-      error: "expression is required"
-    });
     expect(await tool.execute({}, { runId: "run-1" })).toEqual({
       error: "expression is required"
+    });
+    // A present-but-wrong-type `expression` is a DIFFERENT sentence than
+    // "you didn't send one at all" — the caller already sent something and
+    // "expression is required" would tell it to resend what it just sent.
+    expect(await tool.execute({ expression: 42 }, { runId: "run-1" })).toEqual({
+      error: "`expression` must be a string, e.g. {\"expression\": \"42\"}"
     });
   });
 
@@ -2324,6 +2367,39 @@ describe("createMuseTools", () => {
       found: false,
       path: "missing",
       value: null
+    });
+  });
+
+  it("json_query errors on a missing/string document instead of a false 'not found'", async () => {
+    const tool = getTool("json_query");
+    // A document the caller never sent must not read as "the key isn't
+    // there" — that is a fabricated fact about a document that was never
+    // examined.
+    expect(await tool.execute({ path: "a" }, { runId: "run-1" })).toEqual({
+      error: "document is required — pass the JSON object itself, e.g. document: {\"users\":[{\"name\":\"Ada\"}]}"
+    });
+    expect(await tool.execute({ document: "{\"a\":1}", path: "a" }, { runId: "run-1" })).toEqual({
+      error: "document must be a JSON object/array, not a JSON string — pass the parsed object"
+    });
+  });
+
+  it("json_query rejects bracket/JSONPath syntax instead of silently reporting 'not found'", async () => {
+    const tool = getTool("json_query");
+    const document = { users: [{ name: "Ada" }] };
+    // "users[0].name" is unsupported SYNTAX, not a real miss — reporting
+    // found:false for it is a fabricated negative the model would repeat.
+    expect(await tool.execute({ document, path: "users[0].name" }, { runId: "run-1" })).toEqual({
+      error: "path must be dotted with bare numeric segments for array indices — use 'users.0.name', not 'users[0].name'"
+    });
+    expect(await tool.execute({ document: { a: 1 }, path: "$.a" }, { runId: "run-1" })).toEqual({
+      error: "path must be dotted with bare numeric segments for array indices — use 'users.0.name', not 'users[0].name'"
+    });
+    // The dotted equivalent still resolves — proving the rejection is about
+    // syntax, not the underlying data.
+    expect(await tool.execute({ document, path: "users.0.name" }, { runId: "run-1" })).toEqual({
+      found: true,
+      path: "users.0.name",
+      value: "Ada"
     });
   });
 });

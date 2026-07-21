@@ -15,6 +15,28 @@ export interface BrowserReadToolDeps {
   readonly controller: BrowserController;
 }
 
+/**
+ * `offset` is a paging cursor the model copies verbatim from a prior read's
+ * `nextOffset` — a numeric STRING must be honoured (a small model often
+ * stringifies it), never silently treated as absent. Omitted ⇒ the
+ * documented default of 0; present-but-not-a-number ⇒ an error, never a
+ * silent 0 that makes a re-paged call look identical to the first page.
+ */
+function parseOffsetArg(raw: unknown): { readonly ok: true; readonly value: number } | { readonly ok: false; readonly error: string } {
+  if (raw === undefined) return { ok: true, value: 0 };
+  const asNumber = typeof raw === "number"
+    ? raw
+    : typeof raw === "string" && raw.trim().length > 0
+      ? Number(raw.trim())
+      : Number.NaN;
+  if (!Number.isFinite(asNumber)) {
+    return { error: "offset must be a number, e.g. 50 — use the nextOffset from the previous browser_read", ok: false };
+  }
+  return { ok: true, value: Math.trunc(asNumber) };
+}
+
+const NO_PAGE_OPEN_ERROR = "no page is open — call browser_open with a URL first";
+
 export function createBrowserOpenTool(deps: BrowserReadToolDeps): MuseTool {
   return {
     definition: {
@@ -83,28 +105,37 @@ export function createBrowserReadTool(deps: BrowserReadToolDeps): MuseTool {
       risk: "read"
     },
     execute: async (args): Promise<JsonObject> => {
+      const offsetArg = parseOffsetArg(args["offset"]);
+      if (!offsetArg.ok) {
+        return { error: offsetArg.error };
+      }
+      if (!(await deps.controller.hasOpenPage())) {
+        return { error: NO_PAGE_OPEN_ERROR };
+      }
       try {
         const snapshot = await deps.controller.snapshot();
         const find = typeof args["find"] === "string" ? args["find"].trim() : "";
+        const offset = offsetArg.value;
         if (find.length === 0) {
-          const offset = typeof args["offset"] === "number" && Number.isFinite(args["offset"]) ? Math.trunc(args["offset"]) : 0;
-          return snapshotToJson(snapshot, offset);
+          const start = Math.min(Math.max(0, offset), snapshot.elements.length);
+          // Always echoed (including 0) so the model can verify the page
+          // actually moved instead of silently re-reading the same slice.
+          return { ...snapshotToJson(snapshot, offset), offset: start };
         }
         const matched = filterElements(snapshot.elements, find);
         // Page the FILTERED list the same way snapshotToJson pages the full one:
         // honour `offset` and emit `nextOffset`. The description promises
         // `hasMore`/`nextOffset` paging; without this the find branch reported
         // hasMore but ignored offset, so a >50-match list looped on the first 50.
-        const offset = typeof args["offset"] === "number" && Number.isFinite(args["offset"]) ? Math.trunc(args["offset"]) : 0;
         const start = Math.min(Math.max(0, offset), matched.length);
         const shown = matched.slice(start, start + BROWSER_MAX_ELEMENTS);
         const end = start + shown.length;
         return {
           elements: elementsJson(shown),
           matched: matched.length,
+          offset: start,
           title: snapshot.title,
           url: snapshot.url,
-          ...(start > 0 ? { offset: start } : {}),
           ...(end < matched.length ? { hasMore: true, nextOffset: end } : {})
         };
       } catch (cause) {
@@ -170,6 +201,9 @@ export function createBrowserLookTool(deps: BrowserLookToolDeps): MuseTool {
       risk: "read"
     },
     execute: async (args): Promise<JsonObject> => {
+      if (!(await deps.controller.hasOpenPage())) {
+        return { described: false, error: NO_PAGE_OPEN_ERROR };
+      }
       let imageBase64: string;
       try {
         imageBase64 = await deps.controller.screenshotBase64();

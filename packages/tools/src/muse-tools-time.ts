@@ -3,7 +3,7 @@ import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "./index.js";
 import {
   readOptionalDate,
-  readOptionalNumber,
+  readOptionalNumericField,
   readOptionalString,
   readRequiredDate
 } from "./muse-tools-helpers.js";
@@ -135,12 +135,18 @@ export function createTimeAddTool(): MuseTool {
       if (!base) {
         return { error: "base must be a valid ISO-8601 string" };
       }
-      const offsetMs =
-        readOptionalNumber(args, "milliseconds") +
-        readOptionalNumber(args, "seconds") * 1000 +
-        readOptionalNumber(args, "minutes") * 60_000 +
-        readOptionalNumber(args, "hours") * 3_600_000 +
-        readOptionalNumber(args, "days") * 86_400_000;
+      let offsetMs = 0;
+      for (const [key, multiplierMs] of OFFSET_FIELD_MULTIPLIERS) {
+        const field = readOptionalNumericField(args, key);
+        if (field.kind === "invalid") {
+          return {
+            error: `time_add: '${key}' must be a number, not ${JSON.stringify(args[key])} — e.g. {"base":"2026-07-21T00:00:00Z","${key}":3}`
+          };
+        }
+        if (field.kind === "number") {
+          offsetMs += field.value * multiplierMs;
+        }
+      }
       const result = new Date(base.getTime() + offsetMs);
       if (Number.isNaN(result.getTime())) {
         return { error: "computed date is outside the representable range" };
@@ -225,7 +231,11 @@ export function createNextWeekdayTool(now: () => Date): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
-      const weekdayInput = typeof args["weekday"] === "string" ? (args["weekday"] as string).trim().toLowerCase() : "";
+      const weekdayValue = args["weekday"];
+      if (weekdayValue !== undefined && typeof weekdayValue !== "string") {
+        return { error: "next_weekday_date: 'weekday' must be a string, e.g. 'monday' (not a number or boolean)" };
+      }
+      const weekdayInput = typeof weekdayValue === "string" ? weekdayValue.trim().toLowerCase() : "";
       if (weekdayInput.length === 0) {
         return { error: "weekday is required" };
       }
@@ -282,7 +292,15 @@ export function createCronForDatetimeTool(): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
-      const isoInput = typeof args["iso"] === "string" ? (args["iso"] as string).trim() : "";
+      const isoValue = args["iso"];
+      if (isoValue !== undefined && typeof isoValue !== "string") {
+        return {
+          error: typeof isoValue === "number"
+            ? `cron_for_datetime: 'iso' must be an ISO-8601 string, not a number — e.g. '2026-07-21T09:00:00Z' (use epoch_convert on ${isoValue.toString()})`
+            : "cron_for_datetime: 'iso' must be an ISO-8601 string, e.g. '2026-07-21T09:00:00Z'"
+        };
+      }
+      const isoInput = typeof isoValue === "string" ? isoValue.trim() : "";
       const modeInput = typeof args["mode"] === "string" ? (args["mode"] as string).trim().toLowerCase() : "once";
       const mode = modeInput.length === 0 ? "once" : modeInput;
 
@@ -339,6 +357,14 @@ export function createCronForDatetimeTool(): MuseTool {
     }
   };
 }
+
+const OFFSET_FIELD_MULTIPLIERS: ReadonlyArray<readonly [string, number]> = [
+  ["milliseconds", 1],
+  ["seconds", 1000],
+  ["minutes", 60_000],
+  ["hours", 3_600_000],
+  ["days", 86_400_000]
+];
 
 const CRON_DATETIME_MODES = new Set(["once", "daily", "weekly", "monthly"]);
 

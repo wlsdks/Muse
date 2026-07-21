@@ -26,6 +26,36 @@ export function readOptionalNumber(args: JsonObject, key: string): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+export type OptionalNumericField =
+  | { readonly kind: "absent" }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "number"; readonly value: number };
+
+/**
+ * Distinguishes "field absent" (silently keep the default) from "field
+ * present but not a usable number" (needs a caller-visible error) — the
+ * numeric analogue of `readOptionalDate`. `readOptionalNumber` collapses
+ * both to 0, which is right for an additive default but wrong when the
+ * caller actually supplied a value: summing an unparseable offset as 0
+ * returns the unchanged base in the exact success shape of a valid call.
+ * A numeric string ("3") is accepted — the local model routinely quotes
+ * numbers — but non-numeric text, `null`-adjacent, or non-finite values
+ * are `invalid`, never silently coerced.
+ */
+export function readOptionalNumericField(args: JsonObject, key: string): OptionalNumericField {
+  const value = args[key];
+  if (value === undefined || value === null) {
+    return { kind: "absent" };
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? { kind: "number", value } : { kind: "invalid" };
+  }
+  if (typeof value === "string" && /^-?\d+(\.\d+)?$/u.test(value.trim())) {
+    return { kind: "number", value: Number(value.trim()) };
+  }
+  return { kind: "invalid" };
+}
+
 export type OptionalDate =
   | { readonly kind: "absent" }
   | { readonly kind: "invalid" }

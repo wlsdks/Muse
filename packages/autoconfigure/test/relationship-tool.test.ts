@@ -41,6 +41,13 @@ describe("createOverdueContactsTool — who you've lost touch with", () => {
     const out = await tool().execute({ limit: 1 }) as { overdue: unknown[] };
     expect(out.overdue.length).toBeLessThanOrEqual(1);
   });
+
+  it("echoes the applied limit — the default when omitted, the supplied value otherwise (finding 49)", async () => {
+    const defaulted = await tool().execute({}) as { limit: number };
+    expect(defaulted.limit).toBe(10);
+    const explicit = await tool().execute({ limit: 3 }) as { limit: number };
+    expect(explicit.limit).toBe(3);
+  });
 });
 
 describe("interactionsFromEvents — derive contact interaction timestamps from event mentions (moved from CLI)", () => {

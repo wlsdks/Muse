@@ -3,7 +3,7 @@ import { resolve as nodePathResolve } from "node:path";
 
 import type { ProactiveModelProviderLike } from "@muse/proactivity";
 
-import { parseJudgeStringArray } from "./judge-output.js";
+import { parseJudgeStringArrayDiagnostic } from "./judge-output.js";
 import { walkMarkdownFrom } from "./loopback-notes-helpers.js";
 
 /**
@@ -64,12 +64,21 @@ export interface NotesLlmJudgeResult {
    * prompt drift without leaking the hallucinated strings.
    */
   readonly hallucinatedDropped: number;
+  /** How many (path, preview) candidates the judge actually considered. */
+  readonly candidatesConsidered: number;
+  /**
+   * False when the raw model output did not parse into a JSON array at all —
+   * a judge FAILURE, distinct from the model validly returning `[]` (a
+   * genuine "nothing matches"). The caller must not report the two the same
+   * way: one is "I looked and found nothing", the other is "I couldn't ask".
+   */
+  readonly judgeParsed: boolean;
 }
 
 export async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<NotesLlmJudgeResult> {
   const files: string[] = [];
   await walkMarkdownFrom(args.root, args.root, (rel) => { files.push(rel); }, new Set());
-  if (files.length === 0) return { paths: [], hallucinatedDropped: 0 };
+  if (files.length === 0) return { candidatesConsidered: 0, hallucinatedDropped: 0, judgeParsed: true, paths: [] };
 
   // Build (path, preview) pairs. Preview = first non-blank chunk of the
   // note, capped to `judgePreviewChars`. Skips files over maxFileBytes
@@ -95,7 +104,7 @@ export async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<NotesLl
     const preview = previewOf(body, args.judgePreviewChars);
     pairs.push({ path: rel, preview });
   }
-  if (pairs.length === 0) return { paths: [], hallucinatedDropped: 0 };
+  if (pairs.length === 0) return { candidatesConsidered: 0, hallucinatedDropped: 0, judgeParsed: true, paths: [] };
 
   const lines = pairs.map((p) => `[${p.path}] ${p.preview}`);
   const userMessage = `Query: ${args.query}\n\nNotes:\n${lines.join("\n")}\n\nReturn at most ${args.limit.toString()} paths.`;
@@ -109,7 +118,7 @@ export async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<NotesLl
     model: args.model,
     temperature: 0
   });
-  const parsed = parseJudgeStringArray((response.output ?? "").trim());
+  const diagnostic = parseJudgeStringArrayDiagnostic((response.output ?? "").trim());
 
   // Resolve in model order, drop hallucinated paths, cap at limit.
   // The defense-in-depth filter is non-negotiable: the prompt tells
@@ -120,7 +129,7 @@ export async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<NotesLl
   const seen = new Set<string>();
   const out: string[] = [];
   let hallucinatedDropped = 0;
-  for (const path of parsed) {
+  for (const path of diagnostic.values) {
     if (seen.has(path)) continue;
     if (!known.has(path)) {
       hallucinatedDropped += 1;
@@ -130,7 +139,7 @@ export async function runNotesLlmJudge(args: NotesLlmJudgeArgs): Promise<NotesLl
     out.push(path);
     if (out.length >= args.limit) break;
   }
-  return { paths: out, hallucinatedDropped };
+  return { candidatesConsidered: pairs.length, hallucinatedDropped, judgeParsed: diagnostic.parsed, paths: out };
 }
 
 function previewOf(body: string, maxChars: number): string {

@@ -58,6 +58,7 @@ class FakeController implements BrowserController {
   async screenshotBase64(): Promise<string> { return "aW1n"; }
   describeElement(ref: number): SnapshotElement | undefined { return this.elements.get(ref); }
   currentUrl(): string { return SNAP.url; }
+  async hasOpenPage(): Promise<boolean> { return true; }
   async disconnect(): Promise<void> { /* noop */ }
   async close(): Promise<void> { /* noop */ }
 }

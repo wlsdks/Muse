@@ -93,8 +93,24 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
           const providerId = readString(args, "providerId");
           const queryTrimmed = (readString(args, "query") ?? "").trim();
           const needle = queryTrimmed.toLowerCase();
-          const from = parseIsoDate(fromIso) ?? new Date();
-          const to = parseIsoDate(toIso) ?? new Date(from.getTime() + 30 * 86_400_000);
+          const parsedFrom = fromIso !== undefined ? parseIsoDate(fromIso) : undefined;
+          const parsedTo = toIso !== undefined ? parseIsoDate(toIso) : undefined;
+          const from = parsedFrom ?? new Date();
+          const to = parsedTo ?? new Date(from.getTime() + 30 * 86_400_000);
+          // An unparseable from/to used to silently fall back to now→now+30d
+          // with nothing in the response distinguishing it from an honest
+          // empty result for the requested window — repair, but say so
+          // (tool-calling.md rule 7).
+          const notes: string[] = [];
+          if (fromIso !== undefined && !parsedFrom) {
+            notes.push(`'${fromIso}' is not a recognised date — used the default window start (now) instead.`);
+          }
+          if (toIso !== undefined && !parsedTo) {
+            notes.push(`'${toIso}' is not a recognised date — used the default window end (now + 30 days) instead.`);
+          }
+          if (notes.length > 0) {
+            notes.push("Valid: \"tomorrow\", \"2026-07-21\", ISO-8601.");
+          }
           try {
             const all = await registry.listEvents({ from, to }, providerId);
             const events = needle.length === 0
@@ -103,7 +119,10 @@ export function createCalendarMcpServer(options: CalendarMcpServerOptions): Loop
             return {
               events: events.map(serializeEvent) as JsonValue,
               total: events.length,
-              ...(queryTrimmed ? { query: queryTrimmed } : {})
+              windowFromIso: from.toISOString(),
+              windowToIso: to.toISOString(),
+              ...(queryTrimmed ? { query: queryTrimmed } : {}),
+              ...(notes.length > 0 ? { note: notes.join(" ") } : {})
             };
           } catch (error) {
             return { error: errorMessage(error) };

@@ -58,8 +58,30 @@ describe("createRecentActionsTool — what Muse did on your behalf", () => {
     expect(refused.actions[0]).toMatchObject({ result: "refused", what: "Declined to email the bank" });
   });
 
-  it("an unknown result filter value matches nothing (no silent fall-through to all)", async () => {
-    const out = await tool().execute({ result: "bogus" }) as { count: number };
+  // An out-of-enum filter used to silently collapse to count:0, byte-identical to
+  // an empty store — the model then reports "no actions" as fact about the log
+  // instead of learning the filter itself was invalid. Now it names the bad value.
+  it("an unknown result filter value returns a named error, not a silent count:0", async () => {
+    const out = await tool().execute({ result: "pending" }) as { count: number; actions: unknown[]; error?: string };
     expect(out.count).toBe(0);
+    expect(out.actions).toEqual([]);
+    expect(out.error).toContain("pending");
+    expect(out.error).toContain("performed");
+  });
+
+  it("accepts a mis-cased result filter case-insensitively", async () => {
+    const out = await tool().execute({ result: "Refused" }) as { count: number; error?: string };
+    expect(out.error).toBeUndefined();
+    expect(out.count).toBe(1);
+  });
+
+  it("accepts the 'noted' outcome (non-blocking advisory record)", async () => {
+    const withNoted: ActionLogEntry[] = [
+      ...ENTRIES,
+      { id: "a4", result: "noted", userId: "u", what: "Observed a pattern", when: "2026-06-13T00:00:00Z", why: "advisory, non-blocking" }
+    ];
+    const out = await tool(withNoted).execute({ result: "noted" }) as { count: number; actions: { what: string }[] };
+    expect(out.count).toBe(1);
+    expect(out.actions[0]).toMatchObject({ what: "Observed a pattern" });
   });
 });

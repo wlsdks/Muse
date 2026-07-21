@@ -83,6 +83,21 @@ describe("time_add", () => {
   it("errors on an invalid base", () => {
     expect(run(createTimeAddTool(), { base: "xx" })).toEqual({ error: "base must be a valid ISO-8601 string" });
   });
+
+  it("accepts a numeric-string offset (the 12B routinely quotes numbers)", () => {
+    expect(run(createTimeAddTool(), { base: "2026-01-01T00:00:00Z", days: "3" }))
+      .toEqual({ iso: "2026-01-04T00:00:00.000Z", offsetMs: 259_200_000 });
+  });
+
+  it("errors on an unparseable offset instead of silently treating it as 0", () => {
+    // Pre-fix, `days: "3"` (a quoted number) coerced to 0 and returned the
+    // UNCHANGED base in the exact success shape of a valid call — a
+    // confident wrong answer with nothing in the result flagging the drop.
+    const out = run(createTimeAddTool(), { base: "2026-01-01T00:00:00Z", days: "three" }) as { error?: string };
+    expect(out.error).toContain("days");
+    expect(out.error).toContain("three");
+    expect(out).not.toHaveProperty("iso");
+  });
 });
 
 describe("time_relative", () => {
@@ -130,6 +145,12 @@ describe("next_weekday_date", () => {
     expect(run(createNextWeekdayTool(now), { weekday: "monday", reference: "xx" }))
       .toEqual({ error: "reference must be a valid ISO-8601 string" });
   });
+
+  it("errors on a non-string weekday instead of treating it as 'missing'", () => {
+    const out = run(createNextWeekdayTool(now), { weekday: 1 }) as { error?: string };
+    expect(out.error).toContain("weekday");
+    expect(out.error).toContain("string");
+  });
 });
 
 describe("cron_for_datetime", () => {
@@ -153,5 +174,17 @@ describe("cron_for_datetime", () => {
       .toEqual({ error: "mode must be one of: once, daily, weekly, monthly (got 'hourly')" });
     expect(run(tool, { iso: "nope" })).toEqual({ error: "invalid ISO-8601 datetime: 'nope'" });
     expect(run(tool, { iso: "   " })).toEqual({ error: "iso is required" });
+  });
+
+  it("distinguishes a wrong-TYPE iso (e.g. an epoch number) from a genuinely missing one", () => {
+    // Pre-fix, a numeric `iso` failed the `typeof === "string"` check the
+    // same way an absent field did, so the tool told the model "iso is
+    // required" even though the call DID supply it — misdiagnosing a type
+    // error as a missing field sends the model resending the same call.
+    const tool = createCronForDatetimeTool();
+    const out = run(tool, { iso: 1_784_595_066_477 }) as { error?: string };
+    expect(out.error).toContain("iso");
+    expect(out.error).not.toBe("iso is required");
+    expect(out.error).toContain("epoch_convert");
   });
 });

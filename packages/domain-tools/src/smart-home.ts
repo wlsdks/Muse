@@ -107,18 +107,26 @@ export interface HomeState {
 }
 
 /**
- * Read a Home Assistant entity's current state (GET `/api/states/<id>`)
- * so Muse can answer "is the front door locked?" / "living-room
- * temperature?". A read is non-state-changing and idempotent, so it's
- * retry-hardened against transient 429/5xx (unlike the write path,
- * which must stay single-shot). Returns `undefined` — never throws —
- * on a permanent failure or a malformed body, so the caller degrades
- * gracefully instead of crashing the turn.
+ * The distinct reasons a Home Assistant read can come back empty. An
+ * unreachable host, a revoked token, and a genuinely unknown entity are
+ * different facts about the world — collapsing them into one empty result
+ * makes the caller (and the model) report "you have no devices" for what
+ * might be a dead host or a bad token.
  */
-export async function readHomeAssistantState(query: HomeStateQuery): Promise<HomeState | undefined> {
+export type HomeAssistantReadFailure =
+  | { readonly ok: false; readonly kind: "local-only"; readonly reason: string }
+  | { readonly ok: false; readonly kind: "unreachable"; readonly baseUrl: string }
+  | { readonly ok: false; readonly kind: "unauthorized"; readonly status: number }
+  | { readonly ok: false; readonly kind: "not-found" }
+  | { readonly ok: false; readonly kind: "http-error"; readonly status: number }
+  | { readonly ok: false; readonly kind: "malformed" };
+
+export type HomeStateResult = { readonly ok: true; readonly state: HomeState } | HomeAssistantReadFailure;
+
+async function fetchHomeAssistantState(query: HomeStateQuery): Promise<HomeStateResult> {
   const transport = resolveHomeAssistantTransportBaseUrl(query.baseUrl, query);
   if (!transport.allowed) {
-    return undefined;
+    return { kind: "local-only", ok: false, reason: transport.reason };
   }
   const base = transport.baseUrl.replace(/\/+$/u, "");
   const url = `${base}/api/states/${encodeURIComponent(query.entityId)}`;
@@ -130,28 +138,55 @@ export async function readHomeAssistantState(query: HomeStateQuery): Promise<Hom
       init: { headers: { authorization: `Bearer ${query.token}` }, redirect: "manual" }
     });
   } catch {
-    return undefined;
+    return { baseUrl: transport.baseUrl, kind: "unreachable", ok: false };
   }
   if (!response.ok) {
-    return undefined;
+    if (response.status === 401 || response.status === 403) {
+      return { kind: "unauthorized", ok: false, status: response.status };
+    }
+    if (response.status === 404) {
+      return { kind: "not-found", ok: false };
+    }
+    return { kind: "http-error", ok: false, status: response.status };
   }
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    return undefined;
+    return { kind: "malformed", ok: false };
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return undefined;
+    return { kind: "malformed", ok: false };
   }
   const obj = body as Record<string, unknown>;
   if (typeof obj.state !== "string") {
-    return undefined;
+    return { kind: "malformed", ok: false };
   }
   const attributes = obj.attributes && typeof obj.attributes === "object" && !Array.isArray(obj.attributes)
     ? obj.attributes as Record<string, unknown>
     : {};
-  return { attributes, entityId: query.entityId, state: obj.state };
+  return { ok: true, state: { attributes, entityId: query.entityId, state: obj.state } };
+}
+
+/**
+ * Read a Home Assistant entity's current state (GET `/api/states/<id>`)
+ * so Muse can answer "is the front door locked?" / "living-room
+ * temperature?". A read is non-state-changing and idempotent, so it's
+ * retry-hardened against transient 429/5xx (unlike the write path,
+ * which must stay single-shot). Returns `undefined` — never throws —
+ * on a permanent failure or a malformed body, so the caller degrades
+ * gracefully instead of crashing the turn. Callers that need to tell a
+ * transport failure apart from a genuinely unknown entity should use
+ * {@link readHomeAssistantStateDetailed} instead.
+ */
+export async function readHomeAssistantState(query: HomeStateQuery): Promise<HomeState | undefined> {
+  const result = await fetchHomeAssistantState(query);
+  return result.ok ? result.state : undefined;
+}
+
+/** Same read as {@link readHomeAssistantState}, but keeps the failure reason instead of collapsing it to `undefined`. */
+export async function readHomeAssistantStateDetailed(query: HomeStateQuery): Promise<HomeStateResult> {
+  return fetchHomeAssistantState(query);
 }
 
 export interface HomeEntitiesQuery extends HomeAssistantTransportPolicy {
@@ -163,17 +198,12 @@ export interface HomeEntitiesQuery extends HomeAssistantTransportPolicy {
   readonly domain?: string;
 }
 
-/**
- * Discover Home Assistant entities (GET `/api/states`) so the agent can
- * answer "what devices do I have?" and find the entity ids that
- * `home_state` / `home_action` need. Read-only + retry-hardened.
- * Optional `domain` filters to one type (`light.`, `lock.`, …). Returns
- * `[]` — never throws — on failure or a malformed body.
- */
-export async function listHomeAssistantStates(query: HomeEntitiesQuery): Promise<HomeState[]> {
+export type HomeEntitiesResult = { readonly ok: true; readonly states: readonly HomeState[] } | HomeAssistantReadFailure;
+
+async function fetchHomeAssistantStates(query: HomeEntitiesQuery): Promise<HomeEntitiesResult> {
   const transport = resolveHomeAssistantTransportBaseUrl(query.baseUrl, query);
   if (!transport.allowed) {
-    return [];
+    return { kind: "local-only", ok: false, reason: transport.reason };
   }
   const base = transport.baseUrl.replace(/\/+$/u, "");
   const fetchImpl = query.fetchImpl ?? globalThis.fetch;
@@ -184,19 +214,22 @@ export async function listHomeAssistantStates(query: HomeEntitiesQuery): Promise
       init: { headers: { authorization: `Bearer ${query.token}` }, redirect: "manual" }
     });
   } catch {
-    return [];
+    return { baseUrl: transport.baseUrl, kind: "unreachable", ok: false };
   }
   if (!response.ok) {
-    return [];
+    if (response.status === 401 || response.status === 403) {
+      return { kind: "unauthorized", ok: false, status: response.status };
+    }
+    return { kind: "http-error", ok: false, status: response.status };
   }
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    return [];
+    return { kind: "malformed", ok: false };
   }
   if (!Array.isArray(body)) {
-    return [];
+    return { kind: "malformed", ok: false };
   }
   const domain = query.domain?.replace(/\.$/u, "").trim();
   const prefix = domain && domain.length > 0 ? `${domain}.` : undefined;
@@ -217,7 +250,26 @@ export async function listHomeAssistantStates(query: HomeEntitiesQuery): Promise
       : {};
     out.push({ attributes, entityId: o.entity_id, state: o.state });
   }
-  return out;
+  return { ok: true, states: out };
+}
+
+/**
+ * Discover Home Assistant entities (GET `/api/states`) so the agent can
+ * answer "what devices do I have?" and find the entity ids that
+ * `home_state` / `home_action` need. Read-only + retry-hardened.
+ * Optional `domain` filters to one type (`light.`, `lock.`, …). Returns
+ * `[]` — never throws — on failure or a malformed body. Callers that need
+ * to tell a transport failure apart from a genuinely empty home should use
+ * {@link listHomeAssistantStatesDetailed} instead.
+ */
+export async function listHomeAssistantStates(query: HomeEntitiesQuery): Promise<HomeState[]> {
+  const result = await fetchHomeAssistantStates(query);
+  return result.ok ? [...result.states] : [];
+}
+
+/** Same read as {@link listHomeAssistantStates}, but keeps the failure reason instead of collapsing it to `[]`. */
+export async function listHomeAssistantStatesDetailed(query: HomeEntitiesQuery): Promise<HomeEntitiesResult> {
+  return fetchHomeAssistantStates(query);
 }
 
 /**

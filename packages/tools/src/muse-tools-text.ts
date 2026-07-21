@@ -1,7 +1,6 @@
 import { isRecord, type JsonObject, type JsonValue } from "@muse/shared";
 
 import type { MuseTool } from "./index.js";
-import { readOptionalNumber } from "./muse-tools-helpers.js";
 
 /**
  * Text-formatting tools — the subset of `createMuseTools` whose
@@ -29,7 +28,10 @@ export function createTextStatsTool(): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
-      const text = typeof args["text"] === "string" ? args["text"] : "";
+      if (typeof args["text"] !== "string") {
+        return { error: "text is required and must be a string, e.g. text: 'hello world'" };
+      }
+      const text = args["text"];
       if (text.trim().length === 0) {
         return { characters: 0, lines: 0, words: 0 } satisfies JsonObject;
       }
@@ -67,9 +69,18 @@ export function createSlugifyTool(): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
-      const text = typeof args["text"] === "string" ? args["text"] : "";
-      const cap = readOptionalNumber(args, "maxLength");
-      const maxLength = Number.isInteger(cap) && cap > 0 ? cap : undefined;
+      if (typeof args["text"] !== "string") {
+        return { error: "text is required and must be a string, e.g. text: 'My Note Title'" };
+      }
+      const text = args["text"];
+      const rawMaxLength = args["maxLength"];
+      let maxLength: number | undefined;
+      if (rawMaxLength !== undefined) {
+        if (typeof rawMaxLength !== "number" || !Number.isInteger(rawMaxLength) || rawMaxLength <= 0) {
+          return { error: "maxLength must be a positive integer number, e.g. 5" };
+        }
+        maxLength = rawMaxLength;
+      }
       return { slug: slugify(text, maxLength) } satisfies JsonObject;
     }
   };
@@ -97,7 +108,10 @@ export function createKvSummarizeTool(): MuseTool {
     execute: (args): JsonObject => {
       const data = args["data"];
       if (data === undefined || data === null) {
-        return { summary: "" };
+        return {
+          error: "`data` is required — pass the object/array itself, e.g. data:{\"name\":\"Bob\",\"age\":30}",
+          summary: ""
+        };
       }
       const lines: string[] = [];
       let truncated = 0;
@@ -157,9 +171,33 @@ export function createMarkdownTableTool(): MuseTool {
           rows.push(entry);
         }
       }
-      const columns = explicitColumns && explicitColumns.length > 0
-        ? Array.from(new Set(explicitColumns))
-        : deriveMarkdownTableColumns(rows);
+      const derivedColumns = deriveMarkdownTableColumns(rows);
+      let columns: string[];
+      let columnWarning: string | undefined;
+      if (explicitColumns && explicitColumns.length > 0) {
+        const requested = Array.from(new Set(explicitColumns));
+        if (rows.length === 0) {
+          // Nothing to intersect against yet — an explicit header-only
+          // table (no rows) is a legitimate request, not a typo.
+          columns = requested;
+        } else {
+          const available = new Set(derivedColumns);
+          const matched = requested.filter((column) => available.has(column));
+          const missing = requested.filter((column) => !available.has(column));
+          if (matched.length === 0) {
+            return {
+              error: `none of the requested columns exist in \`rows\`; available columns are: ${derivedColumns.join(", ")} — pass \`columns\` using those exact key names, or omit \`columns\` to use all of them`,
+              markdown: ""
+            } satisfies JsonObject;
+          }
+          columns = matched;
+          if (missing.length > 0) {
+            columnWarning = `columns not found in rows: ${missing.join(", ")}`;
+          }
+        }
+      } else {
+        columns = derivedColumns;
+      }
       if (columns.length === 0) {
         return { markdown: "" } satisfies JsonObject;
       }
@@ -175,7 +213,10 @@ export function createMarkdownTableTool(): MuseTool {
       if (truncated > 0) {
         lines.push(`_…${truncated} more rows omitted_`);
       }
-      return { markdown: lines.join("\n") } satisfies JsonObject;
+      const markdown = lines.join("\n");
+      return columnWarning
+        ? ({ markdown, warning: columnWarning } satisfies JsonObject)
+        : ({ markdown } satisfies JsonObject);
     }
   };
 }

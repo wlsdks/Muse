@@ -51,6 +51,28 @@ describe("createLunarDateTool", () => {
     const out = tool.execute({ date: "not-a-date" }, { runId: "t", userId: "u" }) as { error?: string };
     expect(out.error).toBeTruthy();
   });
+
+  it("errors on a non-string date instead of silently defaulting to today", () => {
+    // A number-typed `date` (e.g. 20260925) was previously discarded — `raw`
+    // fell back to "" and the tool quietly returned TODAY's lunar date,
+    // byte-identical to the no-argument call, as if it had answered the
+    // supplied date.
+    const tool = createLunarDateTool(NOW);
+    const out = tool.execute({ date: 20260925 }, { runId: "t", userId: "u" }) as { error?: string };
+    expect(out.error).toContain("ISO-8601");
+    expect(out.error).toContain("2026-09-25");
+  });
+
+  it("echoes the solar date in the SAME zone (Asia/Seoul) the lunar answer was computed in", () => {
+    // A date-only ISO string parses as UTC midnight; Seoul is UTC+9, so the
+    // Seoul calendar day is already one ahead for the first 9 hours of the
+    // UTC day. `date.toISOString().slice(0,10)` echoed the UTC day, which
+    // could read one day BEHIND the lunar fields computed for the Seoul day.
+    const tool = createLunarDateTool(NOW);
+    const out = tool.execute({ date: "2026-09-25" }, { runId: "t", userId: "u" }) as { solar: string; lunarMonth: number; lunarDay: number };
+    expect(out.solar).toBe("2026-09-25");
+    expect(out).toMatchObject({ lunarMonth: 8, lunarDay: 15 }); // 추석
+  });
 });
 
 describe("lunarToSolar (Korean lunar → solar, ICU search)", () => {
@@ -96,5 +118,36 @@ describe("createLunarToSolarTool", () => {
     const tool = createLunarToSolarTool(NOW);
     const out = tool.execute({ day: 30, month: 2, year: 2026 }, { runId: "t", userId: "u" }) as { error?: string };
     expect(out.error).toBeTruthy();
+  });
+
+  it("errors on a string `leap` instead of silently coercing it to false", () => {
+    // `leap: "true"` (a JSON string, not boolean) failed `=== true` and was
+    // silently treated as false — a date one lunar month off, returned as
+    // a confident answer with no sign the request had been changed.
+    const tool = createLunarToSolarTool(NOW);
+    const out = tool.execute({ day: 1, leap: "true", month: 6 }, { runId: "t", userId: "u" }) as { error?: string };
+    expect(out.error).toContain("leap");
+    expect(out.error).toContain("boolean");
+  });
+
+  it("errors on a string `year` instead of silently defaulting to the current year", () => {
+    const tool = createLunarToSolarTool(NOW);
+    const out = tool.execute({ day: 5, month: 5, year: "2030" }, { runId: "t", userId: "u" }) as { error?: string };
+    expect(out.error).toContain("year");
+    expect(out.error).toContain("number");
+  });
+
+  it("distinguishes a wrong-TYPE month/day from an out-of-RANGE one", () => {
+    // month: "8" is a valid value once it's a number — the type is the
+    // problem, not the range. Reporting "must be 1-12" sends the model
+    // retrying values inside 1-12 forever.
+    const tool = createLunarToSolarTool(NOW);
+    const typeError = tool.execute({ day: 5, month: "8", year: 2026 }, { runId: "t", userId: "u" }) as { error?: string };
+    expect(typeError.error).toContain("number");
+    expect(typeError.error).not.toContain("1–12");
+    const dayTypeError = tool.execute({ day: "5", month: 8, year: 2026 }, { runId: "t", userId: "u" }) as { error?: string };
+    expect(dayTypeError.error).toContain("number");
+    const rangeError = tool.execute({ day: 5, month: 13, year: 2026 }, { runId: "t", userId: "u" }) as { error?: string };
+    expect(rangeError.error).toContain("1–12");
   });
 });

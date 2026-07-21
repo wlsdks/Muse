@@ -36,11 +36,15 @@ export interface SkillRuntime {
  */
 export function createSkillRuntime(env: MuseEnvironment): SkillRuntime {
   const skillRegistryPromise = buildSkillRegistry(env);
-  let skillRegistryCache: Awaited<typeof skillRegistryPromise>;
+  // The disk scan is async, so the view awaits the SAME promise on every
+  // call rather than reading a cache that may still be unset — an early
+  // `list()`/`get()` used to silently see an empty registry and report a
+  // populated skills directory as empty.
   const skillRegistryView = {
-    list: () => {
-      if (!skillRegistryCache) return [];
-      return skillRegistryCache.list().map((skill) => ({
+    list: async () => {
+      const registry = await skillRegistryPromise;
+      if (!registry) return [];
+      return registry.list().map((skill) => ({
         body: skill.body,
         description: skill.description,
         ...(skill.frontmatter.emoji ? { emoji: skill.frontmatter.emoji } : {}),
@@ -51,9 +55,9 @@ export function createSkillRuntime(env: MuseEnvironment): SkillRuntime {
         ...(skill.frontmatter.requires?.bins ? { requiresBins: [...skill.frontmatter.requires.bins] } : {})
       }));
     },
-    get: (name: string) => {
-      if (!skillRegistryCache) return undefined;
-      const skill = skillRegistryCache.get(name);
+    get: async (name: string) => {
+      const registry = await skillRegistryPromise;
+      const skill = registry?.get(name);
       if (!skill) return undefined;
       return {
         body: skill.body,
@@ -67,9 +71,6 @@ export function createSkillRuntime(env: MuseEnvironment): SkillRuntime {
       };
     }
   };
-  void skillRegistryPromise.then((registry) => {
-    skillRegistryCache = registry;
-  });
 
   const skillTools = parseBoolean(env.MUSE_SKILLS_ENABLED, true)
     ? [

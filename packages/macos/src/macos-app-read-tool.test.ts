@@ -71,3 +71,55 @@ describe("createMacAppReadTool", () => {
     expect(await tool.execute({ app: "clipboard" }, ctx)).toEqual({ app: "clipboard", text: "hello world" });
   });
 });
+
+/**
+ * An app the user hasn't opened must never be reported as "0 events" / "0
+ * unread" / "no notes" — those are confident, indistinguishable-from-real
+ * empty answers for a state that was never actually read.
+ */
+describe("mac_app_read — an app that is not running is never reported as empty", () => {
+  const NOT_RUNNING_CASES = [
+    { app: "calendar", label: "Calendar.app" },
+    { app: "reminders", label: "Reminders.app" },
+    { app: "notes", label: "Notes.app" },
+    { app: "mail_unread", label: "Mail.app" },
+    { app: "contacts", label: "Contacts.app", query: "Jane" }
+  ] as const;
+
+  for (const testCase of NOT_RUNNING_CASES) {
+    it(`${testCase.app} reports not-running instead of an empty result`, async () => {
+      const tool = createMacAppReadTool({ runner: async () => ok("not running") });
+      const out = await tool.execute(
+        { app: testCase.app, ...("query" in testCase ? { query: testCase.query } : {}) },
+        ctx
+      ) as Record<string, unknown>;
+      expect(out.running).toBe(false);
+      expect(out.error).toContain(testCase.label);
+      // The critical assertion: no empty-collection shape (items/count/people)
+      // leaks through — that would let the model report "0 events" as fact.
+      expect(out.items).toBeUndefined();
+      expect(out.people).toBeUndefined();
+      expect(out.count).toBeUndefined();
+    });
+  }
+
+  it("safari_tab / chrome_tab keep their existing running:false shape (no regression)", async () => {
+    const tool = createMacAppReadTool({ runner: async () => ok("not running") });
+    expect(await tool.execute({ app: "safari_tab" }, ctx)).toEqual({ app: "safari_tab", running: false });
+    expect(await tool.execute({ app: "chrome_tab" }, ctx)).toEqual({ app: "chrome_tab", running: false });
+  });
+});
+
+describe("mac_app_read — mail_unread never coerces an unparseable count to 0", () => {
+  it("returns an error, not unreadCount:0, when Mail's first line isn't a number", async () => {
+    const tool = createMacAppReadTool({ runner: async () => ok("not a number\nsome subject\tsome sender") });
+    const out = await tool.execute({ app: "mail_unread" }, ctx) as Record<string, unknown>;
+    expect(out.error).toContain("unread count");
+    expect(out.unreadCount).toBeUndefined();
+  });
+
+  it("still parses a genuine zero correctly", async () => {
+    const tool = createMacAppReadTool({ runner: async () => ok("0") });
+    expect(await tool.execute({ app: "mail_unread" }, ctx)).toEqual({ app: "mail_unread", recent: [], unreadCount: 0 });
+  });
+});

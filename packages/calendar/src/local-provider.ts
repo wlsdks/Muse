@@ -62,7 +62,7 @@ export class LocalCalendarProvider implements CalendarProvider {
   describe(): CalendarProviderInfo {
     return {
       credentials: [],
-      description: `Local file-backed calendar (${this.file}).`,
+      description: "Local file-backed calendar.",
       displayName: "Local file",
       id: this.id,
       local: true

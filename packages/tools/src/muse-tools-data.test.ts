@@ -26,6 +26,22 @@ describe("math_eval", () => {
 
   it("treats commas as ignorable thousands separators", () => {
     expect(math({ expression: "1,000 + 1" })).toMatchObject({ result: 1001 });
+    expect(math({ expression: "1,000,000" })).toMatchObject({ result: 1_000_000 });
+  });
+
+  it("rejects a comma that is not a valid thousands grouping instead of stripping it wholesale", () => {
+    // "1,5" is European decimal notation, not grouping — stripping the comma
+    // silently turns 1,5 into 15, a confidently wrong reinterpretation.
+    expect(math({ expression: "1,5 + 1" })).toEqual({
+      error: "',' is only accepted as a thousands separator (1,000). Use '.' for a decimal point, e.g. '1.5 + 1'"
+    });
+    expect(math({ expression: "1,00 + 1" })).toMatchObject({ error: expect.stringContaining("thousands separator") });
+  });
+
+  it("errors on a present-but-non-string expression instead of asking the caller to resend it", () => {
+    expect(math({ expression: 42 })).toEqual({
+      error: "`expression` must be a string, e.g. {\"expression\": \"42\"}"
+    });
   });
 
   it("rejects division and modulo by zero", () => {
@@ -130,6 +146,33 @@ describe("csv_parse", () => {
   it("rejects text over the 200k character bound (DoS guard)", () => {
     expect(csv({ text: "a,".repeat(120_000) })).toEqual({ error: "text must be ≤ 200000 characters" });
   });
+
+  it("errors on a missing/non-string text instead of silently returning zero rows", () => {
+    // A dropped required argument must not be indistinguishable from a
+    // genuinely empty CSV — the model would state "the file is empty" as fact.
+    expect(csv({})).toEqual({ error: "csv_parse needs `text` as a CSV string, e.g. {\"text\":\"name,age\\nAda,36\"}" });
+    expect(csv({ text: 42 })).toEqual({ error: "csv_parse needs `text` as a CSV string, e.g. {\"text\":\"name,age\\nAda,36\"}" });
+  });
+
+  it("accepts the string forms \"true\"/\"false\" for header instead of silently defaulting to true", () => {
+    // The previous `=== false` check treated a quoted "false" as the
+    // default (true) — inverting an explicit request with no signal.
+    expect(csv({ header: "false", text: "a,b\n1,2" })).toEqual({ rows: [["a", "b"], ["1", "2"]] });
+    expect(csv({ header: "true", text: "a,b\n1,2" })).toEqual({ headers: ["a", "b"], rows: [{ a: "1", b: "2" }] });
+    expect(csv({ header: "yes", text: "a,b\n1,2" })).toEqual({ error: "`header` must be a boolean (true or false)" });
+  });
+
+  it("flags truncation with the real record count instead of silently dropping rows past the cap", () => {
+    const dataRows = Array.from({ length: 1500 }, (_, i) => `v${i.toString()}`).join("\n");
+    const out = csv({ text: `col\n${dataRows}` }) as {
+      headers: string[]; note: string; returnedRows: number; rows: unknown[]; totalRecords: number; truncated: boolean;
+    };
+    expect(out.truncated).toBe(true);
+    expect(out.totalRecords).toBe(1500);
+    expect(out.returnedRows).toBe(1000);
+    expect(out.rows).toHaveLength(1000);
+    expect(out.note).toContain("1000");
+  });
 });
 
 describe("base64", () => {
@@ -162,5 +205,20 @@ describe("base64", () => {
 
   it("rejects text over the 500k character bound (DoS guard)", () => {
     expect(base64({ mode: "encode", text: "x".repeat(500_001) })).toEqual({ error: "text must be ≤ 500000 characters" });
+  });
+
+  it("errors on a missing/non-string text instead of returning a success-shaped empty encode", () => {
+    expect(base64({ mode: "encode" })).toEqual({
+      error: "base64 needs `text` as a string, e.g. {\"mode\":\"decode\",\"text\":\"aGVsbG8=\"}"
+    });
+  });
+
+  it("errors instead of returning replacement characters as if they were the real plaintext", () => {
+    // 0xFF 0xFE is not a valid UTF-8 sequence; Buffer#toString("utf8") would
+    // silently substitute U+FFFD and hand back a "successful" bogus decode.
+    const nonUtf8 = Buffer.from([0xff, 0xfe]).toString("base64");
+    const out = base64({ mode: "decode", text: nonUtf8 });
+    expect(out.error).toContain("not valid UTF-8");
+    expect(out.decoded).toBeUndefined();
   });
 });

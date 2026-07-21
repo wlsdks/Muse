@@ -13,6 +13,8 @@ import type { MuseTool } from "@muse/tools";
 
 import type { ActionLogEntry } from "@muse/stores";
 
+const ALLOWED_RESULTS = new Set(["performed", "refused", "failed", "noted"]);
+
 export interface RecentActionsToolDeps {
   /** The action-log entries, append-ordered (oldest first), as written. */
   readonly actions: () => Promise<readonly ActionLogEntry[]> | readonly ActionLogEntry[];
@@ -30,8 +32,8 @@ export function createRecentActionsTool(deps: RecentActionsToolDeps): MuseTool {
           limit: { description: "How many recent actions to return, e.g. 10. Defaults to 20.", maximum: 100, minimum: 1, type: "integer" },
           result: {
             description:
-              "Filter by outcome: 'performed' (carried out), 'refused' (declined — e.g. fail-closed safety), or 'failed' (errored). Omit to see all. Use when the user asks specifically about declines/failures, e.g. 'did you refuse anything?' → 'refused'.",
-            enum: ["performed", "refused", "failed"],
+              "Filter by outcome: 'performed' (carried out), 'refused' (declined — e.g. fail-closed safety), 'failed' (errored), or 'noted' (a non-blocking advisory record). Omit to see all. Use when the user asks specifically about declines/failures, e.g. 'did you refuse anything?' → 'refused'.",
+            enum: ["performed", "refused", "failed", "noted"],
             type: "string"
           }
         },
@@ -45,7 +47,19 @@ export function createRecentActionsTool(deps: RecentActionsToolDeps): MuseTool {
     execute: async (args): Promise<JsonObject> => {
       const raw = args["limit"];
       const limit = typeof raw === "number" && Number.isFinite(raw) && raw >= 1 ? Math.min(100, Math.trunc(raw)) : 20;
-      const resultFilter = typeof args["result"] === "string" ? args["result"] : undefined;
+      const rawResult = typeof args["result"] === "string" ? args["result"].trim() : undefined;
+      let resultFilter: string | undefined;
+      if (rawResult !== undefined && rawResult.length > 0) {
+        const normalized = rawResult.toLowerCase();
+        if (!ALLOWED_RESULTS.has(normalized)) {
+          return {
+            actions: [],
+            count: 0,
+            error: `unknown result filter '${rawResult}'; use one of: performed, refused, failed, noted — e.g. result:"refused" for declines`
+          };
+        }
+        resultFilter = normalized;
+      }
       const all = await deps.actions();
       // Filter by outcome BEFORE capping to `limit` — so a refusal/failure still
       // surfaces for "did you refuse anything?" even when it is older than the

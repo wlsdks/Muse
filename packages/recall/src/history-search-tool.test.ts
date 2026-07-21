@@ -92,11 +92,22 @@ describe("createHistorySearchTool — agent-callable history search (Gap1-S2)", 
     expect(text.toLowerCase()).toContain("no");
   });
 
-  it("returns the no-match message for an empty / whitespace query (no eager fabrication)", async () => {
+  it("returns a distinct usage error (not the no-match verdict) for an empty / whitespace query", async () => {
+    // A blank query is a malformed call, not a genuine zero-hit search — conflating the two would
+    // let the model report "your history is empty" after a search it never ran (Gap1-S2 finding 44).
     const tool = createHistorySearchTool({ records: () => [rec("ep-1", "anything")] });
     const out = await tool.execute({ query: "   " }, ctx);
     const text = typeof out === "string" ? out : JSON.stringify(out);
     expect(text).not.toContain("ep-1");
+    expect(text).toContain("history_search needs a non-empty string 'query'");
+    expect(text).not.toContain("do not invent a past discussion");
+  });
+
+  it("returns the usage error (not a silent no-op) when query is omitted entirely", async () => {
+    const tool = createHistorySearchTool({ records: () => [rec("ep-1", "anything")] });
+    const out = await tool.execute({}, ctx);
+    const text = typeof out === "string" ? out : JSON.stringify(out);
+    expect(text).toContain("needs a non-empty string 'query'");
   });
 
   it("labels a conversations-source hit with its resumable ref (R3-1: actionable citation)", async () => {

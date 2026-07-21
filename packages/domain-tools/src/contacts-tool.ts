@@ -37,9 +37,21 @@ export function createContactsFindTool(deps: ContactsFindToolDeps): MuseTool {
       risk: "read"
     },
     execute: async (args): Promise<JsonObject> => {
-      const name = typeof args["name"] === "string" ? args["name"].trim() : "";
+      const rawName = args["name"];
+      // A bare numeric literal (a phone number with no quotes) is the single
+      // most common form a small model emits for the reverse-lookup case this
+      // tool advertises — coerce it rather than reporting the arg as missing.
+      const name =
+        typeof rawName === "string"
+          ? rawName.trim()
+          : typeof rawName === "number" && Number.isFinite(rawName)
+            ? String(rawName)
+            : "";
       if (name.length === 0) {
-        return { found: false, reason: "name is required (e.g. Bob)" };
+        return {
+          found: false,
+          reason: "find_contact needs `name` as a string — a name ('Bob'), a phone number ('+1 415 555 0101'), an email, or an @handle."
+        };
       }
       const resolution = resolveContact(await deps.contacts(), name);
       if (resolution.status === "resolved") {
@@ -177,6 +189,17 @@ export interface UpcomingBirthdaysToolDeps {
   readonly now?: () => Date;
 }
 
+async function computeUpcomingBirthdays(deps: UpcomingBirthdaysToolDeps, withinDays: number): Promise<JsonObject> {
+  const contacts = await deps.contacts();
+  const now = deps.now ? deps.now() : new Date();
+  const upcoming = resolveUpcomingBirthdays(contacts, { now, withinDays });
+  return {
+    count: upcoming.length,
+    upcoming: upcoming.map((u) => ({ date: u.date, daysUntil: u.daysUntil, name: u.contact.name })),
+    withinDays
+  };
+}
+
 export function createUpcomingBirthdaysTool(deps: UpcomingBirthdaysToolDeps): MuseTool {
   return {
     definition: {
@@ -197,15 +220,18 @@ export function createUpcomingBirthdaysTool(deps: UpcomingBirthdaysToolDeps): Mu
     },
     execute: async (args): Promise<JsonObject> => {
       const raw = args["withinDays"];
-      const withinDays = typeof raw === "number" && Number.isFinite(raw) && raw >= 1 ? Math.min(365, Math.trunc(raw)) : 30;
-      const contacts = await deps.contacts();
-      const now = deps.now ? deps.now() : new Date();
-      const upcoming = resolveUpcomingBirthdays(contacts, { now, withinDays });
-      return {
-        count: upcoming.length,
-        upcoming: upcoming.map((u) => ({ date: u.date, daysUntil: u.daysUntil, name: u.contact.name })),
-        withinDays
-      };
+      if (raw === undefined) {
+        return computeUpcomingBirthdays(deps, 30);
+      }
+      const numeric = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/u.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+      if (!Number.isFinite(numeric) || numeric < 1) {
+        return {
+          count: 0,
+          error: "withinDays must be a whole number of days between 1 and 365, e.g. 7 for 'this week'",
+          upcoming: []
+        };
+      }
+      return computeUpcomingBirthdays(deps, Math.min(365, Math.trunc(numeric)));
     }
   };
 }

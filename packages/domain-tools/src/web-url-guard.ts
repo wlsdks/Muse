@@ -226,8 +226,11 @@ export function assertPublicHttpUrlSync(rawUrl: string): UrlGuardResult {
   let url: URL;
   try {
     url = new URL(rawUrl);
-  } catch (error) {
-    return { ok: false, error: `invalid URL: ${errorMessage(error)}` };
+  } catch {
+    return {
+      ok: false,
+      error: `invalid URL: 'url' must be an absolute http(s) URL including the scheme, e.g. 'https://example.com/article' (got ${JSON.stringify(rawUrl)})`,
+    };
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return { ok: false, error: `unsupported protocol '${url.protocol}' — only http(s) is allowed` };

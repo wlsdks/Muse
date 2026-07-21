@@ -58,21 +58,38 @@ export function createFollowupsMcpServer(options: FollowupsMcpServerOptions): Lo
           "NOT when the user wants to ACT on a specific followup: to CANCEL/DROP it ('취소해줘', 'cancel that follow-up') use muse.followup.cancel, or to DELAY/POSTPONE it ('미뤄줘', 'push it to tomorrow') use muse.followup.snooze — listing only SHOWS commitments, it does not cancel or move them. " +
           "Also NOT when the user wants their personal to-do list (use muse.tasks.list) or their reminders/alerts (use muse.reminders.list) — a followup is a thread the agent auto-captured; a task and a reminder are things the USER explicitly added.",
         execute: async (args): Promise<JsonObject> => {
-          const status = readFollowupStatusFilter(readString(args, "status"));
+          // A status the caller SPECIFIED but that is outside the enum
+          // silently fell back to "scheduled" — a model asking "did you
+          // follow up on that?" (status: 'done'/'all') got the scheduled
+          // list back and reported it as the answer. Repair, but say so
+          // (tool-calling.md rule 7 — repair deterministically, don't re-reason).
+          const requestedStatus = readString(args, "status");
+          const status = readFollowupStatusFilter(requestedStatus);
+          const statusWasCoerced = requestedStatus !== undefined && requestedStatus !== status;
           const all = await readFollowups(file);
           const filtered = status === "all" ? all : all.filter((entry) => entry.status === status);
+          const limitRaw = (args as Record<string, unknown>)["limit"];
+          const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw)
+            ? Math.max(1, Math.min(maxListEntries, Math.trunc(limitRaw)))
+            : maxListEntries;
           const sorted = [...filtered]
             .sort(compareFollowupsByScheduledFor)
-            .slice(0, maxListEntries);
+            .slice(0, limit);
           return {
             followups: sorted.map(serializeFollowup) as JsonValue,
+            shown: sorted.length,
             status,
-            total: sorted.length
+            total: filtered.length,
+            truncated: filtered.length > sorted.length,
+            ...(statusWasCoerced
+              ? { note: `'${requestedStatus ?? ""}' is not a valid status — valid values are 'scheduled', 'fired', 'cancelled', 'all'. Listed '${status}' instead.` }
+              : {})
           };
         },
         inputSchema: {
           additionalProperties: false,
           properties: {
+            limit: { description: "Maximum follow-ups to return, e.g. 20. Omit for the server default.", type: "number" },
             status: { description: "Which follow-ups to list: 'scheduled' (still upcoming), 'fired' (already surfaced), 'cancelled', or 'all'. Defaults to scheduled.", enum: ["scheduled", "fired", "cancelled", "all"], type: "string" }
           },
           type: "object"

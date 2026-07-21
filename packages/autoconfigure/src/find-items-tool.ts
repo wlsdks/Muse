@@ -93,6 +93,9 @@ export interface FindItemsToolDeps {
   readonly find: () => Promise<FindSources> | FindSources;
 }
 
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 50;
+
 export function createFindItemsTool(deps: FindItemsToolDeps): MuseTool {
   return {
     definition: {
@@ -102,6 +105,7 @@ export function createFindItemsTool(deps: FindItemsToolDeps): MuseTool {
       inputSchema: {
         additionalProperties: false,
         properties: {
+          limit: { description: "Max matches to return, e.g. 10. Defaults to 20.", maximum: 50, minimum: 1, type: "integer" },
           query: { description: "The word or topic to look for across tasks/reminders/contacts/events, e.g. 'dentist' or 'Berlin trip'.", type: "string" }
         },
         required: ["query"],
@@ -113,8 +117,24 @@ export function createFindItemsTool(deps: FindItemsToolDeps): MuseTool {
     },
     execute: async (args): Promise<JsonObject> => {
       const query = typeof args["query"] === "string" ? args["query"] : "";
+      if (query.trim().length === 0) {
+        return {
+          found: false,
+          hits: [],
+          reason: "find_items needs a non-empty string 'query' — e.g. {\"query\": \"dentist\"}. Nothing was searched.",
+          total: 0
+        };
+      }
+      const rawLimit = args["limit"];
+      const limit = typeof rawLimit === "number" && Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.min(MAX_LIMIT, Math.trunc(rawLimit)) : DEFAULT_LIMIT;
       const hits = findAcrossDomains(await deps.find(), query);
-      return { hits: hits.map((h) => ({ ...h })), total: hits.length };
+      const total = hits.length;
+      return {
+        hits: hits.slice(0, limit).map((h) => ({ ...h })),
+        limit,
+        total,
+        truncated: total > limit
+      };
     }
   };
 }

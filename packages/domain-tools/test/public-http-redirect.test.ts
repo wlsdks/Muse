@@ -89,6 +89,12 @@ describe("fetchPublicHttpWithRedirects", () => {
 
     const malformed = await fetchPublicHttpWithRedirects("not a URL", { fetchImpl, lookup });
     expect(malformed).toMatchObject({ code: "PUBLIC_INITIAL_INVALID_URL", ok: false, phase: "initial" });
+    // The message must name the expected shape + echo the rejected value — the raw
+    // WHATWG DOMException text ("invalid URL: Invalid URL") named neither.
+    if (!malformed.ok) {
+      expect(malformed.message).toContain("http(s)");
+      expect(malformed.message).toContain("not a URL");
+    }
     const ftp = await fetchPublicHttpWithRedirects("ftp://public.test/a", { fetchImpl, lookup });
     expect(ftp).toMatchObject({ code: "PUBLIC_INITIAL_GUARD", ok: false, phase: "initial" });
     const method = await fetchPublicHttpWithRedirects("https://public.test/a", { fetchImpl, lookup, retryOptions: { init: { method: "POST" } } });

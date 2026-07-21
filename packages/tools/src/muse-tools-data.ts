@@ -33,7 +33,11 @@ export function createMathEvalTool(): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
-      const expression = typeof args["expression"] === "string" ? (args["expression"] as string).trim() : "";
+      const rawExpression = args["expression"];
+      if (rawExpression !== undefined && rawExpression !== null && typeof rawExpression !== "string") {
+        return { error: "`expression` must be a string, e.g. {\"expression\": \"42\"}" };
+      }
+      const expression = typeof rawExpression === "string" ? rawExpression.trim() : "";
       if (expression.length === 0) {
         return { error: "expression is required" };
       }
@@ -42,6 +46,9 @@ export function createMathEvalTool(): MuseTool {
       }
       if (!MATH_EXPRESSION.test(expression)) {
         return { error: "expression may only contain digits, parentheses, '.', ',' and + - * / %" };
+      }
+      if (hasInvalidCommaGrouping(expression)) {
+        return { error: "',' is only accepted as a thousands separator (1,000). Use '.' for a decimal point, e.g. '1.5 + 1'" };
       }
       try {
         const result = evaluateArithmetic(expression);
@@ -83,7 +90,10 @@ export function createHashTextTool(): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
-      const text = typeof args["text"] === "string" ? (args["text"] as string) : "";
+      if (typeof args["text"] !== "string") {
+        return { error: "hash_text needs `text` as a string, e.g. {\"text\":\"hello\",\"algorithm\":\"sha256\"}" };
+      }
+      const text = args["text"];
       const algorithmInput = typeof args["algorithm"] === "string"
         ? (args["algorithm"] as string).trim().toLowerCase()
         : "sha256";
@@ -105,7 +115,7 @@ export function createCsvParseTool(): MuseTool {
     definition: {
       description:
         "Parses CSV `text` into structured rows. With `header: true` (default), the first non-empty record becomes the column names and each remaining record returns as an object keyed by those names; `headers` is included on the response. With `header: false`, every record returns as an array of strings under `rows`. " +
-        "Handles quoted fields, escaped quotes (`\"\"` → `\"`), CRLF/LF line endings, and trailing empty fields. A row with more cells than headers keeps the surplus under an `_extra` array (never dropped); a short row pads missing columns with empty strings. Bounded inputs: text ≤ 200k characters, ≤ 1000 records.",
+        "Handles quoted fields, escaped quotes (`\"\"` → `\"`), CRLF/LF line endings, and trailing empty fields. A row with more cells than headers keeps the surplus under an `_extra` array (never dropped); a short row pads missing columns with empty strings. Bounded inputs: text ≤ 200k characters, ≤ 1000 records — a larger input returns only the first 1000 records with `truncated: true` and the real `totalRecords`.",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -124,14 +134,20 @@ export function createCsvParseTool(): MuseTool {
       risk: "read"
     },
     execute: (args): JsonObject => {
-      const text = typeof args["text"] === "string" ? (args["text"] as string) : "";
+      if (typeof args["text"] !== "string") {
+        return { error: "csv_parse needs `text` as a CSV string, e.g. {\"text\":\"name,age\\nAda,36\"}" };
+      }
+      const text = args["text"];
       if (text.length === 0) {
         return { rows: [] } satisfies JsonObject;
       }
       if (text.length > CSV_PARSE_MAX_TEXT_LENGTH) {
         return { error: `text must be ≤ ${CSV_PARSE_MAX_TEXT_LENGTH} characters` };
       }
-      const useHeader = args["header"] === false ? false : true;
+      const useHeader = readHeaderFlag(args["header"]);
+      if (useHeader === "invalid") {
+        return { error: "`header` must be a boolean (true or false)" };
+      }
       const records = parseCsvRecords(text);
       if (useHeader) {
         if (records.length === 0) {
@@ -160,6 +176,7 @@ export function createCsvParseTool(): MuseTool {
         // can't collide with a real (de-duplicated) column key.
         let overflowKey = "_extra";
         while (usedKeys.has(overflowKey)) overflowKey += "_";
+        const totalRecords = records.length - 1;
         const dataRecords = records.slice(1, 1 + CSV_PARSE_MAX_ROWS);
         const rows = dataRecords.map((record) => {
           const row: Record<string, string | string[]> = {};
@@ -171,9 +188,30 @@ export function createCsvParseTool(): MuseTool {
           }
           return row;
         });
+        if (totalRecords > CSV_PARSE_MAX_ROWS) {
+          return {
+            headers,
+            note: `only the first ${CSV_PARSE_MAX_ROWS} records are returned; totals from these rows are incomplete`,
+            returnedRows: rows.length,
+            rows,
+            totalRecords,
+            truncated: true
+          } satisfies JsonObject;
+        }
         return { headers, rows } satisfies JsonObject;
       }
-      return { rows: records.slice(0, CSV_PARSE_MAX_ROWS) } satisfies JsonObject;
+      const totalRecords = records.length;
+      const rows = records.slice(0, CSV_PARSE_MAX_ROWS);
+      if (totalRecords > CSV_PARSE_MAX_ROWS) {
+        return {
+          note: `only the first ${CSV_PARSE_MAX_ROWS} records are returned; totals from these rows are incomplete`,
+          returnedRows: rows.length,
+          rows,
+          totalRecords,
+          truncated: true
+        } satisfies JsonObject;
+      }
+      return { rows } satisfies JsonObject;
     }
   };
 }
@@ -204,12 +242,16 @@ export function createBase64Tool(): MuseTool {
     },
     execute: (args): JsonObject => {
       const mode = typeof args["mode"] === "string" ? (args["mode"] as string).trim().toLowerCase() : "";
-      const text = typeof args["text"] === "string" ? (args["text"] as string) : "";
       const urlSafe = args["urlSafe"] === true;
 
       if (mode !== "encode" && mode !== "decode") {
         return { error: "mode must be 'encode' or 'decode'" };
       }
+
+      if (typeof args["text"] !== "string") {
+        return { error: "base64 needs `text` as a string, e.g. {\"mode\":\"decode\",\"text\":\"aGVsbG8=\"}" };
+      }
+      const text = args["text"];
 
       if (text.length > BASE64_MAX_TEXT_LENGTH) {
         return { error: `text must be ≤ ${BASE64_MAX_TEXT_LENGTH} characters` };
@@ -226,7 +268,15 @@ export function createBase64Tool(): MuseTool {
       const trimmed = text.trim();
       const expectedAlphabet = urlSafe ? /^[A-Za-z0-9_-]*={0,2}$/ : /^[A-Za-z0-9+/]*={0,2}$/;
       if (!expectedAlphabet.test(trimmed)) {
-        return { error: urlSafe ? "input is not valid url-safe base64" : "input is not valid base64" };
+        // The URL-safe alphabet is valid base64 the tool DOES support — just
+        // under the other flag — so name the fix instead of calling it corrupt.
+        if (!urlSafe && /^[A-Za-z0-9_-]+={0,2}$/.test(trimmed)) {
+          return { error: "input uses the URL-safe base64 alphabet ('-' and '_'); retry with urlSafe: true" };
+        }
+        if (urlSafe) {
+          return { error: "input is not valid url-safe base64 (expected A-Z a-z 0-9 - _ with optional '=' padding); pass urlSafe: false if this is standard base64" };
+        }
+        return { error: "`text` is not valid base64 (expected A-Z a-z 0-9 + / with optional '=' padding, e.g. 'aGVsbG8=')" };
       }
       const standardised = urlSafe
         ? padBase64(trimmed.replace(/-/g, "+").replace(/_/g, "/"))
@@ -236,9 +286,39 @@ export function createBase64Tool(): MuseTool {
       if (reEncoded !== standardised.replace(/=+$/, "")) {
         return { error: "input is not valid base64" };
       }
-      return { decoded: buffer.toString("utf8") } satisfies JsonObject;
+      const decoded = buffer.toString("utf8");
+      // Buffer#toString("utf8") silently substitutes U+FFFD for any byte
+      // sequence that isn't valid UTF-8 — re-encoding the decoded string and
+      // comparing bytes catches that lossy coercion instead of returning
+      // replacement characters as if they were the real plaintext.
+      if (!Buffer.from(decoded, "utf8").equals(buffer)) {
+        return { error: `decoded bytes are not valid UTF-8 text (binary payload, ${buffer.length} bytes)` };
+      }
+      return { decoded } satisfies JsonObject;
     }
   };
+}
+
+/**
+ * The model reliably emits quoted "true"/"false" for a boolean argument, and
+ * the old `=== false` check treated any such string as the default (true) —
+ * silently inverting an explicit `header: "false"` request. Accept the
+ * string forms case-insensitively; anything else that isn't a real boolean
+ * or absent is a caller error, not a value to guess through.
+ */
+function readHeaderFlag(value: unknown): boolean | "invalid" {
+  if (value === undefined) {
+    return true;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return "invalid";
 }
 
 function padBase64(input: string): string {
@@ -307,6 +387,29 @@ function parseCsvRecords(text: string): string[][] {
     records.push(row);
   }
   return records;
+}
+
+/**
+ * A comma is only a legitimate thousands separator when every comma-delimited
+ * group after it is exactly three digits (1,000 / 1,000,000) — a stray comma
+ * like "1,5" is European decimal notation, not grouping, and stripping it
+ * wholesale (the previous behaviour) silently turns 1,5 into 15.
+ */
+function hasInvalidCommaGrouping(expression: string): boolean {
+  for (let index = 0; index < expression.length; index += 1) {
+    if (expression[index] !== ",") {
+      continue;
+    }
+    const nextThree = expression.slice(index + 1, index + 4);
+    if (!/^\d{3}$/u.test(nextThree)) {
+      return true;
+    }
+    const after = expression[index + 4];
+    if (after !== undefined && /\d/u.test(after)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

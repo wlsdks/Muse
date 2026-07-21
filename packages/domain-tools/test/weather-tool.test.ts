@@ -148,6 +148,34 @@ describe("createWeatherTool — on-demand weather perception", () => {
     expect(isoInZone(instant, "UTC")).toBe("2026-06-14");
   });
 
+  it("flags a sub-day `when` ('tonight' / 'this afternoon' / 'in 2 hours') with a whole-day note instead of silently answering as if it were granular", async () => {
+    const location = { country: "South Korea", latitude: 37.566, longitude: 126.978, name: "Seoul", timezone: "UTC" };
+    const days = [
+      { code: 61, condition: "slight rain", dateIso: "2026-07-21", precipitationProbabilityMaxPct: 100, tempMaxC: 26, tempMinC: 20 },
+      { code: 0, condition: "clear sky", dateIso: "2026-07-22", tempMaxC: 27, tempMinC: 21 }
+    ];
+    const p = {
+      currentWeather: async () => ({ code: 0, condition: "clear sky", temperatureC: 20 }),
+      dailyForecast: async () => days,
+      geocode: async () => location
+    } as unknown as WeatherProvider;
+    const tool = createWeatherTool({ now: () => new Date("2026-07-21T00:00:00Z"), provider: p });
+
+    for (const when of ["tonight", "this afternoon", "in 2 hours"]) {
+      const out = await tool.execute({ location: "Seoul", when }) as { found: boolean; date?: string; granularity?: string; note?: string };
+      expect(out.found).toBe(true);
+      expect(out.date).toBe("2026-07-21");
+      expect(out.granularity).toBe("whole-day");
+      expect(out.note).toContain("2026-07-21");
+      expect(out.note).toContain(when);
+    }
+
+    // A whole-day phrase ("tomorrow") already asked for a full day — no note needed.
+    const wholeDay = await tool.execute({ location: "Seoul", when: "tomorrow" }) as { note?: string; granularity?: string };
+    expect(wholeDay.note).toBeUndefined();
+    expect(wholeDay.granularity).toBeUndefined();
+  });
+
   it("resolves a relative `when` in the LOCATION's timezone, not the server's", async () => {
     // 2026-06-14T06:00Z is still 2026-06-13 23:00 in Los Angeles — so "today's"
     // LA forecast is the LA-local 2026-06-13, NOT the server/UTC 2026-06-14.

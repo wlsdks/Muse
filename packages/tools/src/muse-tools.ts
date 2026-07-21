@@ -102,10 +102,19 @@ function createJsonQueryTool(): MuseTool {
     },
     execute: (args): JsonObject => {
       const path = typeof args["path"] === "string" ? args["path"].trim() : "";
-      const document = args["document"] ?? null;
       if (path.length === 0) {
         return { error: "path is required" };
       }
+      if (args["document"] === undefined) {
+        return { error: "document is required — pass the JSON object itself, e.g. document: {\"users\":[{\"name\":\"Ada\"}]}" };
+      }
+      if (typeof args["document"] === "string") {
+        return { error: "document must be a JSON object/array, not a JSON string — pass the parsed object" };
+      }
+      if (path.includes("[") || path.includes("]") || path.startsWith("$")) {
+        return { error: "path must be dotted with bare numeric segments for array indices — use 'users.0.name', not 'users[0].name'" };
+      }
+      const document = args["document"] ?? null;
       const segments = path.split(".").map((segment) => segment.trim()).filter((segment) => segment.length > 0);
       let cursor: JsonValue | null = document === null || document === undefined ? null : document;
       for (const segment of segments) {
@@ -188,6 +197,11 @@ const REGEX_EXTRACT_MAX_TEXT_LENGTH = 100_000;
 const REGEX_EXTRACT_MAX_PATTERN_LENGTH = 500;
 const REGEX_EXTRACT_MAX_MATCHES = 1_000;
 const REGEX_EXTRACT_ALLOWED_FLAGS = /^[gimsuy]*$/u;
+// A pattern like "/[a-z]+@[a-z.]+/g" compiles fine as regex SOURCE (the
+// slashes and trailing letters become literal characters), so it silently
+// matches nothing instead of erroring — catch the JS-literal shape before
+// compiling and point the caller at the `flags` argument instead.
+const REGEX_EXTRACT_LITERAL_FORM = /^\/.*\/[gimsuy]*$/u;
 
 /** True when a body fragment contains an unescaped unbounded quantifier (* + {n,}). */
 function fragmentHasUnboundedQuantifier(body: string): boolean {
@@ -257,11 +271,14 @@ function createRegexExtractTool(): MuseTool {
     },
     execute: (args): JsonObject => {
       const pattern = typeof args["pattern"] === "string" ? args["pattern"] : "";
-      const text = typeof args["text"] === "string" ? args["text"] : "";
       const flagsInput = typeof args["flags"] === "string" ? args["flags"] : "g";
       if (pattern.length === 0) {
         return { error: "pattern is required" };
       }
+      if (typeof args["text"] !== "string") {
+        return { error: "text is required and must be a string — pass the text to scan, e.g. text: 'mail me at a@b.com'" };
+      }
+      const text = args["text"];
       if (pattern.length > REGEX_EXTRACT_MAX_PATTERN_LENGTH) {
         return { error: `pattern must be ≤ ${REGEX_EXTRACT_MAX_PATTERN_LENGTH} characters` };
       }
@@ -270,6 +287,9 @@ function createRegexExtractTool(): MuseTool {
       }
       if (!REGEX_EXTRACT_ALLOWED_FLAGS.test(flagsInput)) {
         return { error: "flags must be a subset of g/i/m/s/u/y" };
+      }
+      if (REGEX_EXTRACT_LITERAL_FORM.test(pattern)) {
+        return { error: "pattern must be the regex SOURCE without / delimiters — use '[a-z]+@[a-z.]+' and put flags in the 'flags' argument" };
       }
       // Reject the nested-quantifier catastrophic-backtracking shape BEFORE
       // compiling/running — JS regex can't be timed out on the main thread, so

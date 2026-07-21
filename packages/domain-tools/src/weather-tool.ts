@@ -33,6 +33,15 @@ function isValidCalendarDate(iso: string): boolean {
   return dt.getUTCFullYear() === year && dt.getUTCMonth() === month - 1 && dt.getUTCDate() === day;
 }
 
+// "tonight" / "this afternoon" / "in 2 hours" / an explicit clock time all name a
+// PART of a day, but the provider only forecasts whole calendar days — without
+// this check the sub-day request is silently answered with a whole-day aggregate.
+const SUB_DAY_PHRASE_RE = /\btonight\b|\bthis\s+(morning|afternoon|evening)\b|\bin\s+\d+\s*(hours?|hrs?|minutes?|mins?)\b|\b\d{1,2}(:\d{2})?\s*(am|pm)\b|\bnoon\b|\bmidnight\b|\bat\s+\d{1,2}(:\d{2})?\b/iu;
+
+function hasSubDayComponent(when: string): boolean {
+  return SUB_DAY_PHRASE_RE.test(when);
+}
+
 export function createWeatherTool(deps: WeatherToolDeps = {}): MuseTool {
   const provider = deps.provider ?? new OpenMeteoWeatherProvider();
   const defaultLocation = deps.defaultLocation?.trim();
@@ -80,7 +89,15 @@ export function createWeatherTool(deps: WeatherToolDeps = {}): MuseTool {
           }
           const forecast = await resolveForecastLine(provider, location, { iso });
           return forecast
-            ? { date: forecast.date, forecast: forecast.line, found: true, location }
+            ? {
+                date: forecast.date,
+                forecast: forecast.line,
+                found: true,
+                location,
+                ...(hasSubDayComponent(when)
+                  ? { granularity: "whole-day", note: `forecast is for the whole day ${forecast.date}, not just '${when}'` }
+                  : {})
+              }
             : { date: iso, found: false, location, reason: noForecast };
         }
         if (!resolveRelativeTimePhrase(when, now)) {
@@ -88,7 +105,15 @@ export function createWeatherTool(deps: WeatherToolDeps = {}): MuseTool {
         }
         const forecast = await resolveForecastLine(provider, location, { now, relative: when });
         return forecast
-          ? { date: forecast.date, forecast: forecast.line, found: true, location }
+          ? {
+              date: forecast.date,
+              forecast: forecast.line,
+              found: true,
+              location,
+              ...(hasSubDayComponent(when)
+                ? { granularity: "whole-day", note: `forecast is for the whole day ${forecast.date}, not just '${when}'` }
+                : {})
+            }
           : { found: false, location, reason: noForecast };
       }
       const line = await resolveWeatherLine(provider, location);

@@ -12,6 +12,8 @@ import type { MuseTool } from "@muse/tools";
 
 import type { BackgroundProcessRecord } from "@muse/stores";
 
+const ALLOWED_STATUSES = new Set(["running", "exited", "failed", "killed"]);
+
 export interface BackgroundListToolDeps {
   /** The background-process registry records (as written by `muse bg run`). */
   readonly processes: () => Promise<readonly BackgroundProcessRecord[]> | readonly BackgroundProcessRecord[];
@@ -41,7 +43,19 @@ export function createBackgroundListTool(deps: BackgroundListToolDeps): MuseTool
       risk: "read"
     },
     execute: async (args): Promise<JsonObject> => {
-      const statusFilter = typeof args["status"] === "string" ? args["status"] : undefined;
+      const rawStatus = typeof args["status"] === "string" ? args["status"].trim() : undefined;
+      let statusFilter: string | undefined;
+      if (rawStatus !== undefined && rawStatus.length > 0) {
+        const normalized = rawStatus.toLowerCase();
+        if (!ALLOWED_STATUSES.has(normalized)) {
+          return {
+            count: 0,
+            error: `unknown status filter '${rawStatus}' — use one of: running, exited, failed, killed (e.g. status:"running" for what is still alive)`,
+            processes: []
+          };
+        }
+        statusFilter = normalized;
+      }
       const all = await deps.processes();
       const selected = statusFilter ? all.filter((record) => record.status === statusFilter) : all;
       return {

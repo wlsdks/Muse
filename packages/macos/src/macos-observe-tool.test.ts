@@ -142,6 +142,29 @@ describe("mac_observe — a source it could not read is never reported as empty"
     expect(out.unavailable).toBeDefined();
   });
 
+  it("collapses per-source repetition when every source failed for the SAME reason", async () => {
+    const { deps } = helper({
+      focus: '{"code":"helper_unavailable","message":"not installed","ok":false}',
+      windows: '{"code":"helper_unavailable","message":"not installed","ok":false}'
+    });
+    const out = await createMacObserveTool(deps).execute({ include: ["focus", "windows"] }, ctx) as Record<string, unknown>;
+    // One shared reason, named once, with the list of sources it applies to —
+    // not the same {code,message} pair repeated under every source key.
+    expect(out.unavailable).toEqual({ code: "helper_unavailable", message: "not installed", sources: ["focus", "windows"] });
+  });
+
+  it("does NOT collapse when sources failed for DIFFERENT reasons", async () => {
+    const { deps } = helper({
+      focus: '{"code":"helper_unavailable","message":"not installed","ok":false}',
+      windows: '{"code":"ax_permission_denied","message":"grant Accessibility","ok":false}'
+    });
+    const out = await createMacObserveTool(deps).execute({ include: ["focus", "windows"] }, ctx) as Record<string, unknown>;
+    expect(out.unavailable).toMatchObject({
+      focus: { code: "helper_unavailable" },
+      windows: { code: "ax_permission_denied" }
+    });
+  });
+
   it("degrades cleanly with no helper installed at all", async () => {
     const out = await createMacObserveTool().execute({ include: ["windows"] }, ctx) as Record<string, unknown>;
     expect(out.error).toContain("not installed");

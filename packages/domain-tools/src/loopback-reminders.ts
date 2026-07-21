@@ -252,11 +252,25 @@ export function createRemindersMcpServer(options: RemindersMcpServerOptions): Lo
           "NOT for calendar events (use the calendar tool) or todo tasks (use the tasks tool).",
         keywords: ["reminder", "reminders", "리마인더", "리마인드", "알림", "목록", "보여줘", "list", "show", "remind"],
         execute: async (args): Promise<JsonObject> => {
-          const status = readReminderStatusFilter(readString(args, "status"));
+          // A status the caller SPECIFIED but that is outside the enum silently
+          // fell back to "pending" — a model asking for "done"/"all" got the
+          // pending list back and reported it as the answer. Repair, but say so
+          // (tool-calling.md rule 7 — repair deterministically, don't re-reason).
+          const requestedStatus = readString(args, "status");
+          const status = readReminderStatusFilter(requestedStatus);
+          const statusWasCoerced = requestedStatus !== undefined && requestedStatus !== status;
           const reminders = await readReminders(file);
           const filtered = filterReminders(reminders, status, now);
           const result = serializeSortedReminders(filtered, maxListEntries, now);
-          return { reminders: result.reminders, shown: result.shown, status, total: result.total };
+          return {
+            reminders: result.reminders,
+            shown: result.shown,
+            status,
+            total: result.total,
+            ...(statusWasCoerced
+              ? { note: `'${requestedStatus ?? ""}' is not a valid status — valid values are 'pending', 'fired', 'due', 'all'. Listed '${status}' instead.` }
+              : {})
+          };
         },
         inputSchema: {
           additionalProperties: false,

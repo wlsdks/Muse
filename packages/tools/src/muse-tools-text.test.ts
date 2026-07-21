@@ -29,10 +29,21 @@ describe("text_stats", () => {
     expect((call(createTextStatsTool(), { text: "a\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}b" }))["characters"]).toBe(3);
   });
 
-  it("returns zero across all dimensions for whitespace-only / empty / missing input", () => {
+  it("returns zero across all dimensions for whitespace-only / empty input", () => {
     expect(call(createTextStatsTool(), { text: "   \n\t " })).toEqual({ characters: 0, lines: 0, words: 0 });
     expect(call(createTextStatsTool(), { text: "" })).toEqual({ characters: 0, lines: 0, words: 0 });
-    expect(call(createTextStatsTool(), {})).toEqual({ characters: 0, lines: 0, words: 0 });
+  });
+
+  it("errors on a missing/non-string `text` instead of silently measuring an empty string", () => {
+    // A dropped required argument must not be indistinguishable from a real
+    // zero-length measurement — that reads as a fabricated fact about input
+    // the tool never received.
+    expect(call(createTextStatsTool(), {})).toEqual({
+      error: "text is required and must be a string, e.g. text: 'hello world'"
+    });
+    expect(call(createTextStatsTool(), { text: 123 })).toEqual({
+      error: "text is required and must be a string, e.g. text: 'hello world'"
+    });
   });
 });
 
@@ -54,9 +65,30 @@ describe("slugify", () => {
   it("truncates to maxLength and re-trims a trailing dash left by the cut", () => {
     // "one-two-three" sliced to 8 = "one-two-" → trailing dash stripped → "one-two".
     expect(call(createSlugifyTool(), { text: "one two three", maxLength: 8 })["slug"]).toBe("one-two");
-    // Non-positive / non-integer maxLength is ignored (no truncation).
-    expect(call(createSlugifyTool(), { text: "one two three", maxLength: 0 })["slug"]).toBe("one-two-three");
-    expect(call(createSlugifyTool(), { text: "one two three", maxLength: -5 })["slug"]).toBe("one-two-three");
+  });
+
+  it("errors on a non-positive/non-integer maxLength instead of silently ignoring it", () => {
+    // A supplied-but-unusable argument must be named, not dropped — a caller
+    // who asked for maxLength: 0 and got the untruncated slug back would
+    // never learn their cap had no effect.
+    expect(call(createSlugifyTool(), { maxLength: 0, text: "one two three" })).toEqual({
+      error: "maxLength must be a positive integer number, e.g. 5"
+    });
+    expect(call(createSlugifyTool(), { maxLength: -5, text: "one two three" })).toEqual({
+      error: "maxLength must be a positive integer number, e.g. 5"
+    });
+    expect(call(createSlugifyTool(), { maxLength: "5", text: "one two three" })).toEqual({
+      error: "maxLength must be a positive integer number, e.g. 5"
+    });
+  });
+
+  it("errors on a missing/non-string text", () => {
+    expect(call(createSlugifyTool(), {})).toEqual({
+      error: "text is required and must be a string, e.g. text: 'My Note Title'"
+    });
+    expect(call(createSlugifyTool(), { text: 42 })).toEqual({
+      error: "text is required and must be a string, e.g. text: 'My Note Title'"
+    });
   });
 });
 
@@ -73,9 +105,18 @@ describe("kv_summarize", () => {
     expect(out["summary"]).toBe("a: []\nb: {}\nc: null");
   });
 
-  it("returns an empty summary for null/undefined data", () => {
-    expect(call(createKvSummarizeTool(), { data: null as unknown as JsonObject })["summary"]).toBe("");
-    expect(call(createKvSummarizeTool(), {})["summary"]).toBe("");
+  it("errors on missing/null data instead of a silent empty summary", () => {
+    // Absent `data` (e.g. the model sent `json:` instead of `data:`) must not
+    // read the same as a legitimately empty object — there is no basis to
+    // retry with the right key without the error.
+    expect(call(createKvSummarizeTool(), { data: null as unknown as JsonObject })).toEqual({
+      error: "`data` is required — pass the object/array itself, e.g. data:{\"name\":\"Bob\",\"age\":30}",
+      summary: ""
+    });
+    expect(call(createKvSummarizeTool(), {})).toEqual({
+      error: "`data` is required — pass the object/array itself, e.g. data:{\"name\":\"Bob\",\"age\":30}",
+      summary: ""
+    });
   });
 
   it("caps recursion at KV_SUMMARIZE_MAX_DEPTH with a [deep] marker", () => {
@@ -150,5 +191,36 @@ describe("markdown_table", () => {
     // header + separator + 200 rows + 1 omitted-count line
     expect(lines).toHaveLength(203);
     expect(lines[202]).toBe("_…50 more rows omitted_");
+  });
+
+  it("errors when NONE of the explicit columns exist in the rows, instead of rendering a data-free table", () => {
+    // A syntactically valid table with every cell blank is a success-shaped
+    // answer over data that was silently dropped — the caller needs the
+    // real column names, not a table that looks fine and says nothing.
+    const out = call(createMarkdownTableTool(), {
+      columns: ["A", "bee"] as unknown as JsonObject[],
+      rows: [{ a: 1, b: 2 }] as unknown as JsonObject[]
+    });
+    expect(out).toEqual({
+      error: "none of the requested columns exist in `rows`; available columns are: a, b — pass `columns` using those exact key names, or omit `columns` to use all of them",
+      markdown: ""
+    });
+  });
+
+  it("warns (but still renders) when SOME explicit columns are missing from the rows", () => {
+    const out = call(createMarkdownTableTool(), {
+      columns: ["a", "bee"] as unknown as JsonObject[],
+      rows: [{ a: 1, b: 2 }] as unknown as JsonObject[]
+    });
+    expect(out["markdown"]).toBe("| a |\n| --- |\n| 1 |");
+    expect(out["warning"]).toBe("columns not found in rows: bee");
+  });
+
+  it("renders a header-only table from explicit columns when rows is genuinely empty (not an error)", () => {
+    const out = call(createMarkdownTableTool(), {
+      columns: ["a", "b"] as unknown as JsonObject[],
+      rows: [] as unknown as JsonObject[]
+    });
+    expect(out).toEqual({ markdown: "| a | b |\n| --- | --- |" });
   });
 });

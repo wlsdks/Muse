@@ -152,19 +152,34 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
           `Returns up to ${maxListEntries} entries.`,
         execute: async (args): Promise<JsonObject> => {
           const tasks = await readTasks(file);
+          // A stringified number (`"work"` vs 123) is a common small-model
+          // output shape — coerce it silently when unambiguous rather than
+          // treating the argument as absent.
           const tagRaw = (args as Record<string, unknown>)["tag"];
-          const tagLabel = typeof tagRaw === "string" ? tagRaw.trim() : "";
+          const tagLabel = typeof tagRaw === "string"
+            ? tagRaw.trim()
+            : typeof tagRaw === "number" || typeof tagRaw === "boolean"
+              ? String(tagRaw)
+              : "";
           const wantTag = tagLabel.toLowerCase();
           const matchesTag = (taskTags: readonly string[] | undefined): boolean =>
             wantTag.length === 0 || (taskTags?.some((t) => t.toLowerCase() === wantTag) ?? false);
+
           const dueRaw = (args as Record<string, unknown>)["dueWithinDays"];
-          if (typeof dueRaw === "number" && Number.isFinite(dueRaw)) {
-            const allDue = selectTasksDueWithin(tasks, { now: now(), withinDays: dueRaw })
+          const dueCoerced = typeof dueRaw === "number" && Number.isFinite(dueRaw)
+            ? dueRaw
+            : typeof dueRaw === "string" && dueRaw.trim() !== "" && Number.isFinite(Number(dueRaw))
+              ? Number(dueRaw)
+              : undefined;
+          const dueSuppliedButUnusable = dueRaw !== undefined && dueCoerced === undefined;
+
+          if (dueCoerced !== undefined) {
+            const allDue = selectTasksDueWithin(tasks, { now: now(), withinDays: dueCoerced })
               .map((entry) => entry.task)
               .filter((task) => matchesTag(task.tags));
             const due = allDue.slice(0, maxListEntries);
             return {
-              dueWithinDays: Math.max(0, Math.trunc(dueRaw)),
+              dueWithinDays: Math.max(0, Math.trunc(dueCoerced)),
               shown: due.length,
               tasks: due.map((task) => serializeTaskForModel(task, now)) as JsonValue,
               total: allDue.length,
@@ -184,15 +199,23 @@ export function createTasksMcpServer(options: TasksMcpServerOptions): LoopbackMc
             .filter((task) => matchesTag(task.tags))
             .sort(compareTasksByDueDate);
           const filtered = matching.slice(0, maxListEntries);
+          const notes: string[] = [];
+          if (dueSuppliedButUnusable) {
+            notes.push(
+              `'${String(dueRaw)}' is not a number — dueWithinDays expects days, e.g. 0 (today + overdue) or 7. `
+              + "Listed by status instead."
+            );
+          }
+          if (statusWasCoerced) {
+            notes.push(`'${requestedStatus ?? ""}' is not a valid status — valid values are 'open', 'done', 'all'. Listed '${status}' instead.`);
+          }
           return {
             shown: filtered.length,
             status,
             tasks: filtered.map((task) => serializeTaskForModel(task, now)) as JsonValue,
             total: matching.length,
             ...(tagLabel ? { tag: tagLabel } : {}),
-            ...(statusWasCoerced
-              ? { note: `'${requestedStatus ?? ""}' is not a valid status — valid values are 'open', 'done', 'all'. Listed '${status}' instead.` }
-              : {})
+            ...(notes.length > 0 ? { note: notes.join(" ") } : {})
           };
         },
         inputSchema: {

@@ -47,4 +47,47 @@ describe("createFeedsSearchTool — search the watched feed archive", () => {
     // out-of-range clamps to 50 rather than a huge/NaN cap.
     expect((await tool().execute({ query: "a", limit: 999 }) as { limit: number }).limit).toBe(50);
   });
+
+  // A small model forwards the user's natural phrasing verbatim ("any news about
+  // Mars"), not a distilled keyword — whole-phrase substring matching answered
+  // that with a false "nothing found" even though a plain "Mars" query hits.
+  it("matches a natural-language query by its distinctive words, not the whole phrase", async () => {
+    const out = await tool().execute({ query: "any news about Mars" }) as { count: number; hits: { id: string }[] };
+    expect(out.count).toBe(2);
+    expect(out.hits.map((h) => h.id)).toEqual(["f1", "f2"]);
+  });
+
+  it("gives a self-correcting reason (not a bare zero) when no entry matches any word in the query", async () => {
+    const out = await tool().execute({ query: "kubernetes deployment" }) as { count: number; hits: unknown[]; reason?: string };
+    expect(out.count).toBe(0);
+    expect(out.hits).toEqual([]);
+    expect(out.reason).toBeDefined();
+    expect(out.reason).toContain("kubernetes deployment");
+  });
+
+  it("ranks an entry matching MORE query words above one matching fewer", async () => {
+    const entries: FeedEntryLike[] = [
+      { id: "one", summary: "just mars", title: "Mars only" },
+      { id: "two", summary: "a rover mission on mars", title: "Mars rover mission" }
+    ];
+    const out = await tool(entries).execute({ query: "mars rover mission" }) as { hits: { id: string }[] };
+    expect(out.hits.map((h) => h.id)).toEqual(["two", "one"]);
+  });
+
+  it("truncates an oversized summary and states the truncated hit count when the response would blow the size budget", async () => {
+    const bigSummary = "x".repeat(1000);
+    const entries: FeedEntryLike[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `big${i.toString()}`, summary: `${bigSummary} mars`, title: `Mars entry ${i.toString()}`
+    }));
+    const out = await tool(entries).execute({ query: "mars", limit: 30 }) as {
+      hits: { summary: string }[];
+      truncated?: number;
+    };
+    for (const hit of out.hits) {
+      expect(hit.summary.length).toBeLessThanOrEqual(301); // 300 chars + the ellipsis
+    }
+    // Fewer than the full 30 matches fit in the byte budget with 1000-char summaries.
+    expect(out.hits.length).toBeLessThan(30);
+    expect(out.truncated).toBeGreaterThan(0);
+  });
 });

@@ -117,6 +117,18 @@ describe("assertPublicHttpUrlSync — composed SSRF gate (no DNS)", () => {
   it("rejects a malformed URL", () => {
     expect(assertPublicHttpUrlSync("not a url").ok).toBe(false);
   });
+  // The raw WHATWG DOMException text ("invalid URL: Invalid URL") named neither
+  // the rejected value nor the expected form — the message now says what shape
+  // is required and echoes back what was actually given.
+  it("names the expected form and echoes the rejected value on a malformed URL", () => {
+    const r = assertPublicHttpUrlSync("example.com");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain("http(s)");
+      expect(r.error).toContain("scheme");
+      expect(r.error).toContain("example.com");
+    }
+  });
   it("rejects a blocked hostname (localhost / *.internal)", () => {
     expect(assertPublicHttpUrlSync("http://localhost/admin").ok).toBe(false);
     expect(assertPublicHttpUrlSync("http://metadata.internal/").ok).toBe(false);

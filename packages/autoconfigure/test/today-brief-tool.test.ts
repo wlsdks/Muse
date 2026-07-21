@@ -110,4 +110,32 @@ describe("createTodayBriefTool", () => {
     expect(result.overdue).toEqual(["⏰ overdue thing (overdue)"]);
     expect(result.today).toEqual([]);
   });
+
+  it("echoes the applied lookaheadHours so the model knows what window it actually got", async () => {
+    // A clamped/omitted lookaheadHours request is silently answered with a rest-of-today window
+    // unless the tool names what it actually used (finding 49).
+    const tool = createTodayBriefTool({ now: () => NOW, todayInput: () => ({ tasks: [], reminders: [], followups: [], events: [] }) });
+    const omitted = (await tool.execute({}, { runId: "t", userId: "u" })) as { lookaheadHours: unknown };
+    expect(omitted.lookaheadHours).toBe("rest-of-today");
+    const clamped = (await tool.execute({ lookaheadHours: 100 }, { runId: "t", userId: "u" })) as { lookaheadHours: unknown };
+    expect(clamped.lookaheadHours).toBe(24); // clamped to the schema max, and the response says so
+  });
+
+  it("caps each bucket and reports the true totals when overdue backlog is large", async () => {
+    const manyReminders = Array.from({ length: 31 }, (_, i) => ({ dueAt: at(8), text: `take vitamins ${i}` }));
+    const tool = createTodayBriefTool({
+      now: () => NOW,
+      todayInput: () => ({ tasks: [], reminders: manyReminders, followups: [], events: [] })
+    });
+    const result = (await tool.execute({}, { runId: "t", userId: "u" })) as {
+      overdue: string[];
+      overdueTotal: number;
+      today: string[];
+      todayTotal: number;
+    };
+    expect(result.overdue.length).toBe(20);
+    expect(result.overdueTotal).toBe(31);
+    expect(result.today.length).toBe(0);
+    expect(result.todayTotal).toBe(0);
+  });
 });

@@ -180,6 +180,29 @@ export class PuppeteerBrowserController implements BrowserController {
     throw new Error("Chrome did not expose its DevTools port within 30s — is Chrome installed?");
   }
 
+  /**
+   * Deliberately never calls `launchDetached()` — only `open()` may launch a
+   * new browser. This only reconnects to whatever Chrome a prior invocation
+   * left running (the detached-spawn design means it may well still be up),
+   * and reports whether one of its tabs is an actual page rather than the
+   * `about:blank` a fresh/empty profile starts on.
+   */
+  async hasOpenPage(): Promise<boolean> {
+    if (this.page && !this.page.isClosed()) {
+      return this.page.url() !== "about:blank";
+    }
+    if (!this.browser || !this.browser.connected) {
+      this.browser = await this.connectToExisting();
+    }
+    if (!this.browser) return false;
+    const pages = await this.browser.pages();
+    const real = pages.find((page) => page.url() !== "about:blank");
+    if (!real) return false;
+    this.page = real;
+    this.registerDialogHandler(real);
+    return true;
+  }
+
   private async ensurePage(): Promise<Page> {
     if (this.page && !this.page.isClosed()) return this.page;
     if (!this.browser || !this.browser.connected) {

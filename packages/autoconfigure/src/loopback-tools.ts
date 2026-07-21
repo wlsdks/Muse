@@ -189,7 +189,10 @@ export function buildLoopbackTools(deps: LoopbackToolsDeps): LoopbackToolsBundle
   // Self-followup loopback — list / cancel / snooze the agent's
   // own captured promises.
   const followups = createLoopbackMcpMuseTools(
-    createFollowupsMcpServer({ file: deps.followupsFile })
+    createFollowupsMcpServer({
+      file: deps.followupsFile,
+      maxListEntries: parseInteger(env.MUSE_FOLLOWUPS_LIST_MAX, 12)
+    })
   );
 
   // Episode loopback — read-shaped tools plus user-revocable

@@ -125,11 +125,23 @@ export function createMacObserveTool(deps: MacObserveToolDeps = {}): MuseTool {
 
       const anySucceeded = Object.keys(observed).length > 0;
       if (!anySucceeded) {
-        const first = Object.values(failures)[0] as { code?: string; message?: string } | undefined;
+        const failureEntries = Object.entries(failures) as ReadonlyArray<[string, { code?: string; message?: string }]>;
+        const first = failureEntries[0]?.[1];
+        // Every source failing for the IDENTICAL reason (the usual case — one
+        // missing helper binary answers for windows/focus/apps/permissions
+        // alike) doesn't need the same code+message repeated once per source.
+        const sameReason = failureEntries.length > 1 &&
+          failureEntries.every(([, failure]) => failure.code === first?.code && failure.message === first?.message);
         return {
           error: first?.message ?? "could not read any requested source",
           ...(first?.code ? { code: first.code } : {}),
-          unavailable: failures
+          unavailable: sameReason && first
+            ? {
+                ...(first.code ? { code: first.code } : {}),
+                ...(first.message ? { message: first.message } : {}),
+                sources: failureEntries.map(([source]) => source)
+              }
+            : failures
         };
       }
 

@@ -55,8 +55,11 @@ class PublicRedirectGuardFailure extends Error {
   }
 }
 
-function messageForInitialInvalidUrl(error: unknown): string {
-  return `invalid URL: ${errorMessage(error)}`;
+// The raw WHATWG DOMException text ("invalid URL: Invalid URL") named neither
+// the rejected value nor the expected shape — mirror web-url-guard's message so
+// every public-http entry point gives the model something it can act on.
+function messageForInitialInvalidUrl(rawUrl: string): string {
+  return `invalid URL: 'url' must be an absolute http(s) URL including the scheme, e.g. 'https://example.com/article' (got ${JSON.stringify(rawUrl)})`;
 }
 
 function invalidRequest(message: string): PublicHttpRedirectFailure {
@@ -140,8 +143,8 @@ export async function fetchPublicHttpWithRedirects(
   let initialUrl: URL;
   try {
     initialUrl = new URL(rawUrl);
-  } catch (error) {
-    return { code: "PUBLIC_INITIAL_INVALID_URL", message: messageForInitialInvalidUrl(error), ok: false, phase: "initial" };
+  } catch {
+    return { code: "PUBLIC_INITIAL_INVALID_URL", message: messageForInitialInvalidUrl(rawUrl), ok: false, phase: "initial" };
   }
   initialUrl.hash = "";
 

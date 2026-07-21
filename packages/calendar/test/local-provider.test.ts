@@ -37,6 +37,17 @@ describe("LocalCalendarProvider", () => {
     expect(events[0]).toMatchObject({ providerId: "local", title: "Standup" });
   });
 
+  it("describe() never echoes the on-disk file path — it carries the OS account name", () => {
+    const file = freshFile();
+    const p = new LocalCalendarProvider({ file });
+    const info = p.describe();
+    expect(info.description).not.toContain(file);
+    // The temp dir is under the OS tmp root, which itself embeds the
+    // account name on macOS (/var/folders/.../$USER/...) — assert the
+    // literal filename never appears rather than a path substring.
+    expect(info.description).not.toContain("calendar.json");
+  });
+
   it("a CORRUPT (unparseable) calendar file is QUARANTINED, not silently wiped, on read", async () => {
     const file = freshFile();
     writeFileSync(file, "{ this is not json", "utf8"); // a half-written / corrupted store

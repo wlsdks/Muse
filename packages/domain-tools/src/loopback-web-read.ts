@@ -177,7 +177,16 @@ export function createWebReadMcpServer(options: WebReadMcpServerOptions = {}): L
             const { bytes } = await readBytesCapped(response, imageMaxBytes);
             const described = await options.describeImage({ imageBase64: bytes.toString("base64"), mimeType: imageMime });
             if (!described.ok || !described.text) {
-              return { error: described.error ?? "the vision model could not read the image" };
+              if (described.error) {
+                // The underlying provider error can carry doubly-escaped JSON,
+                // an internal endpoint path, and a resolved model id — none of
+                // it actionable for the model. Log it, never forward it.
+                console.error(`[muse.web.read] vision description failed: ${described.error}`);
+              }
+              return {
+                error:
+                  "this URL is an image and the model configured for this run cannot read images — describe it to the user from context, or configure a multimodal model"
+              };
             }
             return { text: described.text, title: "", truncated: false, url: finalUrl } satisfies JsonObject;
           }

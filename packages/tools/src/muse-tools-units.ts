@@ -39,6 +39,8 @@ const UNIT_ALIASES: Record<string, string> = {
   gallon: "gal", gallons: "gal", quart: "qt", quarts: "qt", pint: "pt", pints: "pt",
   cups: "cup", "fluid ounce": "floz", "fluid ounces": "floz", tablespoon: "tbsp", tablespoons: "tbsp", teaspoon: "tsp", teaspoons: "tsp",
   celsius: "c", centigrade: "c", "°c": "c", fahrenheit: "f", "°f": "f", kelvin: "k", "°k": "k",
+  "섭씨": "c", "화씨": "f", "켈빈": "k",
+  "미터": "m", "킬로미터": "km", "킬로그램": "kg", "파운드": "lb",
   kph: "km/h", kmh: "km/h", "kilometers per hour": "km/h", "kilometres per hour": "km/h",
   "miles per hour": "mph", "metres per second": "m/s", "meters per second": "m/s", mps: "m/s",
   "feet per second": "ft/s", knot: "kn", knots: "kn",
@@ -62,6 +64,23 @@ const fromCelsius = (c: number, u: string): number => (u === "c" ? c : u === "f"
 
 const isKnown = (u: string): boolean => TEMPERATURE.has(u) || CATEGORIES.some((cat) => u in cat);
 
+// A currency code is a common miss for this tool's scope (it is a fixed
+// physical-unit converter, not a live exchange-rate lookup). Naming the
+// out-of-scope reason — instead of a bare "unknown unit" — saves the
+// model a round of retrying other currency spellings.
+const CURRENCY_CODES = new Set([
+  "usd", "eur", "gbp", "jpy", "krw", "cny", "cad", "aud", "chf", "inr",
+  "mxn", "brl", "sgd", "hkd", "nzd", "sek", "nok", "dkk", "rub", "zar",
+  "try", "pln", "thb", "idr", "php", "vnd", "myr"
+]);
+
+function unknownUnitMessage(raw: string, normalized: string): string {
+  if (CURRENCY_CODES.has(normalized)) {
+    return `unknown unit '${raw}' — unit_convert handles only fixed physical units (length, mass, volume, temperature, speed, time, area), e.g. 'km', 'kg', 'c'. For currency exchange rates use the web search tool.`;
+  }
+  return `unknown unit '${raw}' — expected a unit symbol like 'c', 'f', 'km', 'kg', 'l'`;
+}
+
 /**
  * Convert `value` from one unit to another within the same category. Temperature
  * uses the offset formula; length/mass/volume scale by exact factors. Throws on
@@ -79,8 +98,8 @@ export function convertUnit(value: number, from: string, to: string): number {
   for (const cat of CATEGORIES) {
     if (f in cat && t in cat) return value * cat[f]! / cat[t]!;
   }
-  if (!isKnown(f)) throw new Error(`unknown unit '${from}'`);
-  if (!isKnown(t)) throw new Error(`unknown unit '${to}'`);
+  if (!isKnown(f)) throw new Error(unknownUnitMessage(from, f));
+  if (!isKnown(t)) throw new Error(unknownUnitMessage(to, t));
   throw new Error(`cannot convert '${from}' to '${to}' — they are different kinds of unit`);
 }
 

@@ -1,18 +1,21 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 
 import { describe, expect, it } from "vitest";
 
 import { createSkillRuntime } from "../src/skills-runtime.js";
 import type { MuseEnvironment } from "../src/index.js";
 
-// Coverage for createSkillRuntime (untested) — wires the muse.skills.* tools to
-// an ASYNC disk scan. The load-bearing subtlety is the lazy cache: the registry
-// scan completes asynchronously while the surrounding assembly stays
-// synchronous, so the skill tools must see an EMPTY list until the promise
-// resolves (rather than throw or block), then surface the scanned skills.
+// Coverage for createSkillRuntime — wires the muse.skills.* tools to an ASYNC
+// disk scan. The view used to read a `skillRegistryCache` variable that a
+// `.then()` populated in the background, so a `list()`/`get()` racing ahead
+// of that callback saw an empty cache and reported a populated skills dir as
+// empty (list()) or "skill not found" for a skill that exists (read()) — a
+// confident wrong answer, not a pending state. The view now awaits the SAME
+// `skillRegistryPromise` on every call, so the FIRST call already sees the
+// real scan result — there is no more "before the scan resolves" window to
+// test.
 
 const skillsRootWith = (skill?: { name: string; description: string }): { env: MuseEnvironment; userDir: string } => {
   const base = mkdtempSync(join(tmpdir(), "muse-skills-rt-"));
@@ -28,8 +31,6 @@ const skillsRootWith = (skill?: { name: string; description: string }): { env: M
   return { env: { MUSE_AUTHORED_SKILLS_DIR: authoredDir, MUSE_SKILLS_DIR: userDir } as unknown as MuseEnvironment, userDir };
 };
 
-const flushMicrotasks = (): Promise<void> => sleep(0);
-
 describe("createSkillRuntime", () => {
   it("exposes the three muse.skills.* tools when enabled (default)", () => {
     const { env } = skillsRootWith();
@@ -37,17 +38,27 @@ describe("createSkillRuntime", () => {
     expect(runtime.skillTools.map((t) => t.definition.name)).toEqual(["muse.skills.list", "muse.skills.read", "muse.skills.run"]);
   });
 
-  it("LAZY cache: the list tool returns [] before the async scan resolves, then surfaces the scanned skill", async () => {
+  it("the list tool sees the scanned skill on the very first call, no race window", async () => {
     const { env } = skillsRootWith({ description: "Greet the user warmly", name: "greet" });
     const runtime = createSkillRuntime(env);
     const listTool = runtime.skillTools.find((t) => t.definition.name === "muse.skills.list");
 
-    expect(listTool?.execute({})).toEqual({ skills: [] }); // scan still pending → empty, not a throw/block
+    // No `sleep`/flush needed — awaiting the tool call awaits the same
+    // registry promise the runtime holds, so the disk scan is guaranteed
+    // complete by the time this resolves.
+    await expect(listTool?.execute({}, { runId: "r-1" })).resolves.toEqual({
+      skills: [{ description: "Greet the user warmly", name: "greet" }]
+    });
+  });
 
-    const registry = await runtime.skillRegistryPromise;
-    await flushMicrotasks(); // let the internal .then populate the cache
-    expect(registry?.list().map((s) => s.name)).toEqual(["greet"]);
-    expect(listTool?.execute({})).toEqual({ skills: [{ description: "Greet the user warmly", name: "greet" }] });
+  it("the read tool finds a skill on the very first call, no race window", async () => {
+    const { env } = skillsRootWith({ description: "Greet the user warmly", name: "greet" });
+    const runtime = createSkillRuntime(env);
+    const readTool = runtime.skillTools.find((t) => t.definition.name === "muse.skills.read");
+
+    const out = await readTool?.execute({ name: "greet" }, { runId: "r-1" }) as { error?: string; body?: string };
+    expect(out.error).toBeUndefined();
+    expect(out.body).toBe("Body.");
   });
 
   it("returns no tools and an undefined registry when MUSE_SKILLS_ENABLED=false", async () => {

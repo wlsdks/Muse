@@ -74,6 +74,19 @@ describe("muse.skills.read", () => {
     const out = (await tool.execute({ name: "missing" }, { runId: "r-1" })) as { readonly error?: string };
     expect(out.error).toMatch(/skill not found/u);
   });
+
+  it("returns { error } — never THROWS — when `name` is missing, matching muse.skills.run's shape", async () => {
+    const tool = createSkillReadTool(makeRegistry([codex]));
+    const out = (await tool.execute({}, { runId: "r-1" })) as { readonly error?: string };
+    expect(out.error).toMatch(/name/u);
+    expect(out.error).toMatch(/muse\.skills\.list/u);
+  });
+
+  it("returns { error } for a non-string `name` too", async () => {
+    const tool = createSkillReadTool(makeRegistry([codex]));
+    const out = (await tool.execute({ name: 42 }, { runId: "r-1" })) as { readonly error?: string };
+    expect(out.error).toMatch(/name/u);
+  });
 });
 
 describe("muse.skills.run allowlist enforcement", () => {

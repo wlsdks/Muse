@@ -20,6 +20,15 @@ describe("mac helper bridge — degradation", () => {
     expect(result.ok === false && result.code).toBe("helper_unavailable");
   });
 
+  it("names an actual alternative instead of claiming a fallback that doesn't exist", async () => {
+    // There is no AppleScript path for window/focus geometry — System Events
+    // gives a process list, never position/size — so the message must never
+    // say "falling back", only what's actually usable instead.
+    const result = await readMacHelper("windows");
+    expect(result.ok === false && result.message).not.toMatch(/falling back/iu);
+    expect(result.ok === false && result.message).toContain("mac_app_read");
+  });
+
   it("treats an empty binaryPath the same as an absent one", async () => {
     const result = await readMacHelper("windows", { binaryPath: "   " });
     expect(result.ok === false && result.code).toBe("helper_unavailable");

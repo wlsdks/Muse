@@ -84,4 +84,65 @@ describe("createHomeEntitiesTool — read-only discovery tool", () => {
     const tool = createHomeEntitiesTool({ baseUrl: "http://ha.local", token: "t" });
     expect(tool.definition.inputSchema.properties).toHaveProperty("state");
   });
+
+  // listHomeAssistantStates collapses EVERY failure (unreachable host, revoked
+  // token, 500) to []  — byte-identical to a genuinely empty home. The tool must
+  // surface the real cause instead of reporting "you have no devices".
+  it("reports an unreachable host as an error, not an empty-home count:0", async () => {
+    const fetchImpl = (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof globalThis.fetch;
+    const tool = createHomeEntitiesTool({ baseUrl: "http://ha.local:8123", fetchImpl, retryOptions: { baseDelayMs: 0, sleep: async () => {} }, token: "t" });
+    const out = await tool.execute({}) as { count: number; entities: unknown[]; error?: string };
+    expect(out.count).toBe(0);
+    expect(out.entities).toEqual([]);
+    expect(out.error).toContain("unreachable");
+    expect(out.error).toContain("ha.local:8123");
+  });
+
+  it("reports a rejected token (401) distinctly from an unreachable host", async () => {
+    const { fetchImpl } = recordingFetch([{ body: "unauthorized", status: 401 }]);
+    const tool = createHomeEntitiesTool({ baseUrl: "http://ha.local", fetchImpl, retryOptions: noWait, token: "bad" });
+    const out = await tool.execute({}) as { error?: string };
+    expect(out.error).toContain("401");
+    expect(out.error).toContain("MUSE_HOMEASSISTANT_TOKEN");
+  });
+
+  // A small model routinely emits a single-element array for what should be a
+  // scalar filter (`domain: ["light"]`) — it must not be silently dropped into
+  // "no filter" (returning the FULL unfiltered house with no disclosure).
+  it("unwraps a single-element domain array instead of silently returning the unfiltered list", async () => {
+    const { fetchImpl } = recordingFetch([{ body: STATES, status: 200 }]);
+    const tool = createHomeEntitiesTool({ baseUrl: "http://ha.local", fetchImpl, token: "t" });
+    const out = await tool.execute({ domain: ["light"] }) as { count: number; entities: Array<{ entity: string }>; domain?: string };
+    expect(out.count).toBe(1);
+    expect(out.entities[0]!.entity).toBe("light.living_room");
+    expect(out.domain).toBe("light");
+  });
+
+  it("rejects a non-string, non-single-array domain instead of silently returning everything", async () => {
+    const { fetchImpl } = recordingFetch([{ body: STATES, status: 200 }]);
+    const tool = createHomeEntitiesTool({ baseUrl: "http://ha.local", fetchImpl, token: "t" });
+    const out = await tool.execute({ domain: { nested: true } }) as { count: number; entities: unknown[]; error?: string };
+    expect(out.error).toContain("domain");
+    expect(out.entities).toEqual([]);
+  });
+
+  it("pages a large entity list — caps the page, reports total/hasMore/nextOffset", async () => {
+    const many = JSON.stringify(
+      Array.from({ length: 120 }, (_, i) => ({ attributes: {}, entity_id: `light.bulb_${i.toString()}`, state: "on" }))
+    );
+    const { fetchImpl } = recordingFetch([{ body: many, status: 200 }]);
+    const tool = createHomeEntitiesTool({ baseUrl: "http://ha.local", fetchImpl, token: "t" });
+    const first = await tool.execute({}) as { count: number; total: number; hasMore: boolean; nextOffset?: number };
+    expect(first.count).toBe(50);
+    expect(first.total).toBe(120);
+    expect(first.hasMore).toBe(true);
+    expect(first.nextOffset).toBe(50);
+
+    const { fetchImpl: fetchImpl2 } = recordingFetch([{ body: many, status: 200 }]);
+    const tool2 = createHomeEntitiesTool({ baseUrl: "http://ha.local", fetchImpl: fetchImpl2, token: "t" });
+    const last = await tool2.execute({ offset: 100 }) as { count: number; hasMore: boolean; nextOffset?: number };
+    expect(last.count).toBe(20);
+    expect(last.hasMore).toBe(false);
+    expect(last.nextOffset).toBeUndefined();
+  });
 });

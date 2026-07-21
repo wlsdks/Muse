@@ -110,6 +110,12 @@ export function createEpisodesMcpServer(options: EpisodesMcpServerOptions): Loop
             ? Math.max(1, Math.min(maxListEntries, Math.trunc(limitRaw)))
             : Math.min(maxListEntries, 10);
           const modeRaw = readString(args, "mode");
+          if (modeRaw !== undefined && modeRaw !== "substring" && modeRaw !== "llm-judge") {
+            return {
+              error: "mode must be 'substring' (literal match) or 'llm-judge' (paraphrase recall); "
+                + `got '${modeRaw}' — for paraphrase matching use mode:'llm-judge'`
+            };
+          }
           const mode = modeRaw === "llm-judge" ? "llm-judge" : "substring";
 
           const all = await readEpisodes(file);

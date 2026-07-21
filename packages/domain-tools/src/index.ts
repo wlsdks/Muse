@@ -72,13 +72,15 @@ export {
   HOME_ASSISTANT_LOCAL_ONLY_REASON,
   isHomeAssistantLocalOnlyEffective,
   listHomeAssistantStates,
+  listHomeAssistantStatesDetailed,
   parseHomeAlertChecks,
   performHomeActionWithApproval,
   readHomeAssistantState,
+  readHomeAssistantStateDetailed,
   resolveHomeAlertLine,
   resolveHomeAssistantTransportBaseUrl
 } from "./smart-home.js";
-export type { HomeAssistantTransportPolicy, HomeAssistantTransportResolution } from "./smart-home.js";
+export type { HomeAssistantReadFailure, HomeAssistantTransportPolicy, HomeAssistantTransportResolution, HomeEntitiesResult, HomeStateResult } from "./smart-home.js";
 export { createHomeActionTool, createHomeEntitiesTool, createHomeStateTool } from "./smart-home-tool.js";
 export { TasksProviderError, TasksProviderRegistry, TasksValidationError } from "./tasks-providers.js";
 export type { Task, TasksProvider } from "./tasks-providers.js";

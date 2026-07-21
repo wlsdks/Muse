@@ -46,4 +46,49 @@ describe("createFindItemsTool", () => {
     const result = (await tool.execute({ query: "   " }, { runId: "t", userId: "u" })) as { total: number };
     expect(result.total).toBe(0);
   });
+
+  it("a blank query names the missing parameter instead of returning a bare zero-hit result", async () => {
+    // Byte-identical {hits:[],total:0} for "no query given" vs "genuine zero-hit search" let the
+    // model report "nothing anywhere" after a call it never ran (finding 45).
+    const tool = createFindItemsTool({ find: () => SOURCES });
+    const result = (await tool.execute({ query: "" }, { runId: "t", userId: "u" })) as {
+      found: boolean;
+      hits: unknown[];
+      reason: string;
+      total: number;
+    };
+    expect(result.found).toBe(false);
+    expect(result.hits).toEqual([]);
+    expect(result.total).toBe(0);
+    expect(result.reason).toContain("find_items needs a non-empty string 'query'");
+  });
+
+  it("caps hits at `limit` and reports total + truncated when more matches exist", async () => {
+    const manySources: FindSources = {
+      tasks: Array.from({ length: 5 }, (_, i) => ({ id: `t${i}`, title: `dentist follow-up ${i}` }))
+    };
+    const tool = createFindItemsTool({ find: () => manySources });
+    const result = (await tool.execute({ limit: 2, query: "dentist" }, { runId: "t", userId: "u" })) as {
+      hits: unknown[];
+      limit: number;
+      total: number;
+      truncated: boolean;
+    };
+    expect(result.hits.length).toBe(2);
+    expect(result.limit).toBe(2);
+    expect(result.total).toBe(5);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("defaults the limit to 20 and does not mark truncated when everything fits", async () => {
+    const tool = createFindItemsTool({ find: () => SOURCES });
+    const result = (await tool.execute({ query: "dentist" }, { runId: "t", userId: "u" })) as {
+      limit: number;
+      total: number;
+      truncated: boolean;
+    };
+    expect(result.limit).toBe(20);
+    expect(result.total).toBe(3);
+    expect(result.truncated).toBe(false);
+  });
 });

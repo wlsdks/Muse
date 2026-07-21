@@ -37,6 +37,7 @@ export function toKoreanNumber(value: number): string | undefined {
 }
 
 const BIG_UNITS: Record<string, number> = { "조": 1e12, "억": 1e8, "만": 1e4 };
+const BIG_UNIT_ORDER: Record<string, number> = { "조": 3, "억": 2, "만": 1 };
 const SMALL_UNITS: Record<string, number> = { "천": 1000, "백": 100, "십": 10 };
 
 /**
@@ -53,6 +54,7 @@ export function fromKoreanNumber(text: string): number | undefined {
   let section = 0;
   let current = 0;
   let sawUnit = false;
+  let lastBigOrder = 4; // above 조(3) — enforces strictly descending 조 → 억 → 만, no repeats
   for (let i = 0; i < s.length; i += 1) {
     const ch = s[i]!;
     if (ch >= "0" && ch <= "9") {
@@ -69,6 +71,9 @@ export function fromKoreanNumber(text: string): number | undefined {
       continue;
     }
     // a BIG unit (만/억/조) closes the current 4-digit section
+    const order = BIG_UNIT_ORDER[ch]!;
+    if (order >= lastBigOrder) return undefined; // repeated or out-of-order unit ("만만") isn't a real amount
+    lastBigOrder = order;
     section += current;
     current = 0;
     total += (section || 1) * BIG_UNITS[ch]!;
@@ -101,7 +106,14 @@ export function createKoreanNumberTool(): MuseTool {
       // Reverse direction: a string carrying a Korean unit word → parse to an integer.
       if (typeof raw === "string" && /[조억만천백십]/u.test(raw)) {
         const parsed = fromKoreanNumber(raw);
-        if (parsed === undefined) return { error: `couldn't parse '${raw}' as a Korean number` };
+        if (parsed === undefined) {
+          return {
+            error: `couldn't parse '${raw}' — korean_number reads Arabic digits combined with unit words (e.g. 3000만, 1억 2천만, 5400만원), with units in descending order (조 → 억 → 만). Sino-Korean numeral characters (삼, 오, 십오) are not supported.`
+          };
+        }
+        if (!Number.isSafeInteger(parsed)) {
+          return { error: `korean_number is exact only up to 9,007,199,254,740,991 (about 900조); '${raw}' exceeds it` };
+        }
         const korean = toKoreanNumber(parsed);
         return korean === undefined ? { error: "number is out of range (beyond 경, 10¹⁶)" } : { korean, value: parsed };
       }
@@ -110,6 +122,9 @@ export function createKoreanNumberTool(): MuseTool {
         typeof raw === "number" ? raw : typeof raw === "string" && raw.trim().length > 0 ? Number(raw) : Number.NaN;
       if (!Number.isFinite(value) || !Number.isInteger(value)) {
         return { error: "korean_number expects a whole number (12345678) or a Korean amount ('1억 2천만')" };
+      }
+      if (!Number.isSafeInteger(value)) {
+        return { error: `korean_number is exact only up to 9,007,199,254,740,991 (about 900조); '${String(raw)}' exceeds it` };
       }
       const korean = toKoreanNumber(value);
       if (korean === undefined) return { error: "number is out of range (beyond 경, 10¹⁶)" };

@@ -53,6 +53,7 @@ class FakeController implements BrowserController {
   async screenshotBase64(): Promise<string> { this.calls.push("shot-base64"); return "aW1n"; }
   describeElement(ref: number): SnapshotElement | undefined { return this.elements.get(ref); }
   currentUrl(): string { return "https://example.test/"; }
+  async hasOpenPage(): Promise<boolean> { return true; }
   async disconnect(): Promise<void> { this.calls.push("disconnect"); }
   async close(): Promise<void> { this.calls.push("close"); }
 }
@@ -200,7 +201,10 @@ describe("link destinations — a link's url flows through to the model", () => 
   };
 
   it("browser_read returns each link's url so the model can report a destination without navigating", async () => {
-    const controller = { ...new FakeController(), snapshot: async () => LINKED } as unknown as BrowserController;
+    // Spreading a class instance copies only OWN properties, not prototype
+    // methods — hasOpenPage must be re-supplied explicitly or the spread
+    // object silently loses it.
+    const controller = { ...new FakeController(), hasOpenPage: async () => true, snapshot: async () => LINKED } as unknown as BrowserController;
     const out = await createBrowserReadTool({ controller }).execute({}, ctx) as { elements: Array<{ name: string; ref: number; role: string; url?: string }> };
     const pricing = out.elements.find((element) => element.name === "Pricing");
     expect(pricing?.url).toBe("https://example.test/pricing");
@@ -215,7 +219,7 @@ describe("link destinations — a link's url flows through to the model", () => 
   });
 
   it("browser_read with find keeps the matched link's url", async () => {
-    const controller = { ...new FakeController(), snapshot: async () => LINKED } as unknown as BrowserController;
+    const controller = { ...new FakeController(), hasOpenPage: async () => true, snapshot: async () => LINKED } as unknown as BrowserController;
     const out = await createBrowserReadTool({ controller }).execute({ find: "Pricing" }, ctx) as { elements: Array<{ name: string; url?: string }> };
     expect(out.elements).toEqual([{ name: "Pricing", ref: 0, role: "link", url: "https://example.test/pricing" }]);
   });
@@ -278,7 +282,7 @@ describe("navigation-status fidelity — an HTTP error page must not pass for th
   });
 
   it("a bare browser_read NEVER carries status (consume-once: the field is navigation-only)", async () => {
-    const controller = { ...new FakeController(), snapshot: async () => withStatus(404) } as unknown as BrowserController;
+    const controller = { ...new FakeController(), hasOpenPage: async () => true, snapshot: async () => withStatus(404) } as unknown as BrowserController;
     const out = await createBrowserReadTool({ controller }).execute({}, ctx) as Record<string, unknown>;
     expect("httpStatus" in out).toBe(false);
     expect("statusError" in out).toBe(false);
@@ -444,7 +448,7 @@ describe("browser_read — paging a long page (no silent truncation)", () => {
     const snap: PageSnapshot = { elements, text: "x", title: "Big", url: "https://big.test/" };
     return {
       back: async () => snap, click: async () => snap, close: async () => {}, currentUrl: () => "https://big.test/",
-      describeElement: (ref) => elements[ref], disconnect: async () => {}, hover: async () => snap, open: async () => snap,
+      describeElement: (ref) => elements[ref], disconnect: async () => {}, hasOpenPage: async () => true, hover: async () => snap, open: async () => snap,
       pressKey: async () => snap, screenshot: async (path) => ({ path }), scroll: async () => snap, snapshot: async () => snap, type: async () => snap
     };
   }
@@ -474,7 +478,9 @@ describe("browser_read — paging a long page (no silent truncation)", () => {
     expect(first.matched).toBe(60);
     expect(first.hasMore).toBe(true);
     expect(first.nextOffset).toBe(50); // the bug omitted this → the model couldn't page
-    expect(first.offset).toBeUndefined();
+    // offset is now ALWAYS echoed (including 0) so the model can verify a
+    // re-paged call actually moved, rather than silently repeating page one.
+    expect(first.offset).toBe(0);
 
     const second = await tool.execute({ find: "link", offset: 50 }, ctx) as { elements: { ref: number }[]; matched: number; hasMore?: boolean; offset?: number };
     expect(second.elements).toHaveLength(10); // the bug ignored offset → returned the first 50 again
@@ -482,6 +488,47 @@ describe("browser_read — paging a long page (no silent truncation)", () => {
     expect(second.offset).toBe(50);
     expect(second.elements[0]!.ref).toBe(50); // continues where the first batch ended
     expect(second.hasMore).toBeUndefined();
+  });
+
+  it("accepts a numeric STRING offset — a small model often stringifies nextOffset", async () => {
+    const tool = createBrowserReadTool({ controller: bigController(60) });
+    const out = await tool.execute({ offset: "50" as unknown as number }, ctx) as { elements: { ref: number }[]; offset: number };
+    expect(out.offset).toBe(50);
+    expect(out.elements[0]!.ref).toBe(50);
+  });
+
+  it("rejects a non-numeric offset instead of silently treating it as 0", async () => {
+    const tool = createBrowserReadTool({ controller: bigController(60) });
+    const out = await tool.execute({ offset: "fifty" as unknown as number }, ctx) as { error?: string; elements?: unknown };
+    expect(out.error).toContain("offset must be a number");
+    expect(out.elements).toBeUndefined();
+  });
+});
+
+describe("browser_read / browser_look — refuse rather than manufacture a fresh empty page", () => {
+  it("browser_read errors when no page is open, and never calls snapshot", async () => {
+    const c = new FakeController();
+    c.hasOpenPage = async () => false;
+    const out = await createBrowserReadTool({ controller: c }).execute({}, ctx) as { error?: string };
+    expect(out.error).toContain("browser_open");
+    expect(c.calls).toEqual([]);
+  });
+
+  it("browser_look errors when no page is open, and never takes a screenshot", async () => {
+    const c = new FakeController();
+    c.hasOpenPage = async () => false;
+    const tool = createBrowserLookTool({ controller: c, describeImage: async () => ({ ok: true, text: "x" }) });
+    const out = await tool.execute({}, ctx) as { described: boolean; error?: string };
+    expect(out.described).toBe(false);
+    expect(out.error).toContain("browser_open");
+    expect(c.calls).toEqual([]);
+  });
+
+  it("browser_read proceeds normally once hasOpenPage is true (the default fake)", async () => {
+    const c = new FakeController();
+    const out = await createBrowserReadTool({ controller: c }).execute({}, ctx) as { title: string };
+    expect(out.title).toBe("Example");
+    expect(c.calls).toEqual(["snapshot"]);
   });
 });
 
@@ -576,6 +623,7 @@ describe("browser_click — ambiguous target is refused (fail-close), never a si
     async screenshotBase64(): Promise<string> { return "aW1n"; }
     describeElement(ref: number): SnapshotElement | undefined { return twinSnap.elements[ref]; }
     currentUrl(): string { return "https://danger.test/"; }
+    async hasOpenPage(): Promise<boolean> { return true; }
     async disconnect(): Promise<void> {}
     async close(): Promise<void> {}
   }
@@ -708,6 +756,7 @@ describe("display cap — model sees a small list, matcher sees all (long-page s
     async screenshotBase64(): Promise<string> { return "aW1n"; }
     describeElement(ref: number): SnapshotElement | undefined { return manyElements[ref]; }
     currentUrl(): string { return "https://shop.test/"; }
+    async hasOpenPage(): Promise<boolean> { return true; }
     async disconnect(): Promise<void> {}
     async close(): Promise<void> {}
   }
@@ -848,6 +897,7 @@ describe("browser_fill_form — multi-field, ONE draft-first approval, fail-clos
     async screenshotBase64(): Promise<string> { return "aW1n"; }
     describeElement(ref: number): SnapshotElement | undefined { return this.map.get(ref); }
     currentUrl(): string { return "https://app.test/login"; }
+    async hasOpenPage(): Promise<boolean> { return true; }
     async disconnect(): Promise<void> {}
     async close(): Promise<void> {}
   }

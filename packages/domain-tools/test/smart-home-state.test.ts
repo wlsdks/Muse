@@ -107,4 +107,34 @@ describe("createHomeStateTool — read-only agent tool", () => {
     const out = await tool.execute({ entity: "lock.front_door" });
     expect(out).toMatchObject({ found: false });
   });
+
+  // "no state returned (unknown entity or Home Assistant unreachable)" named two
+  // mutually exclusive causes — a dead host and a typo'd entity id are different
+  // facts, and only one of them tells the model to try home_entities next.
+  it("distinguishes a genuinely unknown entity (404) from an unreachable host", async () => {
+    const { fetchImpl } = recordingFetch([{ body: "Entity not found", status: 404 }]);
+    const tool = createHomeStateTool({ baseUrl: "http://ha.local", fetchImpl, retryOptions: noWait, token: "t" });
+    const out = await tool.execute({ entity: "lock.nope" }) as { found: boolean; reason: string };
+    expect(out.found).toBe(false);
+    expect(out.reason).toContain("lock.nope");
+    expect(out.reason).toContain("home_entities");
+  });
+
+  it("reports a network-unreachable host distinctly from an unknown entity", async () => {
+    const fetchImpl = (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof globalThis.fetch;
+    const tool = createHomeStateTool({ baseUrl: "http://ha.local:8123", fetchImpl, retryOptions: noWait, token: "t" });
+    const out = await tool.execute({ entity: "lock.front_door" }) as { found: boolean; reason: string };
+    expect(out.found).toBe(false);
+    expect(out.reason).toContain("unreachable");
+    expect(out.reason).toContain("ha.local:8123");
+  });
+
+  it("reports a rejected token (401) distinctly, naming the fix", async () => {
+    const { fetchImpl } = recordingFetch([{ body: "unauthorized", status: 401 }]);
+    const tool = createHomeStateTool({ baseUrl: "http://ha.local", fetchImpl, retryOptions: noWait, token: "bad" });
+    const out = await tool.execute({ entity: "lock.front_door" }) as { found: boolean; reason: string };
+    expect(out.found).toBe(false);
+    expect(out.reason).toContain("401");
+    expect(out.reason).toContain("MUSE_HOMEASSISTANT_TOKEN");
+  });
 });

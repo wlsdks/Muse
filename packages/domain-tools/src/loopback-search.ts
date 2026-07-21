@@ -117,8 +117,16 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           if (!query || query.length === 0) {
             return { error: "query is required" };
           }
-          // Unknown / missing time_range falls through unfiltered.
-          const timeRange = normaliseTimeRange(readString(args, "time_range"));
+          // Unknown / missing time_range falls through unfiltered, but the applied
+          // window is always echoed back — otherwise an unrecognised value (e.g.
+          // 'hour') is silently dropped and all-time results come back looking
+          // like they answered the time-scoped question.
+          const rawTimeRange = readString(args, "time_range");
+          const timeRange = normaliseTimeRange(rawTimeRange);
+          const timeRangeNote =
+            rawTimeRange !== undefined && rawTimeRange.trim().length > 0 && timeRange === undefined
+              ? `'${rawTimeRange}' is not a supported time_range — valid: day, week, month, year (also today/24h/7d/30d/365d). Searched with no time filter.`
+              : undefined;
 
           // Path 1 — SearXNG when configured. Fall through to DDG on
           // any failure (HTTP error, JSON parse error, zero results).
@@ -139,7 +147,9 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
                 backend: "searxng",
                 query,
                 results: deduped as unknown as JsonValue,
-                total: deduped.length
+                time_range: timeRange ?? null,
+                total: deduped.length,
+                ...(timeRangeNote ? { note: timeRangeNote } : {})
               };
             }
             // searxResults undefined → transport/parse failure; [] → zero hits.
@@ -200,7 +210,14 @@ export function createSearchMcpServer(options: SearchMcpServerOptions = {}): Loo
           if (parsed.length === 0) {
             return { error: "parser returned 0 results — backend markup may have shifted" };
           }
-          return { backend: "duckduckgo", query, results: parsed as unknown as JsonValue, total: parsed.length };
+          return {
+            backend: "duckduckgo",
+            query,
+            results: parsed as unknown as JsonValue,
+            time_range: timeRange ?? null,
+            total: parsed.length,
+            ...(timeRangeNote ? { note: timeRangeNote } : {})
+          };
         },
         inputSchema: buildJsonToolSchema(
           {

@@ -136,6 +136,16 @@ export interface BrowserController {
   /** The current page URL (for the approval draft). */
   currentUrl(): string;
   /**
+   * Whether a REAL page is already open, checked WITHOUT launching a new
+   * browser — it may reconnect to a Chrome a prior invocation left running,
+   * but never spawns one. False when no browser is reachable at all, or the
+   * only tab is `about:blank` (nothing was ever opened). Read tools call this
+   * before `snapshot()` so an unopened session fails with a clear "call
+   * browser_open first" instead of silently manufacturing a fresh, empty
+   * browser window to answer from.
+   */
+  hasOpenPage(): Promise<boolean>;
+  /**
    * Release the CDP connection but LEAVE the browser running — the open
    * socket otherwise pins the Node event loop and a one-shot CLI never
    * exits. The surviving browser is what the next invocation reconnects to.

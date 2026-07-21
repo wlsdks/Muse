@@ -25,6 +25,8 @@ export interface HistorySearchToolOptions {
 }
 
 const NO_MATCH = "No earlier conversation, note, or remembered fact matched that. Nothing was found — do not invent a past discussion.";
+const NO_QUERY =
+  "history_search needs a non-empty string 'query' — e.g. {\"query\": \"the VPN MTU fix we discussed\"}. No search was run; this is NOT a statement that your history is empty.";
 const MAX_TOP_K = 20;
 
 /**
@@ -71,6 +73,9 @@ export function createHistorySearchTool(options: HistorySearchToolOptions): Muse
     execute: async (args) => {
       const raw = args as { query?: unknown; topK?: unknown };
       const query = typeof raw.query === "string" ? raw.query : "";
+      if (query.trim().length === 0) {
+        return NO_QUERY;
+      }
       const topK = typeof raw.topK === "number" && Number.isFinite(raw.topK) ? clampTopK(raw.topK) : defaultTopK;
       let records: readonly HistoryRecord[];
       try {

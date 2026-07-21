@@ -11,9 +11,49 @@
 import type { JsonObject } from "@muse/shared";
 import type { MuseTool } from "@muse/tools";
 
-import { listHomeAssistantStates, performHomeActionWithApproval, readHomeAssistantState } from "./smart-home.js";
+import { listHomeAssistantStatesDetailed, performHomeActionWithApproval, readHomeAssistantStateDetailed, type HomeAssistantReadFailure } from "./smart-home.js";
 import type { RetryOptions } from "@muse/mcp-shared";
 import type { WebActionApprovalGate } from "./web-action.js";
+
+/**
+ * Render a Home Assistant read failure as a message that tells the model
+ * WHY nothing came back — a dead host, a bad token, and a genuinely
+ * unknown entity are different facts and need different next steps.
+ */
+function describeHomeAssistantFailure(failure: HomeAssistantReadFailure, entityId?: string): string {
+  switch (failure.kind) {
+    case "local-only":
+      return failure.reason;
+    case "unreachable":
+      return `Home Assistant unreachable at ${failure.baseUrl} — check MUSE_HOMEASSISTANT_URL / that HA is running`;
+    case "unauthorized":
+      return `Home Assistant rejected the token (HTTP ${failure.status.toString()}) — refresh MUSE_HOMEASSISTANT_TOKEN`;
+    case "not-found":
+      return entityId
+        ? `no entity '${entityId}' — ids look like '<domain>.<name>', e.g. 'lock.front_door'; call home_entities to list them`
+        : "no matching entity";
+    case "http-error":
+      return `Home Assistant responded HTTP ${failure.status.toString()} — check MUSE_HOMEASSISTANT_URL / MUSE_HOMEASSISTANT_TOKEN`;
+    case "malformed":
+      return "Home Assistant returned an unexpected response — check MUSE_HOMEASSISTANT_URL points at a real Home Assistant instance";
+  }
+}
+
+/**
+ * Accept a plain string, or the single-element string array a small model
+ * emits for what should be a scalar filter — a `[light]` form must not be
+ * silently dropped into "no filter" (which would then return an
+ * unfiltered, full-house list with no disclosure that the filter was lost).
+ * Any other shape is rejected outright.
+ */
+function coerceStringFilter(value: unknown): { readonly ok: true; readonly value: string | undefined } | { readonly ok: false } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (typeof value === "string") return { ok: true, value: value.trim() };
+  if (Array.isArray(value) && value.length === 1 && typeof value[0] === "string") return { ok: true, value: value[0].trim() };
+  return { ok: false };
+}
+
+const HOME_ENTITIES_PAGE_SIZE = 50;
 
 export interface HomeActionToolDeps {
   readonly baseUrl: string;
@@ -137,7 +177,7 @@ export function createHomeStateTool(deps: HomeStateToolDeps): MuseTool {
       if (entityId.length === 0) {
         return { found: false, reason: "entity is required (e.g. lock.front_door)" };
       }
-      const state = await readHomeAssistantState({
+      const result = await readHomeAssistantStateDetailed({
         baseUrl: deps.baseUrl,
         entityId,
         token: deps.token,
@@ -145,10 +185,10 @@ export function createHomeStateTool(deps: HomeStateToolDeps): MuseTool {
         ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
         ...(deps.retryOptions ? { retryOptions: deps.retryOptions } : {})
       });
-      if (state === undefined) {
-        return { entity: entityId, found: false, reason: "no state returned (unknown entity or Home Assistant unreachable)" };
+      if (!result.ok) {
+        return { entity: entityId, found: false, reason: describeHomeAssistantFailure(result, entityId) };
       }
-      return { attributes: state.attributes as JsonObject, entity: state.entityId, found: true, state: state.state };
+      return { attributes: result.state.attributes as JsonObject, entity: result.state.entityId, found: true, state: result.state.state };
     }
   };
 }
@@ -163,6 +203,7 @@ export function createHomeEntitiesTool(deps: HomeStateToolDeps): MuseTool {
         additionalProperties: false,
         properties: {
           domain: { description: "Optional device type to filter to, e.g. 'light', 'lock', 'sensor' (omit for all).", type: "string" },
+          offset: { description: "Pagination offset — skip this many matching entities before returning the page, e.g. 50 for the second page. Defaults to 0.", minimum: 0, type: "integer" },
           state: { description: "Optional current-state filter (case-insensitive), e.g. 'on', 'unlocked', 'open' — returns only entities in that state.", type: "string" }
         },
         type: "object"
@@ -172,9 +213,19 @@ export function createHomeEntitiesTool(deps: HomeStateToolDeps): MuseTool {
       risk: "read"
     },
     execute: async (args): Promise<JsonObject> => {
-      const domain = typeof args["domain"] === "string" ? args["domain"].trim() : undefined;
-      const stateFilter = typeof args["state"] === "string" ? args["state"].trim().toLowerCase() : undefined;
-      const all = await listHomeAssistantStates({
+      const domainCoerced = coerceStringFilter(args["domain"]);
+      if (!domainCoerced.ok) {
+        return { count: 0, entities: [], error: "domain must be a string entity domain, e.g. 'light' or 'lock'" };
+      }
+      const stateCoerced = coerceStringFilter(args["state"]);
+      if (!stateCoerced.ok) {
+        return { count: 0, entities: [], error: "state must be a string entity state, e.g. 'on' or 'unlocked'" };
+      }
+      const domain = domainCoerced.value && domainCoerced.value.length > 0 ? domainCoerced.value : undefined;
+      const stateFilter = stateCoerced.value && stateCoerced.value.length > 0 ? stateCoerced.value.toLowerCase() : undefined;
+      const rawOffset = args["offset"];
+      const offset = typeof rawOffset === "number" && Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.trunc(rawOffset) : 0;
+      const result = await listHomeAssistantStatesDetailed({
         baseUrl: deps.baseUrl,
         token: deps.token,
         ...(deps.localOnly ? { localOnly: true } : {}),
@@ -182,12 +233,22 @@ export function createHomeEntitiesTool(deps: HomeStateToolDeps): MuseTool {
         ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
         ...(deps.retryOptions ? { retryOptions: deps.retryOptions } : {})
       });
-      const entities = stateFilter && stateFilter.length > 0
-        ? all.filter((e) => e.state.toLowerCase() === stateFilter)
-        : all;
+      if (!result.ok) {
+        return { count: 0, entities: [], error: describeHomeAssistantFailure(result) };
+      }
+      const filtered = stateFilter
+        ? result.states.filter((e) => e.state.toLowerCase() === stateFilter)
+        : result.states;
+      const page = filtered.slice(offset, offset + HOME_ENTITIES_PAGE_SIZE);
+      const hasMore = offset + page.length < filtered.length;
       return {
-        count: entities.length,
-        entities: entities.map((e) => ({ entity: e.entityId, state: e.state })) as JsonObject[]
+        count: page.length,
+        entities: page.map((e) => ({ entity: e.entityId, state: e.state })) as JsonObject[],
+        hasMore,
+        total: filtered.length,
+        ...(hasMore ? { nextOffset: offset + page.length } : {}),
+        ...(domain ? { domain } : {}),
+        ...(stateFilter ? { state: stateFilter } : {})
       };
     }
   };

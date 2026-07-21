@@ -70,13 +70,26 @@ export function createPatternsMcpServer(options: PatternsMcpServerOptions): Loop
           "'what routines have you noticed?' / 'when do I usually do X?'.",
         execute: async (args): Promise<JsonObject> => {
           const minConfidenceRaw = args["minConfidence"];
-          const minConfidence = typeof minConfidenceRaw === "number"
-            && Number.isFinite(minConfidenceRaw)
-            && minConfidenceRaw >= 0 && minConfidenceRaw <= 1
-            ? minConfidenceRaw
-            : 0;
+          if (
+            minConfidenceRaw !== undefined
+            && !(
+              typeof minConfidenceRaw === "number"
+              && Number.isFinite(minConfidenceRaw)
+              && minConfidenceRaw >= 0 && minConfidenceRaw <= 1
+            )
+          ) {
+            return {
+              error: "minConfidence must be a number between 0 and 1 (a fraction, not a percent), "
+                + `e.g. 0.6; got ${JSON.stringify(minConfidenceRaw)}`
+            };
+          }
+          const minConfidence = typeof minConfidenceRaw === "number" ? minConfidenceRaw : 0;
+
           const limitRaw = args["limit"];
-          const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw)
+          if (limitRaw !== undefined && !(typeof limitRaw === "number" && Number.isFinite(limitRaw))) {
+            return { error: `limit must be a number, e.g. 20; got ${JSON.stringify(limitRaw)}` };
+          }
+          const limit = typeof limitRaw === "number"
             ? Math.max(1, Math.min(maxListEntries, Math.trunc(limitRaw)))
             : Math.min(maxListEntries, 20);
           try {
@@ -88,6 +101,8 @@ export function createPatternsMcpServer(options: PatternsMcpServerOptions): Loop
               .sort((left, right) => right.confidence - left.confidence)
               .slice(0, limit);
             return {
+              limit,
+              minConfidence,
               patterns: matches.map(serializePatternMatch) as JsonValue,
               total: matches.length
             };
