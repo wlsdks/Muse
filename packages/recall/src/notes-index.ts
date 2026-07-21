@@ -49,7 +49,7 @@ export interface IndexChunk {
   readonly file: string;
   readonly chunkIndex: number;
   readonly text: string;
-  readonly embedding: number[];
+  readonly embedding: number[] | Float32Array;
 }
 
 export interface FileEntry {
@@ -135,7 +135,7 @@ export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
 }
 
 /** A note's centroid embedding — the component-wise mean of its chunk embeddings. Pure. */
-export function noteCentroid(chunks: readonly { readonly embedding: readonly number[] }[]): number[] {
+export function noteCentroid(chunks: readonly { readonly embedding: ArrayLike<number> }[]): number[] {
   if (chunks.length === 0) {
     return [];
   }

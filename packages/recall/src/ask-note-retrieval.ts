@@ -11,7 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { classifyRetrievalConfidence, lexicalOverlap, lexicalTokens, resolveRecallConfidentAt, splitCompoundQuery } from "@muse/agent-core";
-import { diversifyAskChunks, secondHopAugmentChunks, shouldSecondHop, type FileEntry, type IndexChunk } from "./chunks.js";
+import { diversifyAskChunks, secondHopAugmentChunks, shouldSecondHop, type ScoredChunk } from "./chunks.js";
 import { demoteStale, detectStaleMarker } from "./conflict.js";
 import { filterNotesByScope, relativizeNoteSource } from "./present.js";
 import { existsSync } from "node:fs";
@@ -20,12 +20,27 @@ import { errorMessage } from "@muse/shared";
 import { filterLiveNoteIndexFiles } from "./live-files.js";
 import { cosine } from "./notes-index.js";
 import { linkExpandRefs } from "./notes-links.js";
+import { NOTES_CHUNKER_VERSION } from "./notes-chunk.js";
+import { NOTES_INDEX_SCHEMA_VERSION } from "./notes-index.js";
+import {
+  createTemporalClaimGraphV1,
+  resolveNoteSpanIdentityV1FromIndex,
+  type NoteSpanIdentityV1,
+  type SupersedesRelationV1,
+  type TemporalClaimGraphV1
+} from "./temporal-claim-graph.js";
 
-type ScoredChunk = { chunk: IndexChunk; file: string; score: number };
 
 // Keep the package boundary aligned with the CLI's `--top` contract without
 // introducing a package -> app dependency. This also bounds direct callers.
 const MAX_RETRIEVAL_TOP_K = 20;
+
+interface RetrievalFileEntry {
+  readonly path: string;
+  readonly sourceHash?: string;
+  readonly chunkerVersion?: typeof NOTES_CHUNKER_VERSION;
+  readonly chunks: readonly ScoredChunk["chunk"][];
+}
 const PAIR_AWARE_RERANK_WINDOW = 20;
 const PAIR_AWARE_RELEVANT_SLOTS = 10;
 const PAIR_SHORTLIST_SIDE_LIMIT = PAIR_AWARE_RELEVANT_SLOTS;
@@ -97,6 +112,12 @@ export interface VerifiedCorrectionPair {
   readonly stale: NoteChunkIdentity;
 }
 
+export interface TemporalClaimGraphActivationV1 {
+  readonly relation: SupersedesRelationV1;
+  readonly scored: readonly ScoredChunk[];
+  readonly verifiedCorrectionPair: VerifiedCorrectionPair;
+}
+
 export type RecallRerankOutcome = "ineligible-window" | "success" | "empty" | "invalid" | "timeout" | "error";
 
 export interface RecallRerankDecision {
@@ -143,7 +164,57 @@ export interface NoteRetrievalSnapshotIdentity {
   readonly notesIndexFile: string;
   readonly indexBuiltAtIso: string;
   readonly conflictAwareSelection: boolean;
+  readonly candidateIndexDigest: string;
   readonly rerankResultHash: string;
+  readonly temporalClaim?: TemporalClaimSnapshotIdentityV1;
+}
+
+export interface TemporalClaimSnapshotAuthorityV1 {
+  readonly schema: "muse.temporal-claim-snapshot-authority.v1";
+  readonly storeState: "absent" | "empty" | "valid" | "unavailable";
+  readonly storeRevision: number;
+  readonly rawStoreDigest: string | null;
+  readonly graphDigest: string | null;
+  readonly indexDigest: string | null;
+  readonly chunkerVersion: typeof NOTES_CHUNKER_VERSION;
+  readonly sourceProvenanceDigest: string | null;
+}
+
+export interface TemporalClaimSnapshotIdentityV1 {
+  readonly authority?: TemporalClaimSnapshotAuthorityV1;
+  readonly selectedRelation?: SupersedesRelationV1;
+}
+
+export interface TemporalClaimContextV1 {
+  readonly authority: TemporalClaimSnapshotAuthorityV1;
+  readonly graph?: TemporalClaimGraphV1;
+}
+
+export function temporalClaimSnapshotMatchesContextV1(
+  snapshot: NoteRetrievalSnapshot,
+  context: TemporalClaimContextV1 | undefined
+): boolean {
+  const identity = snapshot.identity.temporalClaim;
+  if (!identity && !context) return true;
+  if (!identity?.authority || !context) return false;
+  if (identity.authority.storeState === "unavailable" || context.authority.storeState === "unavailable") return false;
+  if (JSON.stringify(identity.authority) !== JSON.stringify(context.authority)) return false;
+  if (!identity.selectedRelation) return true;
+  return context.graph?.relations.some((relation) => JSON.stringify(relation) === JSON.stringify(identity.selectedRelation)) === true;
+}
+
+export function retrievalIndexSnapshotDigestV1(indexFiles: readonly RetrievalFileEntry[]): string {
+  return createHash("sha256").update(JSON.stringify(indexFiles.map((file) => ({
+    chunkerVersion: file.chunkerVersion ?? null,
+    chunks: file.chunks.map((chunk) => ({
+      chunkIndex: chunk.chunkIndex,
+      embedding: Array.from(chunk.embedding),
+      file: chunk.file,
+      text: chunk.text
+    })),
+    path: file.path,
+    sourceHash: file.sourceHash ?? null
+  })))).digest("hex");
 }
 
 export interface NoteRetrievalSnapshot {
@@ -152,10 +223,95 @@ export interface NoteRetrievalSnapshot {
   readonly result: Omit<NoteRetrievalResult, "snapshot">;
 }
 
+const MAX_TEMPORAL_GRAPH_RELATIONS = 1_024;
+const MAX_TEMPORAL_GRAPH_CANDIDATES = 65_536;
+
+function temporalCandidateKey(sourcePath: string, chunkIndex: number): string {
+  return JSON.stringify([sourcePath, chunkIndex]);
+}
+
+/** Pure, bounded activation of one already-validated explicit temporal edge. */
+export function activateTemporalClaimGraphV1(input: {
+  readonly candidates: readonly ScoredChunk[];
+  readonly confidentAt: number;
+  readonly graph: TemporalClaimGraphV1;
+  readonly indexFiles: readonly RetrievalFileEntry[];
+  readonly notesDir: string;
+  readonly query: string;
+  readonly topK: number;
+}): TemporalClaimGraphActivationV1 | undefined {
+  try {
+    if (input.topK < 2 || input.candidates.length === 0 || input.candidates.length > MAX_TEMPORAL_GRAPH_CANDIDATES
+      || !Number.isFinite(input.confidentAt) || detectStaleMarker(input.query)) return undefined;
+    const graph = createTemporalClaimGraphV1({ relations: input.graph.relations });
+    if (graph.relations.length === 0 || graph.relations.length > MAX_TEMPORAL_GRAPH_RELATIONS) return undefined;
+    const ranked = [...input.candidates].sort((left, right) => right.score - left.score);
+    const top = ranked[0];
+    if (!top || top.score < input.confidentAt || (ranked[1] !== undefined && ranked[1]!.score === top.score)) return undefined;
+
+    const candidateMap = new Map<string, ScoredChunk[]>();
+    for (const candidate of input.candidates) {
+      const sourcePath = relativizeNoteSource(candidate.file, input.notesDir);
+      const key = temporalCandidateKey(sourcePath, candidate.chunk.chunkIndex);
+      const values = candidateMap.get(key) ?? [];
+      values.push(candidate);
+      candidateMap.set(key, values);
+    }
+    const fileMap = new Map<string, RetrievalFileEntry[]>();
+    for (const file of input.indexFiles) {
+      const sourcePath = relativizeNoteSource(file.path, input.notesDir);
+      const values = fileMap.get(sourcePath) ?? [];
+      values.push(file);
+      fileMap.set(sourcePath, values);
+    }
+    const endpoint = (identity: NoteSpanIdentityV1) => {
+      const candidates = candidateMap.get(temporalCandidateKey(identity.sourcePath, identity.chunkIndex));
+      const files = fileMap.get(identity.sourcePath);
+      if (candidates?.length !== 1 || files?.length !== 1) return undefined;
+      const file = files[0]!;
+      if (file.sourceHash === undefined || file.chunkerVersion !== NOTES_CHUNKER_VERSION) return undefined;
+      const resolution = resolveNoteSpanIdentityV1FromIndex(identity, {
+        chunkerVersion: NOTES_CHUNKER_VERSION,
+        chunks: file.chunks.map((chunk) => ({ chunkIndex: chunk.chunkIndex, text: chunk.text })),
+        notesIndexSchema: NOTES_INDEX_SCHEMA_VERSION,
+        sourceHash: file.sourceHash,
+        sourcePath: identity.sourcePath
+      });
+      return resolution.status === "resolved"
+        ? { candidate: candidates[0]!, identity, span: resolution.span }
+        : undefined;
+    };
+    const matches = graph.relations.flatMap((relation) => {
+      const current = endpoint(relation.current);
+      const stale = endpoint(relation.stale);
+      if (!current || !stale || current.candidate === stale.candidate) return [];
+      return [{ current, relation, stale }];
+    }).filter(({ current, stale }) => current.candidate === top || stale.candidate === top);
+    if (matches.length !== 1) return undefined;
+    const selected = matches[0]!;
+    const queryTokens = lexicalTokens(input.query);
+    const currentTokens = lexicalTokens(selected.current.span);
+    const staleTokens = lexicalTokens(selected.stale.span);
+    if (![...queryTokens].some((token) => currentTokens.has(token) && staleTokens.has(token))) return undefined;
+    const baseline = diversifyAskChunks(input.candidates, input.topK, undefined, input.query);
+    const rest = baseline.filter((candidate) => candidate !== selected.current.candidate && candidate !== selected.stale.candidate);
+    return Object.freeze({
+      relation: selected.relation,
+      scored: Object.freeze([selected.current.candidate, selected.stale.candidate, ...rest].slice(0, input.topK)),
+      verifiedCorrectionPair: Object.freeze({
+        current: Object.freeze({ chunkIndex: selected.current.candidate.chunk.chunkIndex, file: selected.current.candidate.file }),
+        stale: Object.freeze({ chunkIndex: selected.stale.candidate.chunk.chunkIndex, file: selected.stale.candidate.file })
+      })
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 export async function retrieveAndRankNotes(params: {
   readonly query: string;
   readonly embedModel: string;
-  readonly indexFiles: readonly FileEntry[];
+  readonly indexFiles: readonly RetrievalFileEntry[];
   readonly notesDir: string;
   readonly topK: number;
   readonly scope: string | undefined;
@@ -171,12 +327,19 @@ export async function retrieveAndRankNotes(params: {
    * texts, returns candidate indices best-first — or undefined to fail open.
    */
   readonly rerankFn?: RecallRerankFn;
+  /** Deferred local-model preparation, invoked once only after explicit-edge activation is inert. */
+  readonly prepareRerankFn?: () => Promise<RecallRerankFn | undefined>;
   /** Internal diagnostic/development switch. Production bindings default ON; direct core callers opt in explicitly. */
   readonly conflictAwareSelection?: boolean;
   /** Index generation identity required to mint a reusable first-retrieval snapshot. */
   readonly snapshotIdentity?: { readonly notesIndexFile: string; readonly indexBuiltAtIso: string };
+  /** Already validated immutable explicit temporal graph. Never reads owner state here. */
+  readonly temporalClaimGraph?: TemporalClaimGraphV1;
+  /** Frozen local authority metadata captured by the CLI at the first retrieval boundary. */
+  readonly temporalClaimAuthority?: TemporalClaimSnapshotAuthorityV1;
 }): Promise<NoteRetrievalResult> {
-  const { query, embedModel, indexFiles, notesDir, scope, json, onStderr, embedFn, rerankFn } = params;
+  const { query, embedModel, indexFiles, notesDir, scope, json, onStderr, embedFn } = params;
+  let rerankFn = params.rerankFn;
   const topK = normalizeRetrievalTopK(params.topK);
   const env = params.env ?? process.env;
 
@@ -190,6 +353,8 @@ export async function retrieveAndRankNotes(params: {
   let rerankPair: RecallRerankPairHint | undefined;
   let verifiedCorrectionPair: VerifiedCorrectionPair | undefined;
   let rerankWindow: readonly ScoredChunk[] = [];
+  let temporalActivated = false;
+  let selectedTemporalRelation: SupersedesRelationV1 | undefined;
   try {
     // S3 narrate-the-wait: a REAL stage delta before the embed — on a 10-40s local
     // model the pre-answer gap reads as a hang; this makes it read as thinking.
@@ -208,6 +373,31 @@ export async function retrieveAndRankNotes(params: {
       score: cosine(queryVec!, chunk.embedding)
     })));
     preGapScored = [...allScored].sort((a, b) => b.score - a.score).slice(0, topK);
+    const candidateSnapshot = Object.freeze(allScored.map((candidate) => Object.freeze(candidate)));
+    const temporalActivation = params.temporalClaimGraph
+      ? activateTemporalClaimGraphV1({
+          candidates: candidateSnapshot,
+          confidentAt: resolveRecallConfidentAt(env, embedModel),
+          graph: params.temporalClaimGraph,
+          indexFiles: scopedNoteFiles,
+          notesDir,
+          query,
+          topK
+        })
+      : undefined;
+    if (temporalActivation) {
+      temporalActivated = true;
+      selectedTemporalRelation = temporalActivation.relation;
+      scored = [...temporalActivation.scored];
+      verifiedCorrectionPair = cloneVerifiedCorrectionPair(temporalActivation.verifiedCorrectionPair);
+    } else {
+    if (!rerankFn && params.prepareRerankFn) {
+      try {
+        rerankFn = await params.prepareRerankFn();
+      } catch {
+        rerankFn = undefined;
+      }
+    }
     // RAG-Fusion (arXiv:2402.03367): for a compound question each clause gets its
     // own embedding → its own cosine ranking → all rankings fused via RRF. Fail-open:
     // any embed error leaves clause vectors empty (byte-identical to non-compound).
@@ -324,10 +514,11 @@ export async function retrieveAndRankNotes(params: {
     } else {
       scored = diversifyAskChunks(allScored, topK, undefined, query, subqueryEmbeddings);
     }
-    if (params.conflictAwareSelection === true) {
+    }
+    if (!temporalActivated && params.conflictAwareSelection === true) {
       scored = preserveConflictPairs(scored, allScored, topK);
     }
-    if (rerankPair) {
+    if (!temporalActivated && rerankPair) {
       scored = preserveRerankPair(scored, rerankWindow, topK, rerankPair);
     }
     // Graph-augmented recall (HippoRAG / GraphRAG): pull in chunks from notes 1-hop
@@ -419,6 +610,7 @@ export async function retrieveAndRankNotes(params: {
     ...(result.verifiedCorrectionPair ? { verifiedCorrectionPair: cloneVerifiedCorrectionPair(result.verifiedCorrectionPair) } : {})
   };
   const identity: NoteRetrievalSnapshotIdentity = {
+    candidateIndexDigest: retrievalIndexSnapshotDigestV1(indexFiles),
     conflictAwareSelection: params.conflictAwareSelection === true,
     embedModel,
     indexBuiltAtIso: params.snapshotIdentity.indexBuiltAtIso,
@@ -426,6 +618,12 @@ export async function retrieveAndRankNotes(params: {
     notesIndexFile: params.snapshotIdentity.notesIndexFile,
     query,
     rerankResultHash: noteRetrievalResultHash(snapshotResult),
+    ...((params.temporalClaimAuthority || selectedTemporalRelation) ? {
+      temporalClaim: Object.freeze({
+        ...(params.temporalClaimAuthority ? { authority: params.temporalClaimAuthority } : {}),
+        ...(selectedTemporalRelation ? { selectedRelation: selectedTemporalRelation } : {})
+      })
+    } : {}),
     scope: normalizedScope(scope),
     topK
   };
@@ -442,6 +640,8 @@ export async function retrieveAndRankNotes(params: {
   for (const embedding of snapshotResult.subqueryEmbeddings) Object.freeze(embedding);
   Object.freeze(snapshotResult.subqueryEmbeddings);
   Object.freeze(snapshotResult);
+  if (identity.temporalClaim?.authority) Object.freeze(identity.temporalClaim.authority);
+  if (identity.temporalClaim?.selectedRelation) Object.freeze(identity.temporalClaim.selectedRelation);
   const snapshot = Object.freeze({ identity: Object.freeze(identity), rerankFn, result: snapshotResult });
   return { ...result, snapshot };
 }

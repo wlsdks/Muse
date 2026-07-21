@@ -6,14 +6,18 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const { retrieveCore } = vi.hoisted(() => ({
-  retrieveCore: vi.fn(async (_params?: unknown): Promise<Record<string, unknown>> => ({
-    notesUnavailable: false,
-    preGapScored: [],
-    queryVec: undefined,
-    scored: [],
-    splitClauses: [],
-    subqueryEmbeddings: []
-  }))
+  retrieveCore: vi.fn(async (raw?: unknown): Promise<Record<string, unknown>> => {
+    const params = raw as { readonly prepareRerankFn?: () => Promise<unknown> } | undefined;
+    await params?.prepareRerankFn?.();
+    return {
+      notesUnavailable: false,
+      preGapScored: [],
+      queryVec: undefined,
+      scored: [],
+      splitClauses: [],
+      subqueryEmbeddings: []
+    };
+  })
 }));
 
 vi.mock("@muse/recall", async (importOriginal) => ({
@@ -21,7 +25,7 @@ vi.mock("@muse/recall", async (importOriginal) => ({
   retrieveAndRankNotes: retrieveCore
 }));
 
-import { createRecallRerankFn, createWarmedRecallRerankFn, parseCorrectionPairReply, parsePairAwareRerankReply, parseRerankReply, resolveRerankModel, retrieveAndRankNotes } from "./ask-note-retrieval.js";
+import { captureTemporalClaimContext, createRecallRerankFn, createWarmedRecallRerankFn, parseCorrectionPairReply, parsePairAwareRerankReply, parseRerankReply, resolveRerankModel, retrieveAndRankNotes } from "./ask-note-retrieval.js";
 
 const eligibleIndexFiles = () => [{
   chunks: [
@@ -30,6 +34,7 @@ const eligibleIndexFiles = () => [{
     { chunkIndex: 2, embedding: [0.8, 0.2], file: "old.md", text: "I used to use the home gym, but not anymore." },
     { chunkIndex: 3, embedding: [0.7, 0.3], file: "extra.md", text: "Another note." }
   ],
+  mtimeMs: 1,
   path: fileURLToPath(import.meta.url)
 }];
 
@@ -73,10 +78,32 @@ describe("retrieveAndRankNotes — production conflict-aware default", () => {
   it("enables conflict-aware selection when omitted while preserving the explicit diagnostic opt-out", async () => {
     const runtime = { env: isolatedRerankEnv({ MUSE_RECALL_RERANK: "qwen3:8b", OLLAMA_BASE_URL: "http://127.0.0.1:22445" }) };
     await retrieveAndRankNotes(params, runtime);
-    expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ conflictAwareSelection: true }));
+    expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({
+      conflictAwareSelection: true,
+      temporalClaimAuthority: expect.objectContaining({
+        chunkerVersion: "muse.notes.chunk-text.v1",
+        schema: "muse.temporal-claim-snapshot-authority.v1",
+        storeRevision: 0,
+        storeState: "absent"
+      })
+    }));
 
     await retrieveAndRankNotes({ ...params, conflictAwareSelection: false }, runtime);
     expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ conflictAwareSelection: false }));
+  });
+
+  it("represents an unsafe auto-audit as explicit unavailable authority", async () => {
+    const context = await captureTemporalClaimContext({
+      HOME: isolatedHome,
+      MUSE_NOTE_RELATIONS_FILE: join(isolatedHome, "outside", "relations.json")
+    });
+    expect(context).toEqual({
+      authority: {
+        chunkerVersion: "muse.notes.chunk-text.v1", graphDigest: null, indexDigest: null,
+        rawStoreDigest: null, schema: "muse.temporal-claim-snapshot-authority.v1",
+        sourceProvenanceDigest: null, storeRevision: 0, storeState: "unavailable"
+      }
+    });
   });
 
   it("preloads the bound local reranker before an eligible first retrieval with the exact empty Ollama request", async () => {
@@ -102,7 +129,7 @@ describe("retrieveAndRankNotes — production conflict-aware default", () => {
       method: "POST"
     }));
     expect(timeout).toHaveBeenCalledWith(30_000);
-    expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ rerankFn: expect.any(Function) }));
+    expect(retrieveCore).toHaveBeenLastCalledWith(expect.objectContaining({ prepareRerankFn: expect.any(Function) }));
   });
 
   it("fails open to deterministic retrieval after one invalid preload without issuing a selector retry", async () => {
@@ -235,18 +262,19 @@ describe("retrieveAndRankNotes — production conflict-aware default", () => {
       const coreParams = raw as {
         readonly embedFn: (text: string, model: string) => Promise<number[]>;
         readonly env?: NodeJS.ProcessEnv;
+        readonly prepareRerankFn?: () => Promise<((query: string, candidates: readonly string[]) => Promise<unknown>) | undefined>;
         readonly rerankFn?: (query: string, candidates: readonly string[]) => Promise<unknown>;
       };
-      coreRerankFn = coreParams.rerankFn;
+      coreRerankFn = coreParams.rerankFn ?? await coreParams.prepareRerankFn?.();
       coreEnv = coreParams.env;
       await coreParams.embedFn("private query", "nomic-embed-text-v2-moe");
-      await coreParams.rerankFn?.("private query", ["current", "used to be old, not anymore"]);
+      await coreRerankFn?.("private query", ["current", "used to be old, not anymore"]);
       return {
         notesUnavailable: false,
         preGapScored: [],
         queryVec: [1, 0],
         scored: [],
-        snapshot: { identity: { test: "snapshot" }, rerankFn: coreParams.rerankFn, result: { scored: [] } },
+        snapshot: { identity: { test: "snapshot" }, rerankFn: coreRerankFn, result: { scored: [] } },
         splitClauses: [],
         subqueryEmbeddings: []
       };

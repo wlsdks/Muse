@@ -78,7 +78,7 @@ import { listNoteFiles, notesCorpusFileCount, selectGraphConnections } from "./a
 import { collectAutoImageAttachments, loadImageAttachment } from "./ask-image-attachments.js";
 import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { buildSessionFeedReflectionGrounding } from "./ask-session-grounding.js";
-import { retrieveAndRankNotes } from "./ask-note-retrieval.js";
+import { captureTemporalClaimContext, retrieveAndRankNotes } from "./ask-note-retrieval.js";
 import { applyAdHocGrounding } from "./ask-adhoc-grounding.js";
 import { resolveSessionVisionModel, runVisionCommandAction } from "./ask-vision-command.js";
 import { runGroundingVerdict } from "./ask-grounding-verdict.js";
@@ -185,6 +185,8 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // ad-hoc result no longer needs to be captured back here.
       const askStages = createStageTimer();
       const retrievalIndexFile = notesIndexPath();
+      const retrievalEnv = Object.freeze({ ...process.env });
+      const prepareTemporalClaimContext = () => captureTemporalClaimContext(retrievalEnv);
       const retrieval = await retrieveAndRankNotes({
         embedModel,
         indexFiles: index.files,
@@ -195,7 +197,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         scope: options.scope?.trim(),
         snapshotIdentity: { indexBuiltAtIso: index.builtAtIso, notesIndexFile: retrievalIndexFile },
         topK
-      });
+      }, { env: retrievalEnv });
       let scored = retrieval.scored;
       const notesUnavailable = retrieval.notesUnavailable;
       const { queryVec, splitClauses, subqueryEmbeddings } = retrieval;
@@ -394,6 +396,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
           query,
           rerankFn,
           retrievalSnapshot,
+          prepareTemporalClaimContext,
           sources: { notesDir, notesIndexFile: retrievalIndexFile }
         });
         systemPrompt = prepared.systemPrompt;
@@ -568,6 +571,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
               retrievalSnapshot,
               runtime: {
                 embedFn: (text, embedM) => embed(text, embedM),
+                prepareTemporalClaimContext,
                 rerankFn,
                 // Only reached when the provider has no streaming path — the
                 // seam's documented single-shot degrade.

@@ -29,11 +29,14 @@ import { CITATION_INSTRUCTION_LINES } from "./ask-prompt-constants.js";
 import { createCitationStreamFilter } from "./citation-stream.js";
 import {
   noteRetrievalResultHash,
+  retrievalIndexSnapshotDigestV1,
   retrieveAndRankNotes,
+  temporalClaimSnapshotMatchesContextV1,
   type NoteChunkIdentity,
   type NoteRetrievalResult,
   type NoteRetrievalSnapshot,
   type RecallRerankFn,
+  type TemporalClaimContextV1,
   type VerifiedCorrectionPair
 } from "./ask-note-retrieval.js";
 import { dedupNearDuplicateChunks, notesGroundingFraming, type ScoredChunk } from "./chunks.js";
@@ -68,6 +71,8 @@ export interface GroundedRecallRuntime {
   readonly embedFn: (text: string, model: string) => Promise<number[]>;
   /** Optional local listwise reranker; retrieval invokes it at most once. */
   readonly rerankFn?: RecallRerankFn;
+  /** Re-audit explicit local note relations immediately before snapshot reuse. */
+  readonly prepareTemporalClaimContext?: () => Promise<TemporalClaimContextV1>;
   /** One buffered completion; the caller adapts its ModelProvider. */
   readonly generateAnswer: (args: {
     readonly system: string;
@@ -313,6 +318,8 @@ export interface PrepareRecallInput {
   readonly embedFn: GroundedRecallRuntime["embedFn"];
   readonly rerankFn?: RecallRerankFn;
   readonly retrievalSnapshot?: NoteRetrievalSnapshot;
+  /** Fresh local temporal authority captured immediately before snapshot reuse. */
+  readonly prepareTemporalClaimContext?: () => Promise<TemporalClaimContextV1>;
   readonly extras?: GroundedRecallExtras;
 }
 
@@ -324,6 +331,7 @@ function toPrepareRecallInput(input: GroundedRecallInput): PrepareRecallInput {
     query: input.query,
     rerankFn: input.runtime.rerankFn,
     retrievalSnapshot: input.retrievalSnapshot,
+    prepareTemporalClaimContext: input.runtime.prepareTemporalClaimContext,
     sources: input.sources
   };
 }
@@ -335,6 +343,9 @@ async function prepareRecall(input: PrepareRecallInput): Promise<PreparedGrounde
   const conflictAwareSelection = options.conflictAwareSelection !== false;
 
   const { embedModel, files: indexFiles, indexBuiltAtIso } = await resolveIndexForModel(sources.notesIndexFile, options.embedModel);
+  const temporalContext = input.prepareTemporalClaimContext
+    ? await input.prepareTemporalClaimContext().catch(() => undefined)
+    : undefined;
   const snapshot = input.retrievalSnapshot;
   const canReuseSnapshot = snapshot !== undefined
     && indexBuiltAtIso !== undefined
@@ -346,8 +357,10 @@ async function prepareRecall(input: PrepareRecallInput): Promise<PreparedGrounde
     && snapshot.identity.notesDir === sources.notesDir
     && snapshot.identity.notesIndexFile === sources.notesIndexFile
     && snapshot.identity.indexBuiltAtIso === indexBuiltAtIso
+    && snapshot.identity.candidateIndexDigest === retrievalIndexSnapshotDigestV1(indexFiles)
     && snapshot.identity.rerankResultHash === noteRetrievalResultHash(snapshot.result)
-    && snapshot.identity.conflictAwareSelection === conflictAwareSelection;
+    && snapshot.identity.conflictAwareSelection === conflictAwareSelection
+    && temporalClaimSnapshotMatchesContextV1(snapshot, temporalContext);
   const retrieval: Omit<NoteRetrievalResult, "snapshot"> = canReuseSnapshot
     ? cloneSnapshotResult(snapshot.result)
     : await retrieveAndRankNotes({
@@ -361,6 +374,10 @@ async function prepareRecall(input: PrepareRecallInput): Promise<PreparedGrounde
         query,
         rerankFn: input.rerankFn,
         scope: options.scope,
+        ...(temporalContext ? {
+          temporalClaimAuthority: temporalContext.authority,
+          ...(temporalContext.graph ? { temporalClaimGraph: temporalContext.graph } : {})
+        } : {}),
         topK
       });
 

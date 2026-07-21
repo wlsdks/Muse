@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createNoteSpanIdentityV1, createSupersedesRelationV1 } from "@muse/recall";
 import { describe, expect, it } from "vitest";
 
-import { auditNoteRelationsStore } from "./note-relations-audit.js";
+import { auditNoteRelationsStore, temporalClaimGraphFromAuditV1 } from "./note-relations-audit.js";
 import { loadBoundedNotesIndex, loadIndexedNoteSource } from "./note-relations-context.js";
 import { mutateNoteRelationsStore, resolveNoteRelationsPathSnapshot } from "./note-relations-store.js";
 
@@ -69,6 +69,7 @@ describe("note relations audit", () => {
     expect(audit).toMatchObject({ state: "valid", revision: 1 });
     expect(audit.edges).toEqual([{ edgeId: relation.edgeId, status: "valid" }]);
     expect(audit.semanticDigest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(temporalClaimGraphFromAuditV1(audit)?.semanticDigest).toBe(audit.semanticDigest);
   });
 
   it("retains a stale stored edge as unavailable without rewriting it", async () => {
@@ -77,6 +78,7 @@ describe("note relations audit", () => {
     const audit = await auditNoteRelationsStore(paths);
     expect(audit).toMatchObject({ state: "unavailable", semanticDigest: null });
     expect(audit.edges).toEqual([{ edgeId: relation.edgeId, reason: "stale_endpoint", status: "unavailable" }]);
+    expect(temporalClaimGraphFromAuditV1(audit)).toBeUndefined();
     const after = await (await import("./note-relations-store.js")).readNoteRelationsStore(paths);
     expect(after.relations).toHaveLength(1);
     expect(after.revision).toBe(1);

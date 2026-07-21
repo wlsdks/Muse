@@ -528,6 +528,54 @@ export function resolveNoteSpanIdentityV1(
   }
 }
 
+/**
+ * Resolve an identity against an exact content-addressed notes-index view.
+ * The caller is responsible for validating the raw sourceHash represented by
+ * that view before granting authority; retrieval uses this after the CLI has
+ * already built a validated immutable temporal graph from current source bytes.
+ */
+export function resolveNoteSpanIdentityV1FromIndex(
+  identity: NoteSpanIdentityV1,
+  sourceIndexValue: NoteSourceIndexViewV1
+): NoteSpanResolutionV1 {
+  try {
+    const exactIdentity = extractIdentityData(identity);
+    if (!exactIdentity) return INERT_RESOLUTION;
+    const sourceIndex = validateSourceIndex(sourceIndexValue);
+    const chunk = sourceIndex.chunks.find((candidate) => candidate.chunkIndex === exactIdentity.chunkIndex);
+    if (!chunk) return INERT_RESOLUTION;
+    const chunkBytes = utf8Bytes(chunk.text, "chunk text");
+    if (
+      !Number.isSafeInteger(exactIdentity.start)
+      || !Number.isSafeInteger(exactIdentity.end)
+      || exactIdentity.start < 0
+      || exactIdentity.start >= exactIdentity.end
+      || exactIdentity.end > chunkBytes.byteLength
+      || exactIdentity.end - exactIdentity.start > MAX_SPAN_BYTES
+    ) return INERT_RESOLUTION;
+    let span: string;
+    const spanBytes = chunkBytes.subarray(exactIdentity.start, exactIdentity.end);
+    try {
+      span = FATAL_UTF8_DECODER.decode(spanBytes);
+    } catch {
+      return INERT_RESOLUTION;
+    }
+    if (
+      exactIdentity.schema !== NOTE_SPAN_IDENTITY_SCHEMA_V1
+      || exactIdentity.sourcePath !== sourceIndex.sourcePath
+      || exactIdentity.sourceHash !== sourceIndex.sourceHash
+      || exactIdentity.notesIndexSchema !== sourceIndex.notesIndexSchema
+      || exactIdentity.chunkerVersion !== sourceIndex.chunkerVersion
+      || exactIdentity.sourceIndexDigest !== sourceIndexDigest(sourceIndex, sourceIndex.chunks)
+      || exactIdentity.chunkHash !== sha256(chunkBytes)
+      || exactIdentity.spanHash !== sha256(spanBytes)
+    ) return INERT_RESOLUTION;
+    return Object.freeze({ span, status: "resolved" });
+  } catch {
+    return INERT_RESOLUTION;
+  }
+}
+
 function extractRelationEndpointData(value: unknown): SupersedesRelationEndpointV1 {
   const data = extractExactOwnEnumerableDataProperties(value, RELATION_ENDPOINT_KEYS);
   if (!data) {

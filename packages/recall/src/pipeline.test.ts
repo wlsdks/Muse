@@ -504,6 +504,48 @@ describe("prepareGroundedRecall — the prepare-only entry point (--with-tools c
     expect(rerankCalls).toBe(2);
   });
 
+  it("reuses only an exact freshly audited temporal authority", async () => {
+    const files = [
+      { embedding: [1, 0, 0], path: join(notesDir, "vpn.md"), text: "WireGuard VPN MTU is 1380." },
+      { embedding: [0.9, 0.1, 0], path: join(notesDir, "vpn-other.md"), text: "VPN routing overview." },
+      { embedding: [0.8, 0.2, 0], path: join(notesDir, "vpn-tail.md"), text: "VPN meeting notes." }
+    ];
+    for (const file of files) await writeFile(file.path, file.text);
+    await writeIndex(files);
+    const index = await loadIndex(indexFile);
+    let rerankCalls = 0;
+    const rerankFn = async () => { rerankCalls += 1; return [0]; };
+    const authority = Object.freeze({
+      chunkerVersion: "muse.notes.chunk-text.v1" as const, graphDigest: null, indexDigest: "1".repeat(64),
+      rawStoreDigest: "2".repeat(64), schema: "muse.temporal-claim-snapshot-authority.v1" as const,
+      sourceProvenanceDigest: null, storeRevision: 1, storeState: "empty" as const
+    });
+    const first = await retrieveAndRankNotes({
+      conflictAwareSelection: true, embedFn: fakeEmbed, embedModel: EMBED_MODEL, indexFiles: index?.files ?? [], json: true, notesDir,
+      onStderr: () => {}, query: "vpn mtu", rerankFn, scope: undefined,
+      snapshotIdentity: { indexBuiltAtIso: index?.builtAtIso ?? "", notesIndexFile: indexFile },
+      temporalClaimAuthority: authority, topK: 2
+    });
+    const base = {
+      embedFn: fakeEmbed, options: { embedModel: EMBED_MODEL, topK: 2 }, query: "vpn mtu", rerankFn,
+      retrievalSnapshot: first.snapshot, sources: { notesDir, notesIndexFile: indexFile }
+    };
+    await prepareGroundedRecall({ ...base, prepareTemporalClaimContext: async () => ({ authority }) });
+    expect(rerankCalls).toBe(1);
+    const replacedIndex = JSON.parse(await readFile(indexFile, "utf8")) as {
+      files: Array<{ chunks: Array<{ text: string }> }>;
+    };
+    replacedIndex.files[0]!.chunks[0]!.text = "WireGuard VPN MTU is 1420.";
+    await writeFile(indexFile, JSON.stringify(replacedIndex));
+    await prepareGroundedRecall({ ...base, prepareTemporalClaimContext: async () => ({ authority }) });
+    expect(rerankCalls).toBe(2);
+    await prepareGroundedRecall({
+      ...base,
+      prepareTemporalClaimContext: async () => ({ authority: { ...authority, storeRevision: 2 } })
+    });
+    expect(rerankCalls).toBe(3);
+  });
+
   it("reuses pair-aware reranker selection from the first snapshot with one logical invocation", async () => {
     const files = [
       { embedding: [0.95, Math.sqrt(1 - 0.95 ** 2)], path: join(notesDir, "rent-stale.md"), text: "I used to pay office rent 1200; no longer current." },

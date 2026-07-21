@@ -15,15 +15,17 @@ import {
   type RecallRerankContext,
   type RecallRerankPairHint
 } from "./ask-note-retrieval.js";
-import { diversifyAskChunks, type FileEntry } from "./chunks.js";
+import { diversifyAskChunks } from "./chunks.js";
 import { detectStaleMarker } from "./conflict.js";
+
+type FileEntry = Parameters<typeof retrieveAndRankNotes>[0]["indexFiles"][number];
 
 let dir: string;
 
-async function noteFile(name: string, text: string, embedding: number[]): Promise<FileEntry> {
+async function noteFile(name: string, text: string, embedding: number[]) {
   const path = join(dir, name);
   await writeFile(path, text);
-  return { chunks: [{ chunkIndex: 0, embedding, file: path, text }], path };
+  return { chunks: [{ chunkIndex: 0, embedding, file: path, text }], mtimeMs: 1, path };
 }
 
 const embedFn = async (): Promise<number[]> => [1, 0];
@@ -1257,11 +1259,12 @@ describe("retrieveAndRankNotes — local-LLM rerank seam (opt-in via rerankFn)",
   it("does not invoke a pair-aware reranker when original chunk identity is ambiguous", async () => {
     const duplicatePath = join(dir, "duplicate.md");
     await writeFile(duplicatePath, "duplicate identity fixture");
-    const duplicate: FileEntry = {
+    const duplicate = {
       chunks: [
         { chunkIndex: 0, embedding: unit(0.9), file: duplicatePath, text: "Office rent is 1300 now." },
         { chunkIndex: 0, embedding: unit(0.8), file: duplicatePath, text: "Office rent reminder." }
       ],
+      mtimeMs: 1,
       path: duplicatePath
     };
     const stale = await noteFile("rent-stale.md", "I used to pay office rent 1200; no longer current.", unit(0.7));

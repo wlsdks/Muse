@@ -2,7 +2,8 @@ import {
   createSupersedesRelationV1,
   createTemporalClaimGraphV1,
   resolveNoteSpanIdentityV1,
-  type SupersedesRelationV1
+  type SupersedesRelationV1,
+  type TemporalClaimGraphV1
 } from "@muse/recall";
 
 import {
@@ -34,6 +35,15 @@ export interface NoteRelationsAuditResult {
   readonly indexRawDigest: string | null;
   readonly semanticDigest: string | null;
   readonly edges: readonly RelationEdgeAudit[];
+}
+
+const AUDITED_TEMPORAL_GRAPHS = new WeakMap<object, TemporalClaimGraphV1>();
+
+/** Return graph authority only for the exact valid audit object that minted it. */
+export function temporalClaimGraphFromAuditV1(
+  audit: NoteRelationsAuditResult
+): TemporalClaimGraphV1 | undefined {
+  return AUDITED_TEMPORAL_GRAPHS.get(audit);
 }
 
 function unavailableEdge(edgeId: string, reason: RelationUnavailableReason): RelationEdgeAudit {
@@ -70,9 +80,6 @@ export async function auditNoteRelationsStore(
   paths: NoteRelationsPathSnapshot
 ): Promise<NoteRelationsAuditResult> {
   const store = await readNoteRelationsStore(paths);
-  if (store.state === "absent" || store.state === "empty") {
-    return auditLoadedNoteRelationsStore(store, undefined);
-  }
   let index: BoundedNotesIndexSnapshot;
   try {
     index = await loadBoundedNotesIndex(paths);
@@ -89,7 +96,7 @@ export async function auditLoadedNoteRelationsStore(
   if (store.state === "absent" || store.state === "empty") {
     return Object.freeze({
       edges: Object.freeze([]),
-      indexRawDigest: null,
+      indexRawDigest: index?.rawDigest ?? null,
       rawDigest: store.rawDigest,
       revision: store.revision,
       semanticDigest: null,
@@ -154,10 +161,12 @@ export async function auditLoadedNoteRelationsStore(
   }
   try {
     const graph = createTemporalClaimGraphV1({ relations: authoritative });
-    return Object.freeze({
+    const result = Object.freeze({
       edges: Object.freeze(edges), indexRawDigest: index.rawDigest, rawDigest: store.rawDigest,
       revision: store.revision, semanticDigest: graph.semanticDigest, state: "valid"
     });
+    AUDITED_TEMPORAL_GRAPHS.set(result, graph);
+    return result;
   } catch {
     return Object.freeze({
       edges: Object.freeze(store.relations.map((relation) => unavailableEdge(relation.edgeId, "disjoint_conflict"))),

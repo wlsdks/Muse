@@ -3,10 +3,11 @@
  * CLI's models.json-merged endpoint (the package default is env-only), and
  * optionally binds a local-LLM listwise reranker when MUSE_RECALL_RERANK
  * names an Ollama model (e.g. qwen3:8b). Eligible correction-aware retrieval
- * sends one bounded empty preload before embedding, then keeps the selector's
- * independent 4-second ceiling.
+ * defers one bounded empty preload until explicit temporal-edge activation is
+ * known to be inert, then keeps the selector's independent 4-second ceiling.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
 import {
@@ -17,13 +18,17 @@ import {
   type RecallRerankContext,
   type RecallRerankExecution,
   type RecallRerankFn,
-  type RecallRerankPairHint
+  type RecallRerankPairHint,
+  type TemporalClaimContextV1,
+  type TemporalClaimSnapshotAuthorityV1
 } from "@muse/recall";
 
 import { resolveDefaultModel } from "@muse/autoconfigure";
 
 import { embed } from "./embed.js";
 import { resolveOllamaUrl } from "./ollama-url.js";
+import { auditNoteRelationsStore, temporalClaimGraphFromAuditV1 } from "./note-relations-audit.js";
+import { resolveNoteRelationsPathSnapshot } from "./note-relations-store.js";
 
 export type { NoteRetrievalResult } from "@muse/recall";
 
@@ -362,19 +367,64 @@ export async function retrieveAndRankNotes(
 ): Promise<NoteRetrievalResult> {
   const envSnapshot = Object.freeze({ ...(runtime.env ?? process.env) });
   const fetchFn = runtime.fetchFn ?? defaultFetch;
+  let temporalClaimGraph = (params as CoreParams).temporalClaimGraph;
+  let temporalClaimAuthority = (params as CoreParams & { readonly temporalClaimAuthority?: TemporalClaimSnapshotAuthorityV1 }).temporalClaimAuthority;
+  if (!Object.hasOwn(params, "temporalClaimGraph")) {
+    const context = await captureTemporalClaimContext(envSnapshot);
+    temporalClaimGraph = context.graph;
+    temporalClaimAuthority = context.authority;
+  }
   const hasExplicitRerankFn = Object.hasOwn(params, "rerankFn");
   const binding = hasExplicitRerankFn ? undefined : createRecallRerankBinding(envSnapshot, { fetchFn });
-  let selectedRerankFn = hasExplicitRerankFn ? params.rerankFn : binding?.rerankFn;
-  if (binding) {
-    const preloadEligible = isRecallRerankPreloadEligible(params);
-    const preloadSucceeded = preloadEligible && await preloadRecallRerankBinding(binding);
-    if (!preloadSucceeded) selectedRerankFn = undefined;
-  }
+  const selectedRerankFn = hasExplicitRerankFn ? params.rerankFn : undefined;
+  const prepareRerankFn = binding && isRecallRerankPreloadEligible(params)
+    ? async () => await preloadRecallRerankBinding(binding) ? binding.rerankFn : undefined
+    : undefined;
   return retrieveAndRankNotesCore({
     ...params,
     conflictAwareSelection: params.conflictAwareSelection !== false,
     embedFn: (text, model) => embed(text, model, { fetchImpl: fetchFn }, envSnapshot),
     env: envSnapshot,
-    ...(selectedRerankFn ? { rerankFn: selectedRerankFn } : {})
-  });
+    ...(temporalClaimGraph ? { temporalClaimGraph } : {}),
+    ...(temporalClaimAuthority ? { temporalClaimAuthority } : {}),
+    ...(selectedRerankFn ? { rerankFn: selectedRerankFn } : {}),
+    ...(prepareRerankFn ? { prepareRerankFn } : {})
+  } as CoreParams);
+}
+
+/** Capture a complete fail-closed authority even when the local store cannot be audited. */
+export async function captureTemporalClaimContext(
+  env: NodeJS.ProcessEnv = process.env
+): Promise<TemporalClaimContextV1> {
+  try {
+    const audit = await auditNoteRelationsStore(resolveNoteRelationsPathSnapshot(Object.freeze({ ...env })));
+    const graph = temporalClaimGraphFromAuditV1(audit);
+    const sourceProvenanceDigest = graph
+      ? createHash("sha256").update(JSON.stringify(graph.relations.map(({ current, stale }) => ({ current, stale })))).digest("hex")
+      : null;
+    const authority = Object.freeze({
+      chunkerVersion: "muse.notes.chunk-text.v1",
+      graphDigest: audit.semanticDigest,
+      indexDigest: audit.indexRawDigest,
+      rawStoreDigest: audit.rawDigest,
+      schema: "muse.temporal-claim-snapshot-authority.v1",
+      sourceProvenanceDigest,
+      storeRevision: audit.revision,
+      storeState: audit.state
+    } satisfies TemporalClaimSnapshotAuthorityV1);
+    return Object.freeze({ authority, ...(graph ? { graph } : {}) });
+  } catch {
+    return Object.freeze({
+      authority: Object.freeze({
+        chunkerVersion: "muse.notes.chunk-text.v1",
+        graphDigest: null,
+        indexDigest: null,
+        rawStoreDigest: null,
+        schema: "muse.temporal-claim-snapshot-authority.v1",
+        sourceProvenanceDigest: null,
+        storeRevision: 0,
+        storeState: "unavailable"
+      })
+    });
+  }
 }

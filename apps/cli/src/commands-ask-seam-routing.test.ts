@@ -148,9 +148,13 @@ describe("muse ask (plain path) routes through runGroundedRecall's seam", () => 
 
     const seamInput = vi.mocked(recall.streamGroundedRecall).mock.calls.at(-1)?.[0];
     expect(seamInput?.runtime.rerankFn).toBe(RERANK_PLUMBING.rerankFn);
+    expect(seamInput?.runtime.prepareTemporalClaimContext).toEqual(expect.any(Function));
     expect(seamInput?.retrievalSnapshot).toBe(RERANK_PLUMBING.retrievalSnapshot);
     expect(noteRetrieval.createRecallRerankFn).not.toHaveBeenCalled();
-    expect(noteRetrieval.retrieveAndRankNotes).toHaveBeenCalledWith(expect.not.objectContaining({ rerankFn: expect.anything() }));
+    expect(noteRetrieval.retrieveAndRankNotes).toHaveBeenCalledWith(
+      expect.not.objectContaining({ rerankFn: expect.anything() }),
+      expect.objectContaining({ env: expect.any(Object) })
+    );
   });
 
   it("passes the same reranker and first-retrieval snapshot into the with-tools prepare seam", async () => {
@@ -164,6 +168,7 @@ describe("muse ask (plain path) routes through runGroundedRecall's seam", () => 
     const prepareInput = vi.mocked(recall.prepareGroundedRecall).mock.calls.at(-1)?.[0];
     expect(prepareInput?.rerankFn).toBe(RERANK_PLUMBING.rerankFn);
     expect(prepareInput?.retrievalSnapshot).toBe(RERANK_PLUMBING.retrievalSnapshot);
+    expect(prepareInput?.prepareTemporalClaimContext).toEqual(expect.any(Function));
   });
 
   it("a fault raised inside the seam propagates out of the plain path (not silently swallowed)", async () => {

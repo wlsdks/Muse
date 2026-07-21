@@ -11,6 +11,7 @@ import {
   NOTES_CHUNKER_VERSION,
   NOTES_INDEX_SCHEMA_VERSION,
   resolveNoteSpanIdentityV1,
+  resolveNoteSpanIdentityV1FromIndex,
   type CreateNoteSpanIdentityV1Input,
   type NoteSourceIndexChunkV1,
   type NoteSourceIndexViewV1
@@ -99,6 +100,14 @@ describe("exact temporal note spans", () => {
       span: fixture.span,
       status: "resolved"
     });
+    expect(resolveNoteSpanIdentityV1FromIndex(identity, fixture.sourceIndex)).toEqual({
+      span: fixture.span,
+      status: "resolved"
+    });
+    expect(resolveNoteSpanIdentityV1FromIndex(identity, {
+      ...fixture.sourceIndex,
+      sourceHash: "0".repeat(64)
+    })).toEqual({ status: "inert" });
   });
 
   it("accepts only canonical text source paths within the 512-byte UTF-8 boundary", () => {
