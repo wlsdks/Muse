@@ -86,6 +86,8 @@ export interface LinkArtifactOptions extends AttunementStoreOptions {
 export interface UnlinkArtifactInput {
   readonly artifactId: string;
   readonly artifactType: ArtifactLink["artifactType"];
+  /** Required by calendar surfaces so one provider-scoped link is removed. */
+  readonly providerId?: string;
   readonly threadId: string;
 }
 
@@ -602,9 +604,15 @@ export async function linkArtifact(
 }
 
 export async function unlinkArtifact(file: string, input: UnlinkArtifactInput): Promise<boolean> {
+  if (input.providerId !== undefined && (!isValidProviderId(input.providerId)
+    || !isCoherentArtifactProvider(input.artifactType, input.providerId))) {
+    throw new AttunementStoreError(`provider '${input.providerId}' does not match a ${input.artifactType}`);
+  }
   return mutate<boolean>(file, (state) => {
     const thread = requireThread(state, input.threadId);
-    const links = thread.links.filter((link) => !(link.artifactType === input.artifactType && link.artifactId === input.artifactId));
+    const links = thread.links.filter((link) => !(link.artifactType === input.artifactType
+      && link.artifactId === input.artifactId
+      && (input.providerId === undefined || link.providerId === input.providerId)));
     if (links.length === thread.links.length) return { changed: false, result: false, state };
     return { changed: true, result: true, state: replaceThread(state, { ...thread, links }) };
   });

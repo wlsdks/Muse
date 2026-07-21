@@ -116,6 +116,32 @@ describe("Personal Continuity store", () => {
     expect(await unlinkArtifact(file, { artifactId: "task_full-id-1", artifactType: "task", threadId: thread.id })).toBe(false);
   });
 
+  it("unlinks a calendar occurrence from only the explicitly named provider", async () => {
+    const file = stateFile();
+    const options = deterministicOptions();
+    const thread = await createPersonalThread(file, { kind: "life", title: "Shared occurrence ids" }, options);
+    const reference = "cev1_WyJzYW1lIiwiMjAyNi0wNy0yMlQwOTowMDowMC4wMDBaIl0";
+    for (const providerId of ["calendar:work", "calendar:life"] as const) {
+      await linkArtifact(file, {
+        artifactId: reference,
+        artifactType: "calendar-event",
+        providerId,
+        role: "context",
+        threadId: thread.id
+      }, { ...options, validateArtifact: async ({ artifactId, artifactType, providerId }) => ({ artifactId, artifactType, providerId }) });
+    }
+
+    expect(await unlinkArtifact(file, {
+      artifactId: reference,
+      artifactType: "calendar-event",
+      providerId: "calendar:work",
+      threadId: thread.id
+    })).toBe(true);
+    expect((await readAttunementState(file)).threads[0]?.links).toMatchObject([
+      { artifactId: reference, artifactType: "calendar-event", providerId: "calendar:life" }
+    ]);
+  });
+
   it("requires an exact validator, stores its canonical ID, and rejects unsafe note paths at the public mutation boundary", async () => {
     const file = stateFile();
     const options = deterministicOptions();
