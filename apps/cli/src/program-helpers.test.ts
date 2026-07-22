@@ -381,6 +381,16 @@ describe("writeRunLog — canonical collision-safe identity", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   });
+
+  it("rejects a malformed present outcome instead of laundering it to null", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "muse-runlog-outcome-"));
+    const { rm } = await import("node:fs/promises");
+    try {
+      await expect(writeRunLog(workspace, { message: "q", response: { grounded: "invented", runId: "run_exact" } })).rejects.toThrow(/malformed grounded outcome/u);
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("apiRequest — connection-refused hint (admin commands with no local mode: cost/traces/telemetry/analytics/tools stats/mcp list/settings/scheduler list)", () => {

@@ -208,13 +208,18 @@ export async function writeRunLog(
 ): Promise<string> {
   const runDir = path.join(workspaceDir, ".muse", "runs");
   const responseRunId = readResponseRunId(input.response);
+  const rawOutcome = readResponseGrounded(input.response);
+  const grounded = rawOutcome === undefined ? null : canonicalRunOutcome(rawOutcome);
+  if (grounded === undefined) {
+    throw new Error("run log response contains a malformed grounded outcome");
+  }
   const eventFor = (runId: string) => ({
     apiUrl: input.apiUrl ?? process.env.MUSE_API_URL ?? "http://127.0.0.1:3030",
     // Outcome labels lifted to the TOP LEVEL so a trace is greppable for error-analysis
     // without descending into `response`. cli.remote responses carry these; cli.local
     // responses do not yet, so they are null there for now — but the schema
     // error-analysis reads is fixed here.
-    grounded: canonicalRunOutcome(readResponseGrounded(input.response)) ?? null,
+    grounded,
     message: input.message,
     model: input.model ?? null,
     recordedAt: now.toISOString(),
