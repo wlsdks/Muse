@@ -271,7 +271,8 @@ export async function readReminderTriageLedgerStrict(file: string): Promise<Ledg
       previews.set(rawEvent.operationId, rawEvent);
     } else if (rawEvent.type === "prepared") {
       const preview = previews.get(rawEvent.operationId);
-      if (!preview || rawEvent.previewEventId !== preview.eventId || rawEvent.preStoreDigest !== preview.preStoreDigest || rawEvent.postStoreDigest !== preview.postStoreDigest || counts.terminal > 0) {
+      if (!preview || rawEvent.previewEventId !== preview.eventId || rawEvent.preStoreDigest !== preview.preStoreDigest || rawEvent.postStoreDigest !== preview.postStoreDigest
+        || Date.parse(rawEvent.preparedAt) > Date.parse(preview.expiresAt) || counts.terminal > 0) {
         throw new ReminderTriageStoreError("reminder triage prepared event is invalid");
       }
       preparedEvents.set(rawEvent.operationId, rawEvent);
@@ -459,7 +460,7 @@ function isLedgerEvent(value: unknown): value is LedgerEvent {
     if (!isExactObject(v, ["type", "eventId", "operationId", "recordedAt", "previousHash", "hash", "action", "tokenHash", "expiresAt", "items", "preStoreDigest", "postStoreDigest", ...optional])) return false;
     if (!["dismiss", "snooze", "retain", "draft-digest"].includes(action)
       || typeof v.tokenHash !== "string" || !HASH_RE.test(v.tokenHash)
-      || typeof v.expiresAt !== "string" || !isCanonicalIso(v.expiresAt)
+      || typeof v.expiresAt !== "string" || !isCanonicalIso(v.expiresAt) || Date.parse(v.expiresAt) !== Date.parse(String(v.recordedAt)) + TOKEN_TTL_MS
       || !Array.isArray(v.items) || v.items.length < 1 || v.items.length > MAX_ITEMS || !v.items.every(isSnapshot)
       || typeof v.preStoreDigest !== "string" || !HASH_RE.test(v.preStoreDigest)
       || typeof v.postStoreDigest !== "string" || !HASH_RE.test(v.postStoreDigest)) return false;

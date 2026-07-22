@@ -236,6 +236,32 @@ describe("reminder backlog triage transaction", () => {
     await expect(readReminderTriageLedgerStrict(badTerminal.ledgerFile)).rejects.toThrow("hash chain");
   });
 
+  it("rejects hash-valid authorization events outside the exact preview lifetime", async () => {
+    const badExpiry = await fixture([reminder("rem_a")]);
+    await previewReminderTriage({ action: "retain", ids: ["rem_a"], ledgerFile: badExpiry.ledgerFile, remindersFile: badExpiry.remindersFile, now: () => BASE });
+    const expiryLedger = JSON.parse(await readFile(badExpiry.ledgerFile, "utf8")) as { events: Array<Record<string, unknown>> };
+    expiryLedger.events[0]!.expiresAt = "2026-07-22T00:15:00.001Z";
+    rehash(expiryLedger.events);
+    await writeFile(badExpiry.ledgerFile, JSON.stringify(expiryLedger), { mode: 0o600 });
+    await expect(readReminderTriageLedgerStrict(badExpiry.ledgerFile)).rejects.toBeInstanceOf(ReminderTriageStoreError);
+
+    const latePrepare = await fixture([reminder("rem_a")]);
+    const preview = await previewReminderTriage({ action: "dismiss", ids: ["rem_a"], ledgerFile: latePrepare.ledgerFile, remindersFile: latePrepare.remindersFile, now: () => BASE });
+    await expect(confirmReminderTriage({
+      failpoint: (point) => { if (point === "after-prepared") throw new Error("stop-after-prepared"); },
+      ledgerFile: latePrepare.ledgerFile,
+      remindersFile: latePrepare.remindersFile,
+      token: preview.confirmToken,
+      now: () => BASE
+    })).rejects.toThrow("stop-after-prepared");
+    const preparedLedger = JSON.parse(await readFile(latePrepare.ledgerFile, "utf8")) as { events: Array<Record<string, unknown>> };
+    preparedLedger.events[1]!.preparedAt = "2026-07-22T00:15:00.001Z";
+    preparedLedger.events[1]!.recordedAt = "2026-07-22T00:15:00.001Z";
+    rehash(preparedLedger.events);
+    await writeFile(latePrepare.ledgerFile, JSON.stringify(preparedLedger), { mode: 0o600 });
+    await expect(readReminderTriageLedgerStrict(latePrepare.ledgerFile)).rejects.toThrow("prepared event is invalid");
+  });
+
   it("strict reminder pre-image rejects unknown fields and noncanonical timestamps without rewriting source", async () => {
     const f = await fixture([reminder("rem_a")]);
     const malformed = { reminders: [{ ...reminder("rem_a"), createdAt: "2026-01-01T00:00:00Z", unknown: true }] };
