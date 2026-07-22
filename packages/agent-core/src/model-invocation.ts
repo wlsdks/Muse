@@ -17,7 +17,7 @@
  */
 
 import { estimateCostUsd } from "@muse/cache";
-import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
+import type { CircuitBreaker, FallbackStrategy, RetryBudget, RetryOptions } from "@muse/resilience";
 import { retry, scaleRequestTimeout, withTimeout } from "@muse/resilience";
 import { decideWebSearchPolicy, parseModelName, USAGE_RECORDED_BY_RUNTIME_FLAG, type ModelProvider, type ModelRequest, type ModelResponse, type WebSearchPolicy, type WebSearchSettings } from "@muse/model";
 import type { AgentMetrics, MuseTracer, TokenUsageSink } from "@muse/observability";
@@ -77,6 +77,7 @@ export interface InvokeModelArgs {
   readonly circuitBreaker?: CircuitBreaker;
   readonly fallbackStrategy?: FallbackStrategy;
   readonly retry?: RetryOptions;
+  readonly retryBudget?: RetryBudget;
   readonly requestTimeoutMs?: number;
 }
 
@@ -134,6 +135,7 @@ async function invokeWithFallback(args: InvokeModelArgs): Promise<ModelResponse>
         messages: args.request.messages,
         ...(args.request.metadata !== undefined ? { metadata: args.request.metadata } : {}),
         ...(args.request.signal !== undefined ? { signal: args.request.signal } : {}),
+        ...(args.retryBudget ? { retryBudget: args.retryBudget } : {}),
         ...(args.request.temperature !== undefined ? { temperature: args.request.temperature } : {})
       },
       error
@@ -180,6 +182,8 @@ async function invokeWithResilience(args: InvokeModelArgs): Promise<ModelRespons
   }
   return retry(operation, {
     ...args.retry,
+    ...(args.retryBudget ? { budget: args.retryBudget } : {}),
+    ...(request.signal ? { signal: request.signal } : {}),
     retryable: isRetryableProviderError
   });
 }

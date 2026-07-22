@@ -105,8 +105,10 @@ states say what evidence is missing; they do not render zero as success.
   Background model execution and automatic notes indexing are now bounded.
   Notes refresh uses one attempted embedding by default, persists exact
   resumable progress, publishes only complete files through immutable vector
-  generations, and leaves explicit full reindex unlimited. Context/KV and
-  shared retry-loop budgets remain open.
+  generations, and leaves explicit full reindex unlimited. AgentRuntime model,
+  fallback, and read-plan retries now share one per-run count/backoff allowance
+  with cooperative cancellation. HTTP/MCP/auxiliary retries and Context/KV
+  budgets remain open.
 - [x] Emit only decision-grade telemetry: work admitted/deferred/cancelled and
   the policy reason. Do not sample a costly always-on dashboard.
 - [x] Aggregate claimed-unit duration, CPU delta, maximum positive RSS growth,

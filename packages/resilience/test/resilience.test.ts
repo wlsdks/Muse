@@ -5,10 +5,12 @@ import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
 import {
   CircuitBreakerOpenError,
   CircuitBreakerRegistry,
+  createRetryBudget,
   DefaultCircuitBreaker,
   ModelFallbackStrategy,
   NoOpFallbackStrategy,
   RetryExhaustedError,
+  RetryBudgetExhaustedError,
   TimeoutError,
   computeRetryDelay,
   isCancellationLikeError,
@@ -140,6 +142,19 @@ describe("CircuitBreakerRegistry", () => {
 });
 
 describe("retry and timeout", () => {
+  it("records no phantom physical attempt when the shared budget denies a retry", async () => {
+    const seen: string[] = [];
+    const budget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    budget.reserve({ backoffMs: 0, cause: new Error("used") }).commit();
+    await expect(retry(() => Promise.reject(new Error("down")), {
+      budget,
+      maxAttempts: 2,
+      metricsRecorder: { recordRetryAttempt: (_name, attempt, success) => seen.push(`${attempt.toString()}:${success.toString()}`) },
+      retryable: () => true,
+      sleep: async () => {}
+    })).rejects.toBeInstanceOf(RetryBudgetExhaustedError);
+    expect(seen).toEqual(["1:false"]);
+  });
   it("retries retryable failures with deterministic backoff", async () => {
     const sleeps: number[] = [];
     let attempts = 0;
@@ -394,6 +409,21 @@ describe("fallback strategies", () => {
       .rejects.toMatchObject({ name: "AbortError" });
   });
 
+  it("preserves a custom pre-abort reason and refunds the fallback reservation", async () => {
+    const controller = new AbortController();
+    controller.abort("custom-stop");
+    const retryBudget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    let calls = 0;
+    const strategy = new ModelFallbackStrategy({
+      fallbackModels: ["openai/a"],
+      providers: [createProvider("openai", async () => { calls += 1; return { id: "x", model: "a", output: "no" }; })]
+    });
+    await expect(strategy.execute({ messages: [], retryBudget, signal: controller.signal }, new Error("down")))
+      .rejects.toBe("custom-stop");
+    expect(calls).toBe(0);
+    expect(retryBudget.snapshot()).toMatchObject({ usedBackoffMs: 0, usedRetries: 0 });
+  });
+
   it("records each fallback attempt's outcome through the metrics recorder", async () => {
     const seen: string[] = [];
     const strategy = new ModelFallbackStrategy({
@@ -403,6 +433,37 @@ describe("fallback strategies", () => {
     });
     await strategy.execute({ messages: [] }, new Error("down"));
     expect(seen).toEqual(["openai/a:false", "openai/b:true"]);
+  });
+
+  it("does not swallow fallback budget exhaustion or record a denied physical attempt", async () => {
+    const attempts: string[] = [];
+    const seen: string[] = [];
+    const strategy = new ModelFallbackStrategy({
+      fallbackModels: ["openai/a", "openai/b"],
+      metricsRecorder: { recordFallbackAttempt: (model, ok) => seen.push(`${model}:${ok.toString()}`) },
+      providers: [createProvider("openai", async (request) => {
+        attempts.push(request.model);
+        return { id: "x", model: request.model, output: "" };
+      })]
+    });
+    const retryBudget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    await expect(strategy.execute({ messages: [], retryBudget }, new Error("primary down")))
+      .rejects.toBeInstanceOf(RetryBudgetExhaustedError);
+    expect(attempts).toEqual(["a"]);
+    expect(seen).toEqual(["openai/a:false"]);
+  });
+
+  it("does not consume allowance or emit a physical-attempt metric for resolver failure", async () => {
+    const seen: string[] = [];
+    const retryBudget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    const strategy = new ModelFallbackStrategy({
+      fallbackModels: ["missing/a", "openai/b"],
+      metricsRecorder: { recordFallbackAttempt: (model, ok) => seen.push(`${model}:${ok.toString()}`) },
+      providers: [createProvider("openai", async (request) => ({ id: "x", model: request.model, output: "ok" }))]
+    });
+    await expect(strategy.execute({ messages: [], retryBudget }, new Error("primary down"))).resolves.toMatchObject({ output: "ok" });
+    expect(retryBudget.snapshot()).toMatchObject({ usedRetries: 1 });
+    expect(seen).toEqual(["openai/b:true"]);
   });
 });
 

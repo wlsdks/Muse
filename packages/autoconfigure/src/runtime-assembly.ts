@@ -1319,6 +1319,10 @@ function buildAgentRuntime(params: {
         initialDelayMs: parseInteger(env.MUSE_RETRY_INITIAL_DELAY_MS, 100),
         maxAttempts: parseInteger(env.MUSE_RETRY_MAX_ATTEMPTS, 3)
       },
+      runRetryBudget: {
+        maxBackoffMs: parseInteger(env.MUSE_RUN_RETRY_MAX_BACKOFF_MS, 30_000),
+        maxRetries: parseInteger(env.MUSE_RUN_RETRY_MAX_RETRIES, 6)
+      },
       tokenUsageSink,
       tracer,
       toolRegistry,
