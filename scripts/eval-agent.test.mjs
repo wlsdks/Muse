@@ -82,6 +82,45 @@ test("plan-quality threshold is pinned to one and cannot be weakened by environm
   assert.doesNotMatch(source, /process\.env\.MUSE_EVAL_THRESHOLD/u);
 });
 
+test("help is side-effect free and does not enter the expensive capability gate", () => {
+  let stdout = "";
+  let sideEffects = 0;
+  const noSideEffects = () => {
+    sideEffects += 1;
+    throw new Error("help must not evaluate");
+  };
+
+  const report = main(["--help"], {
+    buildRunnerArtifact: noSideEffects,
+    captureArtifacts: noSideEffects,
+    captureSource: noSideEffects,
+    runTypeScriptBuild: noSideEffects,
+    spawn: noSideEffects,
+    stderr: { write: noSideEffects },
+    stdout: { write: (chunk) => { stdout += chunk; } },
+    writeReport: noSideEffects,
+  });
+
+  assert.equal(report, undefined);
+  assert.equal(sideEffects, 0);
+  assert.match(stdout, /Usage: pnpm eval:agent/u);
+  assert.match(stdout, /may load local models/u);
+});
+
+test("short help is also side-effect free", () => {
+  let sideEffects = 0;
+  const report = main(["-h"], {
+    captureSource: () => {
+      sideEffects += 1;
+      return { tree: "clean" };
+    },
+    stdout: { write: () => {} },
+  });
+
+  assert.equal(report, undefined);
+  assert.equal(sideEffects, 0);
+});
+
 test("exit zero without explicit completion evidence fails closed", () => {
   assert.deepEqual(classifyCapabilityResult(stochastic, result("looks good\nPASS")), {
     id: stochastic.id,

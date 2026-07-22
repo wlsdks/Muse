@@ -36,6 +36,8 @@ const DEFAULT_REPORT_PATH = resolve(here, "../.muse-dev/evals/agent-capability/l
 const REPO_ROOT = resolve(here, "..");
 export const CAPABILITY_MATRIX_ID = "muse-agent-capability-v1";
 
+const HELP_FLAGS = new Set(["--help", "-h"]);
+
 export const CAPABILITIES = Object.freeze([
   { id: "tool-selection-arguments", battery: "eval-tool-selection.mjs", required: true, repeats: 3 },
   { id: "plan-quality", battery: "eval-plan-quality.mjs", required: true, repeats: 3 },
@@ -279,11 +281,23 @@ function printHumanReport(report, stdout) {
   );
 }
 
+function printUsage(stdout) {
+  stdout.write(
+    "Usage: pnpm eval:agent -- [--json]\n\n"
+    + "Runs the full 11-axis local capability gate (builds fresh artifacts and may load local models).\n"
+    + "Use --json for a privacy-safe machine-readable report.\n"
+  );
+}
+
 export function main(args = process.argv.slice(2), dependencies = {}) {
   const spawn = dependencies.spawn ?? spawnSync;
   const stdout = dependencies.stdout ?? process.stdout;
   const stderr = dependencies.stderr ?? process.stderr;
   const now = dependencies.now ?? Date.now;
+  if (args.some((arg) => HELP_FLAGS.has(arg))) {
+    printUsage(stdout);
+    return undefined;
+  }
   const json = args.includes("--json");
   const captureSource = dependencies.captureSource
     ?? (() => captureGitSourceSnapshot({ repoRoot: REPO_ROOT }));
