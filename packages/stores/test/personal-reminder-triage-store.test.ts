@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +32,25 @@ async function fixture(items: readonly PersistedReminder[] = [reminder("rem_a"),
   const ledgerFile = join(dir, "reminder-triage.json");
   await writeReminders(remindersFile, items);
   return { dir, ledgerFile, remindersFile };
+}
+
+function canonical(value: unknown): string {
+  const normalize = (input: unknown): unknown => Array.isArray(input)
+    ? input.map(normalize)
+    : input && typeof input === "object"
+      ? Object.fromEntries(Object.keys(input as Record<string, unknown>).sort().map((key) => [key, normalize((input as Record<string, unknown>)[key])]))
+      : input;
+  return JSON.stringify(normalize(value));
+}
+
+function rehash(events: Array<Record<string, unknown>>): void {
+  let previous = String(events[0]!.previousHash);
+  for (const event of events) {
+    event.previousHash = previous;
+    const { hash: _hash, ...withoutHash } = event;
+    event.hash = createHash("sha256").update(canonical(withoutHash), "utf8").digest("hex");
+    previous = String(event.hash);
+  }
 }
 
 describe("reminder backlog triage transaction", () => {
@@ -193,6 +213,37 @@ describe("reminder backlog triage transaction", () => {
     await writeFile(f.ledgerFile, "{bad", { mode: 0o600 });
     await expect(readReminderTriageLedgerStrict(f.ledgerFile)).rejects.toBeInstanceOf(ReminderTriageStoreError);
     expect(await readFile(f.remindersFile, "utf8")).toBe(before);
+  });
+
+  it("rejects hash-valid malformed snapshot and terminal receipt semantics", async () => {
+    const badSnapshot = await fixture([reminder("rem_a")]);
+    await previewReminderTriage({ action: "retain", ids: ["rem_a"], ledgerFile: badSnapshot.ledgerFile, remindersFile: badSnapshot.remindersFile, now: () => BASE });
+    const snapshotLedger = JSON.parse(await readFile(badSnapshot.ledgerFile, "utf8")) as { events: Array<Record<string, unknown> & { items: Array<Record<string, unknown>> }> };
+    snapshotLedger.events[0]!.items[0]!.createdAt = "not-an-iso";
+    rehash(snapshotLedger.events);
+    await writeFile(badSnapshot.ledgerFile, JSON.stringify(snapshotLedger), { mode: 0o600 });
+    await expect(readReminderTriageLedgerStrict(badSnapshot.ledgerFile)).rejects.toThrow("hash chain");
+
+    const badTerminal = await fixture([reminder("rem_a")]);
+    const preview = await previewReminderTriage({ action: "dismiss", ids: ["rem_a"], ledgerFile: badTerminal.ledgerFile, remindersFile: badTerminal.remindersFile, now: () => BASE });
+    await confirmReminderTriage({ ledgerFile: badTerminal.ledgerFile, remindersFile: badTerminal.remindersFile, token: preview.confirmToken, now: () => BASE });
+    const terminalLedger = JSON.parse(await readFile(badTerminal.ledgerFile, "utf8")) as { events: Array<Record<string, unknown> & { result?: Record<string, unknown> & { items: Array<Record<string, unknown>> } }> };
+    const terminal = terminalLedger.events.at(-1)!;
+    terminal.result!.items[0]!.reminderId = "rem_fabricated";
+    terminal.result!.digestDraft = "forbidden for dismiss";
+    rehash(terminalLedger.events);
+    await writeFile(badTerminal.ledgerFile, JSON.stringify(terminalLedger), { mode: 0o600 });
+    await expect(readReminderTriageLedgerStrict(badTerminal.ledgerFile)).rejects.toThrow("hash chain");
+  });
+
+  it("strict reminder pre-image rejects unknown fields and noncanonical timestamps without rewriting source", async () => {
+    const f = await fixture([reminder("rem_a")]);
+    const malformed = { reminders: [{ ...reminder("rem_a"), createdAt: "2026-01-01T00:00:00Z", unknown: true }] };
+    await writeFile(f.remindersFile, JSON.stringify(malformed), { mode: 0o600 });
+    const before = await readFile(f.remindersFile, "utf8");
+    await expect(previewReminderTriage({ action: "retain", ids: ["rem_a"], ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, now: () => BASE })).rejects.toThrow("reminder store cannot be read");
+    expect(await readFile(f.remindersFile, "utf8")).toBe(before);
+    await expect(readFile(f.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("fails preview before ledger creation for future/fired/linked batch and size violations", async () => {

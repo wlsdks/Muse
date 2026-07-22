@@ -279,8 +279,13 @@ export async function readReminderTriageLedgerStrict(file: string): Promise<Ledg
       const preview = previews.get(rawEvent.operationId);
       const prepared = preparedEvents.get(rawEvent.operationId);
       const needsPrepared = rawEvent.outcome === "applied" || rawEvent.outcome === "recovered-post-image" || rawEvent.outcome === "indeterminate-after-preparation";
+      const statusMatchesOutcome = rawEvent.status === "applied"
+        ? rawEvent.outcome === "applied" || rawEvent.outcome === "recovered-post-image"
+        : rawEvent.outcome === "snooze-time-elapsed" || rawEvent.outcome === "snapshot-drift" || rawEvent.outcome === "indeterminate-after-preparation";
+      const expectedResult = preview ? buildResult(preview, rawEvent.status, rawEvent.outcome) : undefined;
       if (!preview || rawEvent.previewEventId !== preview.eventId || rawEvent.result.operationId !== rawEvent.operationId
         || rawEvent.result.action !== preview.action || rawEvent.result.status !== rawEvent.status || rawEvent.result.outcome !== rawEvent.outcome
+        || !statusMatchesOutcome || canonicalJson(rawEvent.result) !== canonicalJson(expectedResult)
         || (needsPrepared ? !prepared || rawEvent.preparedEventId !== prepared.eventId : rawEvent.preparedEventId !== undefined)) {
         throw new ReminderTriageStoreError("reminder triage terminal event is invalid");
       }
@@ -444,7 +449,7 @@ function isLedgerEvent(value: unknown): value is LedgerEvent {
   const v = value as Record<string, unknown>;
   const base = typeof v.type === "string" && typeof v.eventId === "string" && UUID_RE.test(v.eventId)
     && typeof v.operationId === "string" && UUID_RE.test(v.operationId)
-    && typeof v.recordedAt === "string" && new Date(v.recordedAt).toISOString() === v.recordedAt
+    && typeof v.recordedAt === "string" && isCanonicalIso(v.recordedAt)
     && typeof v.previousHash === "string" && HASH_RE.test(v.previousHash)
     && typeof v.hash === "string" && HASH_RE.test(v.hash);
   if (!base) return false;
@@ -452,15 +457,30 @@ function isLedgerEvent(value: unknown): value is LedgerEvent {
     const action = v.action as ReminderTriageAction;
     const optional = [...(action === "snooze" ? ["snoozeAt"] : []), ...(action === "draft-digest" ? ["digestDraft"] : [])];
     if (!isExactObject(v, ["type", "eventId", "operationId", "recordedAt", "previousHash", "hash", "action", "tokenHash", "expiresAt", "items", "preStoreDigest", "postStoreDigest", ...optional])) return false;
-    return ["dismiss", "snooze", "retain", "draft-digest"].includes(action) && typeof v.tokenHash === "string" && HASH_RE.test(v.tokenHash)
-      && typeof v.expiresAt === "string" && isCanonicalIso(v.expiresAt) && Array.isArray(v.items) && v.items.length >= 1 && v.items.length <= MAX_ITEMS
-      && v.items.every(isSnapshot) && typeof v.preStoreDigest === "string" && HASH_RE.test(v.preStoreDigest)
-      && typeof v.postStoreDigest === "string" && HASH_RE.test(v.postStoreDigest)
-      && (action !== "snooze" || (typeof v.snoozeAt === "string" && isCanonicalIso(v.snoozeAt))) && (action !== "draft-digest" || typeof v.digestDraft === "string");
+    if (!["dismiss", "snooze", "retain", "draft-digest"].includes(action)
+      || typeof v.tokenHash !== "string" || !HASH_RE.test(v.tokenHash)
+      || typeof v.expiresAt !== "string" || !isCanonicalIso(v.expiresAt)
+      || !Array.isArray(v.items) || v.items.length < 1 || v.items.length > MAX_ITEMS || !v.items.every(isSnapshot)
+      || typeof v.preStoreDigest !== "string" || !HASH_RE.test(v.preStoreDigest)
+      || typeof v.postStoreDigest !== "string" || !HASH_RE.test(v.postStoreDigest)) return false;
+    const items = v.items as unknown[];
+    const canonicalOrder = items.every((item, index) => index === 0 || compareRemindersByDueAt(items[index - 1] as PersistedReminder, item as PersistedReminder) <= 0);
+    const uniqueIds = new Set(items.map((item) => (item as PersistedReminder).id)).size === items.length;
+    const dueAtRecorded = Date.parse(String(v.recordedAt));
+    let exactDraft = action !== "draft-digest";
+    if (action === "draft-digest") {
+      try { exactDraft = v.digestDraft === buildReminderTriageDigest(items as PersistedReminder[], String(v.recordedAt)); }
+      catch { return false; }
+    }
+    return items.every((item) => (item as PersistedReminder).status === "pending" && Date.parse((item as PersistedReminder).dueAt) <= dueAtRecorded)
+      && canonicalOrder && uniqueIds && exactDraft
+      && (!(action === "dismiss" || action === "snooze") || items.length === 1 || items.every((item) => !(item as PersistedReminder).recurrence && !(item as PersistedReminder).eventId))
+      && (action !== "snooze" || (typeof v.snoozeAt === "string" && isCanonicalIso(v.snoozeAt) && Date.parse(v.snoozeAt) > dueAtRecorded))
+      && (action !== "draft-digest" || (typeof v.digestDraft === "string" && Buffer.byteLength(v.digestDraft) <= MAX_DRAFT_BYTES));
   }
   if (v.type === "prepared") {
     return isExactObject(v, ["type", "eventId", "operationId", "recordedAt", "previousHash", "hash", "previewEventId", "preparedAt", "preStoreDigest", "postStoreDigest"])
-      && typeof v.previewEventId === "string" && UUID_RE.test(v.previewEventId) && typeof v.preparedAt === "string" && isCanonicalIso(v.preparedAt)
+      && typeof v.previewEventId === "string" && UUID_RE.test(v.previewEventId) && typeof v.preparedAt === "string" && isCanonicalIso(v.preparedAt) && v.recordedAt === v.preparedAt
       && typeof v.preStoreDigest === "string" && HASH_RE.test(v.preStoreDigest) && typeof v.postStoreDigest === "string" && HASH_RE.test(v.postStoreDigest);
   }
   if (v.type === "terminal") {
@@ -481,9 +501,10 @@ function isSnapshot(value: unknown): value is Snapshot {
   const recurrence = v.recurrence === undefined || ["daily", "weekly", "monthly", "yearly"].includes(String(v.recurrence));
   const via = v.via === undefined || (isExactObject(v.via, ["providerId", "destination"])
     && typeof v.via.providerId === "string" && v.via.providerId.length > 0 && typeof v.via.destination === "string" && v.via.destination.length > 0);
-  return typeof v.id === "string" && typeof v.text === "string" && typeof v.dueAt === "string" && Number.isFinite(Date.parse(v.dueAt))
-    && typeof v.createdAt === "string" && (v.status === "pending" || v.status === "fired") && recurrence && via
-    && (v.eventId === undefined || typeof v.eventId === "string") && (v.firedAt === undefined || typeof v.firedAt === "string");
+  return typeof v.id === "string" && v.id.length > 0 && typeof v.text === "string" && v.text.length <= MAX_TEXT
+    && typeof v.dueAt === "string" && isCanonicalIso(v.dueAt)
+    && typeof v.createdAt === "string" && isCanonicalIso(v.createdAt) && (v.status === "pending" || v.status === "fired") && recurrence && via
+    && (v.eventId === undefined || typeof v.eventId === "string") && (v.firedAt === undefined || (typeof v.firedAt === "string" && isCanonicalIso(v.firedAt)));
 }
 
 function isResult(value: unknown): value is ReminderTriageResult {
@@ -494,7 +515,8 @@ function isResult(value: unknown): value is ReminderTriageResult {
     && v.schemaVersion === "muse.reminder-triage-result/v1" && typeof v.operationId === "string" && UUID_RE.test(v.operationId)
     && (v.status === "applied" || v.status === "conflict") && ["applied", "recovered-post-image", "snooze-time-elapsed", "snapshot-drift", "indeterminate-after-preparation"].includes(String(v.outcome))
     && ["dismiss", "snooze", "retain", "draft-digest"].includes(String(v.action))
-    && Array.isArray(v.items) && v.items.every(isItemResult) && (v.digestDraft === undefined || typeof v.digestDraft === "string");
+    && Array.isArray(v.items) && v.items.length >= 1 && v.items.length <= MAX_ITEMS && v.items.every(isItemResult)
+    && (v.action === "draft-digest" ? typeof v.digestDraft === "string" && Buffer.byteLength(v.digestDraft) <= MAX_DRAFT_BYTES : v.digestDraft === undefined);
 }
 
 function isItemResult(value: unknown): boolean {

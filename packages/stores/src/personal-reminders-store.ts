@@ -107,11 +107,13 @@ export async function readRemindersStrict(file: string): Promise<readonly Persis
   } catch {
     throw new ReminderStoreUnavailableError();
   }
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { reminders?: unknown }).reminders)) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
+    || Object.keys(parsed).join("\0") !== "reminders"
+    || !Array.isArray((parsed as { reminders?: unknown }).reminders)) {
     throw new ReminderStoreUnavailableError();
   }
   const entries = (parsed as { reminders: unknown[] }).reminders;
-  if (entries.some((entry) => !isPersistedReminder(entry))) {
+  if (entries.some((entry) => !isPersistedReminderStrict(entry))) {
     throw new ReminderStoreUnavailableError();
   }
   const reminders = entries as readonly PersistedReminder[];
@@ -496,4 +498,20 @@ function isPersistedReminder(value: unknown): value is PersistedReminder {
     return false;
   }
   return true;
+}
+
+function isPersistedReminderStrict(value: unknown): value is PersistedReminder {
+  if (!isPersistedReminder(value) || !value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as PersistedReminder;
+  const allowed = ["createdAt", "dueAt", "eventId", "firedAt", "id", "recurrence", "status", "text", "via"];
+  if (Object.keys(value).some((key) => !allowed.includes(key))) return false;
+  if (!isCanonicalIso(candidate.createdAt) || !isCanonicalIso(candidate.dueAt)) return false;
+  if (candidate.firedAt !== undefined && !isCanonicalIso(candidate.firedAt)) return false;
+  if (candidate.via !== undefined && Object.keys(candidate.via).sort().join("\0") !== "destination\0providerId") return false;
+  return true;
+}
+
+function isCanonicalIso(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
