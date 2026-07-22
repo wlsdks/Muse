@@ -204,6 +204,13 @@ export interface DaemonHelpers {
    * real env). Tests inject a fake model or `undefined` (skip).
    */
   readonly resolveFollowupModel?: (env: NodeJS.ProcessEnv) => Promise<FollowupModel | undefined>;
+  /**
+   * Test seam — resolves the optional local knowledge runtime only after the
+   * resource governor admits heavy work.  Keeping this as a resolver (rather
+   * than injecting a ready enrich function) proves a paused daemon does not
+   * start an embedder just to remain resident.
+   */
+  readonly resolveKnowledgeEnrich?: typeof defaultKnowledgeEnrich;
   /** Test seam — inject the fetch the web-watch tick snapshots with. */
   readonly fetchImpl?: typeof globalThis.fetch;
   /** Test seam — inject the osascript runner for the macOS ambient source. */
@@ -214,6 +221,8 @@ export interface DaemonHelpers {
    * daemon stays up. Tests inject a contract-faithful fake.
    */
   readonly chromeConnection?: ChromeSnapshotConnection;
+  /** Test seam — resolves the optional Chrome DevTools connection on admission. */
+  readonly resolveChromeConnection?: typeof defaultChromeConnection;
   /**
    * Knowledge enricher for the ambient tick — given what the user is
    * looking at, returns a "Related: …" line from their own notes so an
@@ -837,7 +846,11 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const dailyCap = Number.isFinite(dailyCapRaw) && dailyCapRaw > 0 ? Math.trunc(dailyCapRaw) : 0;
       const followupsFile = resolveFollowupsFile(e);
       const remindersFile = resolveRemindersFile(e);
-      const followupModel = await (helpers.resolveFollowupModel ?? defaultFollowupModel)(e);
+      // Never build a model/runtime merely because the resident daemon started.
+      // These bindings are populated by `ensureHeavyRuntime` only after an
+      // admitted tick; owner pause and resource pressure therefore keep the
+      // process genuinely light rather than merely skipping its final calls.
+      let followupModel: FollowupModel | undefined;
 
       // Shared sink: every perception tick (ambient, web-watch, home-watch)
       // routes its notice to the same messaging destination as proactive.
@@ -867,7 +880,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
 
       // Shared knowledge enricher (ambient "Related" line + briefing
       // related-note) — resolved once, reused by both ticks.
-      const knowledgeEnrich = helpers.knowledgeEnrich ?? await defaultKnowledgeEnrich(e);
+      let knowledgeEnrich = helpers.knowledgeEnrich;
 
       // Ambient perception is rule-based (no model). Active only when
       // MUSE_AMBIENT_RULES is configured; otherwise the tick is skipped.
@@ -922,7 +935,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const webWatchRaw = e.MUSE_WEB_WATCH_CONFIG?.trim();
       let webWatchRunner: WebWatchRunner | undefined;
       if (webWatchRaw) {
-        const chromeConnection = helpers.chromeConnection ?? await defaultChromeConnection(e);
+        const chromeConnection = helpers.chromeConnection;
         const watches = webWatchesFromConfig(webWatchRaw, {
           ...(helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {}),
           ...(chromeConnection ? { chromeConnection } : {})
@@ -964,13 +977,13 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const proposedActionsFile = e.MUSE_PROPOSED_ACTIONS_FILE?.trim()?.length
         ? e.MUSE_PROPOSED_ACTIONS_FILE.trim()
         : join(homedir(), ".muse", "proposed-actions.json");
-      const objectivesActuator = !followupModel
+      let objectivesActuator = !followupModel
         ? undefined
         : parseBoolean(e.MUSE_OBJECTIVES_PROPOSE, false)
           ? createProposingObjectiveActuator({ destination, providerId: provider, proposedActionsFile })
           : createMessagingObjectiveActuator({ destination, providerId: provider, registry: messagingRegistry });
       const objectivesActionLogFile = resolveActionLogFile(e);
-      const objectivesEvaluate = followupModel
+      let objectivesEvaluate = followupModel
         ? createModelObjectiveEvaluator({
             evidenceDeps: {
               ...(calendarRegistry.list().length > 0
@@ -990,6 +1003,29 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         : undefined;
 
       if (options.status) {
+        // Status is an explicit interactive inspection, not a resident tick.
+        // Resolve here so it can truthfully distinguish enabled from disabled
+        // integrations, while the background loop stays lazy.
+        followupModel = await (helpers.resolveFollowupModel ?? defaultFollowupModel)(e);
+        objectivesActuator = !followupModel
+          ? undefined
+          : parseBoolean(e.MUSE_OBJECTIVES_PROPOSE, false)
+            ? createProposingObjectiveActuator({ destination, providerId: provider, proposedActionsFile })
+            : createMessagingObjectiveActuator({ destination, providerId: provider, registry: messagingRegistry });
+        objectivesEvaluate = followupModel
+          ? createModelObjectiveEvaluator({
+              evidenceDeps: {
+                ...(calendarRegistry.list().length > 0
+                  ? { listCalendarEvents: (range: { readonly from: Date; readonly to: Date }) => calendarRegistry.listEvents(range) }
+                  : {}),
+                queryActionLog: () => queryActionLog(objectivesActionLogFile, {}),
+                readReminders: () => readReminders(remindersFile),
+                readTasks: () => readTasks(tasksFile)
+              },
+              model: followupModel.model,
+              modelProvider: followupModel.modelProvider
+            })
+          : undefined;
         await resolveCliLanguage(e, () => readConfigStore(io));
         // Will it come back after a reboot, and is it actually alive now?
         // Artifact existence and runtime state are deliberately separate: a
@@ -1111,7 +1147,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         stdout: io.stdout
       });
 
-      const followupTick = makeFollowupTick({
+      let followupTick = makeFollowupTick({
         destination,
         followupModel,
         followupsFile,
@@ -1131,7 +1167,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         stdout: io.stdout
       });
 
-      const patternTick = makePatternTick({
+      let patternTick = makePatternTick({
         destination,
         env: e,
         followupModel,
@@ -1142,11 +1178,11 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         stdout: io.stdout
       });
 
-      const ambientTick = makeAmbientTick({ ambientRunner, stdout: io.stdout });
+      let ambientTick = makeAmbientTick({ ambientRunner, stdout: io.stdout });
 
-      const webWatchTick = makeWebWatchTick({ stdout: io.stdout, webWatchRunner });
+      let webWatchTick = makeWebWatchTick({ stdout: io.stdout, webWatchRunner });
 
-      const objectivesTick = makeObjectivesTick({
+      let objectivesTick = makeObjectivesTick({
         actuator: objectivesActuator,
         evaluate: objectivesEvaluate,
         file: objectivesFile,
@@ -1155,7 +1191,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
 
       const homeWatchTick = makeHomeWatchTick({ homeWatchRunner, stdout: io.stdout });
 
-      const briefingTick = makeBriefingTick({
+      let briefingTick = makeBriefingTick({
         briefingCalendarLister: helpers.briefingCalendarLister,
         calendarRegistry,
         channelOwnersFile,
@@ -1176,7 +1212,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const reflectionIntervalRaw = e.MUSE_REFLECTION_INTERVAL_MS ? Number(e.MUSE_REFLECTION_INTERVAL_MS) : DEFAULT_REFLECTION_INTERVAL_MS;
       const reflectionIntervalMs = Number.isFinite(reflectionIntervalRaw) && reflectionIntervalRaw > 0 ? reflectionIntervalRaw : DEFAULT_REFLECTION_INTERVAL_MS;
       const lastReflectionMs: TickRunState = { current: undefined };
-      const reflectionTick = makeReflectionTick({
+      let reflectionTick = makeReflectionTick({
         env: e,
         followupModel,
         intervalMs: reflectionIntervalMs,
@@ -1196,18 +1232,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const emailSyncLimitRaw = e.MUSE_EMAIL_SYNC_LIMIT ? Number(e.MUSE_EMAIL_SYNC_LIMIT) : 20;
       const emailSyncLimit = Number.isFinite(emailSyncLimitRaw) && emailSyncLimitRaw > 0 ? Math.min(100, Math.trunc(emailSyncLimitRaw)) : 20;
       const lastEmailSyncMs: TickRunState = { current: undefined };
-      const emailSyncTick = localOnly
-        ? undefined
-        : (helpers.makeEmailSyncTick ?? makeEmailSyncTick)({
-          env: e,
-          intervalMs: emailSyncIntervalMs,
-          io,
-          lastRunMs: lastEmailSyncMs,
-          limit: emailSyncLimit,
-          notesDir: resolveNotesDir(e),
-          stdout: io.stdout,
-          ...(helpers.emailSyncProvider ? { emailSyncProvider: helpers.emailSyncProvider } : {})
-        });
+      let emailSyncTick: ReturnType<typeof makeEmailSyncTick> | undefined;
 
       // Unattended learning (distill + subtractive decay) — see
       // `makeSelfLearnTick`'s doc comment for the full brake/safety contract.
@@ -1215,7 +1240,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const selfLearnIntervalRaw = e.MUSE_SELFLEARN_INTERVAL_MS ? Number(e.MUSE_SELFLEARN_INTERVAL_MS) : DEFAULT_SELFLEARN_INTERVAL_MS;
       const selfLearnIntervalMs = Number.isFinite(selfLearnIntervalRaw) && selfLearnIntervalRaw > 0 ? selfLearnIntervalRaw : DEFAULT_SELFLEARN_INTERVAL_MS;
       const lastSelfLearnMs: TickRunState = { current: undefined };
-      const selfLearnTick = makeSelfLearnTick({
+      let selfLearnTick = makeSelfLearnTick({
         env: e,
         followupModel,
         intervalMs: selfLearnIntervalMs,
@@ -1246,7 +1271,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const consolidateIntervalRaw = e.MUSE_SELFLEARN_CONSOLIDATE_INTERVAL_MS ? Number(e.MUSE_SELFLEARN_CONSOLIDATE_INTERVAL_MS) : DEFAULT_SELFLEARN_CONSOLIDATE_INTERVAL_MS;
       const consolidateIntervalMs = Number.isFinite(consolidateIntervalRaw) && consolidateIntervalRaw > 0 ? consolidateIntervalRaw : DEFAULT_SELFLEARN_CONSOLIDATE_INTERVAL_MS;
       const lastConsolidateMs: TickRunState = { current: undefined };
-      const playbookConsolidateTick = makePlaybookConsolidateTick({
+      let playbookConsolidateTick = makePlaybookConsolidateTick({
         env: e,
         followupModel,
         intervalMs: consolidateIntervalMs,
@@ -1369,13 +1394,84 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       const browsingIntervalMinutes = Number.isFinite(browsingIntervalRaw) && browsingIntervalRaw > 0 ? Math.trunc(browsingIntervalRaw) : 60;
       const browsingSyncIntervalMs = browsingIntervalMinutes * 60 * 1000;
       const lastBrowsingSyncMs: TickRunState = { current: undefined };
-      const browsingAutoSyncTick = makeBrowsingAutoSyncTick({
-        env: e,
-        intervalMs: browsingSyncIntervalMs,
-        lastRunMs: lastBrowsingSyncMs,
-        stdout: io.stdout,
-        ...(helpers.browsingSync ? { browsingSync: helpers.browsingSync } : {})
-      });
+      let browsingAutoSyncTick: ReturnType<typeof makeBrowsingAutoSyncTick> | undefined;
+
+      let heavyRuntime: Promise<void> | undefined;
+      const ensureHeavyRuntime = (): Promise<void> => {
+        heavyRuntime ??= (async () => {
+          // Each resolver is deliberately reached only from the admitted path.
+          // A failed optional integration remains a skipped tick, never a
+          // reason for the resident loop to die or to retry hot on every tick.
+          followupModel = await (helpers.resolveFollowupModel ?? defaultFollowupModel)(e).catch(() => undefined);
+          knowledgeEnrich = knowledgeEnrich
+            ?? await (helpers.resolveKnowledgeEnrich ?? defaultKnowledgeEnrich)(e).catch(() => undefined);
+
+          if (ambientRaw) {
+            let rules: ReturnType<typeof parseAmbientNoticeRules>;
+            try { rules = parseAmbientNoticeRules(ambientRaw); } catch { rules = []; }
+            if (rules.length > 0) {
+              const useMacos = e.MUSE_AMBIENT_SOURCE?.trim() === "macos"
+                && (helpers.ambientMacosRun !== undefined || process.platform === "darwin");
+              const useWindows = e.MUSE_AMBIENT_SOURCE?.trim() === "windows"
+                && (helpers.ambientMacosRun !== undefined || process.platform === "win32");
+              const source = useMacos
+                ? new MacOsActiveWindowSource({ includeClipboard: parseBoolean(e.MUSE_AMBIENT_CLIPBOARD, false), ...(helpers.ambientMacosRun ? { run: helpers.ambientMacosRun } : {}) })
+                : useWindows
+                  ? new WindowsActiveWindowSource({ includeClipboard: parseBoolean(e.MUSE_AMBIENT_CLIPBOARD, false), ...(helpers.ambientMacosRun ? { run: helpers.ambientMacosRun } : {}) })
+                  : new FileAmbientSignalSource(e.MUSE_AMBIENT_FILE?.trim().length ? e.MUSE_AMBIENT_FILE.trim() : join(homedir(), ".muse", "ambient.json"));
+              ambientRunner = createAmbientNoticeRunner({
+                interruptionBudget,
+                rules,
+                sink: noticeSink,
+                source,
+                ...(knowledgeEnrich ? { enrich: knowledgeEnrich } : {})
+              });
+              ambientTick = makeAmbientTick({ ambientRunner, stdout: io.stdout });
+            }
+          }
+
+          if (webWatchRaw) {
+            const chromeConnection = helpers.chromeConnection
+              ?? await (helpers.resolveChromeConnection ?? defaultChromeConnection)(e).catch(() => undefined);
+            const watches = webWatchesFromConfig(webWatchRaw, {
+              ...(helpers.fetchImpl ? { fetchImpl: helpers.fetchImpl } : {}),
+              ...(chromeConnection ? { chromeConnection } : {})
+            });
+            webWatchRunner = watches.length > 0 ? createWebWatchRunner({ sink: noticeSink, watches }) : undefined;
+            webWatchTick = makeWebWatchTick({ stdout: io.stdout, webWatchRunner });
+          }
+
+          objectivesActuator = !followupModel
+            ? undefined
+            : parseBoolean(e.MUSE_OBJECTIVES_PROPOSE, false)
+              ? createProposingObjectiveActuator({ destination, providerId: provider, proposedActionsFile })
+              : createMessagingObjectiveActuator({ destination, providerId: provider, registry: messagingRegistry });
+          objectivesEvaluate = followupModel
+            ? createModelObjectiveEvaluator({
+                evidenceDeps: {
+                  ...(calendarRegistry.list().length > 0
+                    ? { listCalendarEvents: (range: { readonly from: Date; readonly to: Date }) => calendarRegistry.listEvents(range) }
+                    : {}),
+                  queryActionLog: () => queryActionLog(objectivesActionLogFile, {}),
+                  readReminders: () => readReminders(remindersFile),
+                  readTasks: () => readTasks(tasksFile)
+                },
+                model: followupModel.model,
+                modelProvider: followupModel.modelProvider
+              })
+            : undefined;
+          followupTick = makeFollowupTick({ destination, followupModel, followupsFile, interruptionBudget, messagingRegistry, provider, stdout: io.stdout });
+          patternTick = makePatternTick({ destination, env: e, followupModel, interruptionBudget, messagingRegistry, provider, quietHours, stdout: io.stdout });
+          objectivesTick = makeObjectivesTick({ actuator: objectivesActuator, evaluate: objectivesEvaluate, file: objectivesFile, stdout: io.stdout });
+          briefingTick = makeBriefingTick({ briefingCalendarLister: helpers.briefingCalendarLister, calendarRegistry, channelOwnersFile, dayRhythmConfigFile, destination, env: e, knowledgeEnrich, leadMinutes, messagingRegistry, objectivesFile, provider, reconfirmCardAnsweredFile: resolveReconfirmCardAnsweredFile(e), reconfirmCardDeliveryFile: resolveReconfirmCardDeliveryFile(e), stdout: io.stdout, tasksFile });
+          reflectionTick = makeReflectionTick({ env: e, followupModel, intervalMs: reflectionIntervalMs, lastRunMs: lastReflectionMs, stdout: io.stdout });
+          emailSyncTick = localOnly ? undefined : (helpers.makeEmailSyncTick ?? makeEmailSyncTick)({ env: e, intervalMs: emailSyncIntervalMs, io, lastRunMs: lastEmailSyncMs, limit: emailSyncLimit, notesDir: resolveNotesDir(e), stdout: io.stdout, ...(helpers.emailSyncProvider ? { emailSyncProvider: helpers.emailSyncProvider } : {}) });
+          selfLearnTick = makeSelfLearnTick({ env: e, followupModel, intervalMs: selfLearnIntervalMs, lastRunMs: lastSelfLearnMs, noticeSink, stdout: io.stdout, ...(helpers.selfLearnDistill ? { selfLearnDistill: helpers.selfLearnDistill } : {}), ...(helpers.contradictionClassify ? { contradictionClassify: helpers.contradictionClassify } : {}) });
+          playbookConsolidateTick = makePlaybookConsolidateTick({ env: e, followupModel, intervalMs: consolidateIntervalMs, lastRunMs: lastConsolidateMs, stdout: io.stdout, ...(helpers.consolidateMerge ? { consolidateMerge: helpers.consolidateMerge } : {}), ...(helpers.consolidateValidate ? { consolidateValidate: helpers.consolidateValidate } : {}) });
+          browsingAutoSyncTick = makeBrowsingAutoSyncTick({ env: e, intervalMs: browsingSyncIntervalMs, lastRunMs: lastBrowsingSyncMs, stdout: io.stdout, ...(helpers.browsingSync ? { browsingSync: helpers.browsingSync } : {}) });
+        })();
+        return heavyRuntime;
+      };
 
       const RETENTION_PRUNE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
       const lastRetentionPruneCheckMs: TickRunState = { current: undefined };
@@ -1427,6 +1523,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         }
         await checkinsTick();
         if (resourceAdmission.status === "admit") {
+          await ensureHeavyRuntime();
           await followupTick();
           await patternTick();
           await ambientTick();
@@ -1442,7 +1539,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
           await memoryConsolidateTick();
           await recapTick();
           await digestFlushTick();
-          await browsingAutoSyncTick();
+          if (browsingAutoSyncTick) await browsingAutoSyncTick();
         }
         await messagingPollTick();
         await conflictWatchTick();

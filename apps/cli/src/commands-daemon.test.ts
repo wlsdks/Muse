@@ -51,7 +51,7 @@ function fakeFollowupModel(): NonNullable<Awaited<ReturnType<NonNullable<DaemonH
 
 async function runDaemon(
   args: string[],
-  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; buildCalendarRegistry?: DaemonHelpers["buildCalendarRegistry"]; buildMessagingRegistry?: DaemonHelpers["buildMessagingRegistry"]; readDaemonConfig?: DaemonHelpers["readDaemonConfig"]; runDaemonLoop?: DaemonHelpers["runDaemonLoop"]; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; contradictionClassify?: DaemonHelpers["contradictionClassify"]; emailSyncProvider?: DaemonHelpers["emailSyncProvider"]; makeEmailSyncTick?: DaemonHelpers["makeEmailSyncTick"]; messagingPoll?: DaemonHelpers["messagingPoll"]; consolidateMerge?: DaemonHelpers["consolidateMerge"]; consolidateValidate?: DaemonHelpers["consolidateValidate"]; conflictWatchCalendarLister?: DaemonHelpers["conflictWatchCalendarLister"]; browsingSync?: DaemonHelpers["browsingSync"]; resourceSnapshot?: DaemonHelpers["resourceSnapshot"]; writeResourceAdmissionReceipt?: DaemonHelpers["writeResourceAdmissionReceipt"]; schtasksRun?: DaemonHelpers["schtasksRun"]; runLaunchctl?: DaemonHelpers["runLaunchctl"]; platform?: DaemonHelpers["platform"]; daemonCliEntry?: DaemonHelpers["daemonCliEntry"]; daemonTemporaryRoots?: DaemonHelpers["daemonTemporaryRoots"] }
+  opts: { env: NodeJS.ProcessEnv; registry: MessagingProviderRegistry; buildCalendarRegistry?: DaemonHelpers["buildCalendarRegistry"]; buildMessagingRegistry?: DaemonHelpers["buildMessagingRegistry"]; readDaemonConfig?: DaemonHelpers["readDaemonConfig"]; runDaemonLoop?: DaemonHelpers["runDaemonLoop"]; resolveFollowupModel?: DaemonHelpers["resolveFollowupModel"]; resolveKnowledgeEnrich?: DaemonHelpers["resolveKnowledgeEnrich"]; resolveChromeConnection?: DaemonHelpers["resolveChromeConnection"]; fetchImpl?: typeof globalThis.fetch; ambientMacosRun?: DaemonHelpers["ambientMacosRun"]; chromeConnection?: DaemonHelpers["chromeConnection"]; knowledgeEnrich?: DaemonHelpers["knowledgeEnrich"]; briefingCalendarLister?: DaemonHelpers["briefingCalendarLister"]; selfLearnDistill?: DaemonHelpers["selfLearnDistill"]; contradictionClassify?: DaemonHelpers["contradictionClassify"]; emailSyncProvider?: DaemonHelpers["emailSyncProvider"]; makeEmailSyncTick?: DaemonHelpers["makeEmailSyncTick"]; messagingPoll?: DaemonHelpers["messagingPoll"]; consolidateMerge?: DaemonHelpers["consolidateMerge"]; consolidateValidate?: DaemonHelpers["consolidateValidate"]; conflictWatchCalendarLister?: DaemonHelpers["conflictWatchCalendarLister"]; browsingSync?: DaemonHelpers["browsingSync"]; resourceSnapshot?: DaemonHelpers["resourceSnapshot"]; writeResourceAdmissionReceipt?: DaemonHelpers["writeResourceAdmissionReceipt"]; schtasksRun?: DaemonHelpers["schtasksRun"]; runLaunchctl?: DaemonHelpers["runLaunchctl"]; platform?: DaemonHelpers["platform"]; daemonCliEntry?: DaemonHelpers["daemonCliEntry"]; daemonTemporaryRoots?: DaemonHelpers["daemonTemporaryRoots"] }
 ): Promise<{ stdout: string; stderr: string; exitCode: number | undefined }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -70,6 +70,8 @@ async function runDaemon(
       ...(opts.buildCalendarRegistry ? { buildCalendarRegistry: opts.buildCalendarRegistry } : {}),
       ...(opts.readDaemonConfig ? { readDaemonConfig: opts.readDaemonConfig } : {}),
       env: () => opts.env,
+      ...(opts.resolveKnowledgeEnrich ? { resolveKnowledgeEnrich: opts.resolveKnowledgeEnrich } : {}),
+      ...(opts.resolveChromeConnection ? { resolveChromeConnection: opts.resolveChromeConnection } : {}),
       ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
       ...(opts.ambientMacosRun ? { ambientMacosRun: opts.ambientMacosRun } : {}),
       ...(opts.chromeConnection ? { chromeConnection: opts.chromeConnection } : {}),
@@ -1772,6 +1774,40 @@ describe("muse daemon — resource admission", () => {
     expect(result.stdout).not.toContain("followup:");
     expect(result.stdout).not.toContain("pattern:");
     expect(result.stdout).not.toContain("objectives:");
+  });
+
+  it("does not initialize heavy resolvers while paused, then initializes each once after admission", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...tmpEnv(),
+      MUSE_DAEMON_DELIVERY_ENABLED: "true",
+      MUSE_WEB_WATCH_CONFIG: JSON.stringify([
+        { id: "lazy-chrome", message: "changed", rule: { appears: "changed" }, source: "chrome", title: "Lazy", url: "https://example.test" }
+      ])
+    };
+    writeFileSync(env.MUSE_DAEMON_CONFIG_FILE!, JSON.stringify({ heavyWorkPaused: true }), "utf8");
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+    const calls = { chrome: 0, knowledge: 0, model: 0 };
+
+    const result = await runDaemon(["--provider", "telegram", "--destination", "555"], {
+      env,
+      registry,
+      resolveChromeConnection: async () => { calls.chrome += 1; return undefined; },
+      resolveFollowupModel: async () => { calls.model += 1; return undefined; },
+      resolveKnowledgeEnrich: async () => { calls.knowledge += 1; return undefined; },
+      resourceSnapshot: () => ({ cpuCount: 4, freeMemoryBytes: 4 * 1024 * 1024 * 1024, load1: 1 }),
+      runDaemonLoop: async ({ signal, tick }) => {
+        await tick();
+        expect(calls).toEqual({ chrome: 0, knowledge: 0, model: 0 });
+        writeFileSync(env.MUSE_DAEMON_CONFIG_FILE!, "{}\n", "utf8");
+        await tick();
+        await tick();
+        signal.stop();
+        return 3;
+      }
+    });
+
+    expect(result.exitCode).toBeUndefined();
+    expect(calls).toEqual({ chrome: 1, knowledge: 1, model: 1 });
   });
 });
 
