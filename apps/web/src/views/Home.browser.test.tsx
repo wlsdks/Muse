@@ -6,6 +6,7 @@ import { writeAutoContinueThread } from "./home-logic.js";
 import type { ApiClient } from "../api/client.js";
 import type { DayRhythmStateResponse, MessagingSetupResponse, ReconfirmCard as ReconfirmCardData } from "../api/types.js";
 import type { OpenedPack, ReviewThreadSummary } from "./continuity-shared.js";
+import type { PersonalStatusCard, PersonalStatusResponse } from "@muse/shared";
 import { I18nProvider, useI18n } from "../i18n/index.js";
 import { DayRhythmCard, HomeView, ReconfirmCard } from "./Home.js";
 
@@ -153,7 +154,21 @@ function openedPackFixture(): OpenedPack {
 /** Every endpoint HomeView (and the TodaySections it always renders)
  * queries, given a safe, minimal fixture — so only the Continuity Pack
  * seam under test needs a meaningful response. */
-function homeGet(overrides: { readonly threads?: readonly ReviewThreadSummary[] } = {}) {
+function personalStatus(cards: readonly PersonalStatusCard[]): PersonalStatusResponse {
+  return {
+    cards,
+    generatedAt: "2026-07-22T12:00:00.000Z",
+    overall: cards.some((card) => card.status === "held") ? "held" : cards.some((card) => card.status === "attention") ? "attention" : "clear",
+    schemaVersion: "muse.personal-status/v1",
+    sources: []
+  };
+}
+
+function homeGet(overrides: {
+  readonly reconfirm?: ReconfirmCardData | null;
+  readonly status?: PersonalStatusResponse;
+  readonly threads?: readonly ReviewThreadSummary[];
+} = {}) {
   return vi.fn(async (path: string) => {
     if (path === "/api/health") return { status: "ok" };
     if (path === "/api/models") return { active: undefined, defaultModel: undefined, models: [] };
@@ -163,17 +178,75 @@ function homeGet(overrides: { readonly threads?: readonly ReviewThreadSummary[] 
     if (path === "/api/day-rhythm") return { enabled: false, eveningHour: 18, morningHour: 8, pairedChannel: null };
     if (path === "/api/user-memory/default") return { facts: {} };
     if (path === "/api/attunement/review") return { threads: overrides.threads ?? [RESUMABLE_THREAD] };
-    if (path === "/api/user-model/reconfirm-card") return { card: null };
+    if (path === "/api/user-model/reconfirm-card") return { card: overrides.reconfirm ?? null };
+    if (path === "/api/personal-status") return overrides.status ?? personalStatus([]);
     return {};
   });
 }
 
+test("approval queue opens a separate dialog and only the explicit dialog decision POSTs once", async () => {
+  const card: PersonalStatusCard = {
+    action: { id: "review-approval", target: { itemId: "approval_1", review: "approval", type: "local-review" } },
+    deadline: "2026-07-22T13:00:00.000Z",
+    detail: "send_message · execute · owner confirmation required",
+    id: "approval:approval_1",
+    kind: "external-approval",
+    observedAt: "2026-07-22T11:00:00.000Z",
+    priority: 20,
+    sourceId: "pending-approvals",
+    status: "attention",
+    title: "Approval waiting"
+  };
+  const get = homeGet({ status: personalStatus([card]) });
+  const post = vi.fn(async (path: string) => {
+    expect(path).toBe("/api/chat/approvals/approval_1/approve");
+    return {};
+  });
+  const screen = await renderHome({ get, post });
+
+  await screen.getByRole("button", { name: "Review" }).click();
+  await expect.element(screen.getByRole("dialog", { name: "Approval waiting" })).toBeVisible();
+  expect(post).not.toHaveBeenCalled();
+  await expect.element(screen.getByRole("button", { name: "Approve once" })).toHaveFocus();
+  await screen.getByRole("button", { name: "Cancel" }).click();
+  expect(post).not.toHaveBeenCalled();
+
+  await screen.getByRole("button", { name: "Review" }).click();
+  await screen.getByRole("button", { name: "Approve once" }).click();
+  expect(post).toHaveBeenCalledTimes(1);
+  await expect.element(screen.getByRole("dialog", { name: "Approval waiting" })).not.toBeInTheDocument();
+});
+
+test("continuity feedback action carries the exact view and focus intent without posting", async () => {
+  const card: PersonalStatusCard = {
+    action: { id: "review-continuity-feedback", target: { focus: "continuity-feedback-review", type: "view", view: "continuity" } },
+    deadline: null,
+    detail: "Owner feedback is ready",
+    id: "feedback:delivery_1",
+    kind: "continuity-feedback",
+    observedAt: "2026-07-22T11:00:00.000Z",
+    priority: 30,
+    sourceId: "attunement",
+    status: "attention",
+    title: "Review the outcome"
+  };
+  const onNavigate = vi.fn();
+  const post = vi.fn(async () => { throw new Error("status navigation must not POST"); });
+  const screen = await renderHome({ get: homeGet({ status: personalStatus([card]) }), onNavigate, post });
+
+  await screen.getByRole("button", { name: "Review feedback" }).click();
+  expect(onNavigate).toHaveBeenCalledWith("continuity");
+  expect(window.sessionStorage.getItem("muse.personal-status.focus.v1")).toContain("continuity-feedback-review");
+  expect(post).not.toHaveBeenCalled();
+});
+
 function renderHome(props: {
   readonly get: ReturnType<typeof homeGet>;
+  readonly lang?: "en" | "ko";
   readonly post: (path: string, body?: Record<string, unknown>) => Promise<unknown>;
   readonly onNavigate?: (view: string) => void;
 }) {
-  window.localStorage.setItem("muse.lang", "en");
+  window.localStorage.setItem("muse.lang", props.lang ?? "en");
   const client = {
     baseUrl: "http://home-pack.test",
     get: props.get,
@@ -188,6 +261,50 @@ function renderHome(props: {
     </QueryClientProvider>
   );
 }
+
+test("KO status actions keep exact navigation targets and local memory focus", async () => {
+  const cards: readonly PersonalStatusCard[] = [
+    {
+      action: { id: "open-continuity", target: { type: "view", view: "continuity" } }, deadline: null, detail: "다시 이어갈 수 있어요", id: "thread:t1",
+      kind: "continuity-thread", observedAt: "2026-07-22T10:00:00.000Z", priority: 50, sourceId: "attunement", status: "ready", title: "출시"
+    },
+    {
+      action: { id: "review-learning", target: { focus: "memory-reconfirm", type: "local-focus" } }, deadline: null, detail: "확인 필요", id: "learning-review:s1",
+      kind: "learning-review", observedAt: "2026-07-22T10:00:00.000Z", priority: 40, sourceId: "reconfirmation", status: "attention", title: "기억"
+    },
+    {
+      action: { id: "open-learning-history", target: { focus: "learning-history", type: "view", view: "journey" } }, deadline: null, detail: "근거 있는 변경", id: "learning:fact:k1",
+      kind: "learning-change", observedAt: "2026-07-22T10:00:00.000Z", priority: 60, sourceId: "belief-provenance", status: "info", title: "집중 시간"
+    },
+    {
+      action: { id: "open-vetoes", target: { focus: "vetoes", type: "view", view: "autonomy" } }, deadline: null, detail: "사용자가 정한 제약", id: "veto:v1",
+      kind: "veto", observedAt: "2026-07-22T10:00:00.000Z", priority: 60, sourceId: "vetoes", status: "info", title: "먼저 묻기"
+    }
+  ];
+  const onNavigate = vi.fn();
+  const post = vi.fn(async () => { throw new Error("navigation must not POST"); });
+  const screen = await renderHome({
+    get: homeGet({
+      reconfirm: { category: "preference", question: "아침 집중이 맞나요?", slotId: "s1" },
+      status: personalStatus(cards)
+    }),
+    lang: "ko",
+    onNavigate,
+    post
+  });
+
+  await screen.getByRole("button", { name: "기억 확인" }).click();
+  await expect.poll(() => document.activeElement?.id).toBe("memory-reconfirm");
+  await screen.getByRole("button", { name: "연속성 열기" }).click();
+  expect(onNavigate).toHaveBeenLastCalledWith("continuity");
+  await screen.getByRole("button", { name: "배움 이력 열기" }).click();
+  expect(onNavigate).toHaveBeenLastCalledWith("journey");
+  expect(window.sessionStorage.getItem("muse.personal-status.focus.v1")).toContain("learning-history");
+  await screen.getByRole("button", { name: "하지 않을 것 열기" }).click();
+  expect(onNavigate).toHaveBeenLastCalledWith("autonomy");
+  expect(window.sessionStorage.getItem("muse.personal-status.focus.v1")).toContain("vetoes");
+  expect(post).not.toHaveBeenCalled();
+});
 
 test("a resumable thread's inline 'Next step' opens its Pack, records the exact outcome POST, then collapses with a confirmation", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);

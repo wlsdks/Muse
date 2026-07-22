@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DecisionMetric } from "@muse/shared/browser";
 
 import { AsyncBlock, Badge, Button, Card, Stat } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
+import { consumePersonalStatusFocus, focusPersonalStatusTarget } from "./personal-status-navigation.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { TaskRow } from "../api/types.js";
@@ -182,7 +183,7 @@ export function PendingReviewCard({
 }) {
   const { t } = useI18n();
   const { next, progress } = reviewQueue;
-  return <div id="continuity-feedback-review"><Card>
+  return <div id="continuity-feedback-review" tabIndex={-1}><Card>
     <div className="row-title">{t("continuity.reviewProgress", {
       eligible: progress.eligibleDeliveries,
       reviewed: progress.reviewedDeliveries,
@@ -559,6 +560,11 @@ export function ContinuityReviewView({ client }: { readonly client: ApiClient })
     queryFn: () => client.get<ReviewResponse>("/api/attunement/review"),
     queryKey: ["attunement-review", client.baseUrl]
   });
+  useEffect(() => {
+    if (review.isSuccess && consumePersonalStatusFocus("continuity") === "continuity-feedback-review") {
+      focusPersonalStatusTarget("continuity-feedback-review");
+    }
+  }, [review.isSuccess]);
   const interactions = useQuery({
     queryFn: () => client.get<InteractionReport>("/api/attunement/interactions"),
     queryKey: ["attunement-interactions", client.baseUrl]

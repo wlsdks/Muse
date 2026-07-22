@@ -1079,6 +1079,58 @@ button.row:last-child {
   flex: none;
 }
 
+.personal-status-row {
+  align-items: flex-start;
+}
+
+.personal-status-title {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-xs);
+}
+
+.personal-status-dialog-backdrop {
+  align-items: center;
+  background: rgba(5, 6, 10, 0.76);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: var(--s-md);
+  position: fixed;
+  z-index: 1000;
+}
+
+.personal-status-dialog {
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-lg);
+  max-width: 520px;
+  padding: var(--s-lg);
+  width: 100%;
+}
+
+.personal-status-dialog h2 {
+  font-size: var(--text-xl);
+  margin: var(--s-xs) 0;
+}
+
+.personal-status-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-xs);
+  margin-top: var(--s-md);
+}
+
+#memory-reconfirm:focus,
+#continuity-feedback-review:focus,
+#learning-history:focus,
+#vetoes:focus {
+  outline: 2px solid var(--primary-focus);
+  outline-offset: 4px;
+}
+
 .checkbox {
   width: 20px;
   height: 20px;
