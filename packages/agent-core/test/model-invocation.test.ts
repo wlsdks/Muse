@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { setTimeout as sleep } from "node:timers/promises";
-import { DefaultCircuitBreaker, type FallbackStrategy, type RetryOptions } from "@muse/resilience";
+import { createRetryBudget, DefaultCircuitBreaker, RetryBudgetExhaustedError, type FallbackStrategy, type RetryOptions } from "@muse/resilience";
 import { ModelProviderError, USAGE_RECORDED_BY_RUNTIME_FLAG, type ModelProvider, type ModelRequest, type ModelResponse } from "@muse/model";
 import { InMemoryAgentMetrics, InMemoryMuseTracer, InMemoryTokenUsageSink } from "@muse/observability";
 import { applyCitationSanitisation, buildModelRequestWithWebSearch, invokeModel, recordTokenUsageEvent } from "../src/model-invocation.js";
@@ -109,6 +109,56 @@ describe("invokeModel", () => {
 
     expect(attempts).toBe(3);
     expect(result.output).toBe("after retries");
+  });
+
+  it("shares one retry allowance across separate blocking model invocations", async () => {
+    const budget = createRetryBudget({ maxBackoffMs: 10, maxRetries: 1 });
+    let attempts = 0;
+    const failing = provider(async () => {
+      attempts += 1;
+      throw Object.assign(new Error("transient"), { retryable: true });
+    });
+    const invoke = () => invokeModel({
+      metrics: new InMemoryAgentMetrics(),
+      provider: failing,
+      request: baseRequest(),
+      retry: { initialDelayMs: 1, maxAttempts: 2, sleep: async () => {} },
+      retryBudget: budget,
+      runId: "shared-run",
+      tracer: new InMemoryMuseTracer()
+    });
+
+    await expect(invoke()).rejects.not.toBeInstanceOf(RetryBudgetExhaustedError);
+    await expect(invoke()).rejects.toBeInstanceOf(RetryBudgetExhaustedError);
+    expect(attempts).toBe(3);
+  });
+
+  it("shares the primary retry debit with fallback dispatch", async () => {
+    const budget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    let primaryCalls = 0;
+    let fallbackCalls = 0;
+    const fallback: FallbackStrategy = {
+      execute: async (command) => {
+        command.retryBudget?.reserve({ backoffMs: 0, cause: new Error("primary") }).commit();
+        fallbackCalls += 1;
+        return { id: "fallback", model: "fallback/model", output: "unexpected" };
+      }
+    };
+    await expect(invokeModel({
+      fallbackStrategy: fallback,
+      metrics: new InMemoryAgentMetrics(),
+      provider: provider(async () => {
+        primaryCalls += 1;
+        throw Object.assign(new Error("transient"), { retryable: true });
+      }),
+      request: baseRequest(),
+      retry: { initialDelayMs: 1, maxAttempts: 2, sleep: async () => {} },
+      retryBudget: budget,
+      runId: "primary-fallback-shared",
+      tracer: new InMemoryMuseTracer()
+    })).rejects.toBeInstanceOf(RetryBudgetExhaustedError);
+    expect(primaryCalls).toBe(2);
+    expect(fallbackCalls).toBe(0);
   });
 
   it("opens the circuit breaker after repeated failures and short-circuits subsequent calls", async () => {

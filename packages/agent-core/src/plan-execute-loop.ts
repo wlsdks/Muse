@@ -9,6 +9,7 @@
  */
 
 import { buildPlanningSystemPrompt } from "@muse/prompts";
+import { RetryBudgetExhaustedError, type RetryBudget } from "@muse/resilience";
 import type {
   ModelProvider,
   ModelRequest,
@@ -53,6 +54,7 @@ import type { AgentRunContext } from "./types.js";
 
 export interface PlanExecuteRunner {
   readonly maxToolCalls: number;
+  readonly retryBudget?: RetryBudget;
   /** Optional plan-template cache (Agentic Plan Caching) — injects a similar past plan as a planning exemplar and records successful plans. */
   readonly planCacheProvider?: PlanCacheProvider;
   generateWithTracing(
@@ -213,12 +215,28 @@ export async function* streamPlanExecute(
     // status "completed", a `{ ok:false }` envelope) is silently counted as done.
     const retryable = tools.find((tool) => tool.name === step.tool)?.risk === "read";
     const maxAttempts = retryable ? PLAN_STEP_MAX_ATTEMPTS : 1;
-    let toolResult: ExecutedToolResult;
-    let completed: boolean;
-    let effect: StepEffectVerdict;
-    let success: boolean;
+    let toolResult!: ExecutedToolResult;
+    let completed = false;
+    let effect: StepEffectVerdict = { effectFailed: false };
+    let success = false;
     let attempts = 0;
+    let retryBudgetDenied = false;
     do {
+      if (attempts > 0 && runner.retryBudget) {
+        let reservation: ReturnType<RetryBudget["reserve"]> | undefined;
+        try {
+          reservation = runner.retryBudget.reserve({ backoffMs: 0, cause: new Error("plan read retry") });
+          context.input.signal?.throwIfAborted();
+          reservation.commit();
+        } catch (error) {
+          reservation?.cancel();
+          if (error instanceof RetryBudgetExhaustedError) {
+            retryBudgetDenied = true;
+            break;
+          }
+          throw error;
+        }
+      }
       toolResult = await runner.executeToolCall(context, synthesizedCall, tools);
       toolCallCount += 1;
       attempts += 1;
@@ -233,7 +251,7 @@ export async function* streamPlanExecute(
     // double-act); the re-plan is filtered to read-risk tools, so recovery can't
     // act on the world. Skipped on the happy path (a succeeding step never
     // replans → no latency added to the common case).
-    if (!success && retryable && toolCallCount < runner.maxToolCalls) {
+    if (!success && retryable && !retryBudgetDenied && toolCallCount < runner.maxToolCalls) {
       const recovered = await replanFailedReadStep(runner, context, provider, request, userPrompt, step, effect.reason ?? "STEP_EFFECT_FAILED", tools, toolCallCount);
       if (recovered) {
         toolCallCount = recovered.toolCallCount;

@@ -22,7 +22,7 @@ import type { ExemplarRetriever, PromptLayerRegistry } from "@muse/prompts";
 
 import type { ToolCallMiddleware } from "./tool-call-middleware.js";
 import type { PersonaRegister } from "./conversational-register.js";
-import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
+import type { CircuitBreaker, FallbackStrategy, RetryBudgetPolicy, RetryOptions } from "@muse/resilience";
 import type {
   AgentRunHistoryStore,
   CheckpointStore,
@@ -140,6 +140,8 @@ export interface AgentRuntimeOptions {
   readonly circuitBreaker?: CircuitBreaker;
   readonly fallbackStrategy?: FallbackStrategy;
   readonly retry?: RetryOptions;
+  /** Aggregate retry allowance shared by every blocking model/plan retry in one run. */
+  readonly runRetryBudget?: RetryBudgetPolicy;
   readonly requestTimeoutMs?: number;
   readonly contextWindow?: ConversationTrimOptions;
   /**

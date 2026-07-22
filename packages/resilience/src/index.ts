@@ -3,6 +3,7 @@ import { setTimeout as sleepWithTimer } from "node:timers/promises";
 
 import { classifyError, isCancellationLikeError } from "./error-classifier.js";
 import type { FallbackStrategy } from "./fallback-strategy.js";
+import type { RetryBudget } from "./retry-budget.js";
 
 export {
   classifyError,
@@ -18,6 +19,21 @@ export {
   type FallbackStrategy,
   type ModelFallbackStrategyOptions
 } from "./fallback-strategy.js";
+
+export {
+  createRetryBudget,
+  DEFAULT_RUN_RETRY_MAX_BACKOFF_MS,
+  DEFAULT_RUN_RETRY_MAX_RETRIES,
+  MAX_RUN_RETRY_MAX_BACKOFF_MS,
+  MAX_RUN_RETRY_MAX_RETRIES,
+  normalizeRetryBudgetPolicy,
+  RetryBudgetExhaustedError,
+  type RetryBudget,
+  type RetryBudgetExhaustionReason,
+  type RetryBudgetPolicy,
+  type RetryBudgetSnapshot,
+  type RetryReservation
+} from "./retry-budget.js";
 
 export type Awaitable<T> = T | Promise<T>;
 export type CircuitBreakerState = "closed" | "open" | "half_open";
@@ -74,8 +90,10 @@ export interface RetryPolicy {
 }
 
 export interface RetryOptions extends RetryPolicy {
+  readonly budget?: RetryBudget;
   readonly name?: string;
   readonly metricsRecorder?: ResilienceMetricsRecorder;
+  readonly signal?: AbortSignal;
   readonly sleep?: (ms: number) => Promise<void>;
 }
 
@@ -332,13 +350,20 @@ export async function retry<T>(operation: () => Awaitable<T>, options: RetryOpti
   let lastError: unknown;
   // Decorrelated jitter carries the previous delay forward; seed at initial.
   let prevDelay = Math.max(0, finiteOr(options.initialDelayMs, defaultRetryDelayMs));
+  let pendingReservation: ReturnType<RetryBudget["reserve"]> | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
+      options.signal?.throwIfAborted();
+      pendingReservation?.commit();
+      pendingReservation = undefined;
       const result = await operation();
       options.metricsRecorder?.recordRetryAttempt?.(options.name ?? "operation", attempt, true);
       return result;
     } catch (error) {
+      if (options.signal?.aborted) {
+        throw options.signal.reason ?? error;
+      }
       if (isCancellationLikeError(error)) {
         throw error;
       }
@@ -377,11 +402,42 @@ export async function retry<T>(operation: () => Awaitable<T>, options: RetryOpti
         classified.retryAfterMs !== null
           ? Math.min(retryAfterCap, Math.max(base, classified.retryAfterMs))
           : base;
-      await sleep(waitMs);
+      pendingReservation = options.budget?.reserve({ backoffMs: waitMs, cause: error });
+      try {
+        await sleepWithCancellation(sleep, waitMs, options.signal);
+        options.signal?.throwIfAborted();
+      } catch (sleepError) {
+        pendingReservation?.cancel();
+        throw sleepError;
+      }
     }
   }
 
   throw new RetryExhaustedError(maxAttempts, lastError);
+}
+
+async function sleepWithCancellation(
+  wait: (ms: number) => Promise<void>,
+  waitMs: number,
+  signal: AbortSignal | undefined
+): Promise<void> {
+  if (!signal) {
+    await wait(waitMs);
+    return;
+  }
+  signal.throwIfAborted();
+  let remove: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    remove = () => signal.removeEventListener("abort", onAbort);
+    if (signal.aborted) onAbort();
+  });
+  try {
+    await Promise.race([wait(waitMs), aborted]);
+  } finally {
+    remove?.();
+  }
 }
 
 export async function withTimeout<T>(

@@ -1,5 +1,6 @@
 import type { ModelProvider, ModelRequest, ModelResponse } from "@muse/model";
 import { describe, expect, it, vi } from "vitest";
+import { createRetryBudget } from "@muse/resilience";
 
 import { executePlanExecuteLoop, type PlanExecuteRunner } from "../src/plan-execute-loop.js";
 import { PlanExecutionError, PlanValidationFailedError, type PlanStep } from "../src/plan-execute.js";
@@ -77,6 +78,64 @@ describe("executePlanExecuteLoop", () => {
     await expect(
       executePlanExecuteLoop(runner([resp(plan([step()])), resp("syn")], { status: "failed" }), context(), provider, request()),
     ).rejects.toMatchObject({ code: "PLAN_ALL_STEPS_FAILED" });
+  });
+
+  it("budget denial starts no read retry or adaptive replan and preserves the all-failed guard", async () => {
+    const readTools = [{ ...tools[0]!, risk: "read" as const }];
+    const readRequest = { ...request(), tools: readTools };
+    const executeToolCall = vi.fn(async (_ctx: AgentRunContext, toolCall: { id: string; name: string; arguments: Record<string, unknown> }): Promise<ExecutedToolResult> => ({
+      result: { error: "down", id: toolCall.id, name: toolCall.name, output: "", status: "failed" },
+      toolCall
+    }));
+    const generateWithTracing = vi.fn(async () => resp(plan([step()])));
+    const retryBudget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    retryBudget.reserve({ backoffMs: 0, cause: new Error("already used") }).commit();
+
+    await expect(executePlanExecuteLoop({ executeToolCall, generateWithTracing, maxToolCalls: 5, retryBudget }, context(), provider, readRequest))
+      .rejects.toMatchObject({ code: "PLAN_ALL_STEPS_FAILED" });
+    expect(executeToolCall).toHaveBeenCalledOnce();
+    expect(generateWithTracing).toHaveBeenCalledOnce();
+  });
+
+  it("refunds the read-retry reservation when the run aborts before dispatch", async () => {
+    const controller = new AbortController();
+    const retryBudget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    const readRequest = { ...request(), tools: [{ ...tools[0]!, risk: "read" as const }] };
+    const executeToolCall = vi.fn(async (_ctx: AgentRunContext, toolCall: { id: string; name: string; arguments: Record<string, unknown> }): Promise<ExecutedToolResult> => {
+      controller.abort("custom-stop");
+      return { result: { error: "down", id: toolCall.id, name: toolCall.name, output: "", status: "failed" }, toolCall };
+    });
+    await expect(executePlanExecuteLoop({
+      executeToolCall,
+      generateWithTracing: async () => resp(plan([step()])),
+      maxToolCalls: 5,
+      retryBudget
+    }, { ...context(), input: { ...context().input, signal: controller.signal } }, provider, readRequest))
+      .rejects.toBe("custom-stop");
+    expect(executeToolCall).toHaveBeenCalledOnce();
+    expect(retryBudget.snapshot()).toMatchObject({ usedRetries: 0 });
+  });
+
+  it("continues later original steps and synthesises partial success after retry-budget denial", async () => {
+    const first: PlanStep = { tool: "get_weather", args: { q: "first" }, description: "first" };
+    const second: PlanStep = { tool: "get_weather", args: { q: "second" }, description: "second" };
+    const retryBudget = createRetryBudget({ maxBackoffMs: 1, maxRetries: 1 });
+    retryBudget.reserve({ backoffMs: 0, cause: new Error("model retry") }).commit();
+    let modelTurn = 0;
+    const executeToolCall = vi.fn(async (_ctx: AgentRunContext, toolCall: { id: string; name: string; arguments: Record<string, unknown> }): Promise<ExecutedToolResult> => ({
+      result: toolCall.arguments.q === "first"
+        ? { error: "down", id: toolCall.id, name: toolCall.name, output: "", status: "failed" }
+        : { id: toolCall.id, name: toolCall.name, output: "sunny", status: "completed" },
+      toolCall
+    }));
+    const result = await executePlanExecuteLoop({
+      executeToolCall,
+      generateWithTracing: async () => [resp(plan([first, second])), resp("partial answer")][modelTurn++]!,
+      maxToolCalls: 5,
+      retryBudget
+    }, context(), provider, { ...request(), tools: [{ ...tools[0]!, risk: "read" as const }] });
+    expect(result.finalResponse.output).toBe("partial answer");
+    expect(executeToolCall).toHaveBeenCalledTimes(2);
   });
 
   it("blocks steps past maxToolCalls but still synthesises when an earlier step succeeded", async () => {

@@ -7,6 +7,7 @@ import type { JsonObject } from "@muse/shared";
 
 import { isCancellationLikeError } from "./error-classifier.js";
 import type { ResilienceMetricsRecorder } from "./index.js";
+import { RetryBudgetExhaustedError, type RetryBudget } from "./retry-budget.js";
 
 export interface FallbackCommand {
   readonly messages: readonly ModelMessage[];
@@ -15,6 +16,7 @@ export interface FallbackCommand {
   readonly maxOutputTokens?: number;
   /** Propagate turn cancellation into a fallback call; a fallback must never outlive its caller. */
   readonly signal?: AbortSignal;
+  readonly retryBudget?: RetryBudget;
 }
 
 export interface FallbackStrategy {
@@ -59,9 +61,18 @@ export class ModelFallbackStrategy implements FallbackStrategy {
     void originalError;
 
     for (const modelName of this.fallbackModels) {
+      let provider: ModelProvider;
+      let model: string;
       try {
-        const provider = this.resolveProvider(modelName);
-        const model = parseModelName(modelName).modelId;
+        provider = this.resolveProvider(modelName);
+        model = parseModelName(modelName).modelId;
+      } catch {
+        continue;
+      }
+      const reservation = command.retryBudget?.reserve({ backoffMs: 0, cause: originalError });
+      try {
+        command.signal?.throwIfAborted();
+        reservation?.commit();
         const response = await provider.generate({
           maxOutputTokens: command.maxOutputTokens,
           messages: command.messages,
@@ -78,7 +89,11 @@ export class ModelFallbackStrategy implements FallbackStrategy {
 
         this.metricsRecorder.recordFallbackAttempt?.(modelName, false);
       } catch (error) {
-        if (isCancellationLikeError(error)) {
+        reservation?.cancel();
+        if (command.signal?.aborted) {
+          throw command.signal.reason ?? error;
+        }
+        if (isCancellationLikeError(error) || error instanceof RetryBudgetExhaustedError) {
           throw error;
         }
 

@@ -461,6 +461,31 @@ describe("ToolCallDeduplicator", () => {
 });
 
 describe("AgentRuntime", () => {
+  it("creates a fresh aggregate retry budget for each top-level run", async () => {
+    let physicalCalls = 0;
+    const provider: ModelProvider = {
+      id: "flaky",
+      async generate(request) {
+        physicalCalls += 1;
+        if (physicalCalls % 2 === 1) throw Object.assign(new Error("temporary"), { retryable: true });
+        return { id: `response-${physicalCalls.toString()}`, model: request.model, output: "recovered" };
+      },
+      async listModels() { return []; },
+      async *stream() {}
+    };
+    const runtime = createAgentRuntime({
+      modelProvider: provider,
+      retry: { initialDelayMs: 1, maxAttempts: 2, sleep: async () => {} },
+      runRetryBudget: { maxBackoffMs: 1, maxRetries: 1 }
+    });
+
+    await expect(runtime.run({ messages: [{ content: "one", role: "user" }], model: "flaky/model" }))
+      .resolves.toMatchObject({ response: { output: "recovered" } });
+    await expect(runtime.run({ messages: [{ content: "two", role: "user" }], model: "flaky/model" }))
+      .resolves.toMatchObject({ response: { output: "recovered" } });
+    expect(physicalCalls).toBe(4);
+  });
+
   it("encodes checkpoint messages with replay-safe versioned payloads", () => {
     const messages = [
       {
@@ -3392,6 +3417,54 @@ describe("AgentRuntime PlanExecute mode", () => {
       toolRegistry
     });
   }
+
+  it("shares a model retry with plan recovery in streaming mode and continues a later original step", async () => {
+    let generateCalls = 0;
+    const provider: ModelProvider = {
+      id: "flaky-plan",
+      async generate() {
+        generateCalls += 1;
+        if (generateCalls === 1) throw Object.assign(new Error("temporary"), { retryable: true });
+        if (generateCalls === 2) return planResponse([
+          { args: {}, description: "first", tool: "tool_a" },
+          { args: {}, description: "second", tool: "tool_b" }
+        ]);
+        if (generateCalls === 3) return answerResponse("partial stream answer");
+        throw new Error("unexpected extra model call");
+      },
+      async listModels() { return []; },
+      async *stream() {}
+    };
+    const toolRegistry = new ToolRegistry(["tool_a", "tool_b"].map((name) => ({
+      definition: { description: name, inputSchema: { type: "object" }, name, risk: "read" as const },
+      execute: async () => ({ ok: true })
+    })));
+    const runtime = createAgentRuntime({
+      modelProvider: provider,
+      retry: { initialDelayMs: 1, maxAttempts: 2, sleep: async () => {} },
+      runRetryBudget: { maxBackoffMs: 1, maxRetries: 1 },
+      toolRegistry
+    });
+    const executor = (runtime as unknown as { toolExecutor: { execute: (input: unknown) => Promise<{ id: string; name: string; output: string; status: string }> } }).toolExecutor;
+    const original = executor.execute.bind(executor);
+    let physicalTools = 0;
+    executor.execute = async (input) => {
+      physicalTools += 1;
+      const result = await original(input);
+      return result.name === "tool_a" ? { ...result, output: "Error: down", status: "failed" } : result;
+    };
+
+    const events = [];
+    for await (const event of runtime.stream({
+      messages: [{ content: "do both", role: "user" }],
+      metadata: { agentMode: "plan_execute" },
+      model: "flaky-plan/model"
+    })) events.push(event);
+
+    expect(generateCalls).toBe(3);
+    expect(physicalTools).toBe(2);
+    expect(events.at(-1)).toMatchObject({ response: { output: "partial stream answer" }, type: "done" });
+  });
 
   it("runs the 4-stage plan→validate→execute→synthesize loop on a happy path", async () => {
     const requests: ModelRequest[] = [];

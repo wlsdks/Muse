@@ -28,7 +28,15 @@ import {
 } from "@muse/observability";
 import type { ExemplarRetriever, PromptLayerRegistry } from "@muse/prompts";
 import type { PersonaRegister } from "./conversational-register.js";
-import type { CircuitBreaker, FallbackStrategy, RetryOptions } from "@muse/resilience";
+import {
+  createRetryBudget,
+  normalizeRetryBudgetPolicy,
+  type CircuitBreaker,
+  type FallbackStrategy,
+  type RetryBudget,
+  type RetryBudgetPolicy,
+  type RetryOptions
+} from "@muse/resilience";
 import type {
   AgentRunHistoryStore,
   CheckpointStore,
@@ -238,6 +246,7 @@ export class AgentRuntime {
   private readonly circuitBreaker?: CircuitBreaker;
   private readonly fallbackStrategy?: FallbackStrategy;
   private readonly retry?: RetryOptions;
+  private readonly runRetryBudget: Required<RetryBudgetPolicy>;
   private readonly requestTimeoutMs?: number;
   private readonly contextWindow?: ConversationTrimOptions;
   private readonly contextSummarizer?: DroppedContextSummarizer;
@@ -323,6 +332,7 @@ export class AgentRuntime {
     this.circuitBreaker = options.circuitBreaker;
     this.fallbackStrategy = options.fallbackStrategy;
     this.retry = options.retry;
+    this.runRetryBudget = normalizeRetryBudgetPolicy(options.runRetryBudget);
     this.requestTimeoutMs = options.requestTimeoutMs;
     this.contextWindow = options.contextWindow;
     this.contextSummarizer = options.contextSummarizer;
@@ -395,6 +405,7 @@ export class AgentRuntime {
       "model.requested": input.model,
       "run.id": context.runId
     });
+    const retryBudget = createRetryBudget(this.runRetryBudget);
 
     try {
       const { cached, cacheKey, inboxGroundingSources, layeredContext, playbookInjectedIds, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
@@ -425,8 +436,8 @@ export class AgentRuntime {
       };
       const compactionOccurred = preparedRequest.contextWindow?.summaryInserted === true;
       const execution = isPlanExecuteMode(layeredContext.input.metadata)
-        ? await executePlanExecuteLoopFn(this.modelLoopRunner(compactionOccurred), layeredContext, selected.provider, loopRequest)
-        : await executeModelLoopFn(this.modelLoopRunner(compactionOccurred), layeredContext, selected.provider, loopRequest);
+        ? await executePlanExecuteLoopFn(this.modelLoopRunner(compactionOccurred, retryBudget), layeredContext, selected.provider, loopRequest)
+        : await executeModelLoopFn(this.modelLoopRunner(compactionOccurred, retryBudget), layeredContext, selected.provider, loopRequest);
       const guardedResponse = await this.finalizeInvocation({
         cacheKey,
         context: layeredContext,
@@ -469,6 +480,7 @@ export class AgentRuntime {
       "model.requested": input.model,
       "run.id": context.runId
     });
+    const retryBudget = createRetryBudget(this.runRetryBudget);
 
     try {
       const { cached, cacheKey, layeredContext, playbookInjectedIds, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
@@ -495,7 +507,7 @@ export class AgentRuntime {
       const isPlanExecuteRun = isPlanExecuteMode(layeredContext.input.metadata);
       const compactionOccurred = preparedRequest.contextWindow?.summaryInserted === true;
       if (isPlanExecuteRun) {
-        const planStream = streamPlanExecuteFn(this.modelLoopRunner(compactionOccurred), layeredContext, selected.provider, streamLoopRequest);
+        const planStream = streamPlanExecuteFn(this.modelLoopRunner(compactionOccurred, retryBudget), layeredContext, selected.provider, streamLoopRequest);
         let next = await planStream.next();
         while (!next.done) {
           yield next.value;
@@ -504,7 +516,7 @@ export class AgentRuntime {
         execution = next.value;
       } else {
         const stream = executeStreamingModelLoopFn(
-          this.modelLoopRunner(compactionOccurred),
+          this.modelLoopRunner(compactionOccurred, retryBudget),
           layeredContext,
           selected.provider,
           streamLoopRequest,
@@ -1034,15 +1046,16 @@ export class AgentRuntime {
     }
   }
 
-  private modelLoopRunner(compactionOccurred?: boolean): ModelLoopRunner {
+  private modelLoopRunner(compactionOccurred?: boolean, retryBudget?: RetryBudget): ModelLoopRunner {
     return {
       ...(compactionOccurred ? { compactionOccurred } : {}),
       executeToolCall: (context, toolCall, activeTools) => this.executeToolCall(context, toolCall, activeTools),
-      generateWithTracing: (context, provider, request) => this.generateWithTracing(context, provider, request),
+      generateWithTracing: (context, provider, request) => this.generateWithTracing(context, provider, request, retryBudget),
       maxRunWallclockMs: this.maxRunWallclockMs,
       ...(this.streamIdleTimeoutMs !== undefined ? { streamIdleTimeoutMs: this.streamIdleTimeoutMs } : {}),
       ...(this.heartbeat ? { heartbeat: this.heartbeat } : {}),
       maxToolCalls: this.maxToolCalls,
+      ...(retryBudget ? { retryBudget } : {}),
       maxToolOutputChars: this.maxToolOutputChars,
       ...(this.toolCallMiddleware ? { toolCallMiddleware: this.toolCallMiddleware } : {}),
       ...(this.planCacheProvider ? { planCacheProvider: this.planCacheProvider } : {}),
@@ -1080,7 +1093,8 @@ export class AgentRuntime {
   private async generateWithTracing(
     context: AgentRunContext,
     provider: ModelProvider,
-    request: ModelRequest
+    request: ModelRequest,
+    retryBudget?: RetryBudget
   ): Promise<ModelResponse> {
     return invokeModel({
       ...(this.circuitBreaker ? { circuitBreaker: this.circuitBreaker } : {}),
@@ -1091,6 +1105,7 @@ export class AgentRuntime {
       request,
       ...(this.requestTimeoutMs !== undefined ? { requestTimeoutMs: this.requestTimeoutMs } : {}),
       ...(this.retry ? { retry: this.retry } : {}),
+      ...(retryBudget ? { retryBudget } : {}),
       runId: context.runId,
       stepType: "act",
       ...(this.tokenUsageSink ? { tokenUsageSink: this.tokenUsageSink } : {}),
@@ -1230,4 +1245,3 @@ export class AgentRuntime {
 export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
   return new AgentRuntime(options);
 }
-

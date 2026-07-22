@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **610** variables.
+Total: **612** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -504,6 +504,8 @@ Total: **610** variables.
 | `MUSE_RUNTIME_SPEC` | apps/cli |
 | `MUSE_RUNTIME_SPEC_TEXT` | apps/cli |
 | `MUSE_RUN_LOG_MAX_FILES` | apps/cli |
+| `MUSE_RUN_RETRY_MAX_BACKOFF_MS` | packages/autoconfigure |
+| `MUSE_RUN_RETRY_MAX_RETRIES` | packages/autoconfigure |
 | `MUSE_SCHEDULED_JOBS_FILE` | apps/cli, packages/autoconfigure, packages/scheduler |
 | `MUSE_SCHEDULER_CRON_ENABLED` | packages/autoconfigure |
 | `MUSE_SCHEDULER_MAX_EXECUTIONS` | packages/autoconfigure |

@@ -8,6 +8,8 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+- Added a default-on, per-run retry count/backoff budget for AgentRuntime blocking model, fallback, and read-plan recovery paths, including cancellable backoff reservations and fail-closed exhaustion.
+
 ### Added
 
 - **Technical personal-agent evidence now has crash-safe canonical publication.**

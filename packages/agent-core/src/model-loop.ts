@@ -60,9 +60,11 @@ import { REVERIFY_NUDGE, ReverifyNudgeTracker, hasRunVerifyIntent, toolsIncludeE
 import { BudgetExhaustionTracker, budgetExhaustionNotice } from "./budget-exhaustion-notice.js";
 import { sanitizeRequestForProvider } from "./prompt-cache-safety.js";
 import type { AgentRunContext } from "./types.js";
+import type { RetryBudget } from "@muse/resilience";
 
 export interface ModelLoopRunner {
   readonly maxToolCalls: number;
+  readonly retryBudget?: RetryBudget;
   /** Plan-template cache (Agentic Plan Caching) — used only by the plan-execute path. */
   readonly planCacheProvider?: PlanCacheProvider;
   /**
