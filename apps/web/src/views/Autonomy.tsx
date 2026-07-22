@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AsyncBlock, Badge, Button, Card, Empty, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
@@ -7,6 +7,7 @@ import { safeDateTime } from "../lib/datetime.js";
 import { actionResultLabel, objectiveStatusLabel } from "./autonomy-labels.js";
 import { nextTabIndex } from "./tabKeyNav.js";
 import { timeUntil } from "./Today.js";
+import { consumePersonalStatusFocus, focusPersonalStatusTarget } from "./personal-status-navigation.js";
 
 import type { ApiClient } from "../api/client.js";
 import type {
@@ -42,6 +43,13 @@ function statusTone(status: string): "ok" | "accent" | "neutral" {
 export function AutonomyView({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
   const [tab, setTab] = useState<Tab>("actions");
+
+  useEffect(() => {
+    if (consumePersonalStatusFocus("autonomy") === "vetoes") {
+      setTab("vetoes");
+      focusPersonalStatusTarget("vetoes");
+    }
+  }, []);
 
   return (
     <div className="content-narrow">
@@ -80,7 +88,7 @@ export function AutonomyView({ client }: { client: ApiClient }) {
 
       {tab === "actions" && <ActionsTab client={client} locale={locale} />}
       {tab === "objectives" && <ObjectivesTab client={client} locale={locale} />}
-      {tab === "vetoes" && <VetoesTab client={client} locale={locale} />}
+      {tab === "vetoes" && <div id="vetoes" tabIndex={-1}><VetoesTab client={client} locale={locale} /></div>}
     </div>
   );
 }

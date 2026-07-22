@@ -465,6 +465,7 @@ export {
   MAX_BELIEF_PROVENANCE_ENTRIES,
   provisionalFactKeys,
   readBeliefProvenance,
+  inspectBeliefProvenanceSource,
   beliefValueTimeline,
   formatFirstLearned,
   selectPromotableFacts,
@@ -474,6 +475,7 @@ export {
   staleFactKeys,
   writeBeliefProvenance,
   type BeliefProvenance,
+  type BeliefProvenanceSourceSnapshot,
   type BeliefProvenanceStore,
   type FactFreshness,
   type FactProvenance,
@@ -688,5 +690,4 @@ export { formatLearnedConfirmation, projectRecentlyLearned, renderRecentlyLearne
 // Bounded deterministic query identifier for the recall-hits sidecar — fuels
 // selectPromotableMemories's minUniqueQueries gate.
 export { hashQuery, normalizeQueryForHash } from "./query-hash.js";
-
 

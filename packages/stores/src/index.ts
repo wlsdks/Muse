@@ -105,7 +105,14 @@ export { adjustPlaybookReward, bumpPlaybookObservation, decayStalePlaybookReward
 export type { PlaybookEntry } from "./personal-playbook-store.js";
 export { appendProactiveHistory, readProactiveHistory } from "./personal-proactive-history-store.js";
 export type { ProactiveHistoryEntry } from "./personal-proactive-history-store.js";
-export { isProposalActionable, patchProposedActionStatus, proposeMessageAction, readProposedActions } from "./personal-proposed-action-store.js";
+export {
+  inspectProposedActionsSource,
+  isProposalActionable,
+  patchProposedActionStatus,
+  proposeMessageAction,
+  readProposedActions,
+  type ProposedActionSourceSnapshot
+} from "./personal-proposed-action-store.js";
 export { readFadedMemoryKeys, readRecallHits, recordRecallHits, writeFadedMemoryKeys } from "./personal-recall-hits-store.js";
 export type { RecallHitRecord } from "./personal-recall-hits-store.js";
 export { appendReminderHistory, readReminderHistory } from "./personal-reminder-history-store.js";
@@ -114,7 +121,16 @@ export { compareRemindersByDueAt, filterReminders, fireReminder, mutateReminders
 export type { PersistedReminder, ReminderRecurrence } from "./personal-reminders-store.js";
 export { compareTasksByDueDate, mutateTasks, parseTaskDueAt, readTaskById, readTaskByIdStrict, readTasks, readTaskStatusFilter, resolveTaskRef, resolveTasksDueLine, selectTasksDueWithin, serializeTask, serializeTaskForModel, TaskStoreUnavailableError, writeTasks } from "./personal-tasks-store.js";
 export type { PersistedTask } from "./personal-tasks-store.js";
-export { hasVeto, queryVetoes, readVetoes, recordVeto, removeVeto, serializeVeto } from "./personal-veto-store.js";
+export {
+  hasVeto,
+  inspectVetoesSource,
+  queryVetoes,
+  readVetoes,
+  recordVeto,
+  removeVeto,
+  serializeVeto,
+  type VetoSourceSnapshot
+} from "./personal-veto-store.js";
 export type { ActionVeto } from "./personal-veto-store.js";
 export {
   readRejectedProposals,

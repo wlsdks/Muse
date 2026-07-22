@@ -15,7 +15,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { quarantineCorruptFile, withFileLock, withFileMutationQueue } from "@muse/shared";
+import { inspectReadOnlyJsonSource, quarantineCorruptFile, withFileLock, withFileMutationQueue, type ReadOnlySourceInspection } from "@muse/shared";
 
 import { decryptMemoryEnvelope, encryptMemoryEnvelope, isEncryptedMemoryEnvelope } from "./memory-encryption.js";
 
@@ -61,6 +61,27 @@ export interface BeliefProvenanceStore {
    */
   recordMany(entries: readonly BeliefProvenance[]): Promise<void>;
   query(userId: string, key?: string): Promise<readonly BeliefProvenance[]>;
+}
+
+export interface BeliefProvenanceSourceSnapshot {
+  readonly entries: readonly BeliefProvenance[];
+  readonly excludedCount: number;
+}
+
+/** Exact inspection for a status read model; supports encrypted stores without quarantine or rewrite. */
+export function inspectBeliefProvenanceSource(
+  file: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<ReadOnlySourceInspection<BeliefProvenanceSourceSnapshot>> {
+  return inspectReadOnlyJsonSource(file, (outer) => {
+    let parsed = outer;
+    if (isEncryptedMemoryEnvelope(parsed)) parsed = JSON.parse(decryptMemoryEnvelope(parsed, env)) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const record = parsed as Record<string, unknown>;
+    if (Object.keys(record).some((key) => key !== "entries") || !Array.isArray(record.entries)) return undefined;
+    const entries = record.entries.filter(isBeliefProvenance);
+    return { entries, excludedCount: record.entries.length - entries.length };
+  });
 }
 
 /** Per-key provenance derived from the append-only log: the signal a freshness /

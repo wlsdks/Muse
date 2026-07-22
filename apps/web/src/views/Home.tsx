@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Badge, Button, Card, Icon } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
@@ -10,6 +10,7 @@ import { isThreadResumable, OutcomeButtons } from "./continuity-shared.js";
 import { OpenedPackCard } from "./ContinuityReview.js";
 import { consumeAutoContinueThread, dayRhythmCardState, homeCapabilities, seedChat } from "./home-logic.js";
 import { useReconfirmCard } from "./reconfirm-inline.js";
+import { focusPersonalStatusTarget, writePersonalStatusFocus } from "./personal-status-navigation.js";
 import { greetingKey, TodaySections } from "./Today.js";
 
 import type { ApiClient } from "../api/client.js";
@@ -26,6 +27,7 @@ import type { OpenedPack, Outcome } from "./continuity-shared.js";
 import type { ReviewThreadSummary } from "./continuity-shared.js";
 import type { Translate } from "../i18n/index.js";
 import type { ReactNode } from "react";
+import type { PersonalStatusCard, PersonalStatusResponse } from "@muse/shared";
 
 interface ReviewThreadsResponse {
   readonly threads?: readonly ReviewThreadSummary[];
@@ -168,6 +170,7 @@ export function ReconfirmCard({ client, t }: { client: ApiClient; t: Translate }
   }
 
   return (
+    <div id="memory-reconfirm" tabIndex={-1}>
     <Card title={t("home.reconfirm.title")}>
       {answered ? (
         <p className="row-meta">{t(answered.verdict === "confirm" ? "home.reconfirm.confirmedAck" : "home.reconfirm.rejectedAck")}</p>
@@ -202,6 +205,144 @@ export function ReconfirmCard({ client, t }: { client: ApiClient; t: Translate }
         </div>
       ) : null}
     </Card>
+    </div>
+  );
+}
+
+function statusTone(status: PersonalStatusCard["status"]): "ok" | "warn" | "err" | "neutral" | "accent" {
+  if (status === "attention") return "warn";
+  if (status === "held" || status === "unavailable") return "err";
+  if (status === "ready") return "accent";
+  return "ok";
+}
+
+function PersonalStatusQueue({
+  client,
+  onNavigate,
+  t
+}: {
+  readonly client: ApiClient;
+  readonly onNavigate?: (view: string) => void;
+  readonly t: Translate;
+}) {
+  const queryClient = useQueryClient();
+  const [approval, setApproval] = useState<PersonalStatusCard | undefined>();
+  const [copied, setCopied] = useState<string | undefined>();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const status = useQuery({
+    queryFn: () => client.get<PersonalStatusResponse>("/api/personal-status"),
+    queryKey: ["personal-status", client.baseUrl]
+  });
+  const decide = useMutation({
+    mutationFn: ({ id, verdict }: { readonly id: string; readonly verdict: "approve" | "deny" }) =>
+      client.post(`/api/chat/approvals/${encodeURIComponent(id)}/${verdict}`),
+    onSuccess: async () => {
+      setApproval(undefined);
+      await queryClient.invalidateQueries({ queryKey: ["personal-status", client.baseUrl] });
+    }
+  });
+
+  useEffect(() => {
+    if (approval) dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+  }, [approval]);
+
+  const runAction = async (card: PersonalStatusCard): Promise<void> => {
+    const target = card.action?.target;
+    if (!target) return;
+    if (target.type === "local-review") {
+      setApproval(card);
+      return;
+    }
+    if (target.type === "command") {
+      await navigator.clipboard?.writeText(target.command);
+      setCopied(card.id);
+      return;
+    }
+    if (target.type === "local-focus") {
+      focusPersonalStatusTarget(target.focus);
+      return;
+    }
+    if (target.focus) writePersonalStatusFocus(target.view, target.focus);
+    onNavigate?.(target.view);
+  };
+
+  const cards = status.data?.cards ?? [];
+  return (
+    <>
+      <Card title={t("home.statusQueue.title")} count={cards.length}>
+        {status.isError ? (
+          <div className="empty" style={{ padding: "18px 0" }}>
+            <div className="empty-title">{t("home.statusQueue.error")}</div>
+            <div className="empty-hint">{t("home.statusQueue.errorHint")}</div>
+          </div>
+        ) : cards.length === 0 ? (
+          <div className="empty" style={{ padding: "18px 0" }}>
+            <div className="empty-title">{t("home.statusQueue.empty")}</div>
+            <div className="empty-hint">{t("home.statusQueue.emptyHint")}</div>
+          </div>
+        ) : cards.map((card) => (
+          <div className="row personal-status-row" key={card.id}>
+            <div className="row-main">
+              <div className="personal-status-title">
+                <span className="row-title">{card.title}</span>
+                <Badge tone={statusTone(card.status)}>{t(`home.statusQueue.status.${card.status}`)}</Badge>
+              </div>
+              <div className="row-meta">{card.detail}</div>
+              {card.deadline ? <div className="row-meta mono">{t("home.statusQueue.deadline", { at: new Date(card.deadline).toLocaleString() })}</div> : null}
+              {card.unavailableReason ? <div className="row-meta exec-error">{card.unavailableReason}</div> : null}
+            </div>
+            {card.action ? (
+              <Button variant="ghost" size="sm" onClick={() => void runAction(card)}>
+                {copied === card.id ? t("home.statusQueue.copied") : t(`home.statusQueue.action.${card.action.id}`)}
+              </Button>
+            ) : null}
+          </div>
+        ))}
+      </Card>
+
+      {approval?.action?.target.type === "local-review" ? (
+        <div
+          className="personal-status-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setApproval(undefined); }}
+        >
+          <div
+            aria-describedby="personal-status-approval-detail"
+            aria-labelledby="personal-status-approval-title"
+            aria-modal="true"
+            className="personal-status-dialog"
+            ref={dialogRef}
+            onKeyDown={(event) => { if (event.key === "Escape") setApproval(undefined); }}
+            role="dialog"
+          >
+            <p className="eyebrow">{t("home.statusQueue.approval.eyebrow")}</p>
+            <h2 id="personal-status-approval-title">{approval.title}</h2>
+            <p className="muted" id="personal-status-approval-detail">{approval.detail}</p>
+            <p className="row-meta">{t("home.statusQueue.approval.notice")}</p>
+            {decide.isError ? <p className="banner err">{t("home.statusQueue.approval.error")}</p> : null}
+            <div className="personal-status-dialog-actions">
+              <Button
+                variant="primary"
+                disabled={decide.isPending}
+                onClick={() => decide.mutate({ id: approval.action!.target.type === "local-review" ? approval.action!.target.itemId : "", verdict: "approve" })}
+              >
+                {t("home.statusQueue.approval.approve")}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={decide.isPending}
+                onClick={() => decide.mutate({ id: approval.action!.target.type === "local-review" ? approval.action!.target.itemId : "", verdict: "deny" })}
+              >
+                {t("home.statusQueue.approval.deny")}
+              </Button>
+              <Button variant="ghost" disabled={decide.isPending} onClick={() => setApproval(undefined)}>
+                {t("home.statusQueue.approval.cancel")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -355,6 +496,10 @@ export function HomeView({ client, onNavigate }: { client: ApiClient; onNavigate
             )}
           </div>
         </Card>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <PersonalStatusQueue client={client} onNavigate={onNavigate} t={t} />
       </div>
 
       <div style={{ marginTop: 16 }}>

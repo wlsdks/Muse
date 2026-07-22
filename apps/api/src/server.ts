@@ -18,6 +18,7 @@ import {
   resolveMuseCliConfigFilePath,
   resolveNotesIndexFile,
   resolveObjectivesFile,
+  resolvePendingApprovalsFile,
   resolveRejectedProposalsFile,
   resolveProgressiveAutonomyOpportunitiesFile,
   resolveRemindersFile,
@@ -104,6 +105,7 @@ import { registerIdentityTaglineRoutes } from "./identity-tagline-routes.js";
 import { registerPromptRoutes } from "./prompt-routes.js";
 import { registerProgressiveAutonomyRoutes } from "./progressive-autonomy-routes.js";
 import { registerUserModelReconfirmRoutes } from "./user-model-reconfirm-routes.js";
+import { registerPersonalStatusRoutes, resolveProposedActionsStatusFile } from "./personal-status-routes.js";
 import { registerAgentNoticesRoutes } from "./agent-notices-routes.js";
 import { registerSetupRoutes } from "./setup-routes.js";
 import { registerTodayRoutes } from "./today-routes.js";
@@ -369,6 +371,18 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     ...((options.continuityWorkspaceDir ?? env.MUSE_CONTINUITY_WORKSPACE)
       ? { workspaceDir: options.continuityWorkspaceDir ?? env.MUSE_CONTINUITY_WORKSPACE }
       : {})
+  });
+  registerPersonalStatusRoutes(server, {
+    attunementFile: options.attunementFile ?? resolveAttunementFile(env),
+    authService,
+    beliefProvenanceFile: options.beliefProvenanceFile ?? defaultBeliefProvenanceFile(env),
+    defaultUserId: resolveDefaultUserId(env),
+    env,
+    pendingApprovalsFile: options.pendingApprovalsFile ?? resolvePendingApprovalsFile(env),
+    proposedActionsFile: options.proposedActionsFile ?? resolveProposedActionsStatusFile(env),
+    reconfirmCardAnsweredFile: options.reconfirmCardAnsweredFile ?? resolveReconfirmCardAnsweredFile(env),
+    userMemoryStore: options.userMemoryStore,
+    vetoesFile: options.vetoesFile ?? resolveVetoesFile(env)
   });
   registerProgressiveAutonomyRoutes(server, {
     attunementFile: options.attunementFile ?? resolveAttunementFile(env),

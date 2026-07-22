@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AsyncBlock, Badge, Button, Card } from "../components/ui.js";
 import { useI18n } from "../i18n/index.js";
 import { groupJourneyEventsByDay } from "./journey-days.js";
+import { consumePersonalStatusFocus, focusPersonalStatusTarget } from "./personal-status-navigation.js";
 
 import type { ApiClient } from "../api/client.js";
 import type { JourneyEventView, JourneyResponse } from "../api/types.js";
@@ -34,6 +35,13 @@ export function JourneyView({ client }: { client: ApiClient }) {
   const { locale, t } = useI18n();
   const [filter, setFilter] = useState<JourneyFilter>("all");
 
+  useEffect(() => {
+    if (consumePersonalStatusFocus("journey") === "learning-history") {
+      setFilter("all");
+      focusPersonalStatusTarget("learning-history");
+    }
+  }, []);
+
   const journey = useQuery({
     queryFn: () => client.get<JourneyResponse>(`/api/journey${filter === "all" ? "" : `?kind=${filter}`}`),
     queryKey: ["journey", client.baseUrl, filter]
@@ -50,6 +58,7 @@ export function JourneyView({ client }: { client: ApiClient }) {
         {t("journey.subtitle", { n: journey.data?.total ?? 0 })}
       </p>
 
+      <div id="learning-history" tabIndex={-1}>
       <Card
         action={
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -81,6 +90,7 @@ export function JourneyView({ client }: { client: ApiClient }) {
           ))}
         </AsyncBlock>
       </Card>
+      </div>
 
       <p className="muted" style={{ marginTop: 16, fontSize: 12 }}>
         {t("journey.footer")}

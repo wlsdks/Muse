@@ -18,7 +18,7 @@
 
 import { promises as fs } from "node:fs";
 
-import type { JsonObject } from "@muse/shared";
+import { inspectReadOnlyJsonSource, type JsonObject, type ReadOnlySourceInspection } from "@muse/shared";
 
 import { atomicWriteFile } from "./atomic-file-store.js";
 import { withFileLock } from "./encrypted-file.js";
@@ -31,6 +31,22 @@ export interface ActionVeto {
   readonly scope: string;
   readonly vetoedAt: string;
   readonly reason?: string;
+}
+
+export interface VetoSourceSnapshot {
+  readonly vetoes: readonly ActionVeto[];
+  readonly excludedCount: number;
+}
+
+/** Strict status inspection that never quarantines, repairs, or writes the veto ledger. */
+export function inspectVetoesSource(file: string): Promise<ReadOnlySourceInspection<VetoSourceSnapshot>> {
+  return inspectReadOnlyJsonSource(file, (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    if (Object.keys(record).some((key) => key !== "vetoes") || !Array.isArray(record.vetoes)) return undefined;
+    const vetoes = record.vetoes.filter(isActionVeto);
+    return { excludedCount: record.vetoes.length - vetoes.length, vetoes };
+  });
 }
 
 export async function readVetoes(file: string): Promise<readonly ActionVeto[]> {
