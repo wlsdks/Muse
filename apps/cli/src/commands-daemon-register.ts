@@ -46,7 +46,7 @@ import { defaultProactiveHeartbeatDir, defaultSchedulerPauseFile, queryActionLog
 import { createAmbientNoticeRunner, createMessagingObjectiveActuator, createModelObjectiveEvaluator, createProposingObjectiveActuator, createWebWatchRunner, FileAmbientSignalSource, gateProactiveNoticeSink, resolveEffectiveQuietHours, MacOsActiveWindowSource, parseAmbientNoticeRules, WindowsActiveWindowSource, webWatchesFromConfig, type AmbientNoticeRunner, type BriefingCalendarLister, type ChromeSnapshotConnection, type InterruptionBudgetWiring, type ProactiveNoticeSink, type QuietHourRange, type WebWatchRunner } from "@muse/proactivity";
 import { homeWatchesFromConfig, type EmailProvider } from "@muse/domain-tools";
 import { execFile as execFileCallback } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 
@@ -59,6 +59,7 @@ import {
   defaultDaemonTemporaryRoots,
   formatDaemonAutostartStatus,
   inspectDaemonAutostart,
+  parseLaunchAgentEnvironmentVariables,
   validateDaemonCliEntry,
   type DaemonAutostartStatus
 } from "./commands-daemon-autostart.js";
@@ -107,7 +108,7 @@ import type { ProgramIO } from "./program.js";
 import { isGmailConfigured } from "./resolve-gmail-provider.js";
 import { DaemonStopSignal, DEFAULT_DAEMON_INTERVAL_MS, runDaemonLoop } from "./commands-daemon-loop.js";
 import { defaultChromeConnection, defaultFollowupModel, defaultKnowledgeEnrich, type FollowupModel } from "./commands-daemon-connections.js";
-import { lockDaemonMessagingRegistry, resolveDaemonProviderLock } from "./daemon-messaging-safety.js";
+import { lockDaemonMessagingRegistry, resolveDaemonProviderLock, type DaemonProviderLock } from "./daemon-messaging-safety.js";
 import { assessDaemonResourceAdmission, daemonResourcePolicyEnvironment, readDaemonResourceSnapshot, type DaemonResourceSnapshot } from "./daemon-resource-admission.js";
 
 const DEFAULT_INTERRUPTION_HOURLY_CAP = 2;
@@ -391,6 +392,48 @@ export async function getDaemonAutostartStatus(
         ? {}
         : { schtasksRun: defaultSchtasksRun })
   });
+}
+
+interface DaemonStatusSafetyGates {
+  readonly deliveryBrakeEngaged: boolean;
+  readonly providerLock: DaemonProviderLock | undefined;
+  readonly selfLearningEnabled: boolean;
+  readonly source: "resident LaunchAgent" | "current shell/default";
+}
+
+/**
+ * Status is often run from an interactive shell after a reboot, while the
+ * resident daemon gets only its plist environment. When a valid artifact is
+ * present, resolve these three safety gates from that contained environment —
+ * never inherit a shell override for an absent plist key.
+ */
+function resolveDaemonStatusSafetyGates(
+  shellEnv: NodeJS.ProcessEnv,
+  autostart: DaemonAutostartStatus
+): DaemonStatusSafetyGates {
+  if (autostart.kind === "darwin" && autostart.artifact.state === "valid") {
+    try {
+      const variables = parseLaunchAgentEnvironmentVariables(readFileSync(autostart.plistFile, "utf8"));
+      if (variables !== undefined) {
+        const providerLock = variables.MUSE_DAEMON_PROVIDER_LOCK?.trim();
+        return {
+          deliveryBrakeEngaged: !parseBoolean(variables.MUSE_DAEMON_DELIVERY_ENABLED, true),
+          providerLock: providerLock === "log" ? "log" : undefined,
+          selfLearningEnabled: parseBoolean(variables.MUSE_SELFLEARN_ENABLED, true),
+          source: "resident LaunchAgent"
+        };
+      }
+    } catch {
+      // A valid artifact may disappear between the service-manager and file
+      // probes. Fall back visibly instead of inventing contained values.
+    }
+  }
+  return {
+    deliveryBrakeEngaged: !parseBoolean(shellEnv.MUSE_DAEMON_DELIVERY_ENABLED, true),
+    providerLock: resolveDaemonProviderLock(shellEnv),
+    selfLearningEnabled: parseBoolean(shellEnv.MUSE_SELFLEARN_ENABLED, true),
+    source: "current shell/default"
+  };
 }
 
 /**
@@ -916,11 +959,23 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
 
       if (options.status) {
         await resolveCliLanguage(e, () => readConfigStore(io));
-        io.stdout(`muse daemon — readiness (provider=${provider}, destination=${destination}):\n`);
-        io.stdout(`  delivery:   ${deliveryBrakeEngaged ? "heartbeat-only (brake engaged)" : "enabled"}\n`);
-        io.stdout(`  route-lock: ${providerLock === "log" ? "log-only" : "disabled"}\n`);
-        io.stdout(`  proactive:  enabled\n`);
-        io.stdout(`  reminders:  enabled\n`);
+        // Will it come back after a reboot, and is it actually alive now?
+        // Artifact existence and runtime state are deliberately separate: a
+        // stale plist may coexist with an orphaned running launchd job.
+        const autostart = await getDaemonAutostartStatus(e, {
+          ...(helpers.platform ? { platform: helpers.platform } : {}),
+          ...(helpers.runLaunchctl ? { runLaunchctl: helpers.runLaunchctl } : {}),
+          ...(helpers.schtasksRun ? { schtasksRun: helpers.schtasksRun } : {})
+        });
+        const statusSafety = resolveDaemonStatusSafetyGates(e, autostart);
+        io.stdout(`muse daemon — readiness (provider=${provider}, destination=${destination}; safety=${statusSafety.source}):\n`);
+        io.stdout(`  delivery:   ${statusSafety.deliveryBrakeEngaged ? "heartbeat-only (brake engaged)" : "enabled"}\n`);
+        io.stdout(`  route-lock: ${statusSafety.providerLock === "log" ? "log-only" : "disabled"}\n`);
+        io.stdout(`  proactive:  ${statusSafety.deliveryBrakeEngaged ? "blocked (delivery brake engaged)" : "enabled"}\n`);
+        io.stdout(`  reminders:  ${statusSafety.deliveryBrakeEngaged ? "blocked (delivery brake engaged)" : "enabled"}\n`);
+        if (statusSafety.deliveryBrakeEngaged) {
+          io.stdout("  resident execution: heartbeat-only; all remaining lines describe configured features, not running ticks\n");
+        }
         io.stdout(`  scheduler:  enabled (recurring \`muse scheduler add\` jobs; \`muse scheduler pause\` suspends)\n`);
         io.stdout(`  followup:   ${followupModel ? "enabled" : "disabled (no model resolved)"}\n`);
         io.stdout(`  objectives: ${objectivesEvaluate && objectivesActuator ? "enabled" : "disabled (no model resolved)"}\n`);
@@ -930,7 +985,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
           : parseBoolean(e.MUSE_EMAIL_SYNC_ENABLED, false) && isGmailConfigured(io, e)
             ? "enabled (recent emails → recall)"
             : "disabled (set MUSE_EMAIL_SYNC_ENABLED, then `muse setup email` or MUSE_GMAIL_TOKEN)"}\n`);
-        io.stdout(`\n${t("daemon.status.featuresHeader")}\n`);
+        io.stdout(`\n${statusSafety.deliveryBrakeEngaged ? "configured features (held by delivery brake):" : t("daemon.status.featuresHeader")}\n`);
         io.stdout(`  ambient:    ${ambientRunner ? "enabled" : `disabled — ${t("daemon.status.ambient.disabled")}`}\n`);
         io.stdout(`  web-watch:  ${webWatchRunner ? "enabled" : `disabled — ${t("daemon.status.webWatch.disabled")}`}\n`);
         io.stdout(`  home-watch: ${homeWatchRunner
@@ -939,7 +994,11 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
             ? `disabled (${homeAssistant.reason})`
             : `disabled — ${t("daemon.status.homeWatch.disabled")}`}\n`);
         io.stdout(`  briefing:   ${parseBoolean(e.MUSE_BRIEFING_ENABLED, false) ? "enabled" : `disabled — ${t("daemon.status.briefing.disabled")}`}\n`);
-        io.stdout(`  self-learn: ${parseBoolean(e.MUSE_SELFLEARN_ENABLED, true) && followupModel ? "enabled (distill + decay + consolidate)" : `disabled — ${t("daemon.status.selfLearn.disabled")}`}\n`);
+        io.stdout(`  self-learn: ${!statusSafety.selfLearningEnabled
+          ? `disabled (safety gate) — ${t("daemon.status.selfLearn.disabled")}`
+          : followupModel
+            ? "enabled (distill + decay + consolidate)"
+            : `disabled (no model resolved) — ${t("daemon.status.selfLearn.disabled")}`}\n`);
         io.stdout(`  recap:      ${parseBoolean(e.MUSE_RECAP_ENABLED, false) ? `enabled (evening, after ${(e.MUSE_RECAP_HOUR ?? "21").toString()}:00)` : `disabled — ${t("daemon.status.recap.disabled")}`}\n`);
         io.stdout(`  digest:     ${parseBoolean(e.MUSE_DIGEST_ENABLED, true) ? `enabled (daily, at ${(e.MUSE_DIGEST_HOUR ?? "18").toString()}:00 local)` : `disabled — ${t("daemon.status.digest.disabled")}`}\n`);
         io.stdout(`  msg-poll:   ${parseBoolean(e.MUSE_MESSAGING_POLL_ENABLED, false) ? "enabled (new inbound → recallable)" : `disabled — ${t("daemon.status.msgPoll.disabled")}`}\n`);
@@ -954,14 +1013,6 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         io.stdout(`  scheduler:  ${defaultScheduledJobsFile(e)}\n`);
         io.stdout(`  followups:  ${followupsFile}\n`);
         io.stdout(`  objectives: ${objectivesFile}\n`);
-        // Will it come back after a reboot, and is it actually alive now?
-        // Artifact existence and runtime state are deliberately separate: a
-        // stale plist may coexist with an orphaned running launchd job.
-        const autostart = await getDaemonAutostartStatus(e, {
-          ...(helpers.platform ? { platform: helpers.platform } : {}),
-          ...(helpers.runLaunchctl ? { runLaunchctl: helpers.runLaunchctl } : {}),
-          ...(helpers.schtasksRun ? { schtasksRun: helpers.schtasksRun } : {})
-        });
         for (const line of formatDaemonAutostartStatus(autostart)) io.stdout(`${line}\n`);
         return;
       }

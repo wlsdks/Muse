@@ -561,6 +561,72 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(status.stdout).not.toMatch(/autostart:\s+installed/);
   });
 
+  it("--status reports contained resident safety gates instead of conflicting shell settings", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-status-contained-safety-"));
+    const plistFile = join(dir, "com.muse.daemon.plist");
+    writeFileSync(plistFile, buildLaunchAgentPlist({
+      environmentVariables: {
+        MUSE_DAEMON_DELIVERY_ENABLED: "false",
+        MUSE_DAEMON_PROVIDER_LOCK: "log",
+        MUSE_SELFLEARN_ENABLED: "false"
+      },
+      label: "com.muse.daemon",
+      programArguments: [process.execPath, process.argv[1]!, "daemon"],
+      stderrPath: join(dir, "daemon.err.log"),
+      stdoutPath: join(dir, "daemon.out.log")
+    }), "utf8");
+
+    const status = await runDaemon(["--status"], {
+      env: {
+        ...tmpEnv(),
+        MUSE_DAEMON_DELIVERY_ENABLED: "true",
+        MUSE_DAEMON_PLIST_FILE: plistFile,
+        MUSE_DAEMON_PROVIDER_LOCK: "",
+        MUSE_SELFLEARN_ENABLED: "true"
+      },
+      platform: "darwin",
+      registry: new MessagingProviderRegistry([capturingProvider([], "log")]),
+      runLaunchctl: async () => ({ code: 0, stderr: "", stdout: '{\n\t"PID" = 731;\n};\n' })
+    });
+
+    expect(status.stdout).toContain("safety=resident LaunchAgent");
+    expect(status.stdout).toContain("delivery:   heartbeat-only (brake engaged)");
+    expect(status.stdout).toContain("route-lock: log-only");
+    expect(status.stdout).toContain("proactive:  blocked (delivery brake engaged)");
+    expect(status.stdout).toContain("resident execution: heartbeat-only; all remaining lines describe configured features, not running ticks");
+    expect(status.stdout).toContain("configured features (held by delivery brake):");
+    expect(status.stdout).toContain("self-learn: disabled (safety gate)");
+  });
+
+  it("--status uses launchd defaults for absent contained safety keys, never the shell", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-status-contained-defaults-"));
+    const plistFile = join(dir, "com.muse.daemon.plist");
+    writeFileSync(plistFile, buildLaunchAgentPlist({
+      label: "com.muse.daemon",
+      programArguments: [process.execPath, process.argv[1]!, "daemon"],
+      stderrPath: join(dir, "daemon.err.log"),
+      stdoutPath: join(dir, "daemon.out.log")
+    }), "utf8");
+
+    const status = await runDaemon(["--status"], {
+      env: {
+        ...tmpEnv(),
+        MUSE_DAEMON_DELIVERY_ENABLED: "false",
+        MUSE_DAEMON_PLIST_FILE: plistFile,
+        MUSE_DAEMON_PROVIDER_LOCK: "log",
+        MUSE_SELFLEARN_ENABLED: "false"
+      },
+      platform: "darwin",
+      registry: new MessagingProviderRegistry([capturingProvider([], "log")]),
+      runLaunchctl: async () => ({ code: 0, stderr: "", stdout: '{\n\t"PID" = 732;\n};\n' })
+    });
+
+    expect(status.stdout).toContain("safety=resident LaunchAgent");
+    expect(status.stdout).toContain("delivery:   enabled");
+    expect(status.stdout).toContain("route-lock: disabled");
+    expect(status.stdout).not.toContain("self-learn: disabled (safety gate)");
+  });
+
   it("--status reports a launchctl probe failure as unknown instead of pretending the job is absent", async () => {
     const dir = mkdtempSync(join(tmpdir(), "muse-autostart-probe-fail-"));
     const plistFile = join(dir, "com.muse.daemon.plist");
