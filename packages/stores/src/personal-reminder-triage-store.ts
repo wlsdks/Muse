@@ -110,7 +110,7 @@ export interface PreviewReminderTriageOptions {
   readonly ids: readonly string[];
   readonly snoozeAt?: string;
   readonly now?: () => Date;
-  readonly failpoint?: (point: "after-preview") => void | Promise<void>;
+  readonly failpoint?: (point: "before-preview" | "after-preview") => void | Promise<void>;
 }
 
 export interface ConfirmReminderTriageOptions {
@@ -118,7 +118,7 @@ export interface ConfirmReminderTriageOptions {
   readonly ledgerFile: string;
   readonly token: string;
   readonly now?: () => Date;
-  readonly failpoint?: (point: "after-prepared" | "after-reminders" | "after-terminal") => void | Promise<void>;
+  readonly failpoint?: (point: "before-prepared" | "after-prepared" | "before-reminders" | "after-reminders" | "before-terminal" | "after-terminal") => void | Promise<void>;
 }
 
 export async function previewReminderTriage(options: PreviewReminderTriageOptions): Promise<ReminderTriagePreview> {
@@ -151,6 +151,7 @@ export async function previewReminderTriage(options: PreviewReminderTriageOption
         tokenHash,
         type: "previewed"
       } satisfies Omit<PreviewedEvent, "eventId" | "previousHash" | "hash">);
+      await options.failpoint?.("before-preview");
       ledger = await appendEvent(options.ledgerFile, ledger, preview);
       void ledger;
       await options.failpoint?.("after-preview");
@@ -200,6 +201,7 @@ export async function confirmReminderTriage(options: ConfirmReminderTriageOption
           recordedAt: at.toISOString(),
           type: "prepared"
         } satisfies Omit<PreparedEvent, "eventId" | "previousHash" | "hash">);
+        await options.failpoint?.("before-prepared");
         ledger = await appendEvent(options.ledgerFile, ledger, prepared);
         await options.failpoint?.("after-prepared");
       }
@@ -210,6 +212,7 @@ export async function confirmReminderTriage(options: ConfirmReminderTriageOption
       if (preview.preStoreDigest === preview.postStoreDigest) {
         terminalOutcome = "applied";
       } else if (currentDigest === preview.preStoreDigest) {
+        await options.failpoint?.("before-reminders");
         await writeReminders(options.remindersFile, applyAction(current, preview.items, preview.action, preview.snoozeAt));
         await options.failpoint?.("after-reminders");
         terminalOutcome = "applied";
@@ -229,6 +232,7 @@ export async function confirmReminderTriage(options: ConfirmReminderTriageOption
         status: "applied",
         type: "terminal"
       } satisfies Omit<TerminalEvent, "eventId" | "previousHash" | "hash">);
+      await options.failpoint?.("before-terminal");
       await appendEvent(options.ledgerFile, ledger, applied);
       await options.failpoint?.("after-terminal");
       return result;

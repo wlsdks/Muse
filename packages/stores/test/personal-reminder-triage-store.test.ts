@@ -34,6 +34,17 @@ async function fixture(items: readonly PersistedReminder[] = [reminder("rem_a"),
 }
 
 describe("reminder backlog triage transaction", () => {
+  it("leaves no authorization or reminder mutation when preview persistence fails before write", async () => {
+    const f = await fixture([reminder("rem_a")]);
+    const before = await readFile(f.remindersFile, "utf8");
+    await expect(previewReminderTriage({
+      action: "dismiss", ids: ["rem_a"], ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, now: () => BASE,
+      failpoint: (point) => { if (point === "before-preview") throw new Error("preview-write-failed"); }
+    })).rejects.toThrow("preview-write-failed");
+    expect(await readFile(f.remindersFile, "utf8")).toBe(before);
+    await expect(readFile(f.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("persists an owner-only preview authorization without changing reminders or leaking the bearer secret", async () => {
     const f = await fixture();
     const before = await readFile(f.remindersFile, "utf8");
@@ -76,6 +87,37 @@ describe("reminder backlog triage transaction", () => {
     const recovered = await confirmReminderTriage({ ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, token: preview.confirmToken, now: () => new Date("2026-07-23T00:00:00Z") });
     expect(recovered).toMatchObject({ outcome: "recovered-post-image", status: "applied" });
     expect((await readReminderTriageLedgerStrict(f.ledgerFile)).events.map((event) => event.type)).toEqual(["previewed", "prepared", "terminal"]);
+  });
+
+  it("recovers exact pre-write failures at prepared, reminder, and terminal boundaries", async () => {
+    const beforePrepared = await fixture([reminder("rem_a")]);
+    const previewA = await previewReminderTriage({ action: "dismiss", ids: ["rem_a"], ledgerFile: beforePrepared.ledgerFile, remindersFile: beforePrepared.remindersFile, now: () => BASE });
+    await expect(confirmReminderTriage({
+      failpoint: (point) => { if (point === "before-prepared") throw new Error("prepared-write-failed"); },
+      ledgerFile: beforePrepared.ledgerFile, remindersFile: beforePrepared.remindersFile, token: previewA.confirmToken, now: () => BASE
+    })).rejects.toThrow("prepared-write-failed");
+    expect((await readReminderTriageLedgerStrict(beforePrepared.ledgerFile)).events.map((event) => event.type)).toEqual(["previewed"]);
+    expect(await readRemindersStrict(beforePrepared.remindersFile)).toHaveLength(1);
+    expect((await confirmReminderTriage({ ledgerFile: beforePrepared.ledgerFile, remindersFile: beforePrepared.remindersFile, token: previewA.confirmToken, now: () => BASE })).outcome).toBe("applied");
+
+    const beforeReminder = await fixture([reminder("rem_a")]);
+    const previewB = await previewReminderTriage({ action: "dismiss", ids: ["rem_a"], ledgerFile: beforeReminder.ledgerFile, remindersFile: beforeReminder.remindersFile, now: () => BASE });
+    await expect(confirmReminderTriage({
+      failpoint: (point) => { if (point === "before-reminders") throw new Error("reminder-write-failed"); },
+      ledgerFile: beforeReminder.ledgerFile, remindersFile: beforeReminder.remindersFile, token: previewB.confirmToken, now: () => BASE
+    })).rejects.toThrow("reminder-write-failed");
+    expect((await readReminderTriageLedgerStrict(beforeReminder.ledgerFile)).events.map((event) => event.type)).toEqual(["previewed", "prepared"]);
+    expect(await readRemindersStrict(beforeReminder.remindersFile)).toHaveLength(1);
+    expect((await confirmReminderTriage({ ledgerFile: beforeReminder.ledgerFile, remindersFile: beforeReminder.remindersFile, token: previewB.confirmToken, now: () => new Date("2026-07-23T00:00:00Z") })).outcome).toBe("applied");
+
+    const beforeTerminal = await fixture([reminder("rem_a")]);
+    const previewC = await previewReminderTriage({ action: "dismiss", ids: ["rem_a"], ledgerFile: beforeTerminal.ledgerFile, remindersFile: beforeTerminal.remindersFile, now: () => BASE });
+    await expect(confirmReminderTriage({
+      failpoint: (point) => { if (point === "before-terminal") throw new Error("terminal-write-failed"); },
+      ledgerFile: beforeTerminal.ledgerFile, remindersFile: beforeTerminal.remindersFile, token: previewC.confirmToken, now: () => BASE
+    })).rejects.toThrow("terminal-write-failed");
+    expect(await readRemindersStrict(beforeTerminal.remindersFile)).toEqual([]);
+    expect((await confirmReminderTriage({ ledgerFile: beforeTerminal.ledgerFile, remindersFile: beforeTerminal.remindersFile, token: previewC.confirmToken, now: () => new Date("2026-07-23T00:00:00Z") })).outcome).toBe("recovered-post-image");
   });
 
   it("consumes a now-past snooze as a non-mutating terminal conflict", async () => {
@@ -136,7 +178,10 @@ describe("reminder backlog triage transaction", () => {
     const f = await fixture([reminder("rem_a")]);
     const preview = await previewReminderTriage({ action: "retain", ids: ["rem_a"], ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, now: () => BASE });
     const before = await readFile(f.remindersFile, "utf8");
-    await expect(confirmReminderTriage({ ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, token: `${preview.confirmToken.slice(0, -1)}A`, now: () => BASE })).rejects.toThrow("invalid reminder triage token");
+    const secretOffset = `rt1_${preview.operationId}_`.length;
+    const replacement = preview.confirmToken[secretOffset] === "A" ? "B" : "A";
+    const forged = `${preview.confirmToken.slice(0, secretOffset)}${replacement}${preview.confirmToken.slice(secretOffset + 1)}`;
+    await expect(confirmReminderTriage({ ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, token: forged, now: () => BASE })).rejects.toThrow("invalid reminder triage token");
     await expect(confirmReminderTriage({ ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, token: preview.confirmToken, now: () => new Date("2026-07-22T00:15:00.001Z") })).rejects.toThrow("expired");
     expect(await readFile(f.remindersFile, "utf8")).toBe(before);
 
@@ -161,5 +206,19 @@ describe("reminder backlog triage transaction", () => {
     await expect(previewReminderTriage({ action: "retain", ids: ["rem_future"], ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, now: () => BASE })).rejects.toThrow("not pending and due");
     await expect(previewReminderTriage({ action: "retain", ids: Array.from({ length: 21 }, (_, i) => `rem_${i.toString()}`), ledgerFile: f.ledgerFile, remindersFile: f.remindersFile, now: () => BASE })).rejects.toThrow("1 to 20");
     await expect(readFile(f.ledgerFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("accepts the inclusive due cutoff and the exact 20-item bound in canonical order", async () => {
+    const items = Array.from({ length: 20 }, (_, index) => reminder(`rem_${index.toString().padStart(2, "0")}`, { dueAt: BASE.toISOString() }));
+    const f = await fixture(items);
+    const preview = await previewReminderTriage({
+      action: "retain",
+      ids: [...items].reverse().map((item) => item.id),
+      ledgerFile: f.ledgerFile,
+      remindersFile: f.remindersFile,
+      now: () => BASE
+    });
+    expect(preview.items).toHaveLength(20);
+    expect(preview.items.map((item) => item.id)).toEqual(items.map((item) => item.id));
   });
 });
