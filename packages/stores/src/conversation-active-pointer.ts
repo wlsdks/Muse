@@ -41,6 +41,27 @@ export async function readActiveConversationId(file: string = defaultActiveConve
   return parsed.activeId;
 }
 
+/** Read-only pointer inspection for listing surfaces: never quarantines, repairs, or writes. */
+export async function peekActiveConversationId(file: string = defaultActiveConversationFile()): Promise<string | undefined> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch (cause) {
+    if (isRecord(cause) && cause.code === "ENOENT") return undefined;
+    throw cause;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed) || parsed.version !== 1 || typeof parsed.activeId !== "string" || parsed.activeId.length === 0) {
+    return undefined;
+  }
+  return parsed.activeId;
+}
+
 export async function writeActiveConversationId(id: string, file: string = defaultActiveConversationFile()): Promise<void> {
   await withFileLock(file, async () => {
     await atomicWriteFile(file, `${JSON.stringify({ activeId: id, version: 1 }, null, 2)}\n`);

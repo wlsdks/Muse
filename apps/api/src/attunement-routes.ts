@@ -1,11 +1,12 @@
 import { realpath } from "node:fs/promises";
 
-import { ARTIFACT_ROLES, ARTIFACT_TYPES, AttunementStoreError, buildContinuityInteractionReport, calendarProviderId, computeContinuityEvaluation, ContinuityEvaluationError, createBrowsingVisitArtifactValidator, createBrowsingVisitExactArtifactResolver, createCalendarArtifactValidator, createCalendarExactArtifactResolver, createCheckpointArtifactValidator, createCheckpointExactArtifactResolver, createContactArtifactValidator, createContactExactArtifactResolver, createLocalArtifactValidator, createLocalContinuityTaskInteractionSourceResolver, createLocalExactArtifactResolver, createPersonalThread, createRunArtifactValidator, createRunExactArtifactResolver, deletePersonalThread, evaluateTimingSession, forgetTimingSession, inspectTimingSession, linkArtifact, OUTCOMES, pauseTimingSession, prepareContinuityReview, readAttunementState, readPreparedContinuityPack, readTimingState, recordTimingFeedback, recordTimingObservation, resetThreadPolicy, resumeTimingSession, startTimingSession, THREAD_KINDS, TIMING_APP_CATEGORIES, undoThreadReset, unlinkArtifact, type ArtifactLinkValidator, type ExactArtifactResolver } from "@muse/attunement";
+import { ARTIFACT_ROLES, ARTIFACT_TYPES, AttunementStoreError, buildContinuityInteractionReport, calendarProviderId, computeContinuityEvaluation, ContinuityEvaluationError, createBrowsingVisitArtifactValidator, createBrowsingVisitExactArtifactResolver, createCalendarArtifactValidator, createCalendarExactArtifactResolver, createCheckpointArtifactValidator, createCheckpointExactArtifactResolver, createContactArtifactValidator, createContactExactArtifactResolver, createConversationArtifactValidator, createConversationExactArtifactResolver, createLocalArtifactValidator, createLocalContinuityTaskInteractionSourceResolver, createLocalExactArtifactResolver, createPersonalThread, createRunArtifactValidator, createRunExactArtifactResolver, deletePersonalThread, evaluateTimingSession, forgetTimingSession, inspectTimingSession, linkArtifact, OUTCOMES, pauseTimingSession, prepareContinuityReview, readAttunementState, readPreparedContinuityPack, readTimingState, recordTimingFeedback, recordTimingObservation, resetThreadPolicy, resumeTimingSession, startTimingSession, THREAD_KINDS, TIMING_APP_CATEGORIES, undoThreadReset, unlinkArtifact, type ArtifactLinkValidator, type ExactArtifactResolver } from "@muse/attunement";
 import { openProductionAuthorizedContinuityPack, recordProductionAuthorizedContinuityOutcome } from "@muse/attunement/host";
 import type { ContinuityOutcome, OpenPreparedContinuityPack } from "@muse/attunement";
 import type { CalendarProviderRegistry } from "@muse/calendar";
 import { readExactBrowsingVisit } from "@muse/recall";
 import { isCanonicalWorkspaceRealpath } from "@muse/shared";
+import { readExactConversation } from "@muse/stores";
 import type { FastifyInstance } from "fastify";
 
 import { requireAuthenticated } from "./server-helpers.js";
@@ -18,6 +19,7 @@ export interface AttunementRoutesGate {
   readonly calendarRegistry?: CalendarProviderRegistry;
   readonly checkpointsDir: string;
   readonly contactsFile: string;
+  readonly conversationsFile: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly notesDir: string;
   readonly now?: () => number;
@@ -48,6 +50,12 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
   const resolveBrowsing = createBrowsingVisitExactArtifactResolver({
     readExactVisit: (artifactId) => readExactBrowsingVisit(gate.browsingFile, artifactId)
   });
+  const validateConversation = createConversationArtifactValidator({
+    readExactConversation: (artifactId) => readExactConversation(gate.conversationsFile, artifactId)
+  });
+  const resolveConversation = createConversationExactArtifactResolver({
+    readExactConversation: (artifactId) => readExactConversation(gate.conversationsFile, artifactId)
+  });
   let workspaceRealpathPromise: Promise<string> | undefined;
   const requireWorkspaceRealpath = async (): Promise<string> => {
     if (!gate.workspaceDir) throw new AttunementStoreError("run evidence requires an explicit API workspace directory");
@@ -70,6 +78,8 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
       ? requireWorkspaceRealpath().then((allowedWorkspaceRealpath) => createCheckpointArtifactValidator({ allowedWorkspaceRealpath, checkpointsDir: gate.checkpointsDir })(input))
     : input.artifactType === "browsing-visit"
       ? validateBrowsing(input)
+    : input.artifactType === "conversation"
+      ? validateConversation(input)
     : validateLocal(input);
   const resolveExactArtifact: ExactArtifactResolver = (link) => link.artifactType === "calendar-event"
     ? (resolveCalendar?.(link) ?? Promise.resolve(undefined))
@@ -81,6 +91,8 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
       ? requireWorkspaceRealpath().then((allowedWorkspaceRealpath) => createCheckpointExactArtifactResolver({ allowedWorkspaceRealpath, checkpointsDir: gate.checkpointsDir })(link))
     : link.artifactType === "browsing-visit"
       ? resolveBrowsing(link)
+    : link.artifactType === "conversation"
+      ? resolveConversation(link)
     : resolveLocal(link);
   const assertKnownThread = async (threadId: string): Promise<void> => {
     const state = await readAttunementState(gate.attunementFile);
@@ -262,7 +274,7 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
     const { artifactId, artifactType, providerId, role } = request.body ?? {};
     if (typeof artifactId !== "string" || artifactId.trim().length === 0) return reply.code(400).send({ errorMessage: "artifact id must be a non-empty string" });
     if (typeof artifactType !== "string" || !ARTIFACT_TYPES.includes(artifactType as (typeof ARTIFACT_TYPES)[number]) || artifactType === "resource") {
-      return reply.code(400).send({ errorMessage: "web linking supports validated local task, note, reminder, calendar-event, contact, run, checkpoint, or browsing-visit sources only" });
+      return reply.code(400).send({ errorMessage: "web linking supports validated local task, note, reminder, calendar-event, contact, run, checkpoint, browsing-visit, or conversation sources only" });
     }
     if (typeof role !== "string" || !ARTIFACT_ROLES.includes(role as (typeof ARTIFACT_ROLES)[number])) return reply.code(400).send({ errorMessage: "link role must be context or next-step" });
     if (role === "next-step" && artifactType !== "task") {
@@ -274,7 +286,7 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
     try {
       return await linkArtifact(gate.attunementFile, {
         artifactId,
-        artifactType: artifactType as "task" | "note" | "reminder" | "calendar-event" | "contact" | "run" | "checkpoint" | "browsing-visit",
+        artifactType: artifactType as "task" | "note" | "reminder" | "calendar-event" | "contact" | "run" | "checkpoint" | "browsing-visit" | "conversation",
         ...(artifactType === "calendar-event" ? { providerId: calendarProviderId(providerId as string) } : {}),
         role: role as "context" | "next-step",
         threadId: request.params.threadId
@@ -289,7 +301,7 @@ export function registerAttunementRoutes(server: FastifyInstance, gate: Attuneme
     if (!requireAuthenticated(request, reply, Boolean(gate.authService))) return reply;
     const { artifactId, artifactType, providerId } = request.body ?? {};
     if (typeof artifactId !== "string" || artifactId.trim().length === 0) return reply.code(400).send({ errorMessage: "artifact id must be a non-empty string" });
-    if (artifactType !== "task" && artifactType !== "note" && artifactType !== "reminder" && artifactType !== "calendar-event" && artifactType !== "contact" && artifactType !== "run" && artifactType !== "checkpoint" && artifactType !== "browsing-visit") return reply.code(400).send({ errorMessage: "web unlinking supports task, note, reminder, calendar-event, contact, run, checkpoint, or browsing-visit sources only" });
+    if (artifactType !== "task" && artifactType !== "note" && artifactType !== "reminder" && artifactType !== "calendar-event" && artifactType !== "contact" && artifactType !== "run" && artifactType !== "checkpoint" && artifactType !== "browsing-visit" && artifactType !== "conversation") return reply.code(400).send({ errorMessage: "web unlinking supports task, note, reminder, calendar-event, contact, run, checkpoint, browsing-visit, or conversation sources only" });
     if (artifactType === "calendar-event" && (typeof providerId !== "string" || !/^[A-Za-z0-9._-]+$/u.test(providerId))) {
       return reply.code(400).send({ errorMessage: "calendar-event unlinking requires the exact provider id stored on the link" });
     }

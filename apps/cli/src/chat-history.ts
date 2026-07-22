@@ -44,8 +44,11 @@ import {
   defaultActiveConversationFile,
   defaultConversationsFile,
   FileConversationStore,
+  isCanonicalConversationId,
   newConversationId,
+  peekActiveConversationId as peekActiveConversationPointerId,
   readActiveConversationId,
+  readExactConversationCatalog,
   recentChatTurns,
   resolveConversationRef,
   writeActiveConversationId,
@@ -54,7 +57,7 @@ import {
   type ConversationSummary,
   type ConversationTurn
 } from "@muse/stores";
-import { redactSecretsInText, resolveHomeDir } from "@muse/shared";
+import { redactSecretsInText, resolveHomeDir, stripUntrustedTerminalChars } from "@muse/shared";
 
 import { isRecord } from "./credential-store.js";
 
@@ -193,6 +196,11 @@ export async function activeConversationId(): Promise<string> {
   return ensureActiveConversationId();
 }
 
+/** Read the pointer only. Listing must never initialize, migrate, or write chat state. */
+export async function peekActiveConversationId(): Promise<string | undefined> {
+  return peekActiveConversationPointerId(activePointerFile());
+}
+
 /**
  * Point the active conversation at `id` without resolving/validating it
  * against the store — used by remote `muse chat` (AC4) to adopt a
@@ -206,6 +214,39 @@ export async function setActiveConversationId(id: string): Promise<void> {
 /** `muse chats` / `/sessions` listing: every conversation, newest first. */
 export async function listConversations(): Promise<readonly ConversationSummary[]> {
   return conversationStore().list();
+}
+
+export interface ConversationContinuityReference {
+  readonly artifactId: string;
+  readonly artifactType: "conversation";
+  readonly providerId: "local";
+  readonly role: "context";
+}
+
+/** Strict, read-only listing source used by `muse chats list`. */
+export async function listConversationsStrict(): Promise<{
+  readonly continuityReferences: readonly ConversationContinuityReference[];
+  readonly summaries: readonly ConversationSummary[];
+}> {
+  const conversations = await readExactConversationCatalog(defaultConversationsFile());
+  const summaries = [...conversations]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .map((conversation) => ({
+      createdAt: conversation.createdAt,
+      id: conversation.id,
+      origin: conversation.origin,
+      title: conversation.title,
+      turnCount: conversation.turns.length,
+      updatedAt: conversation.updatedAt
+    }));
+  const continuityReferences = conversations.flatMap((conversation): readonly ConversationContinuityReference[] => {
+    const hasOwnerPrompt = conversation.turns.some((turn) => turn.role === "user"
+      && stripUntrustedTerminalChars(turn.content).replace(/\s+/gu, " ").trim().length > 0);
+    return isCanonicalConversationId(conversation.id) && (conversation.origin === "cli" || conversation.origin === "web") && hasOwnerPrompt
+      ? [{ artifactId: conversation.id, artifactType: "conversation", providerId: "local", role: "context" }]
+      : [];
+  });
+  return { continuityReferences, summaries };
 }
 
 export async function getConversation(id: string): Promise<Conversation | undefined> {

@@ -49,17 +49,17 @@ evidence sufficiency, or action approval.
 ## Personal-thread contract
 
 Muse must know which part of the user's life they mean before it combines a task, note,
-reminder, calendar event, contact, run, execution checkpoint, or browser visit. Slice A
+reminder, calendar event, contact, run, execution checkpoint, browser visit, or owner-authored conversation. Slice A
 supports exact local tasks, notes, reminders, configured calendar occurrences, contacts,
 strict local run evidence, future workspace-scoped execution checkpoint evidence, and one
-exact visit from the opt-in local browsing archive, and
+exact visit from the opt-in local browsing archive, and one exact CLI/web conversation, and
 only the user can create the binding. An LLM may later summarize
 linked evidence; it may not invent the association.
 
 ```ts
 interface PersonalThreadLink {
   threadId: string;
-  artifactType: "task" | "note" | "reminder" | "calendar-event" | "contact" | "run" | "checkpoint" | "browsing-visit";
+  artifactType: "task" | "note" | "reminder" | "calendar-event" | "contact" | "run" | "checkpoint" | "browsing-visit" | "conversation";
   providerId: "local" | `calendar:${string}`;
   artifactId: string;
   role: "context" | "next-step";
@@ -111,6 +111,17 @@ Chrome rows stay out. Browsing evidence is context-only and cannot navigate, bec
 step or receipt, create feedback, grant permission, or serve as observation/automation
 evidence. Search, link validation, and resolution do not write the Attunement ledger; only
 the existing explicit Pack open and explicit outcome paths retain their existing writes.
+
+A conversation link accepts only a byte-identical canonical ID from the strict v1 local
+archive. `muse chats list` validates the complete bounded archive and reads the active
+pointer without initialization, migration, quarantine, rename, or writes. Only `cli` and
+`web` origins qualify because their role-user turns represent the local owner's prompts;
+messaging/custom origins remain ineligible until author and scope provenance is durable.
+Continuity projects only a bounded terminal-safe title, the latest non-empty owner prompt,
+the exact origin label, and canonical update time. Assistant/system turns and hidden turn
+metadata never cross the adapter. The artifact is context-only and grants no resume,
+next-step, receipt, outcome, feedback, permission, action, observation, or automation
+authority.
 
 Additional artifact types and deterministic bindings are later adapters, not a fallback in
 this path.

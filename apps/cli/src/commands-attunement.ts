@@ -20,6 +20,8 @@ import {
   createBrowsingVisitExactArtifactResolver,
   createContactArtifactValidator,
   createContactExactArtifactResolver,
+  createConversationArtifactValidator,
+  createConversationExactArtifactResolver,
   createCheckpointArtifactValidator,
   createCheckpointExactArtifactResolver,
   createLocalArtifactValidator,
@@ -58,6 +60,7 @@ import { openProductionAuthorizedContinuityPack, recordProductionAuthorizedConti
 import { buildCalendarRegistry, resolveAttunementFile, resolveCheckpointsDir, resolveContactsFile, resolveNotesDir, resolveRemindersFile, resolveTasksFile } from "@muse/autoconfigure";
 import type { CalendarProviderRegistry } from "@muse/calendar";
 import { defaultBrowsingFile, readExactBrowsingVisit } from "@muse/recall";
+import { defaultConversationsFile, readExactConversation } from "@muse/stores";
 import type { Command } from "commander";
 
 import {
@@ -69,7 +72,7 @@ import {
 import type { ProgramIO } from "./program.js";
 
 const THREAD_KINDS = ["life", "work"] as const;
-const ARTIFACT_TYPES = ["task", "note", "reminder", "calendar-event", "contact", "run", "checkpoint", "browsing-visit", "resource"] as const;
+const ARTIFACT_TYPES = ["task", "note", "reminder", "calendar-event", "contact", "run", "checkpoint", "browsing-visit", "conversation", "resource"] as const;
 const ARTIFACT_ROLES = ["context", "next-step"] as const;
 const OUTCOMES = ["used", "adjusted", "ignored", "rejected"] as const;
 
@@ -130,7 +133,7 @@ async function explicitWorkspaceRealpath(workspaceDir: string | undefined): Prom
   }
 }
 
-function createArtifactValidator(mcpCaller: McpToolCaller | undefined, calendarRegistry: CalendarProviderRegistry, workspaceDir: string | undefined, browsingFile: string): ArtifactLinkValidator {
+function createArtifactValidator(mcpCaller: McpToolCaller | undefined, calendarRegistry: CalendarProviderRegistry, workspaceDir: string | undefined, browsingFile: string, conversationsFile: string): ArtifactLinkValidator {
   const localValidator = createLocalArtifactValidator({
     notesDir: notesDir(),
     remindersFile: remindersFile(),
@@ -140,6 +143,9 @@ function createArtifactValidator(mcpCaller: McpToolCaller | undefined, calendarR
   const contactValidator = createContactArtifactValidator({ contactsFile: contactsFile() });
   const browsingValidator = createBrowsingVisitArtifactValidator({
     readExactVisit: (artifactId) => readExactBrowsingVisit(browsingFile, artifactId)
+  });
+  const conversationValidator = createConversationArtifactValidator({
+    readExactConversation: (artifactId) => readExactConversation(conversationsFile, artifactId)
   });
   return async ({ artifactId, artifactType, providerId }) => {
     if (artifactType === "resource") {
@@ -152,11 +158,12 @@ function createArtifactValidator(mcpCaller: McpToolCaller | undefined, calendarR
     if (artifactType === "run") return createRunArtifactValidator({ allowedWorkspaceRealpath: await explicitWorkspaceRealpath(workspaceDir) })({ artifactId, artifactType, providerId });
     if (artifactType === "checkpoint") return createCheckpointArtifactValidator({ allowedWorkspaceRealpath: await explicitWorkspaceRealpath(workspaceDir), checkpointsDir: resolveCheckpointsDir(environment()) })({ artifactId, artifactType, providerId });
     if (artifactType === "browsing-visit") return browsingValidator({ artifactId, artifactType, providerId });
+    if (artifactType === "conversation") return conversationValidator({ artifactId, artifactType, providerId });
     return localValidator({ artifactId, artifactType, providerId });
   };
 }
 
-function createResolveExactArtifact(mcpCaller: McpToolCaller | undefined, calendarRegistry: CalendarProviderRegistry, workspaceDir: string | undefined, browsingFile: string): ExactArtifactResolver {
+function createResolveExactArtifact(mcpCaller: McpToolCaller | undefined, calendarRegistry: CalendarProviderRegistry, workspaceDir: string | undefined, browsingFile: string, conversationsFile: string): ExactArtifactResolver {
   const resolveLocal = createLocalExactArtifactResolver({
     notesDir: notesDir(),
     remindersFile: remindersFile(),
@@ -166,6 +173,9 @@ function createResolveExactArtifact(mcpCaller: McpToolCaller | undefined, calend
   const resolveContact = createContactExactArtifactResolver({ contactsFile: contactsFile() });
   const resolveBrowsing = createBrowsingVisitExactArtifactResolver({
     readExactVisit: (artifactId) => readExactBrowsingVisit(browsingFile, artifactId)
+  });
+  const resolveConversation = createConversationExactArtifactResolver({
+    readExactConversation: (artifactId) => readExactConversation(conversationsFile, artifactId)
   });
   return async (link) => {
     if (link.artifactType === "resource") {
@@ -179,6 +189,7 @@ function createResolveExactArtifact(mcpCaller: McpToolCaller | undefined, calend
     if (link.artifactType === "run") return createRunExactArtifactResolver({ allowedWorkspaceRealpath: await explicitWorkspaceRealpath(workspaceDir) })(link);
     if (link.artifactType === "checkpoint") return createCheckpointExactArtifactResolver({ allowedWorkspaceRealpath: await explicitWorkspaceRealpath(workspaceDir), checkpointsDir: resolveCheckpointsDir(environment()) })(link);
     if (link.artifactType === "browsing-visit") return resolveBrowsing(link);
+    if (link.artifactType === "conversation") return resolveConversation(link);
     return resolveLocal(link);
   };
 }
@@ -392,7 +403,7 @@ async function formatThreadReview(state: AttunementState, resolveExactArtifact: 
         : "next step: none set";
     const readiness = pack.evidence.length === 0
       ? {
-          action: `link an exact source: muse thread link ${thread.id} <task|note|reminder|calendar-event|contact|run|checkpoint|browsing-visit|resource> <id> --role <context|next-step>`,
+          action: `link an exact source: muse thread link ${thread.id} <task|note|reminder|calendar-event|contact|run|checkpoint|browsing-visit|conversation|resource> <id> --role <context|next-step>`,
           status: "needs-link"
         }
       : availableEvidence === 0
@@ -434,6 +445,9 @@ function formatArtifactMetadata(artifact: NonNullable<ContinuityPack["nextStep"]
   if (artifact.calendarLocation) metadata.push(`location: ${artifact.calendarLocation}`);
   if (artifact.browsingVisitedAt) metadata.push(`visited: ${artifact.browsingVisitedAt}`);
   if (artifact.browsingUrl) metadata.push(`url: ${artifact.browsingUrl}`);
+  if (artifact.conversationUpdatedAt) metadata.push(`updated: ${artifact.conversationUpdatedAt}`);
+  if (artifact.conversationOrigin) metadata.push(`origin: ${artifact.conversationOrigin}`);
+  if (artifact.conversationLastOwnerPrompt) metadata.push(`last owner prompt: ${artifact.conversationLastOwnerPrompt}`);
   return metadata.length > 0 ? ` · ${metadata.join(" · ")}` : "";
 }
 
@@ -533,8 +547,9 @@ export function registerAttunementCommands(program: Command, io: ProgramIO, deps
   const calendarRegistry = deps.calendarRegistry ?? buildCalendarRegistry(environment());
   const now = deps.now ?? Date.now;
   const browsingFile = defaultBrowsingFile(environment());
-  const validateArtifact = createArtifactValidator(mcpResourceCaller, calendarRegistry, io.workspaceDir, browsingFile);
-  const resolveExactArtifact = createResolveExactArtifact(mcpResourceCaller, calendarRegistry, io.workspaceDir, browsingFile);
+  const conversationsFile = defaultConversationsFile(environment());
+  const validateArtifact = createArtifactValidator(mcpResourceCaller, calendarRegistry, io.workspaceDir, browsingFile, conversationsFile);
+  const resolveExactArtifact = createResolveExactArtifact(mcpResourceCaller, calendarRegistry, io.workspaceDir, browsingFile, conversationsFile);
   const thread = program.command("thread").description("Keep an explicitly chosen life or work thread ready to resume");
 
   thread
@@ -582,6 +597,7 @@ Examples:
   $ muse thread link <thread-id> run <continuity-ref> --role context
   $ muse thread link <thread-id> checkpoint <continuity-ref> --role context
   $ muse thread link <thread-id> browsing-visit <exact-visit-id> --role context
+  $ muse thread link <thread-id> conversation <exact-conversation-id> --role context
   $ muse thread link <thread-id> calendar-event <continuity-ref> --provider local --role context
   $ muse thread link <thread-id> resource github/facebook/react/issues/123 --role context`)
     .action(async (threadId: string, artifactType: string, artifactId: string, options: { readonly provider?: string; readonly role: string }, command: Command) => {

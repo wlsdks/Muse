@@ -27,6 +27,7 @@ let root: string;
 let attunementFile: string;
 let browsingFile: string;
 let contactsFile: string;
+let conversationsFile: string;
 let checkpointsDir: string;
 let notesDir: string;
 let remindersFile: string;
@@ -88,6 +89,7 @@ beforeEach(async () => {
   attunementFile = join(root, "attunement.json");
   browsingFile = join(root, "browsing.json");
   contactsFile = join(root, "contacts.json");
+  conversationsFile = join(root, "conversations.json");
   checkpointsDir = join(root, "checkpoints");
   notesDir = join(root, "notes");
   remindersFile = join(root, "reminders.json");
@@ -120,6 +122,7 @@ function server(overrides: Partial<AttunementRoutesGate> = {}) {
     authService: undefined,
     browsingFile,
     contactsFile,
+    conversationsFile,
     checkpointsDir,
     notesDir,
     now: () => Date.parse("2026-07-17T00:00:00.000Z"),
@@ -767,6 +770,50 @@ describe("exact local browsing-visit continuity sources", () => {
     expect(response.json().errorMessage).toContain("browsing visit URL must be absolute http(s)");
     expect(await readFile(attunementFile)).toEqual(attunementBytes);
     expect(await readFile(browsingFile)).toEqual(archiveBytes);
+  });
+});
+
+describe("exact local conversation continuity sources", () => {
+  it("links, opens, and unlinks only the bounded owner-prompt projection without changing archive bytes", async () => {
+    const conversation = {
+      createdAt: "2026-07-22T01:00:00.000Z", id: "conv_0a1b2c3d", origin: "cli", title: "Architecture consultation",
+      turns: [
+        { at: "2026-07-22T01:00:00.000Z", content: "Earlier", role: "user" },
+        { at: "2026-07-22T01:01:00.000Z", content: "Private assistant detail", role: "assistant" },
+        { at: "2026-07-22T01:02:00.000Z", content: "Choose the next safe slice", role: "user" }
+      ],
+      updatedAt: "2026-07-22T01:02:00.000Z"
+    };
+    await writeFile(conversationsFile, `${JSON.stringify({ conversations: { [conversation.id]: conversation }, version: 1 }, null, 2)}\n`);
+    const archiveBytes = await readFile(conversationsFile);
+    const app = server();
+    expect((await app.inject({
+      method: "POST", payload: { artifactId: conversation.id, artifactType: "conversation", role: "next-step" },
+      url: `/api/attunement/threads/${threadId}/links`
+    })).statusCode).toBe(400);
+    expect((await app.inject({
+      method: "POST", payload: { artifactId: conversation.id, artifactType: "conversation", role: "context" },
+      url: `/api/attunement/threads/${threadId}/links`
+    })).statusCode).toBe(200);
+    const opened = await app.inject({ method: "POST", url: `/api/attunement/threads/${threadId}/continue` });
+    expect(opened.json().pack.evidence).toContainEqual(expect.objectContaining({
+      artifact: expect.objectContaining({
+        artifactId: conversation.id,
+        artifactType: "conversation",
+        conversationLastOwnerPrompt: "Choose the next safe slice",
+        conversationOrigin: "cli",
+        conversationUpdatedAt: conversation.updatedAt,
+        title: conversation.title
+      }),
+      status: "available"
+    }));
+    expect(JSON.stringify(opened.json())).not.toContain("Private assistant detail");
+    expect((await app.inject({
+      method: "POST", payload: { artifactId: conversation.id, artifactType: "conversation" },
+      url: `/api/attunement/threads/${threadId}/links/unlink`
+    })).statusCode).toBe(200);
+    expect(await readFile(conversationsFile)).toEqual(archiveBytes);
+    await app.close();
   });
 });
 

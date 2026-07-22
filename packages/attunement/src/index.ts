@@ -114,6 +114,14 @@ export {
   type BrowsingVisitSourceRecord,
   type ExactBrowsingVisitReader
 } from "./browsing-visit-artifact.js";
+export {
+  createConversationArtifactValidator,
+  createConversationExactArtifactResolver,
+  type ConversationArtifactOptions,
+  type ConversationSourceRecord,
+  type ConversationSourceTurn,
+  type ExactConversationReader
+} from "./conversation-artifact.js";
 export { createCalendarArtifactValidator, createCalendarExactArtifactResolver } from "./calendar-artifacts.js";
 export {
   createContactArtifactValidator,

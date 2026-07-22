@@ -95,6 +95,13 @@ pack. It does not require desktop observation.
   cursor state. A browsing visit is context-only and cannot navigate, become a next step or
   interaction receipt, create feedback, grant permission, or count as Observe/automation
   evidence.
+  Exact local conversations are now supported through a `conversation` link. `muse chats
+  list` uses a strict no-write catalog and read-only active-pointer peek, then advertises a
+  reference only for canonical CLI/web records containing an owner prompt. CLI,
+  authenticated HTTP, and web resolve one byte-identical ID and project only bounded safe
+  title, latest owner prompt, origin, and update time. Messaging/custom origins, assistant
+  and system turns, raw archives, resume, next-step selection, receipts, feedback,
+  permission, Observe, and automation remain excluded.
 - ✅ Only the user binds an item to a `threadId`; no deterministic auto-link or LLM summary is
   present in Slice A.
 - Treat `work` as one optional thread kind. It must not be the default meaning of every

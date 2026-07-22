@@ -24,7 +24,14 @@ export {
   resolveConversationRef
 } from "./conversation-store.js";
 export type { Conversation, ConversationRefResolution, ConversationSummary, ConversationTurn } from "./conversation-store.js";
-export { defaultActiveConversationFile, readActiveConversationId, writeActiveConversationId } from "./conversation-active-pointer.js";
+export {
+  ConversationExactReadError,
+  EXACT_CONVERSATION_FILE_MAX_BYTES,
+  isCanonicalConversationId,
+  readExactConversation,
+  readExactConversationCatalog
+} from "./conversation-exact-reader.js";
+export { defaultActiveConversationFile, peekActiveConversationId, readActiveConversationId, writeActiveConversationId } from "./conversation-active-pointer.js";
 export { appendDigestItem, drainDigestQueue, readDigestQueue } from "./digest-queue.js";
 export type { DigestQueueItem } from "./digest-queue.js";
 export { digestAlreadySentToday, localDateKey, markDigestSent, readDigestSentDate } from "./digest-sent-store.js";

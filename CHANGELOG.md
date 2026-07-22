@@ -37,6 +37,17 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Continuity can now attach one exact owner-authored local conversation as
+  inert context.** `muse chats list` uses a strict, read-only archive catalog,
+  a non-initializing active-pointer peek, and prints copy-ready references only
+  for canonical CLI/web conversations with an owner prompt. CLI, authenticated
+  local HTTP, and web resolve one byte-identical ID and expose only a bounded
+  terminal-safe title, latest owner prompt, origin, and update time. Assistant
+  and system turns, messaging-origin records, raw archives, resume, next-step,
+  receipts, feedback, permission, actions, and automation stay outside the
+  adapter. Attunement schema v10 reads v9 byte-stably and writes v10 only on a
+  later explicit valid mutation.
+
 - **Continuity can now ground a life or work thread in one exact opt-in
   browsing visit without turning history into observation or action.**
   `muse browsing search|recent` exposes the stable local visit ID and a
@@ -47,8 +58,8 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   backup/rename/log side effects. Packs project only a bounded sanitized title,
   inert HTTP(S) URL text, and canonical visit time—never embeddings, cursor
   state, neighboring visits, live Chrome data, navigation, a next step,
-  receipt, outcome, permission, or automation signal. Attunement schema v9
-  remains byte-stable when reading v8 and writes v9 only on the next explicit
+  receipt, outcome, permission, or automation signal. Older v8/v9 stores remain
+  byte-stable on read and write the current v10 schema only on the next explicit
   valid mutation.
 
 - **Technical personal-agent evidence now has crash-safe canonical publication.**

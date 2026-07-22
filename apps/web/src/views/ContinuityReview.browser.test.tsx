@@ -238,6 +238,7 @@ function contactLinkReview(linked: boolean) {
 const RUN_REFERENCE = "muse-run-v1:ZXhhY3Qtd29ya3NwYWNlLXJ1bi1yZWZlcmVuY2U";
 const CHECKPOINT_REFERENCE = "muse-checkpoint-v1:ZXhhY3Qtd29ya3NwYWNlLWNoZWNrcG9pbnQtcmVmZXJlbmNl";
 const BROWSING_VISIT_ID = "13390000000000000-0a1b2c3d";
+const CONVERSATION_ID = "conv_0a1b2c3d";
 
 function runLinkReview(linked: boolean) {
   const review = reminderLinkReview(false);
@@ -274,6 +275,19 @@ function browsingVisitLinkReview(linked: boolean) {
       linkCount: linked ? 1 : 0,
       links: linked ? [{ artifactId: BROWSING_VISIT_ID, artifactType: "browsing-visit", providerId: "local", role: "context" }] : [],
       title: "Return to an article"
+    }]
+  };
+}
+
+function conversationLinkReview(linked: boolean) {
+  const review = reminderLinkReview(false);
+  return {
+    ...review,
+    threads: [{
+      ...review.threads[0],
+      linkCount: linked ? 1 : 0,
+      links: linked ? [{ artifactId: CONVERSATION_ID, artifactType: "conversation", providerId: "local", role: "context" }] : [],
+      title: "Continue a consultation"
     }]
   };
 }
@@ -493,6 +507,34 @@ test("an opened Pack renders an exact browsing visit as inert context, never a n
   await expect.element(screen.getByRole("button", { name: "Mark next step done" })).not.toBeInTheDocument();
 });
 
+test("an opened Pack renders only the bounded exact conversation projection without resume or action", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  const conversation = {
+    artifactId: CONVERSATION_ID,
+    artifactType: "conversation",
+    conversationLastOwnerPrompt: "Choose the next safe slice",
+    conversationOrigin: "web" as const,
+    conversationUpdatedAt: "2026-07-22T01:02:00.000Z",
+    providerId: "local",
+    role: "context",
+    title: "Architecture consultation"
+  };
+  const screen = await render(<I18nProvider><OpenedPackCard openedPack={{
+    delivery: { id: "delivery_conversation" },
+    pack: {
+      evidence: [{ artifact: conversation, reference: conversation, status: "available" }],
+      policy: { nextStep: "direct" },
+      thread: { kind: "work", title: "Continue architecture" }
+    }
+  }} /></I18nProvider>);
+
+  await expect.element(screen.getByText(`Architecture consultation · conversation:${CONVERSATION_ID}`, { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Choose the next safe slice", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("web", { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Mark next step done" })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: /resume/i })).not.toBeInTheDocument();
+});
+
 test("a reminder can be explicitly linked and unlinked only as context", async () => {
   window.localStorage.setItem("muse.lang", "en");
   let linked = false;
@@ -698,6 +740,44 @@ test("a browsing visit is exact-id-only and context-only in the web link flow", 
   await screen.getByRole("button", { name: `Remove browsing-visit:${BROWSING_VISIT_ID}` }).click();
   await expect.element(screen.getByRole("button", { name: `Remove browsing-visit:${BROWSING_VISIT_ID}` })).not.toBeInTheDocument();
   expect(post).toHaveBeenCalledTimes(3);
+});
+
+test("a conversation is paste-only, byte-exact, and context-only in the web link flow", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  let linked = false;
+  const get = vi.fn(async (path: string) => path === "/api/attunement/interactions"
+    ? interactionReport({ includeDelivery: false })
+    : conversationLinkReview(linked));
+  const post = vi.fn(async (path: string, body: unknown) => {
+    if (path === "/api/attunement/threads/thread_life/links") {
+      if ((body as { artifactId?: string }).artifactId !== CONVERSATION_ID) throw new Error("non-canonical conversation id");
+      expect(body).toEqual({ artifactId: CONVERSATION_ID, artifactType: "conversation", role: "context" });
+      linked = true;
+      return {};
+    }
+    if (path === "/api/attunement/threads/thread_life/links/unlink") {
+      expect(body).toEqual({ artifactId: CONVERSATION_ID, artifactType: "conversation" });
+      linked = false;
+      return {};
+    }
+    throw new Error(`unexpected POST ${path}`);
+  });
+  const client = { baseUrl: "http://continuity-conversation.test", get, post } as unknown as ApiClient;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const screen = await render(<QueryClientProvider client={queryClient}><I18nProvider><ContinuityReviewView client={client} /></I18nProvider></QueryClientProvider>);
+
+  await screen.getByLabelText("Source type").selectOptions("conversation");
+  await expect.element(screen.getByLabelText("How Muse may use it")).toHaveValue("context");
+  await expect.element(screen.getByLabelText("How Muse may use it").getByRole("option", { name: "next-step" })).not.toBeInTheDocument();
+  const input = screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference");
+  await input.fill(` ${CONVERSATION_ID}`);
+  await screen.getByRole("button", { name: "Link source" }).click();
+  await expect.element(screen.getByText(/could not validate/u)).toBeVisible();
+  await input.fill(CONVERSATION_ID);
+  await screen.getByRole("button", { name: "Link source" }).click();
+  await expect.element(screen.getByRole("button", { name: `Remove conversation:${CONVERSATION_ID}` })).toBeVisible();
+  await screen.getByRole("button", { name: `Remove conversation:${CONVERSATION_ID}` }).click();
+  await expect.element(screen.getByRole("button", { name: `Remove conversation:${CONVERSATION_ID}` })).not.toBeInTheDocument();
 });
 
 test("a calendar occurrence requires an explicit configured provider and can be linked and unlinked", async () => {

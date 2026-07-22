@@ -17,11 +17,13 @@
 
 import type { Command } from "commander";
 import type { ConversationSummary } from "@muse/stores";
+import { stripUntrustedTerminalChars } from "@muse/shared";
 
 import {
-  activeConversationId,
   deleteConversation,
   listConversations,
+  listConversationsStrict,
+  peekActiveConversationId,
   renameConversation,
   resumeConversation
 } from "./chat-history.js";
@@ -36,17 +38,23 @@ interface SharedOptions {
 export function formatConversationList(
   summaries: readonly ConversationSummary[],
   activeId: string | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  linkableIds: ReadonlySet<string> = new Set()
 ): string {
   if (summaries.length === 0) {
     return "No conversations yet — start one with `muse chat -i`.\n";
   }
   const lines = summaries.map((c, index) => {
+    const safeId = stripUntrustedTerminalChars(c.id).replace(/\s+/gu, " ").trim();
+    const safeTitle = stripUntrustedTerminalChars(c.title).replace(/\s+/gu, " ").trim();
     const marker = c.id === activeId ? " (active)" : "";
     // The id is already short (conv_ + 8 hex) — shown in full, unlike the
     // longer UUID-based episode/task ids elsewhere which get truncated.
     const turns = c.turnCount === 1 ? "1 turn" : `${c.turnCount.toString()} turns`;
-    return `${(index + 1).toString()}. [${c.id}]${marker} ${c.title} — ${turns}, updated ${formatRelativeTime(c.updatedAt, now)}`;
+    const row = `${(index + 1).toString()}. [${safeId}]${marker} ${safeTitle || "(untitled conversation)"} — ${turns}, updated ${formatRelativeTime(c.updatedAt, now)}`;
+    return linkableIds.has(c.id)
+      ? `${row}\n   continuity: muse thread link <thread-id> conversation ${safeId} --role context`
+      : row;
   });
   return `${lines.join("\n")}\n`;
 }
@@ -61,12 +69,16 @@ export function registerChatsCommands(program: Command, io: ProgramIO): void {
     .description("List conversations, newest first (numbered; marks the active one)")
     .option("--json", "Print the raw payload instead of the formatted list")
     .action(async (options: SharedOptions) => {
-      const [summaries, activeId] = await Promise.all([listConversations(), activeConversationId()]);
+      const [{ continuityReferences, summaries }, activeId] = await Promise.all([
+        listConversationsStrict(),
+        peekActiveConversationId()
+      ]);
+      const listedActiveId = activeId ?? summaries[0]?.id ?? null;
       if (options.json) {
-        io.stdout(`${JSON.stringify({ activeId, conversations: summaries, total: summaries.length }, null, 2)}\n`);
+        io.stdout(`${JSON.stringify({ activeId: listedActiveId, continuityReferences, conversations: summaries, total: summaries.length }, null, 2)}\n`);
         return;
       }
-      io.stdout(formatConversationList(summaries, activeId));
+      io.stdout(formatConversationList(summaries, listedActiveId ?? undefined, new Date(), new Set(continuityReferences.map((reference) => reference.artifactId))));
     });
 
   chats

@@ -365,6 +365,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     browsingFile: options.browsingFile ?? defaultBrowsingFile(env),
     ...(options.calendar ? { calendarRegistry: options.calendar } : {}),
     contactsFile: options.contactsFile ?? resolveContactsFile(env),
+    conversationsFile: options.conversationsFile ?? defaultConversationsFile(env),
     checkpointsDir: resolveCheckpointsDir(env),
     env,
     notesDir: options.notesDir ?? resolveNotesDir(env),

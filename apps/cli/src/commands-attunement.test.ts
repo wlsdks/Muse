@@ -18,6 +18,7 @@ interface Fixture {
   readonly attunementFile: string;
   readonly browsingFile: string;
   readonly contactsFile: string;
+  readonly conversationsFile: string;
   readonly notesDir: string;
   readonly remindersFile: string;
   readonly root: string;
@@ -32,6 +33,7 @@ function fixture(): Fixture {
     attunementFile: join(root, "attunement.json"),
     browsingFile: join(root, "browsing.json"),
     contactsFile: join(root, "contacts.json"),
+    conversationsFile: join(root, "conversations.json"),
     notesDir,
     remindersFile: join(root, "reminders.json"),
     root,
@@ -49,6 +51,7 @@ async function run(fixture: Fixture, args: string[], deps?: AttunementCommandDep
     MUSE_BROWSING_FILE: process.env.MUSE_BROWSING_FILE,
     MUSE_CHECKPOINTS_DIR: process.env.MUSE_CHECKPOINTS_DIR,
     MUSE_CONTACTS_FILE: process.env.MUSE_CONTACTS_FILE,
+    MUSE_CONVERSATIONS_FILE: process.env.MUSE_CONVERSATIONS_FILE,
     MUSE_NOTES_DIR: process.env.MUSE_NOTES_DIR,
     MUSE_REMINDERS_FILE: process.env.MUSE_REMINDERS_FILE,
     MUSE_TASKS_FILE: process.env.MUSE_TASKS_FILE
@@ -59,6 +62,7 @@ async function run(fixture: Fixture, args: string[], deps?: AttunementCommandDep
   process.env.MUSE_BROWSING_FILE = fixture.browsingFile;
   process.env.MUSE_CHECKPOINTS_DIR = join(realpathSync(fixture.root), ".muse", "checkpoints");
   process.env.MUSE_CONTACTS_FILE = fixture.contactsFile;
+  process.env.MUSE_CONVERSATIONS_FILE = fixture.conversationsFile;
   process.env.MUSE_NOTES_DIR = fixture.notesDir;
   process.env.MUSE_REMINDERS_FILE = fixture.remindersFile;
   process.env.MUSE_TASKS_FILE = fixture.taskFile;
@@ -352,6 +356,31 @@ describe("muse thread / continue — Personal Continuity", () => {
     expect(afterOpen.deliveries[0]?.outcome).toBeUndefined();
     expect(afterOpen.interactionReceipts).toEqual([]);
     expect(readFileSync(f.browsingFile)).toEqual(browsingBytes);
+  });
+
+  it("links and opens one exact owner-authored conversation as inert context", async () => {
+    const f = fixture();
+    const conversation = {
+      createdAt: "2026-07-22T01:00:00.000Z", id: "conv_0a1b2c3d", origin: "web", title: "Architecture consultation",
+      turns: [
+        { at: "2026-07-22T01:00:00.000Z", content: "Earlier prompt", role: "user" },
+        { at: "2026-07-22T01:01:00.000Z", content: "Secret assistant reasoning", role: "assistant" },
+        { at: "2026-07-22T01:02:00.000Z", content: "Choose the next safe slice", role: "user" }
+      ],
+      updatedAt: "2026-07-22T01:02:00.000Z"
+    };
+    writeFileSync(f.conversationsFile, `${JSON.stringify({ conversations: { [conversation.id]: conversation }, version: 1 }, null, 2)}\n`);
+    const archiveBytes = readFileSync(f.conversationsFile);
+    const id = threadId((await run(f, ["thread", "start", "Continue", "architecture", "--kind", "work"])).stdout);
+
+    expect((await run(f, ["thread", "link", id, "conversation", conversation.id, "--role", "next-step"])).stderr)
+      .toContain("only a local task can be a next-step");
+    expect((await run(f, ["thread", "link", id, "conversation", conversation.id, "--role", "context"])).exitCode).toBeUndefined();
+    const continued = await run(f, ["thread", "continue", id]);
+    expect(continued.stdout).toContain(`[conversation:${conversation.id}] Architecture consultation`);
+    expect(continued.stdout).toContain("last owner prompt: Choose the next safe slice");
+    expect(continued.stdout).not.toContain("Secret assistant reasoning");
+    expect(readFileSync(f.conversationsFile)).toEqual(archiveBytes);
   });
 
   it("fails closed without a delivery when an exact linked browsing visit is removed", async () => {
