@@ -1799,7 +1799,7 @@ describe("muse daemon — resource admission", () => {
     expect(result.stdout).toContain("resource: heavyweight background work resumed");
   });
 
-  it("honors an opted-in heavy-work unit cap and round-robins deferred units", async () => {
+  it("counts the governed maintenance lane as one capped round-robin unit", async () => {
     const env: NodeJS.ProcessEnv = {
       ...tmpEnv(),
       MUSE_BROWSING_AUTO_SYNC: "true",
@@ -1814,11 +1814,11 @@ describe("muse daemon — resource admission", () => {
       registry,
       resourceSnapshot: () => ({ cpuCount: 4, freeMemoryBytes: 4 * 1024 * 1024 * 1024, load1: 1 }),
       runDaemonLoop: async ({ signal, tick }) => {
-        for (let round = 0; round < 15; round += 1) await tick();
+        for (let round = 0; round < 7; round += 1) await tick();
         expect(browsingCalls).toBe(0);
         await tick();
         signal.stop();
-        return 16;
+        return 8;
       }
     });
 
