@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { Command } from "commander";
 
 import {
   classifyHomeAlertsConfig,
@@ -26,13 +27,34 @@ import {
   weaknessFuelCheck,
   parseNotesIndexEmbedModel,
   resolveDoctorLocalRuntime,
+  registerDoctorCommand,
+  residentDaemonRuntimeCheck,
   resolveMuseEnvPath,
   runLocalDoctor,
   selfLearningCheck,
   webEgressCheck,
   type OllamaTagsEntry
 } from "./commands-doctor.js";
+import type { RuntimeQualificationObservation } from "./personal-agent-qualification.js";
 import type { WeaknessEntry } from "@muse/stores";
+
+function residentRuntime(overrides: Partial<RuntimeQualificationObservation> = {}): RuntimeQualificationObservation {
+  return {
+    artifact: "valid",
+    autostartProbe: "ok",
+    heartbeat: "fresh",
+    liveDefinitionMatches: true,
+    liveProbe: "ok",
+    orphanProbe: "ok",
+    orphanProcessCount: 0,
+    orphanRootCount: 0,
+    pidAgreement: true,
+    platform: "darwin",
+    runtime: "running",
+    stableMuseCommand: true,
+    ...overrides
+  };
+}
 
 describe("local doctor runtime ownership", () => {
   it("uses its injected paths and never reads a poisoned Gmail credential in local-only mode", async () => {
@@ -163,6 +185,90 @@ describe("local doctor runtime ownership", () => {
     expect(selfLearning?.detail).toContain("autostart unmanaged on linux");
     expect(selfLearning?.detail).toContain("runtime unknown");
     expect(selfLearning?.detail).not.toContain("learning while idle");
+  });
+});
+
+describe("resident daemon truth", () => {
+  it("accepts a complete, internally consistent resident proof", () => {
+    const check = residentDaemonRuntimeCheck(residentRuntime());
+
+    expect(check.status).toBe("ok");
+    expect(check.detail).toContain("LaunchAgent");
+  });
+
+  it("fails closed for a known broken daemon and never returns raw process details", () => {
+    const check = residentDaemonRuntimeCheck(residentRuntime({
+      artifact: "missing",
+      heartbeat: "missing",
+      orphanProcessCount: 2,
+      runtime: "crash-looping"
+    }));
+
+    expect(check.status).toBe("fail");
+    expect(check.detail).toContain("artifact missing");
+    expect(check.detail).toContain("runtime crash-looping");
+    expect(check.detail).toContain("2 orphan API process(es)");
+    expect(check.detail).not.toContain("pid");
+  });
+
+  it.each([
+    ["stale heartbeat", { heartbeat: "stale" }],
+    ["process identity mismatch", { pidAgreement: false }],
+    ["live definition mismatch", { liveDefinitionMatches: false }],
+    ["unstable command", { stableMuseCommand: false }]
+  ] as const)("fails closed for %s", (_name, overrides) => {
+    const check = residentDaemonRuntimeCheck(residentRuntime(overrides));
+
+    expect(check.status).toBe("fail");
+  });
+
+  it("includes the shared resident failure in the local doctor report", async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), "muse-doctor-resident-local-"));
+    const report = await runLocalDoctor({
+      daemonAutostartStatus: {
+        artifact: { entrypoint: "/stable/muse/dist/index.js", state: "valid" },
+        kind: "darwin",
+        plistFile: join(homeDir, "Library", "LaunchAgents", "com.muse.daemon.plist"),
+        runtime: { pid: 4321, state: "running" }
+      },
+      env: { HOME: homeDir, MUSE_LOCAL_ONLY: "true" },
+      fetchImpl: async () => new Response(JSON.stringify({ models: [] }), { status: 200 }),
+      homeDir,
+      residentDaemonRuntime: residentRuntime({ heartbeat: "stale" })
+    });
+
+    expect(report.worst).toBe("fail");
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      detail: expect.stringContaining("heartbeat stale"),
+      name: "resident daemon",
+      status: "fail"
+    }));
+  });
+
+  it("adds resident failure evidence to API doctor JSON instead of preserving a false allHealthy", async () => {
+    const program = new Command();
+    const emitted: unknown[] = [];
+    const output: string[] = [];
+    const priorExitCode = process.exitCode;
+    registerDoctorCommand(program, { stderr: () => undefined, stdout: (line) => output.push(line) }, {
+      apiRequest: async () => ({ allHealthy: true, status: "OK", summary: "6 sections — OK 6" }),
+      localRuntime: { residentDaemonRuntime: residentRuntime({ artifact: "missing", runtime: "not-registered" }) },
+      writeOutput: (_io, value) => { emitted.push(value); }
+    });
+
+    try {
+      await program.parseAsync(["node", "muse", "doctor", "--json"], { from: "node" });
+      expect(output).toEqual([]);
+      expect(emitted).toEqual([expect.objectContaining({
+        allHealthy: false,
+        remoteStatus: "OK",
+        residentRuntime: expect.objectContaining({ status: "fail" }),
+        status: "FAIL"
+      })]);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = priorExitCode;
+    }
   });
 });
 

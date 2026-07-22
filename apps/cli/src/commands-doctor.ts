@@ -61,6 +61,8 @@ import { resolveOllamaUrl } from "./ollama-url.js";
 import { isApiUnreachable } from "./program-helpers.js";
 import { atRestDoctorCheck, collectPrivacyPosture } from "./commands-privacy.js";
 import { sleep, waitForShutdownSignal } from "./async-promises.js";
+import { collectResidentDaemonRuntime } from "./personal-agent-qualification-probes.js";
+import type { RuntimeQualificationObservation } from "./personal-agent-qualification.js";
 import type { ProgramIO } from "./program.js";
 
 export interface DoctorCommandHelpers {
@@ -104,6 +106,8 @@ export interface DoctorLocalRuntimeOptions {
   readonly paths?: Partial<DoctorLocalPaths>;
   /** Deterministic test/embedding seam; production probes the real service manager. */
   readonly daemonAutostartStatus?: DaemonAutostartStatus;
+  /** Deterministic test/embedding seam for the shared resident-runtime probe. */
+  readonly residentDaemonRuntime?: RuntimeQualificationObservation;
 }
 
 function doctorPath(env: MuseEnvironment, museHome: string, envKey: string, filename: string): string {
@@ -256,6 +260,10 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
         if (options.local) {
           return renderLocal();
         }
+        // The API doctor can only see API-owned checks. Always add the same
+        // host-side resident-daemon observation that qualification uses, so a
+        // reachable API cannot turn a missing/crashing LaunchAgent into an OK.
+        const resident = await collectDoctorResidentRuntime(helpers.localRuntime);
         const path = options.full ? "/api/admin/doctor" : "/api/admin/doctor/summary";
         let response: unknown;
         try {
@@ -271,16 +279,21 @@ export function registerDoctorCommand(program: Command, io: ProgramIO, helpers: 
           throw error;
         }
         if (options.full || options.json) {
-          helpers.writeOutput(io, response);
-          return "remote";
+          helpers.writeOutput(io, withResidentRuntime(response, resident));
+          return resident.status;
         }
         if (!isRecord(response)) {
-          helpers.writeOutput(io, response);
-          return "remote";
+          helpers.writeOutput(io, withResidentRuntime(response, resident));
+          return resident.status;
         }
         const snapshot = response as DoctorSummary;
-        io.stdout(`${formatDoctorSummaryLine(snapshot)}\n`);
-        return "remote";
+        if (resident.status === "ok") {
+          io.stdout(`${formatDoctorSummaryLine(snapshot)}\n`);
+        } else {
+          io.stdout(`[${resident.status}] resident daemon — ${resident.detail}\n`);
+          io.stdout(`${formatDoctorSummaryLine(snapshot)}\n`);
+        }
+        return resident.status;
       };
 
       if (!options.watch) {
@@ -407,6 +420,80 @@ export interface LocalDoctorReport {
   readonly worst: "ok" | "warn" | "fail";
 }
 
+export interface ResidentDaemonRuntimeCheck extends LocalCheck {
+  readonly observation: RuntimeQualificationObservation;
+}
+
+/**
+ * Turn the qualification collector's privacy-safe evidence into one doctor
+ * line. Known broken resident state is a failure; unknown service-manager
+ * evidence is a warning, never an all-clear.
+ */
+export function residentDaemonRuntimeCheck(
+  observation: RuntimeQualificationObservation
+): ResidentDaemonRuntimeCheck {
+  const failures: string[] = [];
+  const unverified: string[] = [];
+  if (observation.platform !== "darwin") {
+    unverified.push(`autostart unmanaged on ${observation.platform}`);
+  }
+  if (observation.artifact !== "valid") {
+    failures.push(`artifact ${observation.artifact}`);
+  }
+  if (observation.autostartProbe !== "ok") {
+    unverified.push("service-manager probe unavailable");
+  }
+  if (observation.runtime !== "running") {
+    failures.push(`runtime ${observation.runtime}`);
+  }
+  if (observation.liveProbe !== "ok") {
+    unverified.push("live definition unverified");
+  } else {
+    if (!observation.liveDefinitionMatches) failures.push("live definition differs from artifact");
+    if (!observation.stableMuseCommand) failures.push("live command is not a stable Muse entry");
+    if (!observation.pidAgreement) failures.push("daemon process identity mismatch");
+  }
+  if (observation.heartbeat !== "fresh") {
+    failures.push(`heartbeat ${observation.heartbeat}`);
+  }
+  if (observation.orphanProbe !== "ok") {
+    unverified.push("orphan-process probe unavailable");
+  } else if (observation.orphanProcessCount > 0) {
+    failures.push(`${observation.orphanProcessCount.toString()} orphan API process(es)`);
+  }
+  const status: LocalCheck["status"] = failures.length > 0 ? "fail" : unverified.length > 0 ? "warn" : "ok";
+  const detail = status === "ok"
+    ? "LaunchAgent, live definition, process identity, heartbeat, and orphan-process probe are healthy"
+    : [...failures, ...unverified].join("; ");
+  return { detail, name: "resident daemon", observation, status };
+}
+
+async function collectDoctorResidentRuntime(
+  runtimeOptions: DoctorLocalRuntimeOptions = {}
+): Promise<ResidentDaemonRuntimeCheck> {
+  if (runtimeOptions.residentDaemonRuntime) {
+    return residentDaemonRuntimeCheck(runtimeOptions.residentDaemonRuntime);
+  }
+  const runtime = resolveDoctorLocalRuntime(runtimeOptions);
+  const env = createDoctorEnvironmentView(mergeModelKeysFromFile(runtime.env), runtime);
+  return residentDaemonRuntimeCheck(await collectResidentDaemonRuntime({ env }));
+}
+
+function withResidentRuntime(response: unknown, resident: ResidentDaemonRuntimeCheck): unknown {
+  const runtime = {
+    detail: resident.detail,
+    status: resident.status
+  };
+  if (!isRecord(response)) return { remote: response, residentRuntime: runtime };
+  const remoteStatus = typeof response.status === "string" ? response.status : undefined;
+  return {
+    ...response,
+    allHealthy: response.allHealthy === true && resident.status === "ok",
+    ...(resident.status === "ok" ? {} : { remoteStatus, status: resident.status.toUpperCase() }),
+    residentRuntime: runtime
+  };
+}
+
 
 function createDoctorEnvironmentView(merged: MuseEnvironment, runtime: DoctorLocalRuntime): MuseEnvironment {
   // Inherit direct reads from the already-safe model projection, but give every
@@ -443,6 +530,8 @@ export async function runLocalDoctor(runtimeOptions: DoctorLocalRuntimeOptions =
   // key — chat/ask/brief will fail" — even though chat/ask/brief
   // actually work because the runtime does its own merge at boot.
   const env = createDoctorEnvironmentView(mergeModelKeysFromFile(runtime.env), runtime);
+
+  checks.push(await collectDoctorResidentRuntime(runtimeOptions));
 
   // Model env — mirrors the runtime's resolveDefaultModel so local-only's
   // "ambient cloud keys ignored" guarantee is reported truthfully.

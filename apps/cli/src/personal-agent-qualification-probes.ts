@@ -408,27 +408,29 @@ function maxEvidenceAgeMs(value: number | undefined): number {
   return hours * 60 * 60_000;
 }
 
-export async function collectPersonalAgentQualificationObservations(
-  options: CollectQualificationOptions,
+interface ResidentDaemonRuntimeInspection {
+  readonly effectiveRuntimeEnv: NodeJS.ProcessEnv;
+  readonly diskArguments?: readonly string[];
+  readonly liveArguments?: readonly string[];
+  readonly liveEnvironment?: Readonly<Record<string, string>>;
+  readonly observation: RuntimeQualificationObservation;
+}
+
+/**
+ * Read the daemon's resident-runtime evidence once, without changing service
+ * state. Qualification and `muse doctor` deliberately share this collector so
+ * an API summary cannot mask a broken LaunchAgent, stale heartbeat, or orphan
+ * development process tree.
+ */
+async function inspectResidentDaemonRuntime(
   dependencies: QualificationProbeDependencies = {}
-): Promise<PersonalAgentQualificationObservations> {
+): Promise<ResidentDaemonRuntimeInspection> {
   const env = dependencies.env ?? process.env;
   const platform = dependencies.platform ?? process.platform;
   const now = dependencies.now ?? (() => new Date());
   const run = dependencies.run ?? defaultRun;
-  const workspaceDir = resolve(options.workspaceDir);
-  const reportFile = options.capabilityReportFile ?? join(workspaceDir, ".muse-dev", "evals", "agent-capability", "latest.json");
   const nowDate = now();
   const nowMs = nowDate.getTime();
-
-  const currentSourceStart = await inspectGitSnapshot(workspaceDir, run);
-  const capabilityArtifactPromise = readCapabilityArtifact(
-    reportFile,
-    options.capabilityReportFile === undefined ? workspaceDir : undefined
-  );
-  const artifactDigestPromise = dependencies.artifactDigest
-    ? dependencies.artifactDigest(workspaceDir)
-    : defaultArtifactDigest(workspaceDir, run);
 
   let artifact: RuntimeQualificationObservation["artifact"];
   let autostartProbe: RuntimeQualificationObservation["autostartProbe"];
@@ -497,6 +499,54 @@ export async function collectPersonalAgentQualificationObservations(
   const orphan = await inspectOrphanApiProcesses(platform, run);
   const pidAgreement = listPid !== undefined && livePid !== undefined && listPid === livePid && heartbeat.pidMatches;
 
+  return {
+    diskArguments,
+    effectiveRuntimeEnv,
+    liveArguments,
+    liveEnvironment,
+    observation: {
+      artifact,
+      autostartProbe,
+      heartbeat: heartbeat.state,
+      liveDefinitionMatches,
+      liveProbe,
+      ...orphan,
+      pidAgreement,
+      platform,
+      runtime,
+      stableMuseCommand
+    }
+  };
+}
+
+/** Public, privacy-safe resident daemon observation for local diagnostics. */
+export async function collectResidentDaemonRuntime(
+  dependencies: QualificationProbeDependencies = {}
+): Promise<RuntimeQualificationObservation> {
+  return (await inspectResidentDaemonRuntime(dependencies)).observation;
+}
+
+export async function collectPersonalAgentQualificationObservations(
+  options: CollectQualificationOptions,
+  dependencies: QualificationProbeDependencies = {}
+): Promise<PersonalAgentQualificationObservations> {
+  const run = dependencies.run ?? defaultRun;
+  const workspaceDir = resolve(options.workspaceDir);
+  const reportFile = options.capabilityReportFile ?? join(workspaceDir, ".muse-dev", "evals", "agent-capability", "latest.json");
+  const now = dependencies.now ?? (() => new Date());
+  const nowDate = now();
+  const nowMs = nowDate.getTime();
+  const currentSourceStart = await inspectGitSnapshot(workspaceDir, run);
+  const capabilityArtifactPromise = readCapabilityArtifact(
+    reportFile,
+    options.capabilityReportFile === undefined ? workspaceDir : undefined
+  );
+  const artifactDigestPromise = dependencies.artifactDigest
+    ? dependencies.artifactDigest(workspaceDir)
+    : defaultArtifactDigest(workspaceDir, run);
+  const resident = await inspectResidentDaemonRuntime(dependencies);
+  const { effectiveRuntimeEnv, diskArguments, liveArguments, liveEnvironment } = resident;
+
   const configResult = strictDaemonConfigProvider(resolveDaemonConfigFile(effectiveRuntimeEnv));
   const provider = parseProviderFlag(liveArguments ?? diskArguments ?? [])
     ?? effectiveRuntimeEnv.MUSE_PROACTIVE_PROVIDER?.trim()
@@ -504,7 +554,7 @@ export async function collectPersonalAgentQualificationObservations(
     ?? "log";
   const environmentProbe: DeliveryQualificationObservation["environmentProbe"] = liveEnvironment
     && liveArguments
-    && liveDefinitionMatches
+    && resident.observation.liveDefinitionMatches
     && configResult.status === "ok"
     ? "ok"
     : "unverified";
@@ -535,17 +585,6 @@ export async function collectPersonalAgentQualificationObservations(
       selfLearnDisabled: isExplicitlyDisabled(effectiveRuntimeEnv.MUSE_SELFLEARN_ENABLED)
     },
     now: nowDate,
-    runtime: {
-      artifact,
-      autostartProbe,
-      heartbeat: heartbeat.state,
-      liveDefinitionMatches,
-      liveProbe,
-      ...orphan,
-      pidAgreement,
-      platform,
-      runtime,
-      stableMuseCommand
-    }
+    runtime: resident.observation
   };
 }

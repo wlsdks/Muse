@@ -6,6 +6,7 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  collectResidentDaemonRuntime,
   collectPersonalAgentQualificationObservations,
   inspectGitSnapshot,
   inspectOrphanApiProcesses,
@@ -193,6 +194,16 @@ describe("strict read-only backlog probe", () => {
       status: "unverified"
     });
     expect(readdirSync(dir)).toEqual(before);
+  });
+});
+
+describe("resident daemon runtime collector", () => {
+  it("shares exactly the qualification runtime observation without reading capability evidence", async () => {
+    const fixture = qualificationFixture();
+    const qualification = await collectPersonalAgentQualificationObservations(fixture.options, fixture.dependencies);
+    const resident = await collectResidentDaemonRuntime(fixture.dependencies);
+
+    expect(resident).toEqual(qualification.runtime);
   });
 });
 
