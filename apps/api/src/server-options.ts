@@ -33,6 +33,8 @@ import type { SchedulerRouteScheduler } from "./scheduler-routes.js";
 export interface ServerOptions {
   /** Owner-only Personal Continuity ledger used by the read-only evaluation route. */
   readonly attunementFile?: string;
+  /** Opt-in local browsing archive used only for exact Continuity visit resolution. */
+  readonly browsingFile?: string;
   /**
    * Explicit workspace authority for exact local run Continuity evidence.
    * When absent, run linking/resolution fails closed without consulting cwd.

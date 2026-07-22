@@ -11,7 +11,8 @@ import {
   formatBrowsingVisitLines,
   parseBrowsingLimit,
   registerBrowsingCommand,
-  toBrowsingCitations
+  toBrowsingCitations,
+  toBrowsingContinuityReferences
 } from "./commands-browsing.js";
 import type { ProgramIO } from "./program.js";
 
@@ -29,6 +30,7 @@ function hasTerminalControl(s: string): boolean {
 describe("formatBrowsingVisitLines", () => {
   it("strips terminal control sequences from the page-controlled title + url", () => {
     const lines = formatBrowsingVisitLines({
+      id: "13390000000000000-0a1b2c3d",
       title: `${ESC}[2J${ESC}]0;pwned${BEL}Malicious page`,
       url: `https://evil.example/${ESC}[31m`,
       visitedAt: "2026-05-18T09:00:00Z"
@@ -40,21 +42,40 @@ describe("formatBrowsingVisitLines", () => {
   });
 
   it("collapses newlines and falls back to (no title)/(no date)", () => {
-    const lines = formatBrowsingVisitLines({ title: "multi\nline\ntitle", url: "", visitedAt: "   " });
+    const lines = formatBrowsingVisitLines({ id: "", title: "multi\nline\ntitle", url: "", visitedAt: "   " });
     expect(lines).toHaveLength(1);
     expect(lines[0]).toBe("multi line title — (no date)");
-    expect(formatBrowsingVisitLines({ title: "  ", url: "https://x", visitedAt: "2026" })[0]).toBe("(no title) — 2026");
+    expect(formatBrowsingVisitLines({ id: "", title: "  ", url: "https://x", visitedAt: "2026" })[0]).toBe("(no title) — 2026");
   });
 
   it("leaves a clean visit untouched", () => {
     expect(formatBrowsingVisitLines({
+      id: "13390000000000000-0a1b2c3d",
       title: "Rust ownership guide",
       url: "https://blog.example/rust",
       visitedAt: "2026-05-18T09:00:00Z"
     })).toEqual([
       "Rust ownership guide — 2026-05-18T09:00:00Z",
-      "  https://blog.example/rust"
+      "  https://blog.example/rust",
+      "  continuity id: 13390000000000000-0a1b2c3d",
+      "  link: muse thread link <thread-id> browsing-visit 13390000000000000-0a1b2c3d --role context"
     ]);
+  });
+
+  it("does not advertise a continuity command for an invalid or duplicate archive id", () => {
+    expect(formatBrowsingVisitLines({
+      id: "manual-id",
+      title: "Imported page",
+      url: "https://example.com/imported",
+      visitedAt: "2026-05-18T09:00:00Z"
+    })).not.toEqual(expect.arrayContaining([expect.stringContaining("muse thread link")]));
+    expect(formatBrowsingVisitLines({
+      continuityLinkable: false,
+      id: "13390000000000000-0a1b2c3d",
+      title: "Duplicate page",
+      url: "https://example.com/duplicate",
+      visitedAt: "2026-05-18T09:00:00Z"
+    })).not.toEqual(expect.arrayContaining([expect.stringContaining("muse thread link")]));
   });
 });
 
@@ -102,6 +123,24 @@ describe("toBrowsingCitations", () => {
   });
 });
 
+describe("toBrowsingContinuityReferences", () => {
+  it("publishes only canonical ids that occur exactly once in the whole archive", () => {
+    const canonical = { id: "13390000000000000-0a1b2c3d" };
+    const duplicate = { id: "13390000001000000-1a2b3c4d" };
+    const invalid = { id: "manual-id" };
+
+    expect(toBrowsingContinuityReferences(
+      [canonical, duplicate, invalid],
+      [canonical, duplicate, duplicate, invalid]
+    )).toEqual([{
+      artifactId: canonical.id,
+      artifactType: "browsing-visit",
+      providerId: "local",
+      role: "context"
+    }]);
+  });
+});
+
 describe("muse browsing search --json", () => {
   function fakeIo(stdout: string[], stderr: string[]): ProgramIO {
     return { stderr: (m) => stderr.push(m), stdout: (m) => stdout.push(m) };
@@ -132,7 +171,7 @@ describe("muse browsing search --json", () => {
 
   function visit(overrides: Partial<BrowsingVisit> = {}): BrowsingVisit {
     return {
-      id: "v1",
+      id: "13390000000000000-0a1b2c3d",
       url: "https://blog.example/rust",
       title: "Rust ownership guide",
       visitedAt: "2026-05-18T09:00:00Z",
@@ -156,6 +195,12 @@ describe("muse browsing search --json", () => {
       // Pure JSON — no chatter/hint lines mixed into stdout.
       const parsed: unknown = JSON.parse(stdout);
       expect(parsed).toMatchObject({
+        continuityReferences: [{
+          artifactId: "13390000000000000-0a1b2c3d",
+          artifactType: "browsing-visit",
+          providerId: "local",
+          role: "context"
+        }],
         query: "rust",
         total: 1,
         // groundedVerdict + grounded.citations mirror `muse ask --json`'s

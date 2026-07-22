@@ -37,8 +37,9 @@ Terms used below:
 ## Slice A — user-invoked Continuity Pack
 
 **Implemented local CLI experience:** the user runs `muse thread start <title> --kind life|work`,
-explicitly links local tasks, notes, reminders, configured calendar occurrences, contacts, and
-strict local run evidence, then runs `muse continue <thread-id>`.
+explicitly links local tasks, notes, reminders, configured calendar occurrences, contacts,
+strict local run evidence, and optionally one exact visit from the separately enabled local
+browsing archive, then runs `muse continue <thread-id>`.
 Muse shows the connected source IDs and one user-linked open task. Reminders are context
 only. The user records `used`, `adjusted`,
 `ignored`, or `rejected` explicitly with `muse thread outcome`; opening is a separate delivery
@@ -85,8 +86,15 @@ pack. It does not require desktop observation.
   and output stay out. Legacy/v2 checkpoints remain resume/diagnostic-only, are never
   migrated, and cannot be linked. A linked checkpoint is context-only and cannot authorize
   resume, next-step selection, receipts, outcomes, feedback, permission, or automation;
-  `muse resume` explicitly refuses checkpoint locators and remains run-ID-only. Browser
-  history remains a later adapter.
+  `muse resume` explicitly refuses checkpoint locators and remains run-ID-only. Exact
+  browsing visits are now supported through a local-only `browsing-visit` link. Search and
+  recent output expose the stable full visit ID; CLI, authenticated HTTP, and web require
+  one byte-identical record in the opt-in archive and project only a bounded safe title,
+  inert HTTP(S) URL text, and canonical visit time. The strict read path never syncs, reads
+  live Chrome data, chooses a duplicate, renames a future archive, or exposes embeddings and
+  cursor state. A browsing visit is context-only and cannot navigate, become a next step or
+  interaction receipt, create feedback, grant permission, or count as Observe/automation
+  evidence.
 - ✅ Only the user binds an item to a `threadId`; no deterministic auto-link or LLM summary is
   present in Slice A.
 - Treat `work` as one optional thread kind. It must not be the default meaning of every
@@ -96,7 +104,9 @@ pack. It does not require desktop observation.
 
 - A pack uses only items linked to the selected thread, with resolvable evidence IDs.
   Unsupported “where you left off” claims are omitted.
-- Browser history is absent unless separately enabled; no form submission or external send.
+- Browser history is absent unless separately enabled. Exact linked visits remain inert
+  context; no navigation, form submission, external send, hidden outcome, or observation
+  session is created.
 - `muse thread outcome` accepts only `used`, `adjusted`, `ignored`, and `rejected`; no timeout
   or model inference creates a hidden outcome.
 - Golden tests prove `outcome N → allowed policy change → different pack N+1`.

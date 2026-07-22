@@ -89,6 +89,7 @@ import { startInboundReplyTick } from "./inbound-reply-tick.js";
 import { createThreadedInboundRunner, type InboundAgentRunner } from "@muse/messaging";
 import { conversationStoreThreadedTurnStore, migrateLegacyThreadFile } from "./threaded-conversation-store.js";
 import { defaultConversationsFile, FileConversationStore } from "@muse/stores";
+import { defaultBrowsingFile } from "@muse/recall";
 
 import { DiscordProvider, MatrixProvider, SlackProvider, TelegramProvider } from "@muse/messaging";
 import { registerSchedulerRoutes } from "./scheduler-routes.js";
@@ -361,6 +362,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   registerAttunementRoutes(server, {
     attunementFile: options.attunementFile ?? resolveAttunementFile(env),
     authService,
+    browsingFile: options.browsingFile ?? defaultBrowsingFile(env),
     ...(options.calendar ? { calendarRegistry: options.calendar } : {}),
     contactsFile: options.contactsFile ?? resolveContactsFile(env),
     checkpointsDir: resolveCheckpointsDir(env),

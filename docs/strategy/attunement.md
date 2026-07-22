@@ -3,7 +3,7 @@ title: Muse Attunement — product contract
 audience: [product, design, engineering, agents]
 purpose: Define Muse's product wedge without claiming roadmap capabilities are shipped
 status: north-star
-updated: 2026-07-13
+updated: 2026-07-22
 related: [../design/attunement.md, ../goals/attunement-implementation-plan.md, ../privacy-and-data.md]
 ---
 
@@ -93,9 +93,9 @@ improve its timing; they are not prerequisites for testing whether the pack is u
 
 | Status | What it means in Muse today |
 |---|---|
-| **Available now** | Provider-neutral runtime; local personal stores; user memory; grounded recall; guarded browser control; traces/checkpoints; and Personal Continuity Slice A: user-created `life`/`work` threads, exact task/note links plus context-only reminder, configured-calendar occurrence, local-contact, strict workspace-scoped current-run links, and future-only workspace/run/step-scoped execution-checkpoint links, a user-invoked pack, four explicit outcomes, and a narrow display-policy update. |
+| **Available now** | Provider-neutral runtime; local personal stores; user memory; grounded recall; guarded browser control; traces/checkpoints; and Personal Continuity Slice A: user-created `life`/`work` threads, exact task/note links plus context-only reminder, configured-calendar occurrence, local contact, strict workspace-scoped current-run and future-only workspace/run/step-scoped execution-checkpoint links, and one exact visit from the separately enabled local browsing archive. Packs remain user-invoked with four explicit outcomes and a narrow display-policy update. |
 | **Experimental substrates** | Pattern suggestions, proactive surfacing, background review, and self-followup. They contribute signals or delivery paths, but are not an Attunement loop. |
-| **Roadmap** | More Continuity source adapters, opt-in Observe controls, persisted observation sessions, Personal Rhythm Model, Friction Discovery, and timing-aware help. |
+| **Roadmap** | More Continuity source adapters, opt-in Observe controls, persisted observation sessions, Personal Rhythm Model, Friction Discovery, and timing-aware help. Exact browsing context does not itself ship Observe or proactive timing. |
 
 ## What Continuity, Muse Work, and Observe mean
 

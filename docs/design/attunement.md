@@ -12,7 +12,8 @@ related: [../strategy/attunement.md, ../goals/attunement-implementation-plan.md,
 The full Attunement loop is **not shipped**. Slice A is implemented as a user-invoked tracer:
 the user creates a `life` or `work` thread, links exact sources, opens a pack through the CLI
 or local web/API surface, and records one of four outcomes. Exact local tasks and notes plus
-context-only reminders, configured-calendar occurrences, contacts, and strict workspace-scoped run evidence are available; Observe, automatic affiliation, further source
+context-only reminders, configured-calendar occurrences, contacts, strict workspace-scoped run
+evidence, and exact visits from the separately enabled local browsing archive are available; Observe, automatic affiliation, further source
 adapters, and proactive timing-aware help remain roadmap work.
 
 In plain language: start with an unfinished life or work thread the user chooses, build a
@@ -50,14 +51,15 @@ evidence sufficiency, or action approval.
 Muse must know which part of the user's life they mean before it combines a task, note,
 reminder, calendar event, contact, run, execution checkpoint, or browser visit. Slice A
 supports exact local tasks, notes, reminders, configured calendar occurrences, contacts,
-strict local run evidence, and future workspace-scoped execution checkpoint evidence, and
+strict local run evidence, future workspace-scoped execution checkpoint evidence, and one
+exact visit from the opt-in local browsing archive, and
 only the user can create the binding. An LLM may later summarize
 linked evidence; it may not invent the association.
 
 ```ts
 interface PersonalThreadLink {
   threadId: string;
-  artifactType: "task" | "note" | "reminder" | "calendar-event" | "contact" | "run" | "checkpoint";
+  artifactType: "task" | "note" | "reminder" | "calendar-event" | "contact" | "run" | "checkpoint" | "browsing-visit";
   providerId: "local" | `calendar:${string}`;
   artifactId: string;
   role: "context" | "next-step";
@@ -98,6 +100,18 @@ are never rewritten or blessed as Continuity evidence. A checkpoint link is cont
 resume, next-step, receipt, outcome, feedback, permission, or automation authority. These
 are execution checkpoints, not the unrelated filesystem rollback checkpoints in
 `packages/fs`.
+
+A browsing link accepts only the canonical full visit ID printed by `muse browsing
+search|recent`; it never searches a title or URL, accepts a prefix, triggers sync, or reads
+Chrome's live History file. The recall-owned strict reader requires exactly one
+byte-identical record and has no backup, rename, quarantine, or logging side effect.
+Continuity projects only a bounded terminal-safe title, inert absolute HTTP(S) URL text, and
+canonical UTC visit time. Embeddings, cursor state, neighboring visits, archive paths, and
+Chrome rows stay out. Browsing evidence is context-only and cannot navigate, become a next
+step or receipt, create feedback, grant permission, or serve as observation/automation
+evidence. Search, link validation, and resolution do not write the Attunement ledger; only
+the existing explicit Pack open and explicit outcome paths retain their existing writes.
+
 Additional artifact types and deterministic bindings are later adapters, not a fallback in
 this path.
 

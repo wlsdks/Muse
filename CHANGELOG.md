@@ -37,6 +37,20 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ### Added
 
+- **Continuity can now ground a life or work thread in one exact opt-in
+  browsing visit without turning history into observation or action.**
+  `muse browsing search|recent` exposes the stable local visit ID and a
+  copy-ready context-only link. CLI, authenticated local HTTP, and web resolve
+  only one byte-identical record from the existing owner-only archive through
+  a strict no-write reader; duplicate IDs, corrupt/future stores, non-canonical
+  IDs, unsafe URLs, and invalid timestamps fail closed without archive
+  backup/rename/log side effects. Packs project only a bounded sanitized title,
+  inert HTTP(S) URL text, and canonical visit time—never embeddings, cursor
+  state, neighboring visits, live Chrome data, navigation, a next step,
+  receipt, outcome, permission, or automation signal. Attunement schema v9
+  remains byte-stable when reading v8 and writes v9 only on the next explicit
+  valid mutation.
+
 - **Technical personal-agent evidence now has crash-safe canonical publication.**
   `eval:agent` records an owner-only UUID attempt generation before expensive
   work, preserves failed and unverified terminal aggregates outside the

@@ -74,6 +74,16 @@ export interface BrowsingStore {
   readonly lastVisitTimeCursor: number;
 }
 
+/** Exact Continuity projection: embeddings and archive cursor state never cross this boundary. */
+export type ExactBrowsingVisit = Pick<BrowsingVisit, "id" | "title" | "url" | "visitedAt">;
+
+export class BrowsingExactReadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BrowsingExactReadError";
+  }
+}
+
 /**
  * Chrome's `visit_time` counts MICROSECONDS since 1601-01-01T00:00:00Z
  * (the WebKit / Windows FILETIME epoch), NOT the Unix epoch. The offset
@@ -92,8 +102,8 @@ export function isoToWebkitTime(iso: string): number {
   return (unixMs + WEBKIT_TO_UNIX_EPOCH_OFFSET_MS) * 1000;
 }
 
-export function defaultBrowsingFile(): string {
-  const fromEnv = process.env.MUSE_BROWSING_FILE?.trim();
+export function defaultBrowsingFile(env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = env.MUSE_BROWSING_FILE?.trim();
   if (fromEnv && fromEnv.length > 0) return fromEnv;
   return join(homedir(), ".muse", "browsing.json");
 }
@@ -150,6 +160,69 @@ export async function readBrowsingStore(file: string): Promise<BrowsingStore> {
       ? candidate.lastVisitTimeCursor
       : 0;
   return { version: BROWSING_STORE_SCHEMA_VERSION, visits, lastVisitTimeCursor: cursor };
+}
+
+/**
+ * Read one byte-identical visit without invoking the tolerant/archive-migrating
+ * store reader. This seam is intentionally side-effect free for Continuity.
+ */
+export async function readExactBrowsingVisit(file: string, artifactId: string): Promise<ExactBrowsingVisit | undefined> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, "utf8");
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") {
+      return undefined;
+    }
+    throw new BrowsingExactReadError("cannot read browsing archive");
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw) as unknown;
+  } catch {
+    throw new BrowsingExactReadError("browsing archive is not valid JSON");
+  }
+  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
+    throw new BrowsingExactReadError("browsing archive root must be an object");
+  }
+  const parsed = decoded as { readonly version?: unknown; readonly visits?: unknown };
+  if (parsed.version !== BROWSING_STORE_SCHEMA_VERSION) {
+    throw new BrowsingExactReadError(`unsupported browsing archive version '${String(parsed.version)}'`);
+  }
+  if (!Array.isArray(parsed.visits)) {
+    throw new BrowsingExactReadError("browsing archive has an invalid visits collection");
+  }
+  const cursor = (decoded as { readonly lastVisitTimeCursor?: unknown }).lastVisitTimeCursor;
+  if (typeof cursor !== "number" || !Number.isFinite(cursor) || cursor < 0) {
+    throw new BrowsingExactReadError("browsing archive has an invalid cursor");
+  }
+  const visits: BrowsingVisit[] = [];
+  for (const value of parsed.visits) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new BrowsingExactReadError("browsing archive contains an invalid visit");
+    }
+    const visit = value as Partial<BrowsingVisit>;
+    const validEmbedding = visit.embedding === undefined || (
+      Array.isArray(visit.embedding)
+      && visit.embedding.length > 0
+      && visit.embedding.every((component) => typeof component === "number" && Number.isFinite(component))
+    );
+    if (typeof visit.id !== "string"
+      || typeof visit.title !== "string"
+      || typeof visit.url !== "string"
+      || typeof visit.visitedAt !== "string"
+      || !validEmbedding) {
+      throw new BrowsingExactReadError(visit.id === artifactId
+        ? "matching browsing visit has invalid fields"
+        : "browsing archive contains an invalid visit");
+    }
+    visits.push(visit as BrowsingVisit);
+  }
+  const matches = visits.filter((visit) => visit.id === artifactId);
+  if (matches.length > 1) throw new BrowsingExactReadError(`duplicate browsing visit id '${artifactId}'`);
+  if (matches.length === 0) return undefined;
+  const { id, title, url, visitedAt } = matches[0]!;
+  return { id, title, url, visitedAt };
 }
 
 export async function writeBrowsingStore(file: string, store: BrowsingStore): Promise<void> {

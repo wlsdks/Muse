@@ -15,6 +15,7 @@ import {
 } from "@muse/attunement";
 import { CalendarProviderRegistry, encodeCalendarEventReference, type CalendarEvent, type CalendarProvider } from "@muse/calendar";
 import { FileCheckpointStore } from "@muse/runtime-state";
+import { writeBrowsingStore } from "@muse/recall";
 import { encodeLocalCheckpointReference, encodeLocalRunReference } from "@muse/shared";
 import { writeContacts, writeReminders, writeTasks, type Contact, type PersistedReminder, type PersistedTask } from "@muse/stores";
 import Fastify from "fastify";
@@ -24,6 +25,7 @@ import { registerAttunementRoutes, type AttunementRoutesGate } from "./attunemen
 
 let root: string;
 let attunementFile: string;
+let browsingFile: string;
 let contactsFile: string;
 let checkpointsDir: string;
 let notesDir: string;
@@ -84,6 +86,7 @@ function calendarRegistry(): CalendarProviderRegistry {
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), "muse-attunement-api-")));
   attunementFile = join(root, "attunement.json");
+  browsingFile = join(root, "browsing.json");
   contactsFile = join(root, "contacts.json");
   checkpointsDir = join(root, "checkpoints");
   notesDir = join(root, "notes");
@@ -115,6 +118,7 @@ function server(overrides: Partial<AttunementRoutesGate> = {}) {
   registerAttunementRoutes(app, {
     attunementFile,
     authService: undefined,
+    browsingFile,
     contactsFile,
     checkpointsDir,
     notesDir,
@@ -657,6 +661,112 @@ describe("exact local run continuity sources", () => {
     expect(response.statusCode).toBe(409);
     await padded.close();
     expect(await readFile(attunementFile)).toEqual(before);
+  });
+});
+
+describe("exact local browsing-visit continuity sources", () => {
+  it("links, opens, and unlinks one exact visit without changing archive bytes", async () => {
+    const visit = {
+      id: "13390000000000000-0a1b2c3d",
+      title: "Return to the travel article",
+      url: "https://example.com/travel/article",
+      visitedAt: "2026-07-22T01:00:00.000Z"
+    };
+    await writeBrowsingStore(browsingFile, {
+      lastVisitTimeCursor: 13_390_000_000_000_000,
+      version: 1,
+      visits: [visit]
+    });
+    const archiveBytes = await readFile(browsingFile);
+    const app = server();
+
+    const nextStep = await app.inject({
+      method: "POST",
+      payload: { artifactId: visit.id, artifactType: "browsing-visit", role: "next-step" },
+      url: `/api/attunement/threads/${threadId}/links`
+    });
+    expect(nextStep.statusCode).toBe(400);
+    const linked = await app.inject({
+      method: "POST",
+      payload: { artifactId: visit.id, artifactType: "browsing-visit", role: "context" },
+      url: `/api/attunement/threads/${threadId}/links`
+    });
+    expect(linked.statusCode).toBe(200);
+    expect(linked.json().link).toMatchObject({
+      artifactId: visit.id,
+      artifactType: "browsing-visit",
+      providerId: "local",
+      role: "context"
+    });
+
+    const opened = await app.inject({ method: "POST", url: `/api/attunement/threads/${threadId}/continue` });
+    expect(opened.statusCode).toBe(200);
+    expect(opened.json().pack.evidence).toContainEqual(expect.objectContaining({
+      artifact: expect.objectContaining({
+        artifactId: visit.id,
+        artifactType: "browsing-visit",
+        browsingUrl: visit.url,
+        browsingVisitedAt: visit.visitedAt,
+        title: visit.title
+      }),
+      status: "available"
+    }));
+
+    const unlinked = await app.inject({
+      method: "POST",
+      payload: { artifactId: visit.id, artifactType: "browsing-visit" },
+      url: `/api/attunement/threads/${threadId}/links/unlink`
+    });
+    expect(unlinked.statusCode).toBe(200);
+    expect(await readFile(browsingFile)).toEqual(archiveBytes);
+  });
+
+  it("rejects an unauthenticated browsing link when local API auth is configured", async () => {
+    const visit = {
+      id: "13390000000000000-0a1b2c3d",
+      title: "Private article",
+      url: "https://example.com/private",
+      visitedAt: "2026-07-22T01:00:00.000Z"
+    };
+    await writeBrowsingStore(browsingFile, {
+      lastVisitTimeCursor: 13_390_000_000_000_000,
+      version: 1,
+      visits: [visit]
+    });
+    const response = await server({ authService: {} as never }).inject({
+      method: "POST",
+      payload: { artifactId: visit.id, artifactType: "browsing-visit", role: "context" },
+      url: `/api/attunement/threads/${threadId}/links`
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect((await readAttunementState(attunementFile)).threads[0]?.links).toHaveLength(1);
+  });
+
+  it("rejects an unsafe browsing source before changing either store", async () => {
+    const visit = {
+      id: "13390000000000000-0a1b2c3d",
+      title: "Unsafe destination",
+      url: "javascript:alert(1)",
+      visitedAt: "2026-07-22T01:00:00.000Z"
+    };
+    await writeBrowsingStore(browsingFile, {
+      lastVisitTimeCursor: 13_390_000_000_000_000,
+      version: 1,
+      visits: [visit]
+    });
+    const attunementBytes = await readFile(attunementFile);
+    const archiveBytes = await readFile(browsingFile);
+    const response = await server().inject({
+      method: "POST",
+      payload: { artifactId: visit.id, artifactType: "browsing-visit", role: "context" },
+      url: `/api/attunement/threads/${threadId}/links`
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().errorMessage).toContain("browsing visit URL must be absolute http(s)");
+    expect(await readFile(attunementFile)).toEqual(attunementBytes);
+    expect(await readFile(browsingFile)).toEqual(archiveBytes);
   });
 });
 

@@ -107,6 +107,13 @@ export type {
   TimingStoreOptions
 } from "./timing-store.js";
 export { createLocalArtifactValidator, createLocalContinuityTaskInteractionSourceResolver, createLocalExactArtifactResolver, readCanonicalLocalNote, type LocalArtifactValidatorOptions } from "./local-artifacts.js";
+export {
+  createBrowsingVisitArtifactValidator,
+  createBrowsingVisitExactArtifactResolver,
+  type BrowsingVisitArtifactOptions,
+  type BrowsingVisitSourceRecord,
+  type ExactBrowsingVisitReader
+} from "./browsing-visit-artifact.js";
 export { createCalendarArtifactValidator, createCalendarExactArtifactResolver } from "./calendar-artifacts.js";
 export {
   createContactArtifactValidator,

@@ -12,7 +12,7 @@
  * never re-touch the live Chrome file.
  */
 
-import { stripUntrustedTerminalChars } from "@muse/shared";
+import { isCanonicalBrowsingVisitId } from "@muse/attunement";
 import {
   BROWSING_SYNC_LIMIT,
   compareBrowsingVisitsNewestFirst,
@@ -22,6 +22,7 @@ import {
   searchBrowsingVisits,
   syncBrowsingHistory
 } from "@muse/recall";
+import { stripUntrustedTerminalChars } from "@muse/shared";
 import type { Command } from "commander";
 
 import { defaultEmbedModel } from "./council-corpus.js";
@@ -37,6 +38,8 @@ export { BROWSING_SYNC_LIMIT };
  * terminal print.
  */
 export function formatBrowsingVisitLines(visit: {
+  readonly continuityLinkable?: boolean;
+  readonly id: string;
   readonly title: string;
   readonly url: string;
   readonly visitedAt: string;
@@ -45,6 +48,11 @@ export function formatBrowsingVisitLines(visit: {
   const lines = [`${clean(visit.title) || "(no title)"} — ${clean(visit.visitedAt) || "(no date)"}`];
   const url = clean(visit.url);
   if (url) lines.push(`  ${url}`);
+  const id = clean(visit.id);
+  if ((visit.continuityLinkable ?? isCanonicalBrowsingVisitId(id)) && id) {
+    lines.push(`  continuity id: ${id}`);
+    lines.push(`  link: muse thread link <thread-id> browsing-visit ${id} --role context`);
+  }
   return lines;
 }
 
@@ -63,6 +71,31 @@ export interface BrowsingCitation {
   readonly title: string;
   readonly visitedAt: string;
   readonly score: 1;
+}
+
+export interface BrowsingContinuityReference {
+  readonly artifactId: string;
+  readonly artifactType: "browsing-visit";
+  readonly providerId: "local";
+  readonly role: "context";
+}
+
+export function toBrowsingContinuityReferences(
+  visits: readonly { readonly id: string }[],
+  archiveVisits: readonly { readonly id: string }[] = visits
+): readonly BrowsingContinuityReference[] {
+  const occurrenceCounts = new Map<string, number>();
+  for (const visit of archiveVisits) {
+    occurrenceCounts.set(visit.id, (occurrenceCounts.get(visit.id) ?? 0) + 1);
+  }
+  return visits
+    .filter((visit) => isCanonicalBrowsingVisitId(visit.id) && occurrenceCounts.get(visit.id) === 1)
+    .map((visit) => ({
+      artifactId: visit.id,
+      artifactType: "browsing-visit",
+      providerId: "local",
+      role: "context"
+    }));
 }
 
 /**
@@ -146,6 +179,7 @@ export function registerBrowsingCommand(program: Command, io: ProgramIO): void {
         // change); `groundedVerdict` + `grounded.citations` are new and match
         // `muse ask --json`'s grounded-block contract (see BrowsingCitation).
         io.stdout(`${JSON.stringify({
+          continuityReferences: toBrowsingContinuityReferences(hits, store.visits),
           query,
           total: hits.length,
           visits: hits,
@@ -158,8 +192,12 @@ export function registerBrowsingCommand(program: Command, io: ProgramIO): void {
         io.stdout(`(no visits match "${query}" — try a different keyword or run \`muse browsing sync\`)\n`);
         return;
       }
+      const continuityReferences = new Set(toBrowsingContinuityReferences(hits, store.visits).map((reference) => reference.artifactId));
       for (const hit of hits) {
-        for (const line of formatBrowsingVisitLines(hit)) io.stdout(`${line}\n`);
+        for (const line of formatBrowsingVisitLines({
+          ...hit,
+          continuityLinkable: continuityReferences.has(hit.id)
+        })) io.stdout(`${line}\n`);
       }
     });
 
@@ -173,15 +211,23 @@ export function registerBrowsingCommand(program: Command, io: ProgramIO): void {
       const store = await readBrowsingStore(defaultBrowsingFile());
       const recent = [...store.visits].sort(compareBrowsingVisitsNewestFirst).slice(0, limit);
       if (options.json) {
-        io.stdout(`${JSON.stringify({ total: recent.length, visits: recent }, null, 2)}\n`);
+        io.stdout(`${JSON.stringify({
+          continuityReferences: toBrowsingContinuityReferences(recent, store.visits),
+          total: recent.length,
+          visits: recent
+        }, null, 2)}\n`);
         return;
       }
       if (recent.length === 0) {
         io.stdout("(no visits yet — run `muse browsing sync`)\n");
         return;
       }
+      const continuityReferences = new Set(toBrowsingContinuityReferences(recent, store.visits).map((reference) => reference.artifactId));
       for (const visit of recent) {
-        for (const line of formatBrowsingVisitLines(visit)) io.stdout(`${line}\n`);
+        for (const line of formatBrowsingVisitLines({
+          ...visit,
+          continuityLinkable: continuityReferences.has(visit.id)
+        })) io.stdout(`${line}\n`);
       }
     });
 }

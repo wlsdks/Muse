@@ -2,11 +2,12 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlin
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { writeContacts, writeReminders, writeTasks, type Contact, type PersistedReminder, type PersistedTask } from "@muse/stores";
 import { computeContinuityEvaluation, createLocalExactArtifactResolver, prepareContinuityReview, readAttunementState } from "@muse/attunement";
 import { CalendarProviderRegistry, encodeCalendarEventReference, type CalendarEvent, type CalendarProvider } from "@muse/calendar";
-import { encodeLocalCheckpointReference, encodeLocalRunReference } from "@muse/shared";
+import { writeBrowsingStore } from "@muse/recall";
 import { FileCheckpointStore } from "@muse/runtime-state";
+import { encodeLocalCheckpointReference, encodeLocalRunReference } from "@muse/shared";
+import { writeContacts, writeReminders, writeTasks, type Contact, type PersistedReminder, type PersistedTask } from "@muse/stores";
 import { Command } from "commander";
 import { describe, expect, it } from "vitest";
 
@@ -15,6 +16,7 @@ import type { McpToolCaller } from "./attunement-mcp-resource.js";
 
 interface Fixture {
   readonly attunementFile: string;
+  readonly browsingFile: string;
   readonly contactsFile: string;
   readonly notesDir: string;
   readonly remindersFile: string;
@@ -28,6 +30,7 @@ function fixture(): Fixture {
   mkdirSync(notesDir);
   return {
     attunementFile: join(root, "attunement.json"),
+    browsingFile: join(root, "browsing.json"),
     contactsFile: join(root, "contacts.json"),
     notesDir,
     remindersFile: join(root, "reminders.json"),
@@ -43,6 +46,7 @@ async function run(fixture: Fixture, args: string[], deps?: AttunementCommandDep
     HOME: process.env.HOME,
     MUSE_ATTUNEMENT_FILE: process.env.MUSE_ATTUNEMENT_FILE,
     MUSE_CALENDAR_ICS_FILE: process.env.MUSE_CALENDAR_ICS_FILE,
+    MUSE_BROWSING_FILE: process.env.MUSE_BROWSING_FILE,
     MUSE_CHECKPOINTS_DIR: process.env.MUSE_CHECKPOINTS_DIR,
     MUSE_CONTACTS_FILE: process.env.MUSE_CONTACTS_FILE,
     MUSE_NOTES_DIR: process.env.MUSE_NOTES_DIR,
@@ -52,6 +56,7 @@ async function run(fixture: Fixture, args: string[], deps?: AttunementCommandDep
   process.env.HOME = fixture.root;
   process.env.MUSE_ATTUNEMENT_FILE = fixture.attunementFile;
   process.env.MUSE_CALENDAR_ICS_FILE = join(fixture.root, "calendar.ics");
+  process.env.MUSE_BROWSING_FILE = fixture.browsingFile;
   process.env.MUSE_CHECKPOINTS_DIR = join(realpathSync(fixture.root), ".muse", "checkpoints");
   process.env.MUSE_CONTACTS_FILE = fixture.contactsFile;
   process.env.MUSE_NOTES_DIR = fixture.notesDir;
@@ -312,6 +317,97 @@ describe("muse thread / continue — Personal Continuity", () => {
     expect((await run(f, ["thread", "unlink", id, "checkpoint", ` ${reference}`])).stderr)
       .toContain("no checkpoint link");
     expect(readFileSync(checkpointFile)).toEqual(before);
+  });
+
+  it.each(["life", "work"] as const)("links one exact opt-in browsing visit to a %s thread as inert context without hidden feedback", async (kind) => {
+    const f = fixture();
+    const visit = {
+      id: "13390000000000000-0a1b2c3d",
+      title: "Hospital visit checklist",
+      url: "https://example.com/health/checklist",
+      visitedAt: "2026-07-22T01:00:00.000Z"
+    };
+    await writeBrowsingStore(f.browsingFile, {
+      lastVisitTimeCursor: 13_390_000_000_000_000,
+      version: 1,
+      visits: [visit]
+    });
+    const browsingBytes = readFileSync(f.browsingFile);
+    const id = threadId((await run(f, ["thread", "start", "Return", "to", "article", "--kind", kind])).stdout);
+
+    expect((await run(f, ["thread", "link", id, "browsing-visit", visit.id, "--role", "next-step"])).stderr)
+      .toContain("only a local task can be a next-step");
+    expect((await run(f, ["thread", "link", id, "browsing-visit", visit.id, "--role", "context"])).stdout)
+      .toContain(`local:browsing-visit:${visit.id}`);
+    const beforeOpen = await readAttunementState(f.attunementFile);
+    expect(beforeOpen.deliveries).toEqual([]);
+    expect(beforeOpen.interactionReceipts).toEqual([]);
+
+    const continued = await run(f, ["thread", "continue", id]);
+    expect(continued.stdout).toContain(`[browsing-visit:${visit.id}] Hospital visit checklist`);
+    expect(continued.stdout).toContain("visited: 2026-07-22T01:00:00.000Z");
+    expect(continued.stdout).toContain("url: https://example.com/health/checklist");
+    const afterOpen = await readAttunementState(f.attunementFile);
+    expect(afterOpen.deliveries).toHaveLength(1);
+    expect(afterOpen.deliveries[0]?.outcome).toBeUndefined();
+    expect(afterOpen.interactionReceipts).toEqual([]);
+    expect(readFileSync(f.browsingFile)).toEqual(browsingBytes);
+  });
+
+  it("fails closed without a delivery when an exact linked browsing visit is removed", async () => {
+    const f = fixture();
+    const visit = {
+      id: "13390000000000000-0a1b2c3d",
+      title: "Exact source that will be removed",
+      url: "https://example.com/removed",
+      visitedAt: "2026-07-22T01:00:00.000Z"
+    };
+    await writeBrowsingStore(f.browsingFile, {
+      lastVisitTimeCursor: 13_390_000_000_000_000,
+      version: 1,
+      visits: [visit]
+    });
+    const id = threadId((await run(f, ["thread", "start", "Removed", "source", "thread", "--kind", "work"])).stdout);
+    expect((await run(f, ["thread", "link", id, "browsing-visit", visit.id, "--role", "context"])).exitCode)
+      .toBeUndefined();
+
+    await writeBrowsingStore(f.browsingFile, {
+      lastVisitTimeCursor: 13_390_000_000_000_000,
+      version: 1,
+      visits: []
+    });
+    const browsingBytesAfterRemoval = readFileSync(f.browsingFile);
+    const attunementBytesBeforeOpen = readFileSync(f.attunementFile);
+    const continued = await run(f, ["thread", "continue", id]);
+
+    expect(continued.exitCode).toBe(1);
+    expect(continued.stderr).toContain("has no currently available linked evidence; no delivery was recorded");
+    expect(readFileSync(f.attunementFile)).toEqual(attunementBytesBeforeOpen);
+    expect(readFileSync(f.browsingFile)).toEqual(browsingBytesAfterRemoval);
+  });
+
+  it("rejects an unsafe exact browsing visit before persisting its link", async () => {
+    const f = fixture();
+    const visit = {
+      id: "13390000000000000-0a1b2c3d",
+      title: "Unsafe destination",
+      url: "javascript:alert(1)",
+      visitedAt: "2026-07-22T01:00:00.000Z"
+    };
+    await writeBrowsingStore(f.browsingFile, {
+      lastVisitTimeCursor: 13_390_000_000_000_000,
+      version: 1,
+      visits: [visit]
+    });
+    const id = threadId((await run(f, ["thread", "start", "Unsafe", "source", "--kind", "work"])).stdout);
+    const attunementBytes = readFileSync(f.attunementFile);
+    const browsingBytes = readFileSync(f.browsingFile);
+
+    const linked = await run(f, ["thread", "link", id, "browsing-visit", visit.id, "--role", "context"]);
+    expect(linked.exitCode).toBe(1);
+    expect(linked.stderr).toContain("browsing visit URL must be absolute http(s)");
+    expect(readFileSync(f.attunementFile)).toEqual(attunementBytes);
+    expect(readFileSync(f.browsingFile)).toEqual(browsingBytes);
   });
 
   it("links, resolves, and provider-scoped unlinks one exact calendar occurrence", async () => {

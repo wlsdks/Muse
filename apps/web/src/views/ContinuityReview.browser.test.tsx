@@ -237,6 +237,7 @@ function contactLinkReview(linked: boolean) {
 
 const RUN_REFERENCE = "muse-run-v1:ZXhhY3Qtd29ya3NwYWNlLXJ1bi1yZWZlcmVuY2U";
 const CHECKPOINT_REFERENCE = "muse-checkpoint-v1:ZXhhY3Qtd29ya3NwYWNlLWNoZWNrcG9pbnQtcmVmZXJlbmNl";
+const BROWSING_VISIT_ID = "13390000000000000-0a1b2c3d";
 
 function runLinkReview(linked: boolean) {
   const review = reminderLinkReview(false);
@@ -260,6 +261,19 @@ function checkpointLinkReview(linked: boolean) {
       linkCount: linked ? 1 : 0,
       links: linked ? [{ artifactId: CHECKPOINT_REFERENCE, artifactType: "checkpoint", providerId: "local", role: "context" }] : [],
       title: "Recover interrupted work"
+    }]
+  };
+}
+
+function browsingVisitLinkReview(linked: boolean) {
+  const review = reminderLinkReview(false);
+  return {
+    ...review,
+    threads: [{
+      ...review.threads[0],
+      linkCount: linked ? 1 : 0,
+      links: linked ? [{ artifactId: BROWSING_VISIT_ID, artifactType: "browsing-visit", providerId: "local", role: "context" }] : [],
+      title: "Return to an article"
     }]
   };
 }
@@ -450,6 +464,35 @@ test("an opened Pack shows only safe checkpoint context and no action control", 
   await expect.element(screen.getByText(/encodedMessages|tool secret|resume/u)).not.toBeInTheDocument();
 });
 
+test("an opened Pack renders an exact browsing visit as inert context, never a navigation or action", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  const url = "https://example.com/travel/article";
+  const visit = {
+    artifactId: "13390000000000000-0a1b2c3d",
+    artifactType: "browsing-visit",
+    browsingUrl: url,
+    browsingVisitedAt: "2026-07-22T01:00:00.000Z",
+    providerId: "local",
+    role: "context",
+    title: "Return to the travel article"
+  };
+  const screen = await render(<I18nProvider><OpenedPackCard openedPack={{
+    delivery: { id: "delivery_browsing" },
+    pack: {
+      evidence: [{ artifact: visit, reference: visit, status: "available" }],
+      policy: { nextStep: "direct" },
+      thread: { kind: "life", title: "Plan the trip" }
+    }
+  }} /></I18nProvider>);
+
+  await expect.element(screen.getByText("Return to the travel article · browsing-visit:13390000000000000-0a1b2c3d", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText(url, { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("2026-07-22T01:00:00.000Z", { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("link", { name: url })).not.toBeInTheDocument();
+  expect(document.querySelector(`a[href="${url}"]`)).toBeNull();
+  await expect.element(screen.getByRole("button", { name: "Mark next step done" })).not.toBeInTheDocument();
+});
+
 test("a reminder can be explicitly linked and unlinked only as context", async () => {
   window.localStorage.setItem("muse.lang", "en");
   let linked = false;
@@ -481,7 +524,7 @@ test("a reminder can be explicitly linked and unlinked only as context", async (
   await screen.getByLabelText("Source type").selectOptions("reminder");
   await expect.element(screen.getByLabelText("How Muse may use it")).toHaveValue("context");
   await expect.element(screen.getByLabelText("How Muse may use it").getByRole("option", { name: "next-step" })).not.toBeInTheDocument();
-  await screen.getByLabelText("Exact task/reminder/contact ID, note path, run or checkpoint reference").fill("reminder_den");
+  await screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference").fill("reminder_den");
   await screen.getByRole("button", { name: "Link source" }).click();
   await expect.element(screen.getByRole("button", { name: "Remove reminder:reminder_dentist" })).toBeVisible();
 
@@ -523,10 +566,10 @@ test("a contact requires a pasted exact id and can be linked only as context", a
   await expect.element(screen.getByLabelText("How Muse may use it")).toHaveValue("context");
   await expect.element(screen.getByLabelText("How Muse may use it").getByRole("option", { name: "next-step" })).not.toBeInTheDocument();
   await expect.element(screen.getByRole("option", { name: "Kim Minji" })).not.toBeInTheDocument();
-  await screen.getByLabelText("Exact task/reminder/contact ID, note path, run or checkpoint reference").fill(" person_김민지_Aa ");
+  await screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference").fill(" person_김민지_Aa ");
   await screen.getByRole("button", { name: "Link source" }).click();
   await expect.element(screen.getByText(/could not validate/u)).toBeVisible();
-  await screen.getByLabelText("Exact task/reminder/contact ID, note path, run or checkpoint reference").fill("person_김민지_Aa");
+  await screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference").fill("person_김민지_Aa");
   await screen.getByRole("button", { name: "Link source" }).click();
   await expect.element(screen.getByRole("button", { name: "Remove contact:person_김민지_Aa" })).toBeVisible();
 
@@ -568,7 +611,7 @@ test("a run requires a pasted exact reference and can be linked only as context"
   await expect.element(screen.getByLabelText("How Muse may use it")).toHaveValue("context");
   await expect.element(screen.getByLabelText("How Muse may use it").getByRole("option", { name: "next-step" })).not.toBeInTheDocument();
   await expect.element(screen.getByRole("option", { name: "Verify the release gate" })).not.toBeInTheDocument();
-  const input = screen.getByLabelText("Exact task/reminder/contact ID, note path, run or checkpoint reference");
+  const input = screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference");
   await input.fill(` ${RUN_REFERENCE}`);
   await screen.getByRole("button", { name: "Link source" }).click();
   await expect.element(screen.getByText(/could not validate/u)).toBeVisible();
@@ -608,7 +651,7 @@ test("a checkpoint is paste-only, byte-exact, and context-only", async () => {
   await screen.getByLabelText("Source type").selectOptions("checkpoint");
   await expect.element(screen.getByLabelText("How Muse may use it")).toHaveValue("context");
   await expect.element(screen.getByLabelText("How Muse may use it").getByRole("option", { name: "next-step" })).not.toBeInTheDocument();
-  const input = screen.getByLabelText("Exact task/reminder/contact ID, note path, run or checkpoint reference");
+  const input = screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference");
   await input.fill(` ${CHECKPOINT_REFERENCE}`);
   await screen.getByRole("button", { name: "Link source" }).click();
   await expect.element(screen.getByText(/could not validate/u)).toBeVisible();
@@ -617,6 +660,44 @@ test("a checkpoint is paste-only, byte-exact, and context-only", async () => {
   await expect.element(screen.getByRole("button", { name: `Remove checkpoint:${CHECKPOINT_REFERENCE}` })).toBeVisible();
   await screen.getByRole("button", { name: `Remove checkpoint:${CHECKPOINT_REFERENCE}` }).click();
   await expect.element(screen.getByRole("button", { name: `Remove checkpoint:${CHECKPOINT_REFERENCE}` })).not.toBeInTheDocument();
+});
+
+test("a browsing visit is exact-id-only and context-only in the web link flow", async () => {
+  window.localStorage.setItem("muse.lang", "en");
+  let linked = false;
+  const get = vi.fn(async (path: string) => path === "/api/attunement/interactions"
+    ? interactionReport({ includeDelivery: false })
+    : browsingVisitLinkReview(linked));
+  const post = vi.fn(async (path: string, body: unknown) => {
+    if (path === "/api/attunement/threads/thread_life/links") {
+      if ((body as { artifactId?: string }).artifactId === ` ${BROWSING_VISIT_ID} `) throw new Error("non-canonical browsing visit id");
+      expect(body).toEqual({ artifactId: BROWSING_VISIT_ID, artifactType: "browsing-visit", role: "context" });
+      linked = true;
+      return {};
+    }
+    if (path === "/api/attunement/threads/thread_life/links/unlink") {
+      expect(body).toEqual({ artifactId: BROWSING_VISIT_ID, artifactType: "browsing-visit" });
+      linked = false;
+      return {};
+    }
+    throw new Error(`unexpected POST ${path}`);
+  });
+  const client = { baseUrl: "http://continuity-browsing.test", get, post } as unknown as ApiClient;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const screen = await render(<QueryClientProvider client={queryClient}><I18nProvider><ContinuityReviewView client={client} /></I18nProvider></QueryClientProvider>);
+
+  await screen.getByLabelText("Source type").selectOptions("browsing-visit");
+  await expect.element(screen.getByLabelText("How Muse may use it")).toHaveValue("context");
+  await expect.element(screen.getByLabelText("How Muse may use it").getByRole("option", { name: "next-step" })).not.toBeInTheDocument();
+  await screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference").fill(` ${BROWSING_VISIT_ID} `);
+  await screen.getByRole("button", { name: "Link source" }).click();
+  await expect.element(screen.getByText(/could not validate/u)).toBeVisible();
+  await screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference").fill(BROWSING_VISIT_ID);
+  await screen.getByRole("button", { name: "Link source" }).click();
+  await expect.element(screen.getByRole("button", { name: `Remove browsing-visit:${BROWSING_VISIT_ID}` })).toBeVisible();
+  await screen.getByRole("button", { name: `Remove browsing-visit:${BROWSING_VISIT_ID}` }).click();
+  await expect.element(screen.getByRole("button", { name: `Remove browsing-visit:${BROWSING_VISIT_ID}` })).not.toBeInTheDocument();
+  expect(post).toHaveBeenCalledTimes(3);
 });
 
 test("a calendar occurrence requires an explicit configured provider and can be linked and unlinked", async () => {
@@ -649,7 +730,7 @@ test("a calendar occurrence requires an explicit configured provider and can be 
   await expect.element(screen.getByText("Review roadmap", { exact: true })).toBeVisible();
   await screen.getByLabelText("Source type").selectOptions("calendar-event");
   await expect.element(screen.getByRole("button", { name: "Link source" })).toBeDisabled();
-  await screen.getByLabelText("Exact task/reminder/contact ID, note path, run or checkpoint reference").fill("cev1_exact");
+  await screen.getByLabelText("Exact source ID, note path, or run/checkpoint reference").fill("cev1_exact");
   await screen.getByLabelText("Calendar provider").selectOptions("work-calendar");
   await screen.getByRole("button", { name: "Link source" }).click();
   await expect.element(screen.getByRole("button", { name: "Remove calendar-event:cev1_exact" })).toBeVisible();
