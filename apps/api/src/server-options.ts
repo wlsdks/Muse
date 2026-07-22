@@ -73,6 +73,8 @@ export interface ServerOptions {
   readonly tokenCostQuery?: TokenCostQuery;
   readonly historyStore?: AgentRunHistoryStore;
   readonly mcp?: McpRouteMcp;
+  /** Background-priority projection for unattended model work. */
+  readonly backgroundModelProvider?: ModelProvider;
   readonly modelProvider?: ModelProvider;
   readonly defaultModel?: string;
   /**

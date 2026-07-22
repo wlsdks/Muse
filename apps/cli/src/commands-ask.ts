@@ -29,7 +29,6 @@ import { enforceAnswerCitations, withUngroundableFallback } from "@muse/agent-co
 import { classifyActionRequest } from "@muse/agent-core";
 import { createMuseRuntimeAssembly, resolveAnswerTemperature, resolveNoteProvenanceFile, type MuseEnvironment } from "@muse/autoconfigure";
 import { readNoteProvenance, untrustedNotePaths } from "./note-provenance.js";
-import { releaseOllamaLease } from "@muse/stores";
 
 import { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts } from "@muse/recall";
 export { allUserMemoryFacts, collectCitedNoteAges, contactGroundingEvidence, contactMatchScore, filterNotesByScope, formatCoarseAge, formatContactBirthday, formatNonNoteReceipts, formatSourceReceipts, formatSourcesFooter, formatStalenessWarning, groundingSectionLines, provenanceDate, provenanceSnippet, relativizeNoteSource, relevantSnippet, renderMemoryFact, selectMemoryFacts };
@@ -367,7 +366,7 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         matchedActions, matchedCommands, matchedCommits, matchedFlows,
         playbookSection, appliedStrategy, appliedStrategyId, probationSuggestion,
         printGroundedBanner, announceGenerating, webSearchPolicy,
-        askRunId, leaseFile, acquireLease,
+        askRunId,
         nonNoteCitations, buildFullSystemPrompt, normalizeAskCitations
       } = assembled;
       let { collectedAnswer, answerLogprobs, toolsUsed, allowedNotes, citationAllowed, preRefusalStrippedCitations, agentGroundingSources, decompositionSignals } = assembled;
@@ -403,7 +402,6 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
         scored = [...prepared.scored];
         printGroundedBanner(scored, prepared.verdict);
         announceGenerating();
-        await acquireLease();
         // Agent-runtime path exposes only the static personal-read tool set.
         if (!assembly.agentRuntime) {
           io.stderr("(--with-tools requires a configured agent runtime — set MUSE_MODEL or provider key and re-run)\n");
@@ -625,7 +623,6 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
                 scored = [...event.scored];
                 printGroundedBanner(scored, event.verdict);
                 announceGenerating();
-                await acquireLease();
               } else if (event.type === "answer-delta") {
                 if (!options.json) io.stdout(event.text);
               } else if (event.type === "result") {
@@ -671,11 +668,6 @@ export function registerAskCommand(program: Command, io: ProgramIO): void {
       // Refusal guard: a refusal asserts no grounded fact, so any citation the
       // model tacked on is spurious — strip ALL of them (and thus the Sources
       // footer) so a refusal never points the user at a source "to verify".
-      // Generation done — free the Ollama lease (best-effort; process exit
-      // also frees it for the daemon since a dead pid is ignored).
-      try {
-        await releaseOllamaLease(leaseFile, process.pid);
-      } catch { /* best-effort */ }
       if (refusalAnswer) {
         collectedAnswer = withUngroundableFallback(enforceAnswerCitations(collectedAnswer, {
           events: [], feeds: [], notes: [], reminders: [], sessions: [], tasks: []

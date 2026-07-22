@@ -16,10 +16,11 @@ export async function defaultFollowupModel(_env: NodeJS.ProcessEnv): Promise<Fol
   try {
     const { createMuseRuntimeAssembly } = await import("@muse/autoconfigure");
     const assembly = createMuseRuntimeAssembly();
-    if (assembly.modelProvider && assembly.defaultModel) {
+    const modelProvider = assembly.backgroundModelProvider ?? assembly.modelProvider;
+    if (modelProvider && assembly.defaultModel) {
       return {
         model: assembly.defaultModel,
-        modelProvider: assembly.modelProvider as FollowupModel["modelProvider"]
+        modelProvider: modelProvider as FollowupModel["modelProvider"]
       };
     }
   } catch { /* fail-soft — followup tick skipped when no model */ }

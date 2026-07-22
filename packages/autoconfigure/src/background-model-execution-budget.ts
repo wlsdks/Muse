@@ -670,8 +670,12 @@ async function* backgroundStream(
 
 export function createBackgroundModelExecutionBudgetProviders(
   provider: ModelProvider,
-  options: BackgroundModelExecutionBudgetOptions = {}
+  options: BackgroundModelExecutionBudgetOptions = {},
+  backgroundProvider: ModelProvider = provider
 ): BackgroundModelExecutionBudgetProviders {
+  if (backgroundProvider.id !== provider.id) {
+    throw new Error("foreground and background model providers must share an id");
+  }
   const coordinator = new BackgroundModelExecutionCoordinator(provider.id, options);
   const foreground: ModelProvider = {
     id: provider.id,
@@ -680,10 +684,10 @@ export function createBackgroundModelExecutionBudgetProviders(
     stream: (request) => foregroundStream(provider, coordinator, request)
   };
   const background: ModelProvider = {
-    id: provider.id,
-    listModels: () => provider.listModels(),
-    generate: (request) => runBackgroundGenerate(provider, coordinator, request),
-    stream: (request) => backgroundStream(provider, coordinator, request)
+    id: backgroundProvider.id,
+    listModels: () => backgroundProvider.listModels(),
+    generate: (request) => runBackgroundGenerate(backgroundProvider, coordinator, request),
+    stream: (request) => backgroundStream(backgroundProvider, coordinator, request)
   };
   return { background, foreground, snapshot: () => coordinator.snapshot() };
 }

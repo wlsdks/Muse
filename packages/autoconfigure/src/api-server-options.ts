@@ -61,6 +61,7 @@ export function createApiServerOptions(options: ApiServerAssemblyOptions = {}) {
       resilience: assembly.resilience
     },
     agentRuntime: assembly.agentRuntime,
+    ...(assembly.backgroundModelProvider ? { backgroundModelProvider: assembly.backgroundModelProvider } : {}),
     ...((options.continuityWorkspaceDir ?? env.MUSE_CONTINUITY_WORKSPACE)
       ? { continuityWorkspaceDir: options.continuityWorkspaceDir ?? env.MUSE_CONTINUITY_WORKSPACE }
       : {}),

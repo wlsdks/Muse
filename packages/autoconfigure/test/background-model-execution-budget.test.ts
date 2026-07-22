@@ -974,10 +974,9 @@ describe("runtime assembly background model budget wiring", () => {
       metadata: { userId: "owner" },
       model: "diagnostic/smoke"
     });
-    await flush();
-    await flush();
-
-    expect(snapshot!()).toMatchObject({ activeBackground: 0, completed: 1, started: 1 });
+    await vi.waitFor(() => {
+      expect(snapshot!()).toMatchObject({ activeBackground: 0, completed: 1, started: 1 });
+    });
   });
 
   it("keeps runtime, auto-extract, and awaited followup LLM calls off the background queue", async () => {

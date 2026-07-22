@@ -18,6 +18,7 @@ import {
   buildCalendarRegistry,
   buildMessagingRegistry,
   backgroundModelExecutionBudgetEnvironment,
+  crossProcessModelExecutionLeaseEnvironment,
   createMessagingPollDispatchers,
   parseBoolean,
   parseNonNegativeInteger,
@@ -557,6 +558,12 @@ export async function installDaemonAutostart(
   }
   Object.assign(safetyEnvironment, daemonResourcePolicyEnvironment(e));
   Object.assign(safetyEnvironment, backgroundModelExecutionBudgetEnvironment(e));
+  try {
+    Object.assign(safetyEnvironment, crossProcessModelExecutionLeaseEnvironment(e));
+  } catch {
+    io.stderr("refusing to install daemon autostart: MUSE_CROSS_PROCESS_MODEL_LEASE_ROOT must be an absolute path without NUL bytes.\n");
+    return { ok: false };
+  }
   Object.assign(safetyEnvironment, autoReindexBudgetEnvironment(e));
   const plist = buildLaunchAgentPlist({
     environmentVariables: safetyEnvironment,

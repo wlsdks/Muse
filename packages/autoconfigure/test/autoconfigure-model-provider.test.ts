@@ -1,8 +1,54 @@
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { OpenAICompatibleProvider, OpenRouterProvider } from "@muse/model";
 
-import { createModelProvider } from "../src/autoconfigure-model-provider.js";
+import { createModelProvider, resolveModelProvider } from "../src/autoconfigure-model-provider.js";
+
+describe("createModelProvider — local execution boundary", () => {
+  it("exposes canonical locality and wraps direct local calls at the public factory", async () => {
+    const leaseRoot = join(mkdtempSync(join(tmpdir(), "muse-provider-lease-")), "lease");
+    const env = {
+      MUSE_CROSS_PROCESS_MODEL_LEASE_ROOT: leaseRoot,
+      MUSE_LOCAL_ONLY: "true",
+      MUSE_MODEL: "local/test",
+      MUSE_MODEL_BASE_URL: "http://localhost:18000/v1"
+    };
+    expect(resolveModelProvider(env)).toMatchObject({ locality: "local" });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "ok" } }],
+      id: "c1",
+      model: "local/test"
+    }), { status: 200 })) as typeof globalThis.fetch;
+    try {
+      const provider = createModelProvider(env);
+      expect(existsSync(leaseRoot)).toBe(false);
+      await expect(provider?.generate({
+        messages: [{ content: "hello", role: "user" }],
+        model: "local/test"
+      })).resolves.toMatchObject({ output: "ok" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(existsSync(join(leaseRoot, "sequence.json"))).toBe(true);
+    expect(existsSync(join(leaseRoot, "active.json"))).toBe(false);
+  });
+
+  it("keeps diagnostic providers outside local physical-execution filesystem admission", async () => {
+    const leaseRoot = join(mkdtempSync(join(tmpdir(), "muse-provider-diagnostic-")), "lease");
+    const provider = createModelProvider({
+      MUSE_CROSS_PROCESS_MODEL_LEASE_ROOT: leaseRoot,
+      MUSE_MODEL: "diagnostic/smoke",
+      MUSE_MODEL_PROVIDER_ID: "diagnostic"
+    });
+    await provider?.generate({ messages: [{ content: "hello", role: "user" }], model: "diagnostic/smoke" });
+    expect(existsSync(leaseRoot)).toBe(false);
+  });
+});
 
 describe("createModelProvider — OpenAI-compatible presets", () => {
   it("groq routes through OpenAICompatibleProvider with the Groq base URL", () => {
@@ -151,7 +197,11 @@ describe("createModelProvider — Ollama base URL is honoured", () => {
     try {
       // A REMOTE ollama host is egress, so testing remote URL routing requires
       // opting out of the default local-only gate (unless the env already set it).
-      const provider = createModelProvider({ MUSE_LOCAL_ONLY: "false", ...env });
+      const provider = createModelProvider({
+        MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED: "false",
+        MUSE_LOCAL_ONLY: "false",
+        ...env
+      });
       expect(provider?.id).toBe("ollama");
       await provider?.generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/llama3.2" });
     } finally {
@@ -195,7 +245,11 @@ describe("createModelProvider — Ollama base URL is honoured", () => {
       return new Response(JSON.stringify({ message: { content: "ok" }, model: "m" }), { status: 200 });
     }) as typeof globalThis.fetch;
     try {
-      const provider = createModelProvider({ MUSE_LOCAL_ONLY: "false", ...env });
+      const provider = createModelProvider({
+        MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED: "false",
+        MUSE_LOCAL_ONLY: "false",
+        ...env
+      });
       await provider?.generate({ messages: [{ content: "hi", role: "user" }], model: "ollama/llama3.2" });
     } finally {
       globalThis.fetch = original;

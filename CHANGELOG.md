@@ -8,6 +8,15 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+- Added default-on cross-process admission for local model generation and
+  streaming across CLI, API, and daemon runtimes. The owner-only filesystem
+  protocol uses atomic ticket publication, a token-scoped bakery guard,
+  monotonic foreground priority, PID/inode/token fencing, dead-owner recovery, bounded waits, cooperative
+  background preemption, fixed privacy-safe errors/counters, and resident
+  LaunchAgent override projection. Local providers are wrapped at the public
+  factory boundary, while the runtime composition root avoids double wrapping;
+  the older advisory Ollama-only lease has been removed.
+
 - Added process-local foreground model admission to the existing runtime model
   budget: bounded concurrency, FIFO queueing, timeout/cancellation cleanup,
   foreground-before-background scheduling, resident-safe owner overrides, and

@@ -21,6 +21,10 @@ import { readFileSync } from "node:fs";
 
 import { parseBoolean, parseCsv, parseHeaderMap, parseInteger, parseNonNegativeFloat, parseNonNegativeInteger, parseOptionalString } from "./env-parsers.js";
 import { resolveMuseCliConfigFilePath } from "./provider-paths.js";
+import {
+  createCrossProcessModelExecutionLeaseProviders,
+  resolveCrossProcessModelExecutionLeaseOptions
+} from "./cross-process-model-execution-lease.js";
 
 /**
  * Temperature for Muse's user-facing ANSWER generation (chat / ask). Set
@@ -389,12 +393,19 @@ function providerIdFromPrefix(modelSpec: string): string | undefined {
   return undefined;
 }
 
-export function createModelProvider(env: MuseEnvironment, modelOverride?: string): ModelProvider | undefined {
-  const defaultModel = modelOverride ?? resolveDefaultModel(env);
+interface ModelProviderIdentity {
+  readonly baseUrl: string | undefined;
+  readonly defaultModel: string;
+  readonly effectiveBaseUrl: string | undefined;
+  readonly providerId: string;
+}
 
-  if (!defaultModel) {
-    return undefined;
-  }
+function resolveModelProviderIdentity(
+  env: MuseEnvironment,
+  modelOverride?: string
+): ModelProviderIdentity | undefined {
+  const defaultModel = modelOverride ?? resolveDefaultModel(env);
+  if (!defaultModel) return undefined;
 
   // `modelOverride` builds a provider for a SPECIFIC model string rather than
   // the session's resolved default (privacy-tiered routing: constructing the
@@ -410,14 +421,27 @@ export function createModelProvider(env: MuseEnvironment, modelOverride?: string
     ?? (baseUrl ? "openai-compatible" : parseModelName(defaultModel).providerId)
     ?? (baseUrl ? "openai-compatible" : providerIdFromPrefix(defaultModel))
     ?? "openai-compatible";
-  const models = parseCsv(env.MUSE_MODEL_LIST) ?? [parseModelName(defaultModel).modelId];
-  const extraHeaders = parseHeaderMap(env.MUSE_MODEL_EXTRA_HEADERS);
-
   const effectiveBaseUrl = providerId === "ollama"
     ? (baseUrl ?? normalizeOllamaBaseUrl(env.OLLAMA_BASE_URL))
     : OPENAI_COMPAT_PRESETS[providerId]
       ? (baseUrl ?? OPENAI_COMPAT_PRESETS[providerId].baseUrl)
       : baseUrl;
+  return { baseUrl, defaultModel, effectiveBaseUrl, providerId };
+}
+
+export interface ModelProviderResolution {
+  readonly locality: "cloud" | "local";
+  readonly provider: ModelProvider;
+  /** True only for a physical local inference transport, not the in-memory diagnostic provider. */
+  readonly requiresLocalExecutionLease: boolean;
+}
+
+function createRawModelProvider(env: MuseEnvironment, modelOverride?: string): ModelProvider | undefined {
+  const identity = resolveModelProviderIdentity(env, modelOverride);
+  if (!identity) return undefined;
+  const { baseUrl, defaultModel, effectiveBaseUrl, providerId } = identity;
+  const models = parseCsv(env.MUSE_MODEL_LIST) ?? [parseModelName(defaultModel).modelId];
+  const extraHeaders = parseHeaderMap(env.MUSE_MODEL_EXTRA_HEADERS);
   const localOnly = parseBoolean(env.MUSE_LOCAL_ONLY, false);
   const transportBaseUrl = localOnly
     ? canonicalizeLocalOnlyModelBaseUrl(providerId, effectiveBaseUrl)
@@ -553,6 +577,37 @@ export function createModelProvider(env: MuseEnvironment, modelOverride?: string
         models
       });
   }
+}
+
+/** Resolve the raw adapter plus canonical locality for composition roots. */
+export function resolveModelProvider(
+  env: MuseEnvironment,
+  modelOverride?: string
+): ModelProviderResolution | undefined {
+  const identity = resolveModelProviderIdentity(env, modelOverride);
+  if (!identity) return undefined;
+  const provider = createRawModelProvider(env, modelOverride);
+  if (!provider) return undefined;
+  const locality = classifyProviderLocality(identity.providerId, identity.effectiveBaseUrl);
+  return {
+    locality,
+    provider,
+    requiresLocalExecutionLease: identity.providerId !== "diagnostic" && locality === "local"
+  };
+}
+
+/**
+ * Public provider factory. Local adapters are foreground projections so direct
+ * callers cannot bypass the cross-process admission boundary.
+ */
+export function createModelProvider(env: MuseEnvironment, modelOverride?: string): ModelProvider | undefined {
+  const resolution = resolveModelProvider(env, modelOverride);
+  if (!resolution) return undefined;
+  if (!resolution.requiresLocalExecutionLease) return resolution.provider;
+  return createCrossProcessModelExecutionLeaseProviders(
+    resolution.provider,
+    resolveCrossProcessModelExecutionLeaseOptions(env)
+  ).foreground;
 }
 
 /**

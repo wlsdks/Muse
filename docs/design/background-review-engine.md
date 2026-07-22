@@ -194,10 +194,22 @@ ranges/defaults are `1..8`/`1`, `0..64`/`8`, and
 respectively. Unset, blank, non-decimal-integer, and out-of-range values return
 to those safe defaults; only valid explicit values enter the resident
 LaunchAgent allowlist. Runtime observability exposes only fixed-size counters
-and queue/cancellation state, never prompt contents. This boundary coordinates
-one assembled Muse runtime; separate CLI/API/daemon processes still need a
-future cross-process provider lease before the limit can be described as a
-machine-wide cap.
+and queue/cancellation state, never prompt contents. Local providers add a
+second, default-on cross-process boundary at
+`~/.muse/model-execution-lease`: filesystem tickets use foreground-first
+monotonic ordering, a live owner is never stolen because of elapsed wall time,
+dead owners are fenced by inode plus token identity, and background work is
+cooperatively preempted when another process queues foreground demand. An
+adapter that ignores cancellation retains the global lease until it actually
+settles, so two Muse processes do not cold-run the same local model
+concurrently. Cloud providers bypass this local-machine boundary.
+
+Owner controls are `MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED` (default `true`),
+`MUSE_CROSS_PROCESS_MODEL_LEASE_ROOT`, foreground/background queue waits
+(`15000`/`1000` ms), filesystem poll (`25` ms), and background preemption poll
+(`100` ms). Invalid state, permissions, ownership, or process-liveness probes
+fail closed with fixed provider errors; no prompt or abort reason is persisted.
+Valid explicit overrides enter resident LaunchAgent configuration.
 
 ## 6. Incremental build plan (each slice verifiable)
 

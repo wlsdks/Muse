@@ -1,7 +1,7 @@
 import { LocalOnlyViolationError, OllamaProvider, OpenAICompatibleProvider } from "@muse/model";
 import { describe, expect, it } from "vitest";
 
-import { createModelProvider } from "../src/autoconfigure-model-provider.js";
+import { createModelProvider, resolveModelProvider } from "../src/autoconfigure-model-provider.js";
 
 describe("createModelProvider — MUSE_LOCAL_ONLY fail-close", () => {
   it("blocks an EXPLICIT cloud model loud and clear under local-only", () => {
@@ -24,22 +24,24 @@ describe("createModelProvider — MUSE_LOCAL_ONLY fail-close", () => {
       { GEMINI_API_KEY: "k", MUSE_LOCAL_ONLY: "true" },
       { OPENAI_API_KEY: "k", MUSE_LOCAL_ONLY: "true" }
     ]) {
-      expect(createModelProvider(env), JSON.stringify(env)).toBeInstanceOf(OllamaProvider);
+      expect(resolveModelProvider(env)?.provider, JSON.stringify(env)).toBeInstanceOf(OllamaProvider);
     }
   });
 
   it("allows local Ollama under local-only", () => {
-    const provider = createModelProvider({ MUSE_MODEL: "ollama/llama3.2", MUSE_LOCAL_ONLY: "true" });
-    expect(provider).toBeInstanceOf(OllamaProvider);
+    const resolution = resolveModelProvider({ MUSE_MODEL: "ollama/llama3.2", MUSE_LOCAL_ONLY: "true" });
+    expect(resolution).toMatchObject({ locality: "local" });
+    expect(resolution?.provider).toBeInstanceOf(OllamaProvider);
   });
 
   it("allows a localhost OpenAI-compatible endpoint under local-only", () => {
-    const provider = createModelProvider({
+    const resolution = resolveModelProvider({
       MUSE_MODEL: "local/qwen3:8b",
       MUSE_MODEL_BASE_URL: "http://localhost:8000/v1",
       MUSE_LOCAL_ONLY: "true"
     });
-    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(resolution).toMatchObject({ locality: "local" });
+    expect(resolution?.provider).toBeInstanceOf(OpenAICompatibleProvider);
   });
 
   it("passes numeric loopback endpoints to the actual Ollama and OpenAI-compatible transports under local-only", async () => {
@@ -53,9 +55,14 @@ describe("createModelProvider — MUSE_LOCAL_ONLY fail-close", () => {
       return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], id: "c1", model: "local/test" }), { status: 200 });
     }) as typeof globalThis.fetch;
     try {
-      const ollama = createModelProvider({ MUSE_LOCAL_ONLY: "true", MUSE_MODEL: "ollama/test" });
+      const ollama = createModelProvider({
+        MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED: "false",
+        MUSE_LOCAL_ONLY: "true",
+        MUSE_MODEL: "ollama/test"
+      });
       await ollama?.generate({ messages: [{ content: "hello", role: "user" }], model: "ollama/test" });
       const compatible = createModelProvider({
+        MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED: "false",
         MUSE_LOCAL_ONLY: "true",
         MUSE_MODEL: "local/test",
         MUSE_MODEL_BASE_URL: "http://localhost:18000/v1"
@@ -112,6 +119,7 @@ describe("createModelProvider — MUSE_LOCAL_ONLY fail-close", () => {
     }) as typeof globalThis.fetch;
     try {
       const provider = createModelProvider({
+        MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED: "false",
         MUSE_LOCAL_ONLY: "false",
         MUSE_MODEL: "local/test",
         MUSE_MODEL_BASE_URL: "http://localhost:18000/v1"

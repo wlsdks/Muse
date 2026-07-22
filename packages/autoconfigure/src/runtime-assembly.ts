@@ -199,10 +199,15 @@ import {
   resolveStreamIdleTimeoutMs
 } from "./runtime-wiring.js";
 import {
-  createModelProvider,
+  resolveModelProvider,
   resolveAnswerTemperature,
   resolveDefaultModel
 } from "./autoconfigure-model-provider.js";
+import {
+  createCrossProcessModelExecutionLeaseProviders,
+  resolveCrossProcessModelExecutionLeaseOptions,
+  type CrossProcessModelExecutionLeaseSnapshot
+} from "./cross-process-model-execution-lease.js";
 import { mintProgressiveAutonomyOrganicAuthority } from "./progressive-autonomy-organic-authority.js";
 import { createTrustedProgressiveAutonomyToolOpportunityObserver } from "./progressive-autonomy-runtime-observer.js";
 import { resolveDefaultUserId } from "./user-id.js";
@@ -213,6 +218,7 @@ export interface MuseEnvironment {
 
 export interface MuseRuntimeAssembly {
   readonly agentRuntime?: AgentRuntime;
+  readonly backgroundModelProvider?: ModelProvider;
   readonly agentSpecRegistry: AgentSpecRegistry;
   readonly authService?: MuseAuth;
   readonly cache: {
@@ -248,6 +254,7 @@ export interface MuseRuntimeAssembly {
     readonly followupSuggestionStore: InMemoryFollowupSuggestionStore;
     readonly latencyQuery: LatencyQuery;
     readonly metrics: InMemoryAgentMetrics;
+    readonly crossProcessModelExecutionLeaseSnapshot?: () => CrossProcessModelExecutionLeaseSnapshot;
     readonly modelExecutionBudgetSnapshot?: () => BackgroundModelExecutionBudgetSnapshot;
     readonly sloEvaluator: SloAlertEvaluator;
     readonly tokenCostQuery: TokenCostQuery;
@@ -436,6 +443,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
   const {
     modelProvider,
     backgroundModelProvider,
+    crossProcessModelExecutionLeaseSnapshot,
     modelExecutionBudgetSnapshot,
     conversationSummaryStore,
     taskMemoryStore,
@@ -585,6 +593,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
 
   return {
     agentRuntime,
+    backgroundModelProvider,
     agentSpecRegistry,
     authService,
     cache: {
@@ -610,6 +619,7 @@ export function createMuseRuntimeAssembly(options: ApiServerAssemblyOptions = {}
       followupSuggestionStore,
       latencyQuery,
       metrics: agentMetrics,
+      ...(crossProcessModelExecutionLeaseSnapshot ? { crossProcessModelExecutionLeaseSnapshot } : {}),
       ...(modelExecutionBudgetSnapshot ? { modelExecutionBudgetSnapshot } : {}),
       sloEvaluator,
       ...(telemetryAggregator ? { telemetryAggregator } : {}),
@@ -746,14 +756,22 @@ function buildModelAndStoreStack(
   // Wrap every model call so the LOCAL answer path (which calls provider directly,
   // bypassing the runtime's recordTokenUsageEvent) still records token usage. The
   // runtime flags its own requests so this decorator skips them (no double-count).
-  const baseModelProvider = createModelProvider(env);
+  const modelResolution = resolveModelProvider(env);
+  const baseModelProvider = modelResolution?.provider;
   const usageRecordingProvider = baseModelProvider
     ? createUsageRecordingProvider(baseModelProvider, tokenUsageSink)
     : baseModelProvider;
+  const crossProcessProviders = usageRecordingProvider && modelResolution?.requiresLocalExecutionLease
+    ? createCrossProcessModelExecutionLeaseProviders(
+      usageRecordingProvider,
+      resolveCrossProcessModelExecutionLeaseOptions(env)
+    )
+    : undefined;
   const budgetProviders = usageRecordingProvider
     ? createBackgroundModelExecutionBudgetProviders(
-      usageRecordingProvider,
-      resolveBackgroundModelExecutionBudgetOptions(env)
+      crossProcessProviders?.foreground ?? usageRecordingProvider,
+      resolveBackgroundModelExecutionBudgetOptions(env),
+      crossProcessProviders?.background ?? usageRecordingProvider
     )
     : undefined;
   const modelProvider = budgetProviders?.foreground;
@@ -778,6 +796,7 @@ function buildModelAndStoreStack(
   return {
     modelProvider,
     backgroundModelProvider: budgetProviders?.background,
+    crossProcessModelExecutionLeaseSnapshot: crossProcessProviders?.snapshot,
     modelExecutionBudgetSnapshot: budgetProviders?.snapshot,
     conversationSummaryStore,
     taskMemoryStore,

@@ -44,6 +44,22 @@ describe("warmUpModelIfConfigured", () => {
     expect(sink.calls).toBe(0);
   });
 
+  it("prefers the background-priority provider when the runtime exposes one", async () => {
+    const foreground: { request?: ModelRequest; calls: number } = { calls: 0 };
+    const background: { request?: ModelRequest; calls: number } = { calls: 0 };
+    warmUpModelIfConfigured(
+      { MUSE_WARMUP_MODEL: "true" },
+      {
+        backgroundModelProvider: captureProvider(background),
+        defaultModel: "ollama/gemma4:12b",
+        modelProvider: captureProvider(foreground)
+      }
+    );
+    await flush();
+    expect(background.calls).toBe(1);
+    expect(foreground.calls).toBe(0);
+  });
+
   it("does nothing when no provider or no default model is configured (guard)", async () => {
     const sink: { request?: ModelRequest; calls: number } = { calls: 0 };
     warmUpModelIfConfigured({ MUSE_WARMUP_MODEL: "1" }, { defaultModel: "m" }); // no provider

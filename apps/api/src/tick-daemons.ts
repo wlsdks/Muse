@@ -38,7 +38,7 @@ import { distillQueuedCorrections } from "./distill-queue.js";
 import { isModelResidentLive } from "./model-resident.js";
 import { osIdleMs } from "./os-idle.js";
 import { isOnAcPower } from "./power-state.js";
-import { readTasks, readReminders, queryActionLog, resolveTasksDueLine, formatBirthdayBriefLine, queryContacts, resolveUpcomingBirthdays, isOllamaLeaseHeldByOther, resolveOllamaLeaseFile, resolveLearnQueueFile, decayStalePlaybookRewards } from "@muse/stores";
+import { readTasks, readReminders, queryActionLog, resolveTasksDueLine, formatBirthdayBriefLine, queryContacts, resolveUpcomingBirthdays, resolveLearnQueueFile, decayStalePlaybookRewards } from "@muse/stores";
 import { createMessagingObjectiveActuator, createModelObjectiveEvaluator, deriveBriefingImminent, deriveCalendarBriefingImminent, FileAmbientSignalSource, MacOsActiveWindowSource, resolveDayShapeLine, resolveEffectiveQuietHours, parseAmbientNoticeRules, webWatchesFromConfig, type BriefingImminent, type QuietHourRange } from "@muse/proactivity";
 import { createNotesInvestigator, extractEmailAddress, GmailEmailProvider, LocalDirNotesProvider, LocalFileTasksProvider, OpenMeteoWeatherProvider, homeWatchesFromConfig, parseHomeAlertChecks, resolveHomeAlertLine } from "@muse/domain-tools";
 import { startAmbientTick } from "./ambient-tick.js";
@@ -57,6 +57,10 @@ function stopOnClose(server: FastifyInstance, handle: { stop(): void }): void {
 
 function optionalNumber(raw: string | undefined): number | undefined {
   return raw ? Number(raw) : undefined;
+}
+
+function backgroundModelProvider(options: ServerOptions) {
+  return options.backgroundModelProvider ?? options.modelProvider;
 }
 
 /**
@@ -176,6 +180,7 @@ export function startProactiveDaemonIfConfigured(
   // this daemon and the reminder daemon when their respective
   // MUSE_*_AGENT_TURN flag is on.
   const phaseDWindowRaw = optionalNumber(env.MUSE_PROACTIVE_ACTIVE_SESSION_WINDOW_MS);
+  const proactiveModelProvider = backgroundModelProvider(options);
 
   // A real notes-backed investigator over the primary notes
   // provider so the proactive notice surfaces "📎 Related notes: …"
@@ -193,8 +198,8 @@ export function startProactiveDaemonIfConfigured(
     // agent runtime's tool registry trips up ≤ 3B local models
     // into emitting tool-call JSON. Fall back to agentRuntime when
     // no provider is available (legacy path).
-    ...(phaseD.phaseDProactiveOn && options.modelProvider
-      ? { modelProvider: options.modelProvider }
+    ...(phaseD.phaseDProactiveOn && proactiveModelProvider
+      ? { modelProvider: proactiveModelProvider }
       : phaseD.phaseDProactiveOn && options.agentRuntime
         ? { agentRuntime: options.agentRuntime }
         : {}),
@@ -268,8 +273,9 @@ export function startFollowupDaemonIfConfigured(
   server: FastifyInstance,
   options: ServerOptions
 ): void {
+  const followupModelProvider = backgroundModelProvider(options);
   const target = resolveMessagingTarget(env.MUSE_FOLLOWUP_DEFAULT_PROVIDER, env.MUSE_FOLLOWUP_DEFAULT_DESTINATION, options);
-  if (!target || !options.followupsFile || !options.modelProvider || !options.defaultModel) {
+  if (!target || !options.followupsFile || !followupModelProvider || !options.defaultModel) {
     return;
   }
   const { providerId: followupProvider, destination: followupDestination, registry: followupRegistry } = target;
@@ -285,7 +291,7 @@ export function startFollowupDaemonIfConfigured(
     logger: (message) => server.log.info(message),
     ...(followupMaxPerTickRaw !== undefined ? { maxPerTick: followupMaxPerTickRaw } : {}),
     model: options.defaultModel,
-    modelProvider: options.modelProvider,
+    modelProvider: followupModelProvider,
     providerId: followupProvider,
     quietHours: followupQuietHours,
     registry: followupRegistry
@@ -453,8 +459,9 @@ export function startObjectivesDaemonIfConfigured(
   server: FastifyInstance,
   options: ServerOptions
 ): void {
+  const objectivesModelProvider = backgroundModelProvider(options);
   const target = resolveMessagingTarget(env.MUSE_OBJECTIVES_PROVIDER, env.MUSE_OBJECTIVES_DESTINATION, options);
-  if (!target || !options.objectivesFile || !options.modelProvider || !options.defaultModel) {
+  if (!target || !options.objectivesFile || !objectivesModelProvider || !options.defaultModel) {
     return;
   }
   const { providerId: objectivesProvider, destination: objectivesDestination, registry: objectivesRegistry } = target;
@@ -476,7 +483,7 @@ export function startObjectivesDaemonIfConfigured(
       queryActionLog: () => queryActionLog(objectivesActionLogFile, {})
     },
     model: options.defaultModel,
-    modelProvider: options.modelProvider
+    modelProvider: objectivesModelProvider
   });
   const { act, escalate } = createMessagingObjectiveActuator({
     ...(options.actionLogFile ? { actionLogFile: options.actionLogFile } : {}),
@@ -548,9 +555,10 @@ export function startConsolidateDaemonIfConfigured(
   options: ServerOptions,
   phaseD: PhaseDActivityWiring
 ): void {
+  const consolidateProvider = backgroundModelProvider(options);
   if (
     !parseBoolean(env.MUSE_SKILL_CONSOLIDATE_IDLE_ENABLED, false)
-    || !options.modelProvider
+    || !consolidateProvider
     || !options.defaultModel
   ) {
     return;
@@ -575,7 +583,6 @@ export function startConsolidateDaemonIfConfigured(
   const tickMsRaw = optionalNumber(env.MUSE_SKILL_CONSOLIDATE_TICK_MS);
   const consolidateQuietHours = liveQuietHours(env, server, env.MUSE_SKILL_CONSOLIDATE_QUIET_HOURS, env.MUSE_REMINDER_QUIET_HOURS);
   const consolidateModel = options.defaultModel;
-  const consolidateProvider = options.modelProvider;
   // Deterministic curate cadence: auto-archive authored skills idle this many
   // days so the local model isn't choosing among stale skills. Default 90d
   // (recoverable archive); MUSE_SKILL_CURATE_IDLE_DAYS=0 disables.
@@ -587,7 +594,7 @@ export function startConsolidateDaemonIfConfigured(
     lastActivityMs: () => activitySource.lastActivityMs(),
     logger: (message) => server.log.info(message),
     model: options.defaultModel,
-    modelProvider: options.modelProvider,
+    modelProvider: consolidateProvider,
     // SkillOpt held-out coverage gate: verify a proposed umbrella semantically
     // covers every clustered skill before committing (shared gate embedder).
     embed: createGateEmbedder(env),
@@ -610,9 +617,6 @@ export function startConsolidateDaemonIfConfigured(
     // AC-power brake: a heavy LLM merge runs on wall power only, never on
     // battery — so background learning can't drain the laptop (fail-closed).
     isOnAcPower: () => isOnAcPower(),
-    // Contention brake: defer while a foreground chat/ask holds the Ollama
-    // lease, so the daemon never competes with a live foreground call.
-    isForegroundBusy: () => isOllamaLeaseHeldByOther(resolveOllamaLeaseFile(env), process.pid, { nowMs: Date.now() }),
     ...(idleMsRaw !== undefined ? { idleThresholdMs: idleMsRaw } : {}),
     ...(tickMsRaw !== undefined ? { intervalMs: tickMsRaw } : {}),
     quietHours: consolidateQuietHours

@@ -1,6 +1,7 @@
 import type { ModelProvider } from "@muse/model";
 
 export interface ModelWarmupOptions {
+  readonly backgroundModelProvider?: ModelProvider;
   readonly modelProvider?: ModelProvider;
   readonly defaultModel?: string;
 }
@@ -24,10 +25,10 @@ export function warmUpModelIfConfigured(
   options: ModelWarmupOptions
 ): void {
   const enabled = env.MUSE_WARMUP_MODEL === "1" || env.MUSE_WARMUP_MODEL?.toLowerCase() === "true";
-  if (!enabled || !options.modelProvider || !options.defaultModel) {
+  const provider = options.backgroundModelProvider ?? options.modelProvider;
+  if (!enabled || !provider || !options.defaultModel) {
     return;
   }
-  const provider = options.modelProvider;
   const model = options.defaultModel;
   void (async (): Promise<void> => {
     await provider.generate({

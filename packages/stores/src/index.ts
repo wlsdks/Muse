@@ -75,7 +75,21 @@ export { enqueueLearnEvent, markLearnEventsDone, pruneLearnQueueByAge, readPendi
 export type { LearnCorrectionEvent } from "./learn-queue.js";
 export { isLearningPaused, setLearningPaused } from "./learning-pause-store.js";
 export { defaultSchedulerPauseFile, isSchedulerPaused, readSchedulerPauseState, setSchedulerPaused } from "./scheduler-pause-store.js";
-export { acquireOllamaLease, isOllamaLeaseHeldByOther, releaseOllamaLease, resolveOllamaLeaseFile } from "./ollama-lease.js";
+export {
+  DEFAULT_LOCAL_MODEL_BACKGROUND_WAIT_MS,
+  DEFAULT_LOCAL_MODEL_FOREGROUND_WAIT_MS,
+  DEFAULT_LOCAL_MODEL_POLL_MS,
+  FileLocalModelExecutionLeaseCoordinator,
+  LocalModelExecutionLeaseError,
+  resolveLocalModelExecutionLeaseRoot
+} from "./local-model-execution-lease.js";
+export type {
+  LocalModelExecutionLease,
+  LocalModelExecutionLeaseErrorCode,
+  LocalModelExecutionLeaseOptions,
+  LocalModelExecutionRole,
+  ProcessLiveness
+} from "./local-model-execution-lease.js";
 export { detectUncleanShutdown, markSessionCleanExit, markSessionStart } from "./session-crash-marker.js";
 export type { SessionStartInfo } from "./session-crash-marker.js";
 export { capBackgroundProcesses, defaultBackgroundProcessesFile, getBackgroundProcess, pruneTerminalBackgroundProcesses, readBackgroundProcesses, registerBackgroundProcess, removeBackgroundProcess, updateBackgroundProcess } from "./background-process-store.js";

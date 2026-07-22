@@ -86,7 +86,10 @@ describe("createModelProvider — MUSE_MODEL_EXTRA_HEADERS (LAN gateway auth hea
       return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], id: "c1", model: "m" }));
     }) as typeof fetch;
     try {
-      const provider = createModelProvider(env as never);
+      const provider = createModelProvider({
+        ...env,
+        MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED: "false"
+      } as never);
       await provider?.generate({ messages: [{ content: "hi", role: "user" }], model: "m" });
     } finally {
       globalThis.fetch = originalFetch;

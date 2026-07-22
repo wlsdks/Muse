@@ -182,6 +182,17 @@ export {
 } from "./background-model-execution-budget.js";
 
 export {
+  CrossProcessModelExecutionLeaseError,
+  crossProcessModelExecutionLeaseEnvironment,
+  createCrossProcessModelExecutionLeaseProviders,
+  resolveCrossProcessModelExecutionLeaseOptions,
+  type CrossProcessModelExecutionLeaseErrorCode,
+  type CrossProcessModelExecutionLeaseProviders,
+  type CrossProcessModelExecutionLeaseSnapshot,
+  type ResolvedCrossProcessModelExecutionLeaseOptions
+} from "./cross-process-model-execution-lease.js";
+
+export {
   ACTUATOR_MODES,
   DEFAULT_ACTUATOR_MODE,
   isActuatorMode,

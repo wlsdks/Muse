@@ -7,7 +7,7 @@ tests excluded) is listed with the workspaces that read it. Descriptions and
 value contracts are curated incrementally in code (`.claude/rules/` /
 per-module docs); this inventory is the discoverability + drift floor.
 
-Total: **615** variables.
+Total: **620** variables.
 
 | Variable | Read by |
 | --- | --- |
@@ -167,6 +167,12 @@ Total: **615** variables.
 | `MUSE_CREDENTIALS_FILE` | packages/autoconfigure |
 | `MUSE_CREDENTIAL_KEY` | apps/api, packages/autoconfigure, packages/stores |
 | `MUSE_CROSS_LINGUAL_COSINE_FLOOR` | packages/recall |
+| `MUSE_CROSS_PROCESS_MODEL_BACKGROUND_WAIT_MS` | packages/autoconfigure |
+| `MUSE_CROSS_PROCESS_MODEL_FOREGROUND_WAIT_MS` | packages/autoconfigure |
+| `MUSE_CROSS_PROCESS_MODEL_LEASE_ENABLED` | packages/autoconfigure |
+| `MUSE_CROSS_PROCESS_MODEL_LEASE_ROOT` | apps/cli, packages/autoconfigure, packages/stores |
+| `MUSE_CROSS_PROCESS_MODEL_POLL_MS` | packages/autoconfigure |
+| `MUSE_CROSS_PROCESS_MODEL_PREEMPT_POLL_MS` | packages/autoconfigure |
 | `MUSE_DAEMON_BACKGROUND_MODE` | apps/cli |
 | `MUSE_DAEMON_CONFIG_FILE` | apps/cli, packages/autoconfigure |
 | `MUSE_DAEMON_DELIVERY_ENABLED` | apps/api, apps/cli |
@@ -392,7 +398,6 @@ Total: **615** variables.
 | `MUSE_OBJECTIVES_QUIET_HOURS` | apps/api |
 | `MUSE_OBJECTIVES_TICK_MS` | apps/api |
 | `MUSE_OLLAMA_KEEP_ALIVE` | apps/cli, packages/autoconfigure, packages/model |
-| `MUSE_OLLAMA_LEASE_FILE` | packages/stores |
 | `MUSE_OLLAMA_NUM_BATCH` | apps/cli, packages/autoconfigure, packages/model |
 | `MUSE_OLLAMA_NUM_CTX` | apps/cli, packages/autoconfigure, packages/model |
 | `MUSE_OLLAMA_NUM_GPU` | packages/autoconfigure, packages/model |
