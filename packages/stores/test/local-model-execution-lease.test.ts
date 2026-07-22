@@ -27,7 +27,8 @@ function coordinator(
   leaseRoot: string,
   pid: number,
   alive: ReadonlySet<number>,
-  prefix: string
+  prefix: string,
+  options: Pick<ConstructorParameters<typeof FileLocalModelExecutionLeaseCoordinator>[0], "now" | "wait"> = {}
 ) {
   return new FileLocalModelExecutionLeaseCoordinator({
     backgroundWaitMs: 1_000,
@@ -36,7 +37,8 @@ function coordinator(
     pollMs: 5,
     processLiveness: liveness(alive),
     root: leaseRoot,
-    token: tokens(prefix)
+    token: tokens(prefix),
+    ...options
   });
 }
 
@@ -87,15 +89,17 @@ describe("FileLocalModelExecutionLeaseCoordinator", () => {
   it("uses guard sequences for foreground priority without wall-clock ordering authority", async () => {
     const leaseRoot = await root();
     const alive = new Set([1, 2, 3]);
-    const active = await coordinator(leaseRoot, 1, alive, "active").acquire("background");
+    const logicalTime = { now: () => 0 };
+    const active = await coordinator(leaseRoot, 1, alive, "active", logicalTime).acquire("background");
     const starts: string[] = [];
-    const backgroundPromise = coordinator(leaseRoot, 2, alive, "background").acquire("background")
+    const backgroundPromise = coordinator(leaseRoot, 2, alive, "background", logicalTime).acquire("background")
       .then((lease) => { starts.push("background"); return lease; });
     await vi.waitFor(() => expect(readdirSync(join(leaseRoot, "tickets"))).toHaveLength(1));
-    const foregroundPromise = coordinator(leaseRoot, 3, alive, "foreground").acquire("foreground")
+    const foregroundPromise = coordinator(leaseRoot, 3, alive, "foreground", logicalTime).acquire("foreground")
       .then((lease) => { starts.push("foreground"); return lease; });
     await vi.waitFor(() => expect(readdirSync(join(leaseRoot, "tickets"))).toHaveLength(2));
 
+    expect(starts).toEqual([]);
     await active.release();
     const foreground = await foregroundPromise;
     expect(starts).toEqual(["foreground"]);
@@ -103,6 +107,10 @@ describe("FileLocalModelExecutionLeaseCoordinator", () => {
     const background = await backgroundPromise;
     expect(starts).toEqual(["foreground", "background"]);
     await background.release();
+    expect(readdirSync(join(leaseRoot, "candidates"))).toEqual([]);
+    expect(readdirSync(join(leaseRoot, "guards"))).toEqual([]);
+    expect(readdirSync(join(leaseRoot, "tickets"))).toEqual([]);
+    expect(existsSync(join(leaseRoot, "active.json"))).toBe(false);
   });
 
   it("reaps a dead active owner but a late non-owner release cannot remove the replacement", async () => {
@@ -123,13 +131,16 @@ describe("FileLocalModelExecutionLeaseCoordinator", () => {
     const leaseRoot = await root();
     const alive = new Set([101, 202]);
     const first = await coordinator(leaseRoot, 101, alive, "first").acquire("foreground");
+    let logicalNow = 0;
     const waiting = new FileLocalModelExecutionLeaseCoordinator({
       backgroundWaitMs: 50,
+      now: () => logicalNow,
       pid: 202,
       pollMs: 5,
       processLiveness: liveness(alive),
       root: leaseRoot,
-      token: tokens("second")
+      token: tokens("second"),
+      wait: async () => { logicalNow = 51; }
     }).acquire("background");
     await expect(waiting).rejects.toMatchObject({
       code: "QUEUE_TIMEOUT",
