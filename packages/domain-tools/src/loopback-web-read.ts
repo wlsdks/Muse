@@ -51,10 +51,37 @@ function imageMimeFromContentType(contentType: string | null): string | undefine
 }
 
 async function readBytesCapped(response: Response, maxBytes: number): Promise<{ readonly bytes: Buffer; readonly truncated: boolean }> {
-  const buf = Buffer.from(await response.arrayBuffer());
-  return buf.byteLength > maxBytes
-    ? { bytes: buf.subarray(0, maxBytes), truncated: true }
-    : { bytes: buf, truncated: false };
+  // Stream and cancel at the cap, the same way readBodyCapped does. `await
+  // response.arrayBuffer()` materialises the WHOLE body first and only then
+  // slices — so an attacker server serving `Content-Type: application/pdf` with
+  // a huge chunked body forces an allocation proportional to what it can push
+  // within the timeout, tens-to-hundreds of MB over the 10MB cap, in the shared
+  // process. Reading incrementally and cancelling bounds allocation to maxBytes.
+  if (!response.body) {
+    return { bytes: Buffer.alloc(0), truncated: false };
+  }
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let bytesRead = 0;
+  let truncated = false;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const remaining = maxBytes - bytesRead;
+      if (value.byteLength > remaining) {
+        chunks.push(Buffer.from(value.subarray(0, Math.max(0, remaining))));
+        truncated = true;
+        await reader.cancel();
+        break;
+      }
+      chunks.push(Buffer.from(value));
+      bytesRead += value.byteLength;
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* released by cancel / completion */ }
+  }
+  return { bytes: Buffer.concat(chunks), truncated };
 }
 
 function isReadableContentType(contentType: string | null): boolean {
