@@ -58,6 +58,11 @@ export {
   type PrivateFileLockOptions
 } from "./private-file-lock.js";
 export { quarantineCorruptFile } from "./corrupt-file.js";
+export {
+  inspectReadOnlyJsonSource,
+  type ReadOnlySourceFailure,
+  type ReadOnlySourceInspection
+} from "./read-only-source.js";
 export { isRecord, parseJson, parseJsonWith, type JsonObject, type JsonPredicate, type JsonPrimitive, type JsonValue } from "./json-utils.js";
 export { parseStrictJson, StrictJsonError, type StrictJsonOptions } from "./strict-json.js";
 export {

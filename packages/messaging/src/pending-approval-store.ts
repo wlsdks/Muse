@@ -18,6 +18,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 
+import { inspectReadOnlyJsonSource, type ReadOnlySourceInspection } from "@muse/shared";
 import { atomicWritePrivateFile, withMessagingFileMutation } from "./messaging-file-store.js";
 
 export interface PendingApproval {
@@ -218,6 +219,27 @@ function isPendingApprovalStoreV2(value: unknown): value is PendingApprovalStore
   ];
   const claimTokens = record["executions"].map((execution) => execution.claimToken);
   return new Set(ids).size === ids.length && new Set(claimTokens).size === claimTokens.length;
+}
+
+export interface PendingApprovalSourceSnapshot {
+  readonly pending: readonly PendingApproval[];
+  readonly excludedCount: number;
+}
+
+/** Strict, side-effect-free reader for status surfaces; unlike tolerant readers it never quarantines or collapses corruption to []. */
+export function inspectPendingApprovalsSource(file: string): Promise<ReadOnlySourceInspection<PendingApprovalSourceSnapshot>> {
+  return inspectReadOnlyJsonSource(file, (value) => {
+    if (!value || typeof value !== "object") return undefined;
+    const record = value as Record<string, unknown>;
+    if (record["version"] === undefined) {
+      if (Object.keys(record).some((key) => key !== "pending") || !Array.isArray(record["pending"])) return undefined;
+      const pending = record["pending"].filter(isExactNewPendingApproval);
+      return { excludedCount: record["pending"].length - pending.length, pending };
+    }
+    if (!isPendingApprovalStoreV2(record)) return undefined;
+    const pending = record["pending"].filter(isExactNewPendingApproval);
+    return { excludedCount: record["pending"].length - pending.length, pending };
+  });
 }
 
 async function readMutationStore(file: string): Promise<PendingApprovalStoreV2 | undefined> {

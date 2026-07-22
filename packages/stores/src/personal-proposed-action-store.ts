@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
+import { inspectReadOnlyJsonSource, type ReadOnlySourceInspection } from "@muse/shared";
 import { withFileLock } from "./encrypted-file.js";
 import { quarantineCorruptStore } from "./store-quarantine.js";
 
@@ -91,6 +92,22 @@ function isProposedAction(value: unknown): value is ProposedAction {
     && (c.status === "pending" || c.status === "executed" || c.status === "declined")
     && (c.expiresAt === undefined || (typeof c.expiresAt === "string" && Number.isFinite(Date.parse(c.expiresAt))))
     && (c.resolvedAt === undefined || (typeof c.resolvedAt === "string" && Number.isFinite(Date.parse(c.resolvedAt))));
+}
+
+export interface ProposedActionSourceSnapshot {
+  readonly proposals: readonly ProposedAction[];
+  readonly excludedCount: number;
+}
+
+/** Status-only inspection that preserves corrupt/absent states and never invokes quarantine writes. */
+export function inspectProposedActionsSource(file: string): Promise<ReadOnlySourceInspection<ProposedActionSourceSnapshot>> {
+  return inspectReadOnlyJsonSource(file, (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    if (Object.keys(record).some((key) => key !== "proposals") || !Array.isArray(record.proposals)) return undefined;
+    const proposals = record.proposals.filter(isProposedAction);
+    return { excludedCount: record.proposals.length - proposals.length, proposals };
+  });
 }
 
 export async function readProposedActions(file: string): Promise<ProposedAction[]> {

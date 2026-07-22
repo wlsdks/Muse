@@ -105,7 +105,14 @@ export { adjustPlaybookReward, bumpPlaybookObservation, decayStalePlaybookReward
 export type { PlaybookEntry } from "./personal-playbook-store.js";
 export { appendProactiveHistory, readProactiveHistory } from "./personal-proactive-history-store.js";
 export type { ProactiveHistoryEntry } from "./personal-proactive-history-store.js";
-export { isProposalActionable, patchProposedActionStatus, proposeMessageAction, readProposedActions } from "./personal-proposed-action-store.js";
+export {
+  inspectProposedActionsSource,
+  isProposalActionable,
+  patchProposedActionStatus,
+  proposeMessageAction,
+  readProposedActions,
+  type ProposedActionSourceSnapshot
+} from "./personal-proposed-action-store.js";
 export { readFadedMemoryKeys, readRecallHits, recordRecallHits, writeFadedMemoryKeys } from "./personal-recall-hits-store.js";
 export type { RecallHitRecord } from "./personal-recall-hits-store.js";
 export { appendReminderHistory, readReminderHistory } from "./personal-reminder-history-store.js";
