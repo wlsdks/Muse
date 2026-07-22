@@ -122,8 +122,10 @@ change without an explicit owner action; retries are idempotent.
 
 - [x] Add a no-side-effect preflight that lists the fixed 11-axis battery,
   expected model/runner requirements, and resource budget before the full run.
-- [ ] Schedule the full pass^k capability evaluator only while the owner is not
-  actively using the machine and under an explicit resource budget.
+- [x] Require explicit execution intent, owner idle confirmation, a sufficient
+  time budget, and a local CPU/RAM admission before the full pass^k capability
+  evaluator can build or start a local model; expose the same decision through
+  a read-only admission command.
 - [ ] Publish the canonical v2 report only on a clean source/artifact snapshot;
   a partial/aborted run is unverified, never passing evidence.
 

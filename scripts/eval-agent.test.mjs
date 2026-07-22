@@ -16,6 +16,7 @@ import { test } from "node:test";
 import {
   CAPABILITIES,
   classifyCapabilityResult,
+  createCapabilityExecutionAdmissionForArgs,
   createCapabilityPreflight,
   createCapabilityReport,
   main,
@@ -24,6 +25,12 @@ import {
 import { completionLine, skipLine } from "./eval-skip.mjs";
 
 const stochastic = CAPABILITIES[0];
+const EXECUTE_ARGS = ["--execute", "--confirm-idle", "--budget-minutes", "990"];
+const HEALTHY_RESOURCE_SNAPSHOT = {
+  cpuCount: 8,
+  freeMemoryBytes: 8 * 1024 * 1024 * 1024,
+  load1: 1,
+};
 
 function result(stdout, overrides = {}) {
   return {
@@ -42,6 +49,7 @@ function verifiedPipeline(overrides = {}) {
     buildRunnerArtifact: () => ({ ok: true, runnerPath: "/fixed/private/muse-runner" }),
     captureArtifacts: () => ({ count: 41, digest: "a".repeat(64), status: "ok" }),
     captureSource: () => ({ revision: "a".repeat(40), tree: "clean" }),
+    readResourceSnapshot: () => HEALTHY_RESOURCE_SNAPSHOT,
     runTypeScriptBuild: () => ({ ok: true }),
     ...overrides,
   };
@@ -184,6 +192,107 @@ test("preflight constructor remains a static manifest with no configured-machine
   assert.equal(preflight.axes.find((axis) => axis.id === "browser-terminal-task")?.requirements.includes("compatible-local-chrome"), true);
   assert.equal(preflight.axes.find((axis) => axis.id === "multihop-retrieval-lift")?.requirements.includes("local-ollama-embedding-model"), true);
   assert.equal(preflight.axes.find((axis) => axis.id === "computer-task-terminal-edit")?.requirements.includes("local-runner"), false);
+});
+
+test("execution admission is read-only, requires owner confirmation and a full declared budget", () => {
+  let stdout = "";
+  let sideEffects = 0;
+  const previousExitCode = process.exitCode;
+  const noSideEffects = () => {
+    sideEffects += 1;
+    throw new Error("admission must not evaluate");
+  };
+  try {
+    process.exitCode = undefined;
+    const refused = main(["--admit", "--json"], {
+      buildRunnerArtifact: noSideEffects,
+      captureArtifacts: noSideEffects,
+      captureSource: noSideEffects,
+      readResourceSnapshot: () => HEALTHY_RESOURCE_SNAPSHOT,
+      runTypeScriptBuild: noSideEffects,
+      spawn: noSideEffects,
+      stdout: { write: (chunk) => { stdout += chunk; } },
+      writeReport: noSideEffects,
+    });
+
+    assert.equal(sideEffects, 0);
+    assert.equal(refused.mode, "execution-admission");
+    assert.equal(refused.status, "defer");
+    assert.deepEqual(refused.reasons, ["owner-idle-confirmation-required", "owner-budget-required"]);
+    assert.deepEqual(JSON.parse(stdout), refused);
+
+    const admitted = createCapabilityExecutionAdmissionForArgs(
+      ["--admit", "--confirm-idle", "--budget-minutes", "990"],
+      { readResourceSnapshot: () => HEALTHY_RESOURCE_SNAPSHOT }
+    );
+    assert.equal(admitted.status, "admit");
+    assert.equal(admitted.sideEffects, "none");
+  } finally {
+    process.exitCode = previousExitCode;
+  }
+});
+
+test("execution is refused before the build pipeline on missing intent, pressure, or invalid OS observations", () => {
+  const scenarios = [
+    { args: ["--json"], reason: "execution-intent-required", snapshot: HEALTHY_RESOURCE_SNAPSHOT },
+    { args: ["--json", "--execute", "--confirm-idle", "--budget-minutes", "989"], reason: "insufficient-time-budget", snapshot: HEALTHY_RESOURCE_SNAPSHOT },
+    { args: ["--json", "--execute", "--confirm-idle", "--budget-minutes", "1e100"], reason: "invalid-owner-budget", snapshot: HEALTHY_RESOURCE_SNAPSHOT },
+    { args: ["--json", ...EXECUTE_ARGS], reason: "low-free-memory", snapshot: { ...HEALTHY_RESOURCE_SNAPSHOT, freeMemoryBytes: 1 } },
+    { args: ["--json", ...EXECUTE_ARGS], reason: "cpu-load", snapshot: { ...HEALTHY_RESOURCE_SNAPSHOT, load1: 4 } },
+    { args: ["--json", ...EXECUTE_ARGS], reason: "resource-observation-unavailable", snapshot: { ...HEALTHY_RESOURCE_SNAPSHOT, load1: Number.NaN } },
+  ];
+  const previousExitCode = process.exitCode;
+  try {
+    for (const scenario of scenarios) {
+      let pipelineCalls = 0;
+      const noPipeline = () => {
+        pipelineCalls += 1;
+        throw new Error("refused execution must not enter pipeline");
+      };
+      const admission = main(scenario.args, {
+        buildRunnerArtifact: noPipeline,
+        captureArtifacts: noPipeline,
+        captureSource: noPipeline,
+        readResourceSnapshot: () => scenario.snapshot,
+        runTypeScriptBuild: noPipeline,
+        spawn: noPipeline,
+        stdout: { write: () => {} },
+        writeReport: noPipeline,
+      });
+      assert.equal(admission.status, "defer");
+      assert.ok(admission.reasons.includes(scenario.reason));
+      assert.equal(pipelineCalls, 0);
+    }
+  } finally {
+    process.exitCode = previousExitCode;
+  }
+});
+
+test("a failing local counter is treated as unavailable and cannot start execution", () => {
+  let pipelineCalls = 0;
+  const previousExitCode = process.exitCode;
+  const noPipeline = () => {
+    pipelineCalls += 1;
+    throw new Error("counter failure must not enter pipeline");
+  };
+  try {
+    process.exitCode = undefined;
+    const admission = main(["--json", ...EXECUTE_ARGS], {
+      buildRunnerArtifact: noPipeline,
+      captureArtifacts: noPipeline,
+      captureSource: noPipeline,
+      readResourceSnapshot: () => { throw new Error("counter unavailable"); },
+      runTypeScriptBuild: noPipeline,
+      spawn: noPipeline,
+      stdout: { write: () => {} },
+      writeReport: noPipeline,
+    });
+    assert.equal(admission.status, "defer");
+    assert.ok(admission.reasons.includes("resource-observation-unavailable"));
+    assert.equal(pipelineCalls, 0);
+  } finally {
+    process.exitCode = previousExitCode;
+  }
 });
 
 test("exit zero without explicit completion evidence fails closed", () => {
@@ -356,7 +465,7 @@ test("--json keeps stdout JSON-only, redirects safe progress, and enforces repea
     };
   };
 
-  const report = main(["--json"], verifiedPipeline({
+  const report = main(["--json", ...EXECUTE_ARGS], verifiedPipeline({
     spawn: fakeSpawn,
     stdout: { write: (chunk) => { stdout += chunk; } },
     stderr: { write: (chunk) => { stderr += chunk; } },
@@ -386,7 +495,7 @@ test("default orchestration binds every battery to one freshly built source and 
     { count: 41, digest: "a".repeat(64), status: "ok" },
   ];
 
-  const report = main(["--json"], {
+  const report = main(["--json", ...EXECUTE_ARGS], {
     buildRunnerArtifact: () => {
       order.push("runner-build");
       return { ok: true, runnerPath: "/fixed/private/muse-runner" };
@@ -399,6 +508,7 @@ test("default orchestration binds every battery to one freshly built source and 
       order.push("source");
       return sourceSnapshots.shift();
     },
+    readResourceSnapshot: () => HEALTHY_RESOURCE_SNAPSHOT,
     now: () => 0,
     runTypeScriptBuild: () => {
       order.push("typescript-build");
@@ -457,7 +567,7 @@ test("a failed forced TypeScript build replaces an old pass report without using
   let batteryRuns = 0;
   try {
     process.exitCode = undefined;
-    const report = main(["--json"], {
+    const report = main(["--json", ...EXECUTE_ARGS], {
       buildRunnerArtifact: () => {
         throw new Error("runner build must not run after TypeScript failure");
       },
@@ -466,6 +576,7 @@ test("a failed forced TypeScript build replaces an old pass report without using
         return { count: 99, digest: "b".repeat(64), status: "ok" };
       },
       captureSource: () => ({ revision: "a".repeat(40), tree: "clean" }),
+      readResourceSnapshot: () => HEALTHY_RESOURCE_SNAPSHOT,
       now: () => 0,
       runTypeScriptBuild: () => ({ ok: false, reason: "typescript-build-failed" }),
       spawn: () => {
@@ -493,7 +604,7 @@ test("a failed forced TypeScript build replaces an old pass report without using
 
 test("source drift or runtime artifact mutation cannot retain a passing report", () => {
   const previousExitCode = process.exitCode;
-  const run = ({ artifacts, sources }) => main(["--json"], verifiedPipeline({
+  const run = ({ artifacts, sources }) => main(["--json", ...EXECUTE_ARGS], verifiedPipeline({
     captureArtifacts: () => artifacts.shift(),
     captureSource: () => sources.shift(),
     now: () => 0,
@@ -549,7 +660,7 @@ test("invalid source and artifact probe payloads are reduced to path-free unknow
   const previousExitCode = process.exitCode;
   try {
     process.exitCode = undefined;
-    const report = main(["--json"], verifiedPipeline({
+    const report = main(["--json", ...EXECUTE_ARGS], verifiedPipeline({
       captureArtifacts: () => ({
         count: 1,
         digest: "/Users/private-owner/secret-runner",
@@ -632,7 +743,7 @@ test("a failed safe atomic replace removes the prior pass and main reports stati
     const previousExitCode = process.exitCode;
     try {
       process.exitCode = undefined;
-      const report = main(["--json"], verifiedPipeline({
+      const report = main(["--json", ...EXECUTE_ARGS], verifiedPipeline({
         now: () => 0,
         spawn: (_command, _args, options) => {
           const requested = Number(options.env.MUSE_EVAL_REPEAT);
@@ -666,7 +777,7 @@ test("a required environmental skip makes the strict aggregate process exit nonz
   const previousExitCode = process.exitCode;
   try {
     process.exitCode = undefined;
-    const report = main(["--json"], verifiedPipeline({
+    const report = main(["--json", ...EXECUTE_ARGS], verifiedPipeline({
       spawn: (_command, _args, options) => {
         const capability = CAPABILITIES[invocation++];
         assert.ok(capability);

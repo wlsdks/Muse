@@ -22,6 +22,12 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  createCapabilityExecutionAdmission,
+  describeCapabilityExecutionAdmission,
+  parseCapabilityExecutionRequest,
+  readCapabilityResourceSnapshot,
+} from "./eval-agent-admission.mjs";
 import { classifySkip, parseCompletion } from "./eval-skip.mjs";
 import {
   buildAndPublishRunner,
@@ -38,6 +44,8 @@ export const CAPABILITY_MATRIX_ID = "muse-agent-capability-v1";
 
 const HELP_FLAGS = new Set(["--help", "-h"]);
 const PREFLIGHT_FLAG = "--preflight";
+const ADMISSION_FLAG = "--admit";
+const EXECUTE_FLAG = "--execute";
 
 export const CAPABILITIES = Object.freeze([
   { id: "tool-selection-arguments", battery: "eval-tool-selection.mjs", required: true, repeats: 3 },
@@ -307,9 +315,11 @@ function printHumanReport(report, stdout) {
 
 function printUsage(stdout) {
   stdout.write(
-    "Usage: pnpm eval:agent -- [--preflight] [--json]\n\n"
+    "Usage: pnpm eval:agent -- [--preflight | --admit | --execute --confirm-idle --budget-minutes <minutes>] [--json]\n\n"
     + "Runs the full 11-axis local capability gate (builds fresh artifacts and may load local models).\n"
     + "Use --preflight to inspect its static requirements and resource budget without builds, probes, model calls, or writes.\n"
+    + "Use --admit with --confirm-idle and --budget-minutes to check live local readiness without builds, probes, model calls, or writes.\n"
+    + "Use --execute with the same owner confirmation and sufficient budget to start the full gate.\n"
     + "Use --json for a privacy-safe machine-readable report.\n"
   );
 }
@@ -367,6 +377,40 @@ function printPreflight(preflight, stdout) {
   );
 }
 
+export function createCapabilityExecutionAdmissionForArgs(args, dependencies = {}) {
+  const preflight = createCapabilityPreflight();
+  const request = parseCapabilityExecutionRequest(args);
+  let snapshot;
+  try {
+    snapshot = (dependencies.readResourceSnapshot ?? readCapabilityResourceSnapshot)();
+  } catch {
+    snapshot = undefined;
+  }
+  return createCapabilityExecutionAdmission({
+    matrixId: preflight.matrixId,
+    requiredBudgetMinutes: preflight.resourceBudget.hardSequentialTimeoutMinutes,
+    request,
+    snapshot,
+  });
+}
+
+function printAdmission(admission, stdout) {
+  stdout.write("\n=== eval:agent execution admission (read only) ===\n" + describeCapabilityExecutionAdmission(admission) + "\n");
+  if (admission.status === "defer") {
+    stdout.write(
+      "next: inspect with --admit --confirm-idle --budget-minutes 990; "
+      + "start only with --execute --confirm-idle --budget-minutes 990.\n"
+    );
+  }
+}
+
+function emitAdmission(admission, { json, stdout }) {
+  if (json) stdout.write(JSON.stringify(admission) + "\n");
+  else printAdmission(admission, stdout);
+  if (admission.status !== "admit") process.exitCode = 1;
+  return admission;
+}
+
 export function main(args = process.argv.slice(2), dependencies = {}) {
   const spawn = dependencies.spawn ?? spawnSync;
   const stdout = dependencies.stdout ?? process.stdout;
@@ -382,6 +426,18 @@ export function main(args = process.argv.slice(2), dependencies = {}) {
     if (json) stdout.write(`${JSON.stringify(preflight)}\n`);
     else printPreflight(preflight, stdout);
     return preflight;
+  }
+  const admissionRequested = args.includes(ADMISSION_FLAG);
+  const executionRequested = args.includes(EXECUTE_FLAG);
+  const admission = createCapabilityExecutionAdmissionForArgs(args, dependencies);
+  if (admissionRequested && executionRequested) {
+    return emitAdmission(
+      { ...admission, reasons: ["conflicting-admission-mode"], status: "defer" },
+      { json, stdout }
+    );
+  }
+  if (admissionRequested || !executionRequested || admission.status !== "admit") {
+    return emitAdmission(admission, { json, stdout });
   }
   const captureSource = dependencies.captureSource
     ?? (() => captureGitSourceSnapshot({ repoRoot: REPO_ROOT }));
