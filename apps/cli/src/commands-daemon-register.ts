@@ -113,6 +113,7 @@ import { assessDaemonResourceAdmission, daemonResourcePolicyEnvironment, readDae
 import { DaemonHeavyWorkQueue, resolveDaemonHeavyWorkUnitsPerTick } from "./daemon-heavy-work-budget.js";
 import { cancelledDecisionReceipt, resolveDaemonResourceReceiptFile, withWorkloadBoundary, workloadDecisionReceipt, writeDaemonResourceAdmissionReceipt, type DaemonResourceReceipt } from "./daemon-resource-receipt.js";
 import { DaemonWorkloadGovernor, daemonWorkloadNotReady, type DaemonWorkloadCycleResult } from "./daemon-workload-governor.js";
+import { emptyDaemonWorkloadProfile, readDaemonWorkloadProfile, recordDaemonWorkloadReceipt, resolveDaemonWorkloadProfileFile, writeDaemonWorkloadProfile } from "./daemon-workload-profile.js";
 
 const DEFAULT_INTERRUPTION_HOURLY_CAP = 2;
 const DEFAULT_INTERRUPTION_DAILY_CAP = 6;
@@ -1528,6 +1529,9 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       let lastResourceAdmissionKey: string | undefined;
       const resourceReceiptFile = resolveDaemonResourceReceiptFile(e);
       const signal = new DaemonStopSignal();
+      const workloadProfileFile = resolveDaemonWorkloadProfileFile(e);
+      let workloadProfile = await readDaemonWorkloadProfile(workloadProfileFile)
+        ?? emptyDaemonWorkloadProfile();
       const workloadGovernor = new DaemonWorkloadGovernor([
         { id: "reflection", run: (claim) => reflectionTick(claim) },
         { id: "email-sync", run: (claim) => emailSyncTick?.(claim) ?? Promise.resolve(daemonWorkloadNotReady(localOnly ? "disabled" : "unconfigured")) },
@@ -1540,13 +1544,20 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         { id: "browsing-sync", run: (claim) => browsingAutoSyncTick?.(claim) ?? Promise.resolve(daemonWorkloadNotReady("unconfigured")) }
       ]);
       const writeResourceReceipt = async (receipt: DaemonResourceReceipt): Promise<boolean> => {
+        let written = false;
         try {
           await (helpers.writeResourceAdmissionReceipt ?? writeDaemonResourceAdmissionReceipt)(resourceReceiptFile, receipt);
-          return true;
+          written = true;
         } catch {
           io.stderr("resource: receipt-write-failed\n");
-          return false;
         }
+        workloadProfile = recordDaemonWorkloadReceipt(workloadProfile, receipt);
+        try {
+          await writeDaemonWorkloadProfile(workloadProfileFile, workloadProfile);
+        } catch {
+          io.stderr("resource: profile-write-failed\n");
+        }
+        return written;
       };
       const runTick = async (): Promise<void> => {
         await recordProactiveHeartbeat(daemonHeartbeatDir, "daemon-loop").catch(() => false);

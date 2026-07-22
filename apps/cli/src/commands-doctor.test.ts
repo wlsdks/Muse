@@ -242,6 +242,11 @@ describe("local doctor runtime ownership", () => {
 
   it("has a dedicated resource check that never contacts a model or remote service", async () => {
     const homeDir = mkdtempSync(join(tmpdir(), "muse-doctor-resource-standalone-"));
+    mkdirSync(join(homeDir, ".muse"), { recursive: true });
+    writeFileSync(join(homeDir, ".muse", "daemon-workload-profile.json"), JSON.stringify({
+      admitted: 1, boundaries: 1, cancelled: 0, deferred: 0, schema: "muse.daemon-workload-profile/v1",
+      since: "2026-07-22T00:00:00.000Z", units: {}, updatedAt: "2026-07-22T00:00:01.000Z"
+    }));
     const check = await daemonResourceDoctorCheck({
       daemonAutostartStatus: {
         artifact: { state: "missing" },
@@ -258,13 +263,21 @@ describe("local doctor runtime ownership", () => {
     expect(check).toMatchObject({ name: "daemon resources", status: "ok" });
     expect(check.detail).toContain("shell/default");
     expect(check.detail).toContain("no prior transition evidence");
+    expect(check.detail).toContain("no cumulative workload profile");
   });
 
   it("shows a latest resource transition receipt without changing the live admission verdict", async () => {
     const homeDir = mkdtempSync(join(tmpdir(), "muse-doctor-resource-receipt-"));
     const receiptFile = join(homeDir, ".muse", "daemon-resource-admission.json");
+    const profileFile = join(homeDir, ".muse", "daemon-workload-profile.json");
     mkdirSync(join(homeDir, ".muse"), { recursive: true });
     writeFileSync(receiptFile, JSON.stringify({ at: "2026-07-22T00:00:00.000Z", reason: "cpu-load", schema: "muse.daemon-resource-admission.v1", status: "defer" }));
+    writeFileSync(profileFile, JSON.stringify({
+      admitted: 3, boundaries: 3, cancelled: 0, deferred: 2,
+      schema: "muse.daemon-workload-profile/v1", since: "2026-07-22T00:00:00.000Z",
+      units: { "browsing-sync": { completed: 3, failed: 0, maxDurationMs: 80, maxRssGrowthBytes: 1024, totalCpuMicros: 600, totalDurationMs: 150 } },
+      updatedAt: "2026-07-22T00:05:00.000Z"
+    }));
     const check = await daemonResourceDoctorCheck({
       daemonAutostartStatus: {
         artifact: { state: "missing" },
@@ -281,6 +294,8 @@ describe("local doctor runtime ownership", () => {
     expect(check).toMatchObject({ name: "daemon resources", status: "ok" });
     expect(check.detail).toContain("heavy background work admitted");
     expect(check.detail).toContain("legacy transition evidence deferred (cpu-load) at 2026-07-22T00:00:00.000Z");
+    expect(check.detail).toContain("profile 3 boundaries");
+    expect(check.detail).toContain("slowest-total browsing-sync avg 50 ms max 80 ms");
   });
 
   it("falls back to the interactive shell self-learning gate when a valid artifact cannot be read", async () => {

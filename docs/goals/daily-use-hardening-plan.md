@@ -104,12 +104,18 @@ states say what evidence is missing; they do not render zero as success.
   batches, browser work, and retry loops. Queue one bounded unit at a time.
 - [x] Emit only decision-grade telemetry: work admitted/deferred/cancelled and
   the policy reason. Do not sample a costly always-on dashboard.
+- [x] Aggregate claimed-unit duration, CPU delta, maximum positive RSS growth,
+  completion, and failure into a constant-size local workload profile. Doctor
+  reports the largest cumulative-time unit; raw event history and continuous
+  sampling remain intentionally absent.
 - [x] Require an owner-visible escape hatch and a deterministic test seam for
   each admission decision.
 
 The current slice additionally records per-unit CPU delta, RSS, candidate queue
 depth, duration, and truthful cooperative stop-boundary latency. The broader
-inventory item stays open until model load is measured directly; thermal
+inventory item stays open until model load is measured directly. Its bounded
+aggregate now survives daemon restarts and makes comparative dogfooding
+possible without adding a dashboard or an unbounded telemetry log; thermal
 production support and the wider model/cache/index/browser budgets also remain
 open rather than being inferred from this daemon-only governor.
 

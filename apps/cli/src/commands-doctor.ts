@@ -68,6 +68,7 @@ import type { ProgramIO } from "./program.js";
 import { assessDaemonResourceAdmission, readDaemonResourceSnapshot, resolveDaemonResourcePolicy, type DaemonResourceSnapshot } from "./daemon-resource-admission.js";
 import { readDaemonResourceAdmissionReceipt, resolveDaemonResourceReceiptFile } from "./daemon-resource-receipt.js";
 import { describeDaemonResourceStatus } from "./daemon-resource-status.js";
+import { describeDaemonWorkloadProfile, readDaemonWorkloadProfile, resolveDaemonWorkloadProfileFile } from "./daemon-workload-profile.js";
 
 export interface DoctorCommandHelpers {
   readonly apiRequest: (
@@ -575,8 +576,9 @@ async function daemonResourceDoctorCheckFor(
   const resourcePolicy = resolveDaemonResourcePolicy(resourceEnvironment.env);
   const resourceAdmission = assessDaemonResourceAdmission(resourceEnvironment.env, snapshot);
   const receipt = await readDaemonResourceAdmissionReceipt(resolveDaemonResourceReceiptFile(resourceEnvironment.env));
+  const profile = await readDaemonWorkloadProfile(resolveDaemonWorkloadProfileFile(resourceEnvironment.env));
   return {
-    detail: describeDaemonResourceStatus({ admission: resourceAdmission, policy: resourcePolicy, receipt, snapshot, source: resourceEnvironment.source }),
+    detail: `${describeDaemonResourceStatus({ admission: resourceAdmission, policy: resourcePolicy, receipt, snapshot, source: resourceEnvironment.source })}; ${describeDaemonWorkloadProfile(profile)}`,
     name: "daemon resources",
     status: resourceAdmission.status === "defer" ? "warn" : "ok"
   };

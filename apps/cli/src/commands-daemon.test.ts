@@ -1756,6 +1756,12 @@ describe("muse daemon — resource admission", () => {
       { decision: { status: "admitted" }, lastBoundary: { status: "completed", unit: "email-sync" } },
       { decision: { reason: "owner-paused", status: "deferred" } }
     ]);
+    expect(JSON.parse(readFileSync(join(env.HOME!, ".muse", "daemon-workload-profile.json"), "utf8"))).toMatchObject({
+      admitted: 1,
+      boundaries: 1,
+      deferred: 2,
+      units: { "email-sync": { completed: 1, failed: 0 } }
+    });
   });
 
   it("defers and then resumes opt-in heavyweight browsing sync without changing the light tick", async () => {
