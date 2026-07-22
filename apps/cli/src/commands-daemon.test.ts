@@ -1742,21 +1742,25 @@ describe("muse daemon — daemon-loop heartbeat (R2-1)", () => {
 });
 
 describe("muse daemon — resource admission", () => {
-  it("runs the isolated active -> idle claim -> owner-paused three-cycle journey", async () => {
+  it("rechecks resources at the exact claim and starts zero heavy work after an active-user flip", async () => {
     const env: NodeJS.ProcessEnv = {
       ...tmpEnv(),
-      MUSE_DAEMON_BACKGROUND_MODE: "auto",
       MUSE_EMAIL_SYNC_ENABLED: "true",
       MUSE_MESSAGING_POLL_ENABLED: "true"
     };
+    const healthy: DaemonResourceSnapshot = {
+      cpuCount: 4,
+      freeMemoryBytes: 4 * 1024 ** 3,
+      idleMs: 600_000,
+      load1: 1,
+      onAcPower: true,
+      platform: "darwin"
+    };
+    const active = { ...healthy, idleMs: 1_000 };
+    const snapshots = [healthy, active];
     const heavy = vi.fn();
     const messagingPoll = vi.fn(async () => ({ errors: [], ingestedByProvider: {} }));
     const receipts: DaemonResourceReceipt[] = [];
-    const snapshots: DaemonResourceSnapshot[] = [
-      { cpuCount: 4, freeMemoryBytes: 4 * 1024 ** 3, idleMs: 1_000, load1: 1, onAcPower: true, platform: "darwin" },
-      { cpuCount: 4, freeMemoryBytes: 4 * 1024 ** 3, idleMs: 300_000, load1: 1, onAcPower: true, platform: "darwin" },
-      { cpuCount: 4, freeMemoryBytes: 4 * 1024 ** 3, idleMs: 300_000, load1: 1, onAcPower: true, platform: "darwin" }
-    ];
     const makeEmailSyncTick: NonNullable<DaemonHelpers["makeEmailSyncTick"]> = () => async (claim) => {
       if (!(claim ?? (() => true))()) return { status: "cancelled-before-claim" };
       heavy();
@@ -1768,7 +1772,100 @@ describe("muse daemon — resource admission", () => {
       makeEmailSyncTick,
       messagingPoll,
       registry: new MessagingProviderRegistry([capturingProvider([])]),
-      resourceSnapshot: () => snapshots.shift()!,
+      resourceSnapshot: () => snapshots.shift() ?? active,
+      runDaemonLoop: async ({ signal, tick }) => { await tick(); await tick(); signal.stop(); return 2; },
+      writeResourceAdmissionReceipt: async (_file, receipt) => { receipts.push(receipt); }
+    });
+
+    expect(heavy).not.toHaveBeenCalled();
+    expect(messagingPoll).toHaveBeenCalledOnce();
+    expect(receipts).toHaveLength(2);
+    expect(receipts).toMatchObject([
+      { decision: { observation: { idle: { milliseconds: 600_000 } }, status: "admitted" } },
+      { decision: { observation: { idle: { milliseconds: 1_000 } }, reason: "active-user", status: "deferred" } }
+    ]);
+    expect(receipts.some((receipt) => "lastBoundary" in receipt && receipt.lastBoundary !== undefined)).toBe(false);
+  });
+
+  it("binds each cap-2 boundary to its claim snapshot and defers the second claim without skipping light lanes", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...tmpEnv(),
+      MUSE_EMAIL_SYNC_ENABLED: "true",
+      MUSE_MESSAGING_POLL_ENABLED: "true",
+      MUSE_DAEMON_HEAVY_WORK_UNITS_PER_TICK: "2"
+    };
+    const base: DaemonResourceSnapshot = {
+      cpuCount: 4,
+      freeMemoryBytes: 4 * 1024 ** 3,
+      load1: 1,
+      onAcPower: true,
+      platform: "darwin"
+    };
+    const snapshots = [
+      { ...base, idleMs: 600_000 },
+      { ...base, idleMs: 700_000 },
+      { ...base, idleMs: 1_000 }
+    ];
+    const emailBody = vi.fn();
+    const messagingPoll = vi.fn(async () => ({ errors: [], ingestedByProvider: {} }));
+    const receipts: DaemonResourceReceipt[] = [];
+    const makeEmailSyncTick: NonNullable<DaemonHelpers["makeEmailSyncTick"]> = () => async (claim) => {
+      if (!(claim ?? (() => true))()) return { status: "cancelled-before-claim" };
+      emailBody();
+      return { status: "claimed-completed" };
+    };
+
+    await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      env,
+      makeEmailSyncTick,
+      messagingPoll,
+      registry: new MessagingProviderRegistry([capturingProvider([])]),
+      resourceSnapshot: () => snapshots.shift() ?? { ...base, idleMs: 1_000 },
+      writeResourceAdmissionReceipt: async (_file, receipt) => { receipts.push(receipt); }
+    });
+
+    expect(emailBody).not.toHaveBeenCalled();
+    expect(messagingPoll).toHaveBeenCalledOnce();
+    const boundaries = receipts.flatMap((receipt) => "lastBoundary" in receipt && receipt.lastBoundary ? [receipt] : []);
+    expect(boundaries).toHaveLength(1);
+    expect(boundaries[0]).toMatchObject({
+      decision: { observation: { idle: { milliseconds: 700_000 } }, status: "admitted" },
+      lastBoundary: { unit: "pattern" }
+    });
+    expect(receipts.at(-1)).toMatchObject({
+      decision: { observation: { idle: { milliseconds: 1_000 } }, reason: "active-user", status: "deferred" }
+    });
+  });
+
+  it("runs the isolated active -> idle claim -> owner-paused three-cycle journey", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...tmpEnv(),
+      MUSE_DAEMON_BACKGROUND_MODE: "auto",
+      MUSE_EMAIL_SYNC_ENABLED: "true",
+      MUSE_MESSAGING_POLL_ENABLED: "true"
+    };
+    const heavy = vi.fn();
+    const messagingPoll = vi.fn(async () => ({ errors: [], ingestedByProvider: {} }));
+    const receipts: DaemonResourceReceipt[] = [];
+    const activeSnapshot: DaemonResourceSnapshot = {
+      cpuCount: 4, freeMemoryBytes: 4 * 1024 ** 3, idleMs: 1_000, load1: 1, onAcPower: true, platform: "darwin"
+    };
+    const idleSnapshot: DaemonResourceSnapshot = {
+      cpuCount: 4, freeMemoryBytes: 4 * 1024 ** 3, idleMs: 300_000, load1: 1, onAcPower: true, platform: "darwin"
+    };
+    let snapshotReads = 0;
+    const makeEmailSyncTick: NonNullable<DaemonHelpers["makeEmailSyncTick"]> = () => async (claim) => {
+      if (!(claim ?? (() => true))()) return { status: "cancelled-before-claim" };
+      heavy();
+      return { status: "claimed-completed" };
+    };
+
+    await runDaemon(["--provider", "telegram", "--destination", "555"], {
+      env,
+      makeEmailSyncTick,
+      messagingPoll,
+      registry: new MessagingProviderRegistry([capturingProvider([])]),
+      resourceSnapshot: () => snapshotReads++ === 0 ? activeSnapshot : idleSnapshot,
       runDaemonLoop: async ({ signal, tick }) => {
         await tick();
         await tick();

@@ -55,7 +55,10 @@ move from `Unreleased` to dated/versioned headings. Version policy:
   units. One fair cursor applies the owner's global cap to actual claims (and
   preserves the historical maximum of eight claims when uncapped); stop requests
   before claim start nothing, while a stop during work is recorded truthfully at
-  the completed/failed boundary. Strict owner-only v2 evidence
+  the completed/failed boundary. Every actual claim now re-reads the live owner
+  pause and takes a fresh resource snapshot, so a state change after tick start
+  prevents later work without delaying light lanes; each boundary is bound to
+  the exact snapshot that admitted it. Strict owner-only v2 evidence
   keeps the admission observation beside the latest unit CPU/RSS/duration and
   queue measurements, while `doctor --resources` separates its live verdict
   from legacy, historical, or stale receipt evidence. The resource diagnostic

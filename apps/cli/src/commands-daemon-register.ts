@@ -113,10 +113,10 @@ import { isGmailConfigured } from "./resolve-gmail-provider.js";
 import { DaemonStopSignal, DEFAULT_DAEMON_INTERVAL_MS, runDaemonLoop } from "./commands-daemon-loop.js";
 import { defaultChromeConnection, defaultFollowupModel, defaultKnowledgeEnrich, type FollowupModel } from "./commands-daemon-connections.js";
 import { lockDaemonMessagingRegistry, resolveDaemonProviderLock, type DaemonProviderLock } from "./daemon-messaging-safety.js";
-import { assessDaemonResourceAdmission, daemonResourcePolicyEnvironment, readDaemonResourceSnapshot, type DaemonResourceSnapshot } from "./daemon-resource-admission.js";
+import { assessDaemonResourceAdmission, daemonResourcePolicyEnvironment, readDaemonResourceSnapshot, type DaemonResourceAdmission, type DaemonResourceSnapshot } from "./daemon-resource-admission.js";
 import { resolveDaemonHeavyWorkUnitsPerTick } from "./daemon-heavy-work-budget.js";
-import { cancelledDecisionReceipt, resolveDaemonResourceReceiptFile, withWorkloadBoundary, workloadDecisionReceipt, writeDaemonResourceAdmissionReceipt, type DaemonResourceReceipt, type DaemonWorkloadUnitId } from "./daemon-resource-receipt.js";
-import { DaemonWorkloadGovernor, daemonWorkloadNotReady, type DaemonWorkloadCycleResult } from "./daemon-workload-governor.js";
+import { cancelledDecisionReceipt, resolveDaemonResourceReceiptFile, withWorkloadBoundary, workloadDecisionReceipt, writeDaemonResourceAdmissionReceipt, type DaemonResourceReceipt, type DaemonWorkloadReceiptV2, type DaemonWorkloadUnitId } from "./daemon-resource-receipt.js";
+import { DaemonWorkloadGovernor, daemonWorkloadNotReady } from "./daemon-workload-governor.js";
 import { emptyDaemonWorkloadProfile, readDaemonWorkloadProfile, recordDaemonWorkloadReceipt, resolveDaemonWorkloadProfileFile, writeDaemonWorkloadProfile } from "./daemon-workload-profile.js";
 
 const DEFAULT_INTERRUPTION_HOURLY_CAP = 2;
@@ -1554,6 +1554,38 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         }
         return written;
       };
+      interface ResourceClaimToken {
+        readonly admission: DaemonResourceAdmission;
+        readonly receipt: DaemonWorkloadReceiptV2;
+        readonly snapshot: DaemonResourceSnapshot;
+      }
+      const readResourceClaimToken = (): ResourceClaimToken => {
+        const liveDaemonConfig = (helpers.readDaemonConfig ?? readDaemonConfig)(configFile);
+        const snapshot = (helpers.resourceSnapshot ?? readDaemonResourceSnapshot)();
+        const admission = assessDaemonResourceAdmission(
+          e,
+          snapshot,
+          { ownerPaused: liveDaemonConfig.heavyWorkPaused === true }
+        );
+        return {
+          admission,
+          receipt: workloadDecisionReceipt(admission, snapshot, workloadGovernor.queueDepth),
+          snapshot
+        };
+      };
+      const recordResourceTransition = async (token: ResourceClaimToken): Promise<boolean> => {
+        const resourceAdmissionKey = `${token.admission.status}:${token.admission.reason ?? ""}`;
+        const previousResourceAdmissionKey = lastResourceAdmissionKey;
+        if (resourceAdmissionKey === previousResourceAdmissionKey) return false;
+        lastResourceAdmissionKey = resourceAdmissionKey;
+        await writeResourceReceipt(token.receipt);
+        if (token.admission.status === "defer") {
+          io.stdout(`[${new Date().toISOString()}] resource: deferred heavyweight background work (${token.admission.reason})\n`);
+        } else if (previousResourceAdmissionKey?.startsWith("defer:") === true) {
+          io.stdout(`[${new Date().toISOString()}] resource: heavyweight background work resumed\n`);
+        }
+        return true;
+      };
       const runTick = async (): Promise<void> => {
         await recordProactiveHeartbeat(daemonHeartbeatDir, "daemon-loop").catch(() => false);
         await proactiveTick();
@@ -1561,63 +1593,52 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await remindersTick();
         await dailyBriefTick();
         await schedulerTick();
-        const liveDaemonConfig = (helpers.readDaemonConfig ?? readDaemonConfig)(configFile);
-        const resourceSnapshot = (helpers.resourceSnapshot ?? readDaemonResourceSnapshot)();
-        const resourceAdmission = assessDaemonResourceAdmission(
-          e,
-          resourceSnapshot,
-          { ownerPaused: liveDaemonConfig.heavyWorkPaused === true }
-        );
-        const decisionReceipt = workloadDecisionReceipt(resourceAdmission, resourceSnapshot, workloadGovernor.queueDepth);
-        const resourceAdmissionKey = `${resourceAdmission.status}:${resourceAdmission.reason ?? ""}`;
-        const previousResourceAdmissionKey = lastResourceAdmissionKey;
-        const resourceAdmissionChanged = resourceAdmissionKey !== previousResourceAdmissionKey;
-        if (resourceAdmissionChanged) {
-          lastResourceAdmissionKey = resourceAdmissionKey;
-          await writeResourceReceipt(decisionReceipt);
-        }
+        const initialResource = readResourceClaimToken();
+        await recordResourceTransition(initialResource);
         if (signal.stopped) {
-          await writeResourceReceipt(cancelledDecisionReceipt(resourceSnapshot, workloadGovernor.queueDepth));
+          await writeResourceReceipt(cancelledDecisionReceipt(initialResource.snapshot, workloadGovernor.queueDepth));
           return;
-        }
-        if (resourceAdmission.status === "defer") {
-          if (resourceAdmissionChanged) {
-            io.stdout(`[${new Date().toISOString()}] resource: deferred heavyweight background work (${resourceAdmission.reason})\n`);
-          }
-        } else if (previousResourceAdmissionKey?.startsWith("defer:") === true) {
-          io.stdout(`[${new Date().toISOString()}] resource: heavyweight background work resumed\n`);
         }
         await checkinsTick();
         if (signal.stopped) {
-          await writeResourceReceipt(cancelledDecisionReceipt(resourceSnapshot, workloadGovernor.queueDepth));
+          await writeResourceReceipt(cancelledDecisionReceipt(initialResource.snapshot, workloadGovernor.queueDepth));
           return;
         }
-        if (resourceAdmission.status === "admit") {
+        if (initialResource.admission.status === "admit") {
           await ensureHeavyRuntime();
           if (signal.stopped) {
-            await writeResourceReceipt(cancelledDecisionReceipt(resourceSnapshot, workloadGovernor.queueDepth));
+            await writeResourceReceipt(cancelledDecisionReceipt(initialResource.snapshot, workloadGovernor.queueDepth));
             return;
           }
-          // Historically an uncapped tick attempted seven delivery/watch lanes
-          // plus one maintenance lane. Keep that upper bound while putting all
-          // sixteen claimable units behind one fair cursor and one measurement
-          // boundary. An explicit cap remains a cap on actual claimed work,
-          // not on cheap not-ready checks.
+          // Preserve the established delivery/watch cadence while ensuring
+          // every later claim receives a fresh resource/config decision rather
+          // than inheriting this tick-start snapshot.
           const cycleBudget = heavyWorkUnitsPerTick === 0 ? 8 : Math.min(heavyWorkUnitsPerTick, 8);
           const completedUnits = new Set<DaemonWorkloadUnitId>();
           for (let completed = 0; completed < cycleBudget; completed += 1) {
-            const governedCycle: DaemonWorkloadCycleResult = await workloadGovernor.runAdmittedCycle(signal, completedUnits);
+            const governedCycle = await workloadGovernor.runAdmittedCycle(
+              signal,
+              completedUnits,
+              () => {
+                const token = readResourceClaimToken();
+                return { status: token.admission.status, token };
+              }
+            );
             if (governedCycle.status === "no-work") break;
             if (governedCycle.status === "cancelled-before-claim") {
-              await writeResourceReceipt(cancelledDecisionReceipt(resourceSnapshot, workloadGovernor.queueDepth));
+              await writeResourceReceipt(cancelledDecisionReceipt(initialResource.snapshot, workloadGovernor.queueDepth));
               return;
             }
+            if (governedCycle.status === "deferred-before-claim") {
+              await recordResourceTransition(governedCycle.claimToken);
+              break;
+            }
             completedUnits.add(governedCycle.boundary.unit);
-            await writeResourceReceipt(withWorkloadBoundary(decisionReceipt, governedCycle.boundary));
+            await writeResourceReceipt(withWorkloadBoundary(governedCycle.claimToken.receipt, governedCycle.boundary));
             if (governedCycle.boundary.stopRequestedDuring) return;
           }
           if (signal.stopped) {
-            await writeResourceReceipt(cancelledDecisionReceipt(resourceSnapshot, workloadGovernor.queueDepth));
+            await writeResourceReceipt(cancelledDecisionReceipt(initialResource.snapshot, workloadGovernor.queueDepth));
             return;
           }
         }

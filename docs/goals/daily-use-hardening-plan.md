@@ -91,6 +91,11 @@ states say what evidence is missing; they do not render zero as success.
   boundary as an owner-only local receipt; it is written on transitions/work
   boundaries, not sampled into a chart, and is shown as historical evidence
   separate from the live `muse doctor --resources` verdict.
+- [x] Revalidate live owner pause and resources at each exact workload claim,
+  after cheap readiness checks and before governed work. A state change after
+  tick start prevents later claims without advancing the fairness cursor or
+  skipping light lanes, and each completed/failed boundary carries the exact
+  claim-time decision rather than a stale tick observation.
 - [x] Give the owner a live `muse daemon --pause-heavy-work` /
   `--resume-heavy-work` escape hatch. It persists locally, is re-read on each
   tick without restart, holds only model/sync/consolidation work, and records
@@ -150,7 +155,9 @@ execution/context-token coordinators.
 
 **Gate:** under an injected constrained-resource state, background work starts
 zero new model/tool jobs, records a bounded deferral reason, and foreground chat
-remains responsive. On recovery it resumes at most one bounded unit.
+remains responsive. On recovery, every new unit is independently re-admitted
+within the existing owner-configured cadence; already-claimed non-model work is
+not hard-cancelled by this slice.
 
 ### 4. Triage old reminder backlog without automation — complete
 

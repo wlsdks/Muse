@@ -11,6 +11,11 @@ export type DaemonWorkloadTickOutcome =
 export type DaemonWorkloadClaim = () => boolean;
 export type GovernedDaemonTick = (claim?: DaemonWorkloadClaim) => Promise<DaemonWorkloadTickOutcome>;
 
+export type DaemonWorkloadClaimDecision<T> =
+  | { readonly status: "admit"; readonly token: T }
+  | { readonly status: "defer"; readonly token: T };
+export type DaemonWorkloadClaimGate<T> = () => DaemonWorkloadClaimDecision<T>;
+
 export interface DaemonWorkloadUnit {
   readonly id: DaemonWorkloadUnitId;
   readonly run: GovernedDaemonTick;
@@ -28,6 +33,12 @@ export type DaemonWorkloadCycleResult =
   | { readonly status: "cancelled-before-claim" }
   | { readonly status: "boundary"; readonly boundary: DaemonWorkloadBoundaryV2 };
 
+export type GatedDaemonWorkloadCycleResult<T> =
+  | { readonly status: "no-work" }
+  | { readonly status: "cancelled-before-claim" }
+  | { readonly status: "deferred-before-claim"; readonly claimToken: T }
+  | { readonly status: "boundary"; readonly boundary: DaemonWorkloadBoundaryV2; readonly claimToken: T };
+
 export class DaemonWorkloadGovernor {
   private cursor = 0;
   private inFlight = false;
@@ -44,23 +55,34 @@ export class DaemonWorkloadGovernor {
     return this.units.length;
   }
 
-  async runAdmittedCycle(
+  runAdmittedCycle(
     signal: DaemonStopSignal,
-    excludedUnits: ReadonlySet<DaemonWorkloadUnitId> = new Set()
-  ): Promise<DaemonWorkloadCycleResult> {
+    excludedUnits?: ReadonlySet<DaemonWorkloadUnitId>
+  ): Promise<DaemonWorkloadCycleResult>;
+  runAdmittedCycle<T>(
+    signal: DaemonStopSignal,
+    excludedUnits: ReadonlySet<DaemonWorkloadUnitId>,
+    claimGate: DaemonWorkloadClaimGate<T>
+  ): Promise<GatedDaemonWorkloadCycleResult<T>>;
+  async runAdmittedCycle<T>(
+    signal: DaemonStopSignal,
+    excludedUnits: ReadonlySet<DaemonWorkloadUnitId> = new Set(),
+    claimGate?: DaemonWorkloadClaimGate<T>
+  ): Promise<DaemonWorkloadCycleResult | GatedDaemonWorkloadCycleResult<T>> {
     if (this.inFlight) return { status: "no-work" };
     this.inFlight = true;
     try {
-      return await this.runExclusiveCycle(signal, excludedUnits);
+      return await this.runExclusiveCycle(signal, excludedUnits, claimGate);
     } finally {
       this.inFlight = false;
     }
   }
 
-  private async runExclusiveCycle(
+  private async runExclusiveCycle<T>(
     signal: DaemonStopSignal,
-    excludedUnits: ReadonlySet<DaemonWorkloadUnitId>
-  ): Promise<DaemonWorkloadCycleResult> {
+    excludedUnits: ReadonlySet<DaemonWorkloadUnitId>,
+    claimGate: DaemonWorkloadClaimGate<T> | undefined
+  ): Promise<DaemonWorkloadCycleResult | GatedDaemonWorkloadCycleResult<T>> {
     if (signal.stopped) return { status: "cancelled-before-claim" };
     const total = this.units.length;
     if (total === 0) return { status: "no-work" };
@@ -74,9 +96,25 @@ export class DaemonWorkloadGovernor {
       let claimAtMs = 0;
       let cpuBefore = 0;
       let rssBefore = 0;
+      let claimAdmitted = false;
+      let claimDeferred = false;
+      let admittedToken: T | undefined;
+      let deferredToken: T | undefined;
       const claim: DaemonWorkloadClaim = () => {
         if (claimed) return true;
         if (signal.stopped) return false;
+        if (claimDeferred) return false;
+        const decision = claimGate?.();
+        // A stop raised synchronously while the gate was observing resources
+        // outranks resource deferral and retains the existing stop contract.
+        if (signal.stopped) return false;
+        if (decision?.status === "defer") {
+          claimDeferred = true;
+          deferredToken = decision.token;
+          return false;
+        }
+        claimAdmitted = true;
+        admittedToken = decision?.token;
         claimed = true;
         claimAtMs = this.metrics.monotonicMs();
         cpuBefore = this.metrics.cpuMicros();
@@ -89,6 +127,9 @@ export class DaemonWorkloadGovernor {
         outcome = await unit.run(claim);
       } catch {
         outcome = claimed ? { errorClass: "unknown", status: "claimed-failed" } : { reason: "internal-brake", status: "not-ready" };
+      }
+      if (claimDeferred) {
+        return { claimToken: deferredToken as T, status: "deferred-before-claim" };
       }
       if (outcome.status === "not-ready") {
         if (claimed) throw new Error(`daemon workload unit ${unit.id} claimed then reported not-ready`);
@@ -116,7 +157,9 @@ export class DaemonWorkloadGovernor {
         unit: unit.id
       };
       this.cursor = (index + 1) % total;
-      return { boundary, status: "boundary" };
+      return claimGate && claimAdmitted
+        ? { boundary, claimToken: admittedToken as T, status: "boundary" }
+        : { boundary, status: "boundary" };
     }
     return { status: "no-work" };
   }

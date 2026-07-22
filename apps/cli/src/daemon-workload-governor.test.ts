@@ -127,6 +127,73 @@ describe("DaemonWorkloadGovernor", () => {
     expect(await boundaryGovernor.runAdmittedCycle(signal)).toEqual({ status: "cancelled-before-claim" });
   });
 
+  it("distinguishes an exact claim-gate deferral from process stop without advancing fairness", async () => {
+    const calls: string[] = [];
+    const governor = new DaemonWorkloadGovernor(["pattern", "browsing-sync"].map((id) => ({
+      id: id as DaemonWorkloadUnit["id"],
+      run: async (claim) => {
+        calls.push(id);
+        if (!claim!()) return daemonWorkloadCancelled();
+        return daemonWorkloadCompleted();
+      }
+    })));
+    const token = { observation: "active-at-claim" };
+
+    expect(await governor.runAdmittedCycle(
+      new DaemonStopSignal(),
+      new Set(),
+      () => ({ status: "defer", token })
+    )).toEqual({ claimToken: token, status: "deferred-before-claim" });
+
+    const admitted = await governor.runAdmittedCycle(
+      new DaemonStopSignal(),
+      new Set(),
+      () => ({ status: "admit", token: { observation: "idle-at-claim" } })
+    );
+    expect(admitted).toMatchObject({
+      boundary: { unit: "pattern" },
+      claimToken: { observation: "idle-at-claim" },
+      status: "boundary"
+    });
+    expect(calls).toEqual(["pattern", "pattern"]);
+  });
+
+  it.each(["admit", "defer"] as const)("lets synchronous stop outrank a %s gate decision", async (status) => {
+    const signal = new DaemonStopSignal();
+    const governor = new DaemonWorkloadGovernor([{
+      id: "reflection",
+      run: async (claim) => {
+        expect(claim!()).toBe(false);
+        return daemonWorkloadCancelled();
+      }
+    }]);
+
+    expect(await governor.runAdmittedCycle(signal, new Set(), () => {
+      signal.stop(10);
+      return { status, token: "must-not-escape" };
+    })).toEqual({ status: "cancelled-before-claim" });
+  });
+
+  it("carries an undefined gate token without treating it as missing state", async () => {
+    const governor = new DaemonWorkloadGovernor([{
+      id: "pattern",
+      run: async (claim) => claim!() ? daemonWorkloadCompleted() : daemonWorkloadCancelled()
+    }]);
+
+    expect(await governor.runAdmittedCycle(
+      new DaemonStopSignal(),
+      new Set(),
+      () => ({ status: "defer", token: undefined })
+    )).toEqual({ claimToken: undefined, status: "deferred-before-claim" });
+
+    const admitted = await governor.runAdmittedCycle(
+      new DaemonStopSignal(),
+      new Set(),
+      () => ({ status: "admit", token: undefined })
+    );
+    expect(admitted).toMatchObject({ boundary: { unit: "pattern" }, claimToken: undefined, status: "boundary" });
+  });
+
   it("truthfully records completed or failed work when stop arrives after claim", async () => {
     const signal = new DaemonStopSignal();
     const governor = new DaemonWorkloadGovernor([{ id: "reflection", run: async (claim) => {
