@@ -16,6 +16,7 @@ import { test } from "node:test";
 import {
   CAPABILITIES,
   classifyCapabilityResult,
+  createCapabilityPreflight,
   createCapabilityReport,
   main,
   persistCapabilityReport,
@@ -119,6 +120,70 @@ test("short help is also side-effect free", () => {
 
   assert.equal(report, undefined);
   assert.equal(sideEffects, 0);
+});
+
+test("preflight is a static 11-axis plan and never enters the full evaluation pipeline", () => {
+  let stdout = "";
+  let sideEffects = 0;
+  const noSideEffects = () => {
+    sideEffects += 1;
+    throw new Error("preflight must not evaluate");
+  };
+
+  const preflight = main(["--preflight"], {
+    buildRunnerArtifact: noSideEffects,
+    captureArtifacts: noSideEffects,
+    captureSource: noSideEffects,
+    runTypeScriptBuild: noSideEffects,
+    spawn: noSideEffects,
+    stderr: { write: noSideEffects },
+    stdout: { write: (chunk) => { stdout += chunk; } },
+    writeReport: noSideEffects,
+  });
+
+  assert.equal(sideEffects, 0);
+  assert.equal(preflight.mode, "plan-only");
+  assert.equal(preflight.qualification, "unverified");
+  assert.equal(preflight.sideEffects, "none");
+  assert.equal(preflight.axes.length, 11);
+  assert.deepEqual(preflight.axes.map(({ id, repeats, required }) => ({ id, repeats, required })), CAPABILITIES.map(({ id, repeats, required }) => ({ id, repeats, required })));
+  assert.deepEqual(preflight.resourceBudget, {
+    batteryProcesses: 11,
+    hardSequentialTimeoutMinutes: 990,
+    perBatteryTimeoutMinutes: 90,
+    requestedTrials: 29,
+  });
+  assert.match(stdout, /capability preflight \(plan only\)/u);
+  assert.match(stdout, /qualification: UNVERIFIED/u);
+  assert.doesNotMatch(stdout, /PASS|builds fresh artifacts/u);
+});
+
+test("preflight JSON is privacy-safe plan-only output and does not write a report", () => {
+  let stdout = "";
+  const noSideEffects = () => { throw new Error("preflight must not mutate"); };
+  const preflight = main(["--preflight", "--json"], {
+    buildRunnerArtifact: noSideEffects,
+    captureArtifacts: noSideEffects,
+    captureSource: noSideEffects,
+    runTypeScriptBuild: noSideEffects,
+    spawn: noSideEffects,
+    stderr: { write: noSideEffects },
+    stdout: { write: (chunk) => { stdout += chunk; } },
+    writeReport: noSideEffects,
+  });
+
+  assert.deepEqual(JSON.parse(stdout), preflight);
+  assert.equal(preflight.qualification, "unverified");
+  assert.equal(Object.hasOwn(preflight, "provenance"), false);
+  assert.doesNotMatch(stdout, /prompt|payload|private|secret/iu);
+});
+
+test("preflight constructor remains a static manifest with no configured-machine readiness claim", () => {
+  const preflight = createCapabilityPreflight();
+  assert.equal(preflight.requiredBeforeRun.some((item) => item.includes("owner confirms")), true);
+  assert.equal(preflight.axes.find((axis) => axis.id === "browser-terminal-task")?.requirements.includes("compatible-local-chrome"), true);
+  assert.equal(preflight.axes.find((axis) => axis.id === "multihop-retrieval-lift")?.requirements.includes("local-ollama-embedding-model"), true);
+  assert.equal(preflight.axes.find((axis) => axis.id === "computer-task-terminal-edit")?.requirements.includes("local-runner"), false);
 });
 
 test("exit zero without explicit completion evidence fails closed", () => {

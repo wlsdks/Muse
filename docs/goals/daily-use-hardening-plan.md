@@ -117,7 +117,7 @@ change without an explicit owner action; retries are idempotent.
 
 ### 5. Run bounded technical capability qualification
 
-- [ ] Add a no-side-effect preflight that lists the fixed 11-axis battery,
+- [x] Add a no-side-effect preflight that lists the fixed 11-axis battery,
   expected model/runner requirements, and resource budget before the full run.
 - [ ] Schedule the full pass^k capability evaluator only while the owner is not
   actively using the machine and under an explicit resource budget.

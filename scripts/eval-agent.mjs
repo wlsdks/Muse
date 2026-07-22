@@ -37,6 +37,7 @@ const REPO_ROOT = resolve(here, "..");
 export const CAPABILITY_MATRIX_ID = "muse-agent-capability-v1";
 
 const HELP_FLAGS = new Set(["--help", "-h"]);
+const PREFLIGHT_FLAG = "--preflight";
 
 export const CAPABILITIES = Object.freeze([
   { id: "tool-selection-arguments", battery: "eval-tool-selection.mjs", required: true, repeats: 3 },
@@ -50,6 +51,29 @@ export const CAPABILITIES = Object.freeze([
   { id: "channel-conversation-rhythm", battery: "eval-channel-rhythm.mjs", required: true, repeats: 3 },
   { id: "edit-run-verify", battery: "eval-edit-run-verify.mjs", required: false, repeats: 3 },
   { id: "browser-terminal-task", battery: "eval-browser-agent.mjs", required: false, repeats: 3 },
+]);
+
+const CAPABILITY_REQUIREMENTS = Object.freeze({
+  "tool-selection-arguments": ["local-ollama-generation-model"],
+  "plan-quality": ["local-ollama-generation-model"],
+  "tool-argument-grounding": ["local-ollama-generation-model"],
+  "computer-task-terminal-edit": ["local-ollama-generation-model"],
+  "adversarial-containment-no-op": ["local-ollama-generation-model", "local-runner", "sandbox"],
+  "cosine-recall-abstention": ["local-ollama-embedding-model"],
+  "multihop-retrieval-lift": ["local-ollama-embedding-model", "fresh-typescript-artifacts"],
+  "orchestration-failure-bounds": ["local-ollama-generation-model"],
+  "channel-conversation-rhythm": ["local-ollama-generation-model"],
+  "edit-run-verify": ["local-ollama-generation-model", "local-runner"],
+  "browser-terminal-task": ["local-ollama-generation-model", "compatible-local-chrome"],
+});
+
+const PREFLIGHT_REQUIRED_BEFORE_RUN = Object.freeze([
+  "clean source snapshot before, after, and at end of the run",
+  "fresh TypeScript build and freshly published local runner artifact",
+  "local Ollama generation model (MUSE_EVAL_MODEL or gemma4:12b)",
+  "local embedding model for retrieval axes (default nomic-embed-text-v2-moe)",
+  "sandbox for adversarial containment; compatible local Chrome for the optional browser axis",
+  "owner confirms the machine is idle and accepts the stated resource budget",
 ]);
 
 const RECOGNIZED_ENVIRONMENT_SKIPS = new Set([
@@ -283,9 +307,63 @@ function printHumanReport(report, stdout) {
 
 function printUsage(stdout) {
   stdout.write(
-    "Usage: pnpm eval:agent -- [--json]\n\n"
+    "Usage: pnpm eval:agent -- [--preflight] [--json]\n\n"
     + "Runs the full 11-axis local capability gate (builds fresh artifacts and may load local models).\n"
+    + "Use --preflight to inspect its static requirements and resource budget without builds, probes, model calls, or writes.\n"
     + "Use --json for a privacy-safe machine-readable report.\n"
+  );
+}
+
+/**
+ * A deliberately static plan for the expensive capability gate. This is not a
+ * readiness check: it does not inspect git, spawn a child, touch a runner,
+ * connect to Ollama, or write a report. Keeping those operations out makes
+ * discovery safe on a working laptop.
+ */
+export function createCapabilityPreflight(capabilities = CAPABILITIES) {
+  const axes = capabilities.map((capability) => ({
+    battery: capability.battery,
+    id: capability.id,
+    repeats: capability.repeats,
+    required: capability.required,
+    requirements: CAPABILITY_REQUIREMENTS[capability.id] ?? [],
+  }));
+  const requiredAxes = axes.filter((axis) => axis.required).length;
+  const requestedTrials = axes.reduce((total, axis) => total + axis.repeats, 0);
+  return {
+    version: 1,
+    matrixId: CAPABILITY_MATRIX_ID,
+    mode: "plan-only",
+    qualification: "unverified",
+    sideEffects: "none",
+    requiredBeforeRun: PREFLIGHT_REQUIRED_BEFORE_RUN,
+    resourceBudget: {
+      batteryProcesses: axes.length,
+      hardSequentialTimeoutMinutes: (axes.length * CAPABILITY_TIMEOUT_MS) / 60_000,
+      perBatteryTimeoutMinutes: CAPABILITY_TIMEOUT_MS / 60_000,
+      requestedTrials,
+    },
+    summary: {
+      optionalAxes: axes.length - requiredAxes,
+      requiredAxes,
+      totalAxes: axes.length,
+    },
+    axes,
+  };
+}
+
+function printPreflight(preflight, stdout) {
+  stdout.write("\n=== eval:agent capability preflight (plan only) ===\n");
+  for (const axis of preflight.axes) {
+    const tier = axis.required ? "REQUIRED" : "OPTIONAL";
+    stdout.write(`  ${tier.padEnd(10)} ${axis.id} pass^${axis.repeats.toString()} — ${axis.requirements.join(", ")}\n`);
+  }
+  stdout.write(
+    `\nresource budget: ${preflight.resourceBudget.batteryProcesses.toString()} sequential batteries, `
+    + `${preflight.resourceBudget.requestedTrials.toString()} requested trials, `
+    + `${preflight.resourceBudget.perBatteryTimeoutMinutes.toString()} min hard cap each, `
+    + `${preflight.resourceBudget.hardSequentialTimeoutMinutes.toString()} min worst-case total\n`
+    + "qualification: UNVERIFIED — this command performed no build, probe, model call, battery run, or report write.\n"
   );
 }
 
@@ -299,6 +377,12 @@ export function main(args = process.argv.slice(2), dependencies = {}) {
     return undefined;
   }
   const json = args.includes("--json");
+  if (args.includes(PREFLIGHT_FLAG)) {
+    const preflight = createCapabilityPreflight();
+    if (json) stdout.write(`${JSON.stringify(preflight)}\n`);
+    else printPreflight(preflight, stdout);
+    return preflight;
+  }
   const captureSource = dependencies.captureSource
     ?? (() => captureGitSourceSnapshot({ repoRoot: REPO_ROOT }));
   const runTypeScriptBuild = dependencies.runTypeScriptBuild
