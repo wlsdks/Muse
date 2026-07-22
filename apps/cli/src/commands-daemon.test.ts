@@ -786,6 +786,57 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     expect(sent[0]!.destination).toBe("555");
   });
 
+  it("pauses and resumes heavyweight work through config without constructing a registry or model", async () => {
+    const env: NodeJS.ProcessEnv = { ...tmpEnv(), MUSE_DAEMON_DELIVERY_ENABLED: "false" };
+    writeFileSync(env.MUSE_DAEMON_CONFIG_FILE!, JSON.stringify({
+      dailyBrief: { enabled: true, time: "09:00" },
+      destination: "555",
+      provider: "telegram"
+    }), "utf8");
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+    const buildMessagingRegistry = vi.fn((): never => { throw new Error("pause must not construct messaging"); });
+    const resolveFollowupModel = vi.fn(async (): Promise<undefined> => {
+      throw new Error("pause must not resolve a model");
+    });
+
+    const paused = await runDaemon(["--pause-heavy-work"], {
+      buildMessagingRegistry,
+      env,
+      registry,
+      resolveFollowupModel
+    });
+    expect(paused.exitCode).toBeUndefined();
+    expect(paused.stdout).toContain("heavyweight work paused; all other work remains subject");
+    expect(JSON.parse(readFileSync(env.MUSE_DAEMON_CONFIG_FILE!, "utf8"))).toEqual({
+      dailyBrief: { enabled: true, time: "09:00" },
+      destination: "555",
+      heavyWorkPaused: true,
+      provider: "telegram"
+    });
+    expect(buildMessagingRegistry).not.toHaveBeenCalled();
+    expect(resolveFollowupModel).not.toHaveBeenCalled();
+
+    const status = await runDaemon(["--status", "--provider", "telegram", "--destination", "555"], {
+      env,
+      registry
+    });
+    expect(status.stdout).toContain("heavy-work: paused by owner");
+
+    const resumed = await runDaemon(["--resume-heavy-work"], {
+      buildMessagingRegistry,
+      env,
+      registry,
+      resolveFollowupModel
+    });
+    expect(resumed.exitCode).toBeUndefined();
+    expect(resumed.stdout).toContain("will resume on the next admitted tick");
+    expect(JSON.parse(readFileSync(env.MUSE_DAEMON_CONFIG_FILE!, "utf8"))).toEqual({
+      dailyBrief: { enabled: true, time: "09:00" },
+      destination: "555",
+      provider: "telegram"
+    });
+  });
+
   it("--once full daemon: all five ticks deliver end-to-end in one run", async () => {
     const env: NodeJS.ProcessEnv = { ...tmpEnv(),
       MUSE_AMBIENT_RULES: JSON.stringify([{ id: "r", title: "Heads up", message: "You're in Slack", match: { app: "Slack" } }]),
@@ -1651,6 +1702,76 @@ describe("muse daemon — resource admission", () => {
     ]);
     expect(result.stdout).toContain("resource: deferred heavyweight background work (cpu-load)");
     expect(result.stdout).toContain("resource: heavyweight background work resumed");
+  });
+
+  it("re-reads owner pause each tick, defers heavy work, and resumes without a restart", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...tmpEnv(),
+      MUSE_BROWSING_AUTO_SYNC: "true",
+      MUSE_DAEMON_DELIVERY_ENABLED: "true"
+    };
+    writeFileSync(env.MUSE_DAEMON_CONFIG_FILE!, JSON.stringify({ heavyWorkPaused: true }), "utf8");
+    const registry = new MessagingProviderRegistry([capturingProvider([])]);
+    const receipts: unknown[] = [];
+    let calls = 0;
+    const result = await runDaemon(["--provider", "telegram", "--destination", "555"], {
+      browsingSync: async () => { calls += 1; return { synced: 0, total: 0 }; },
+      env,
+      registry,
+      resourceSnapshot: () => ({ cpuCount: 4, freeMemoryBytes: 4 * 1024 * 1024 * 1024, load1: 1 }),
+      runDaemonLoop: async ({ signal, tick }) => {
+        await tick();
+        writeFileSync(env.MUSE_DAEMON_CONFIG_FILE!, "{}\n", "utf8");
+        await tick();
+        signal.stop();
+        return 2;
+      },
+      writeResourceAdmissionReceipt: async (_file, receipt) => { receipts.push(receipt); }
+    });
+
+    expect(result.exitCode).toBeUndefined();
+    expect(calls).toBe(1);
+    expect(receipts).toMatchObject([
+      { reason: "owner-paused", status: "defer" },
+      { status: "admit" }
+    ]);
+    expect(result.stdout).toContain("resource: deferred heavyweight background work (owner-paused)");
+    expect(result.stdout).toContain("resource: heavyweight background work resumed");
+  });
+
+  it("does not invoke a due followup model while the owner pause is active", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...tmpEnv(),
+      MUSE_DAEMON_DELIVERY_ENABLED: "true"
+    };
+    writeFileSync(env.MUSE_DAEMON_CONFIG_FILE!, JSON.stringify({ heavyWorkPaused: true }), "utf8");
+    await writeFollowups(env.MUSE_FOLLOWUPS_FILE!, [
+      { createdAt: "2026-01-01T00:00:00Z", id: "fu-owner-pause", scheduledFor: "2026-01-02T00:00:00Z", status: "scheduled", summary: "Do not call the model", userId: "stark" }
+    ]);
+    const sent: OutboundMessage[] = [];
+    const registry = new MessagingProviderRegistry([capturingProvider(sent)]);
+    let modelCalls = 0;
+    const result = await runDaemon(["--once", "--provider", "telegram", "--destination", "555"], {
+      env,
+      registry,
+      resourceSnapshot: () => ({ cpuCount: 4, freeMemoryBytes: 4 * 1024 * 1024 * 1024, load1: 1 }),
+      resolveFollowupModel: async () => ({
+        model: "test-model",
+        modelProvider: {
+          generate: async () => {
+            modelCalls += 1;
+            return { output: "must not be generated" };
+          }
+        } as never
+      })
+    });
+
+    expect(result.exitCode).toBeUndefined();
+    expect(modelCalls).toBe(0);
+    expect(sent).toHaveLength(0);
+    expect(result.stdout).not.toContain("followup:");
+    expect(result.stdout).not.toContain("pattern:");
+    expect(result.stdout).not.toContain("objectives:");
   });
 });
 

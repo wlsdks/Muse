@@ -10,7 +10,12 @@ export interface DaemonResourceSnapshot {
 
 export interface DaemonResourceAdmission {
   readonly status: "admit" | "defer";
-  readonly reason?: "cpu-load" | "low-free-memory";
+  readonly reason?: "cpu-load" | "low-free-memory" | "owner-paused";
+}
+
+export interface DaemonResourceAdmissionOptions {
+  /** Explicit owner escape hatch, read live from daemon config once per tick. */
+  readonly ownerPaused?: boolean;
 }
 
 /** The resolved limits a daemon applies before it starts deferrable work. */
@@ -107,8 +112,10 @@ export function describeDaemonResourceAdmission(
  */
 export function assessDaemonResourceAdmission(
   env: NodeJS.ProcessEnv,
-  snapshot: DaemonResourceSnapshot
+  snapshot: DaemonResourceSnapshot,
+  options: DaemonResourceAdmissionOptions = {}
 ): DaemonResourceAdmission {
+  if (options.ownerPaused) return { reason: "owner-paused", status: "defer" };
   const policy = resolveDaemonResourcePolicy(env);
   if (!policy.guardEnabled) return { status: "admit" };
   if (!Number.isFinite(snapshot.cpuCount) || snapshot.cpuCount < 1

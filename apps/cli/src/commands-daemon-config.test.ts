@@ -33,4 +33,13 @@ describe("readDaemonConfig (tolerant)", () => {
     writeFileSync(file, "{not json");
     expect(readDaemonConfig(file)).toEqual({});
   });
+
+  it("accepts the heavy-work brake only when it is the exact boolean true", () => {
+    const dir = mkdtempSync(join(tmpdir(), "daemon-cfg-"));
+    const file = join(dir, "daemon.json");
+    writeFileSync(file, JSON.stringify({ heavyWorkPaused: true }));
+    expect(readDaemonConfig(file)).toEqual({ heavyWorkPaused: true });
+    writeFileSync(file, JSON.stringify({ heavyWorkPaused: "true" }));
+    expect(readDaemonConfig(file)).toEqual({});
+  });
 });

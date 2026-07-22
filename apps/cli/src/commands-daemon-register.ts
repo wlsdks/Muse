@@ -577,6 +577,8 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
     .option("--print", "Also echo every delivered notice to stdout (watch the daemon work in the foreground)")
     .option("--status", "Print which daemon ticks are enabled for the current config, then exit")
     .option("--init", "Write the resolved provider + destination to the daemon config file, then exit")
+    .option("--pause-heavy-work", "Pause model, sync, and consolidation daemon work until resumed (heartbeat and safety work continue)")
+    .option("--resume-heavy-work", "Resume model, sync, and consolidation daemon work on the next tick")
     .option("--install", "Write a macOS LaunchAgent plist AND load it via launchctl so the daemon survives logout/reboot, then exit")
     .option("--safe", "With --install, persist local-only + log lock + delivery brake + self-learning off for controlled activation")
     .option("--uninstall", "Unload the macOS LaunchAgent (or remove the Windows scheduled task) and delete its file, then exit")
@@ -589,6 +591,8 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       readonly print?: boolean;
       readonly status?: boolean;
       readonly init?: boolean;
+      readonly pauseHeavyWork?: boolean;
+      readonly resumeHeavyWork?: boolean;
       readonly install?: boolean;
       readonly safe?: boolean;
       readonly uninstall?: boolean;
@@ -603,6 +607,11 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         process.exitCode = 1;
         return;
       }
+      if (options.pauseHeavyWork && options.resumeHeavyWork) {
+        io.stderr("muse daemon --pause-heavy-work and --resume-heavy-work cannot be used together.\n");
+        process.exitCode = 1;
+        return;
+      }
       const deliveryBrakeEngaged = !parseBoolean(e.MUSE_DAEMON_DELIVERY_ENABLED, true);
       // `helpers.env` is a test/composition seam, not an escape hatch. A
       // supplied false cannot downgrade the ambient local-only posture.
@@ -614,7 +623,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       // credentials, models, calendars, store paths, and every sub-tick. The
       // only authorized mutation in this branch is the daemon-loop heartbeat.
       // Administrative/status commands keep their own existing behavior.
-      if (deliveryBrakeEngaged && !options.init && !options.install && !options.uninstall && !options.status) {
+      if (deliveryBrakeEngaged && !options.init && !options.install && !options.uninstall && !options.status && !options.pauseHeavyWork && !options.resumeHeavyWork) {
         const heartbeatDir = defaultProactiveHeartbeatDir(e);
         const heartbeatOnlyTick = async (): Promise<void> => {
           await recordProactiveHeartbeat(heartbeatDir, "daemon-loop").catch(() => false);
@@ -662,8 +671,28 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       if (options.init) {
         // Preserve any `dailyBrief` block `muse setup briefing` already wrote —
         // this write must not silently disable the daily brief.
-        writeDaemonConfig(configFile, { destination, provider, ...(fileConfig.dailyBrief ? { dailyBrief: fileConfig.dailyBrief } : {}) });
+        writeDaemonConfig(configFile, {
+          destination,
+          provider,
+          ...(fileConfig.dailyBrief ? { dailyBrief: fileConfig.dailyBrief } : {}),
+          ...(fileConfig.heavyWorkPaused ? { heavyWorkPaused: true } : {})
+        });
         io.stdout(`muse daemon config written to ${configFile}\n  provider=${provider}, destination=${destination}\n`);
+        return;
+      }
+
+      if (options.pauseHeavyWork || options.resumeHeavyWork) {
+        const nextConfig = options.pauseHeavyWork
+          ? { ...fileConfig, heavyWorkPaused: true }
+          : {
+              ...(fileConfig.dailyBrief ? { dailyBrief: fileConfig.dailyBrief } : {}),
+              ...(fileConfig.destination ? { destination: fileConfig.destination } : {}),
+              ...(fileConfig.provider ? { provider: fileConfig.provider } : {})
+            };
+        writeDaemonConfig(configFile, nextConfig);
+        io.stdout(options.pauseHeavyWork
+          ? "muse daemon — heavyweight work paused; all other work remains subject to the delivery and safety gates.\n"
+          : "muse daemon — heavyweight work will resume on the next admitted tick.\n");
         return;
       }
 
@@ -973,6 +1002,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         const statusSafety = resolveDaemonStatusSafetyGates(e, autostart);
         io.stdout(`muse daemon — readiness (provider=${provider}, destination=${destination}; safety=${statusSafety.source}):\n`);
         io.stdout(`  delivery:   ${statusSafety.deliveryBrakeEngaged ? "heartbeat-only (brake engaged)" : "enabled"}\n`);
+        io.stdout(`  heavy-work: ${fileConfig.heavyWorkPaused ? "paused by owner (model/sync/consolidation held)" : "eligible (subject to resource admission)"}\n`);
         io.stdout(`  route-lock: ${statusSafety.providerLock === "log" ? "log-only" : "disabled"}\n`);
         io.stdout(`  proactive:  ${statusSafety.deliveryBrakeEngaged ? "blocked (delivery brake engaged)" : "enabled"}\n`);
         io.stdout(`  reminders:  ${statusSafety.deliveryBrakeEngaged ? "blocked (delivery brake engaged)" : "enabled"}\n`);
@@ -1374,15 +1404,12 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         await remindersTick();
         await dailyBriefTick();
         await schedulerTick();
-        await followupTick();
-        await checkinsTick();
-        await patternTick();
-        await ambientTick();
-        await webWatchTick();
-        await objectivesTick();
-        await homeWatchTick();
-        await briefingTick();
-        const resourceAdmission = assessDaemonResourceAdmission(e, (helpers.resourceSnapshot ?? readDaemonResourceSnapshot)());
+        const liveDaemonConfig = (helpers.readDaemonConfig ?? readDaemonConfig)(configFile);
+        const resourceAdmission = assessDaemonResourceAdmission(
+          e,
+          (helpers.resourceSnapshot ?? readDaemonResourceSnapshot)(),
+          { ownerPaused: liveDaemonConfig.heavyWorkPaused === true }
+        );
         const resourceAdmissionKey = `${resourceAdmission.status}:${resourceAdmission.reason ?? ""}`;
         const previousResourceAdmissionKey = lastResourceAdmissionKey;
         const resourceAdmissionChanged = resourceAdmissionKey !== previousResourceAdmissionKey;
@@ -1398,7 +1425,15 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
         } else if (previousResourceAdmissionKey?.startsWith("defer:") === true) {
           io.stdout(`[${new Date().toISOString()}] resource: heavyweight background work resumed\n`);
         }
+        await checkinsTick();
         if (resourceAdmission.status === "admit") {
+          await followupTick();
+          await patternTick();
+          await ambientTick();
+          await webWatchTick();
+          await objectivesTick();
+          await homeWatchTick();
+          await briefingTick();
           await reflectionTick();
           if (emailSyncTick) await emailSyncTick();
           await selfLearnTick();

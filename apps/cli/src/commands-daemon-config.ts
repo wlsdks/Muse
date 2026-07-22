@@ -14,6 +14,8 @@ export interface DaemonConfig {
   readonly provider?: string;
   readonly destination?: string;
   readonly dailyBrief?: DailyBriefConfig;
+  /** Owner-controlled live brake for model/sync/consolidation daemon work. */
+  readonly heavyWorkPaused?: boolean;
 }
 
 export function resolveDaemonConfigFile(env: NodeJS.ProcessEnv): string {
@@ -34,7 +36,7 @@ export function readDaemonConfig(file: string): DaemonConfig {
   }
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const config: { provider?: string; destination?: string; dailyBrief?: DailyBriefConfig } = {};
+    const config: { provider?: string; destination?: string; dailyBrief?: DailyBriefConfig; heavyWorkPaused?: boolean } = {};
     if (typeof parsed.provider === "string") config.provider = parsed.provider;
     if (typeof parsed.destination === "string") config.destination = parsed.destination;
     const db = parsed.dailyBrief;
@@ -44,6 +46,7 @@ export function readDaemonConfig(file: string): DaemonConfig {
         config.dailyBrief = { enabled: record.enabled === true, time: record.time.trim() };
       }
     }
+    if (parsed.heavyWorkPaused === true) config.heavyWorkPaused = true;
     return config;
   } catch {
     return {};

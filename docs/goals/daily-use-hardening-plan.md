@@ -90,6 +90,10 @@ states say what evidence is missing; they do not render zero as success.
 - [x] Persist only the latest admission/defer transition as an owner-only local
   receipt; it is written on state changes, not per tick, and is shown as
   separate evidence in `muse doctor --resources`.
+- [x] Give the owner a live `muse daemon --pause-heavy-work` /
+  `--resume-heavy-work` escape hatch. It persists locally, is re-read on each
+  tick without restart, holds only model/sync/consolidation work, and records
+  the bounded `owner-paused` deferral reason.
 - [ ] Inventory per-loop CPU, resident memory, model load, queue depth, and
   cancellation latency using local, privacy-safe process measurements.
 - [ ] Define hard admission states: active user, low headroom, thermal/battery

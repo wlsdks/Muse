@@ -16,6 +16,14 @@ describe("assessDaemonResourceAdmission", () => {
       .toEqual({ reason: "cpu-load", status: "defer" });
   });
 
+  it("honors the owner pause even when the automatic guard is disabled", () => {
+    expect(assessDaemonResourceAdmission(
+      { MUSE_DAEMON_RESOURCE_GUARD: "false" },
+      healthy,
+      { ownerPaused: true }
+    )).toEqual({ reason: "owner-paused", status: "defer" });
+  });
+
   it("uses bounded daemon-only overrides and fails open on invalid observations", () => {
     expect(assessDaemonResourceAdmission({ MUSE_DAEMON_MIN_FREE_MEMORY_MB: "256" }, { ...healthy, freeMemoryBytes: 512 * 1024 * 1024 }))
       .toEqual({ status: "admit" });

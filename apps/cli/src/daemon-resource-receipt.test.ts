@@ -41,6 +41,18 @@ describe("daemon resource admission receipt", () => {
     }
   });
 
+  it("keeps an owner pause as a strict latest transition reason", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "muse-resource-receipt-owner-pause-"));
+    const file = join(directory, "receipt.json");
+    try {
+      const receipt = resourceAdmissionReceipt({ reason: "owner-paused", status: "defer" }, "2026-07-22T00:00:00.000Z");
+      await writeDaemonResourceAdmissionReceipt(file, receipt);
+      expect(await readDaemonResourceAdmissionReceipt(file)).toEqual(receipt);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("uses an explicit test path or a bounded Muse-home default", () => {
     expect(resolveDaemonResourceReceiptFile({ MUSE_DAEMON_RESOURCE_RECEIPT_FILE: " /tmp/receipt.json " })).toBe("/tmp/receipt.json");
     expect(resolveDaemonResourceReceiptFile({ HOME: "/tmp/muse-home" })).toBe("/tmp/muse-home/.muse/daemon-resource-admission.json");

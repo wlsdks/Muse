@@ -11,7 +11,7 @@ const RECEIPT_SCHEMA = "muse.daemon-resource-admission.v1";
 /** A latest-state receipt, deliberately not a sampled performance history. */
 export interface DaemonResourceAdmissionReceipt {
   readonly at: string;
-  readonly reason?: "cpu-load" | "low-free-memory";
+  readonly reason?: "cpu-load" | "low-free-memory" | "owner-paused";
   readonly schema: typeof RECEIPT_SCHEMA;
   readonly status: "admit" | "defer";
 }
@@ -41,7 +41,8 @@ function isReceipt(value: unknown): value is DaemonResourceAdmissionReceipt {
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) return false;
   if (record.schema !== RECEIPT_SCHEMA || typeof record.at !== "string" || !Number.isFinite(Date.parse(record.at))) return false;
   if (record.status === "admit") return true;
-  return record.status === "defer" && (record.reason === "cpu-load" || record.reason === "low-free-memory");
+  return record.status === "defer"
+    && (record.reason === "cpu-load" || record.reason === "low-free-memory" || record.reason === "owner-paused");
 }
 
 /** Invalid or unavailable evidence is absent, never a fabricated transition. */
