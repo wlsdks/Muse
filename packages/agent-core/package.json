@@ -28,5 +28,8 @@
     "@muse/runtime-state": "workspace:*",
     "@muse/shared": "workspace:*",
     "@muse/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@muse/mcp-shared": "workspace:*"
   }
 }

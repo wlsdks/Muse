@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ModelProvider, ModelRequest } from "@muse/model";
 import type { ConversationMessage } from "@muse/memory";
+import { createRetryBudget, runWithRetryBudget } from "@muse/resilience";
 
 import { createModelDroppedContextSummarizer } from "../src/index.js";
 
@@ -125,6 +126,39 @@ describe("createModelDroppedContextSummarizer (CMP-2 production summarizer)", ()
   });
 
   describe("failure retry (DS-18)", () => {
+    it("charges retries to the current foreground scope without a memory-package dependency", async () => {
+      const budget = createRetryBudget({ maxBackoffMs: 10, maxRetries: 1 });
+      const { provider, calls } = scriptedProvider((callIndex) => {
+        if (callIndex === 0) throw new Error("transient");
+        return EFFECTIVE_OUTPUT;
+      });
+      const summarize = createModelDroppedContextSummarizer(provider, "m", {
+        retryInitialDelayMs: 2,
+        retryMaxDelayMs: 2,
+        sleep: async () => {}
+      });
+
+      await expect(runWithRetryBudget(budget, () => summarize(dropped))).resolves.toBe(EFFECTIVE_OUTPUT);
+      expect(calls).toHaveLength(2);
+      expect(budget.snapshot()).toMatchObject({ usedBackoffMs: 2, usedRetries: 1 });
+    });
+
+    it("propagates cancellation to retry backoff and the physical provider request", async () => {
+      const controller = new AbortController();
+      const cancellation = new Error("cancel auxiliary summary");
+      const { provider, calls } = scriptedProvider(() => { throw new Error("transient"); });
+      const summarize = createModelDroppedContextSummarizer(provider, "m", {
+        sleep: async () => {
+          controller.abort(cancellation);
+          await new Promise<void>(() => {});
+        }
+      });
+
+      await expect(summarize(dropped, { signal: controller.signal })).rejects.toBe(cancellation);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.signal).toBe(controller.signal);
+    });
+
     it("retries a transient failure within a single call and succeeds without opening the cooldown", async () => {
       const clock = fakeClock(0);
       const { sleep, delays } = fakeSleep();

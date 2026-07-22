@@ -27,6 +27,8 @@ export interface DroppedContextSummarizerOptions {
    * still valid — the option is advisory, not required.
    */
   readonly focusTopic?: string;
+  /** Caller-owned cancellation propagated through staged auxiliary work. */
+  readonly signal?: AbortSignal;
 }
 
 export type DroppedContextSummarizer = (
@@ -41,6 +43,7 @@ export interface SummarizeDroppedOptions {
   readonly maxChars?: number;
   /** Forwarded verbatim to the summarizer as `DroppedContextSummarizerOptions.focusTopic`. */
   readonly focusTopic?: string;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -59,7 +62,14 @@ export async function summarizeDroppedContext(
     return options.fallback;
   }
   try {
-    const raw = await summarizer(dropped, options.focusTopic ? { focusTopic: options.focusTopic } : undefined);
+    options.signal?.throwIfAborted();
+    const callOptions = options.focusTopic || options.signal
+      ? {
+          ...(options.focusTopic ? { focusTopic: options.focusTopic } : {}),
+          ...(options.signal ? { signal: options.signal } : {})
+        }
+      : undefined;
+    const raw = await summarizer(dropped, callOptions);
     const trimmed = typeof raw === "string" ? raw.trim() : "";
     if (trimmed.length === 0) {
       return options.fallback;
@@ -67,7 +77,10 @@ export async function summarizeDroppedContext(
     return options.maxChars !== undefined && options.maxChars > 0 && trimmed.length > options.maxChars
       ? trimmed.slice(0, options.maxChars)
       : trimmed;
-  } catch {
+  } catch (error) {
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? error;
+    }
     return options.fallback;
   }
 }
@@ -152,7 +165,8 @@ export async function summarizeDroppedContextInStages(
     const chunkSummary = await summarizeDroppedContext(chunk, summarizer, {
       fallback: "",
       maxChars: options.maxChars,
-      focusTopic: options.focusTopic
+      focusTopic: options.focusTopic,
+      signal: options.signal
     });
     if (chunkSummary.length > 0) {
       chunkSummaries.push(chunkSummary);

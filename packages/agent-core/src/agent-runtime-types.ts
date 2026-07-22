@@ -140,7 +140,11 @@ export interface AgentRuntimeOptions {
   readonly circuitBreaker?: CircuitBreaker;
   readonly fallbackStrategy?: FallbackStrategy;
   readonly retry?: RetryOptions;
-  /** Aggregate retry allowance shared by every blocking model/plan retry in one run. */
+  /**
+   * Aggregate count/backoff allowance for foreground-run-owned extra attempts:
+   * model/fallback/plan repair, auxiliary compaction, and scoped read HTTP.
+   * Lifecycle reconnects, background jobs, and outbound sends stay separate.
+   */
   readonly runRetryBudget?: RetryBudgetPolicy;
   readonly requestTimeoutMs?: number;
   readonly contextWindow?: ConversationTrimOptions;

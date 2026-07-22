@@ -110,8 +110,13 @@ states say what evidence is missing; they do not render zero as success.
   Notes refresh uses one attempted embedding by default, persists exact
   resumable progress, publishes only complete files through immutable vector
   generations, and leaves explicit full reindex unlimited. AgentRuntime model,
-  fallback, and read-plan retries now share one per-run count/backoff allowance
-  with cooperative cancellation. HTTP/MCP/auxiliary retries remain open. Local
+  fallback, read-plan, staged auxiliary-compaction, and tool-owned read HTTP
+  retries now share one per-run count/backoff allowance with cooperative
+  cancellation and fixed-size numeric trace accounting. The first physical
+  attempt remains free; only admitted extra attempts consume the ledger.
+  Background MCP lifecycle recovery, outbound-send delivery retries, and
+  background jobs intentionally retain separate bounded policies because they
+  do not belong to one foreground run. Local
   model `generate` and `stream` calls now also pass
   through a default-on, owner-only filesystem lease shared by independently
   running CLI, API, and daemon processes. Foreground tickets outrank background

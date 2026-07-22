@@ -1,4 +1,5 @@
 import { MessagingProviderError } from "@muse/messaging";
+import { createRetryBudget, runWithRetryBudget } from "@muse/resilience";
 import { describe, expect, it } from "vitest";
 
 import { sendWithRetry } from "../src/messaging-retry.js";
@@ -24,6 +25,14 @@ const rateLimited = (retryAfterMs?: number): MessagingProviderError =>
   new MessagingProviderError("telegram", "UPSTREAM_FAILED", "rate limited", 429, retryAfterMs);
 
 describe("sendWithRetry — honours a 429 Retry-After over the fixed ladder", () => {
+  it("keeps outbound-send retries outside an ambient foreground read ledger", async () => {
+    const budget = createRetryBudget({ maxBackoffMs: 10, maxRetries: 1 });
+    const { registry, attempts } = scriptedRegistry([rateLimited(1), undefined]);
+    await runWithRetryBudget(budget, () => sendWithRetry(registry, "telegram", MSG, { sleep: async () => {} }));
+    expect(attempts()).toBe(2);
+    expect(budget.snapshot()).toMatchObject({ usedBackoffMs: 0, usedRetries: 0 });
+  });
+
   it("reuses one generated idempotency key across every retry attempt", async () => {
     const keys: Array<string | undefined> = [];
     let attempts = 0;

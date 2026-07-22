@@ -1,5 +1,6 @@
 import type { ModelTool } from "@muse/model";
 import type { SanitizedToolOutput } from "@muse/policy";
+import type { RetryBudget } from "@muse/resilience";
 import type { JsonObject, JsonValue } from "@muse/shared";
 
 import { toModelTool } from "./tool-definition-helpers.js";
@@ -67,6 +68,8 @@ export interface ToolCallRequest {
   readonly name: string;
   readonly arguments: JsonObject;
   readonly context: MuseToolContext;
+  /** Internal foreground-run retry ledger; never exposed through MuseToolContext. */
+  readonly retryBudget?: RetryBudget;
 }
 
 export interface ToolExecutionResult {

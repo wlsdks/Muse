@@ -42,6 +42,7 @@ import { metadataString } from "./runtime-helpers.js";
 import { blockedToolResult, type ExecutedToolResult } from "./runtime-internals.js";
 import { groundToolArguments } from "./tool-argument-grounding.js";
 import type { AgentRunContext } from "./types.js";
+import type { RetryBudget } from "@muse/resilience";
 
 export interface ExecuteToolCallDeps {
   readonly afterTool: (context: AgentRunContext, executed: ExecutedToolResult) => Promise<void>;
@@ -56,6 +57,7 @@ export interface ExecuteToolCallDeps {
   readonly toolExecutor?: ToolExecutor;
   readonly toolOpportunityObserver?: AgentRuntimeOptions["toolOpportunityObserver"];
   readonly toolOpportunityObserverTimeoutMs: number;
+  readonly retryBudget?: RetryBudget;
 }
 
 export async function executeToolCall(
@@ -338,7 +340,8 @@ export async function executeToolCall(
       userId: metadataString(context.input.metadata, "userId")
     },
     id: toolCall.id,
-    name: toolCall.name
+    name: toolCall.name,
+    ...(deps.retryBudget ? { retryBudget: deps.retryBudget } : {})
   });
 
   await deps.afterTool(context, { result, toolCall });

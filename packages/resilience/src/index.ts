@@ -4,6 +4,7 @@ import { setTimeout as sleepWithTimer } from "node:timers/promises";
 import { classifyError, isCancellationLikeError } from "./error-classifier.js";
 import type { FallbackStrategy } from "./fallback-strategy.js";
 import type { RetryBudget } from "./retry-budget.js";
+import { currentRetryBudget, RetryScopeEndedError } from "./retry-scope.js";
 
 export {
   classifyError,
@@ -34,6 +35,12 @@ export {
   type RetryBudgetSnapshot,
   type RetryReservation
 } from "./retry-budget.js";
+
+export {
+  currentRetryBudget,
+  RetryScopeEndedError,
+  runWithRetryBudget
+} from "./retry-scope.js";
 
 export type Awaitable<T> = T | Promise<T>;
 export type CircuitBreakerState = "closed" | "open" | "half_open";
@@ -351,16 +358,26 @@ export async function retry<T>(operation: () => Awaitable<T>, options: RetryOpti
   // Decorrelated jitter carries the previous delay forward; seed at initial.
   let prevDelay = Math.max(0, finiteOr(options.initialDelayMs, defaultRetryDelayMs));
   let pendingReservation: ReturnType<RetryBudget["reserve"]> | undefined;
+  const retryBudget = options.budget ?? currentRetryBudget();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      options.signal?.throwIfAborted();
+      try {
+        options.signal?.throwIfAborted();
+      } catch (error) {
+        pendingReservation?.cancel();
+        pendingReservation = undefined;
+        throw error;
+      }
       pendingReservation?.commit();
       pendingReservation = undefined;
       const result = await operation();
       options.metricsRecorder?.recordRetryAttempt?.(options.name ?? "operation", attempt, true);
       return result;
     } catch (error) {
+      if (error instanceof RetryScopeEndedError) {
+        throw error;
+      }
       if (options.signal?.aborted) {
         throw options.signal.reason ?? error;
       }
@@ -402,7 +419,7 @@ export async function retry<T>(operation: () => Awaitable<T>, options: RetryOpti
         classified.retryAfterMs !== null
           ? Math.min(retryAfterCap, Math.max(base, classified.retryAfterMs))
           : base;
-      pendingReservation = options.budget?.reserve({ backoffMs: waitMs, cause: error });
+      pendingReservation = retryBudget?.reserve({ backoffMs: waitMs, cause: error });
       try {
         await sleepWithCancellation(sleep, waitMs, options.signal);
         options.signal?.throwIfAborted();

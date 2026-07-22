@@ -319,6 +319,10 @@ importers:
       '@muse/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@muse/mcp-shared':
+        specifier: workspace:*
+        version: link:../mcp-shared
 
   packages/agent-specs:
     dependencies:
@@ -646,6 +650,9 @@ importers:
       '@muse/messaging':
         specifier: workspace:*
         version: link:../messaging
+      '@muse/resilience':
+        specifier: workspace:*
+        version: link:../resilience
       '@muse/shared':
         specifier: workspace:*
         version: link:../shared

@@ -1,6 +1,6 @@
 import { ToolOutputSanitizer } from "@muse/policy";
 import { errorMessage } from "@muse/shared";
-import { isCancellationLikeError } from "@muse/resilience";
+import { isCancellationLikeError, runWithRetryBudget } from "@muse/resilience";
 
 import type {
   ToolCallRequest,
@@ -83,7 +83,7 @@ export class ToolExecutor {
     idempotencyKey?: string
   ): Promise<ToolExecutionResult> {
     try {
-      const raw = await tool.execute(request.arguments, request.context);
+      const raw = await runWithRetryBudget(request.retryBudget, () => tool.execute(request.arguments, request.context));
       const output = stringifyToolOutput(raw);
       const sanitized = this.sanitizer.sanitize(request.name, output);
       const result = {

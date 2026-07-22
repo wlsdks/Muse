@@ -143,7 +143,8 @@ export function createModelDroppedContextSummarizer(
               { content: transcript, role: "user" }
             ],
             model,
-            temperature: 0.2
+            temperature: 0.2,
+            ...(callOptions?.signal ? { signal: callOptions.signal } : {})
           }),
         {
           initialDelayMs: retryInitialDelayMs,
@@ -151,10 +152,14 @@ export function createModelDroppedContextSummarizer(
           maxDelayMs: retryMaxDelayMs,
           multiplier: RETRY_MULTIPLIER,
           name: "dropped-context-summarizer",
+          ...(callOptions?.signal ? { signal: callOptions.signal } : {}),
           sleep
         }
       );
     } catch (error) {
+      if (callOptions?.signal?.aborted) {
+        throw callOptions.signal.reason ?? error;
+      }
       cooldownUntilMs = now().getTime() + cooldownMs;
       throw error instanceof RetryExhaustedError ? error.cause : error;
     }

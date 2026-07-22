@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import type { MuseDatabase } from "@muse/db";
+import { createRetryBudget, runWithRetryBudget } from "@muse/resilience";
 import {
   DummyDriver,
   Kysely,
@@ -674,6 +675,23 @@ describe("McpManager", () => {
     nowMs = health.nextReconnectAt!.getTime();
     await manager.reconnectDue();
     expect(manager.getHealth("ext").reconnectAttempts).toBe(2);
+  });
+
+  it("keeps lifecycle reconnect accounting outside an ambient foreground run ledger", async () => {
+    const budget = createRetryBudget({ maxBackoffMs: 10, maxRetries: 1 });
+    const connector = {
+      connect: vi.fn().mockRejectedValue(new McpConnectionError("upstream down", 503))
+    };
+    const manager = new McpManager(new InMemoryMcpServerStore(), {
+      connector,
+      reconnect: { initialDelayMs: 1, maxAttempts: 2 }
+    });
+    await manager.register({ config: { command: "node" }, name: "lifecycle", transportType: "stdio" });
+
+    await runWithRetryBudget(budget, () => manager.connect("lifecycle"));
+
+    expect(manager.getHealth("lifecycle")).toMatchObject({ reconnectAttempts: 1, status: "unhealthy" });
+    expect(budget.snapshot()).toMatchObject({ usedBackoffMs: 0, usedRetries: 0 });
   });
 
   it("reconnectDue never permanently wedges — one due server throwing doesn't skip or drop retry for the rest of the batch", async () => {

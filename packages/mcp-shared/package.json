@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@muse/messaging": "workspace:*",
+    "@muse/resilience": "workspace:*",
     "@muse/shared": "workspace:*"
   }
 }

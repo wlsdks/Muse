@@ -31,6 +31,7 @@ import type { PersonaRegister } from "./conversational-register.js";
 import {
   createRetryBudget,
   normalizeRetryBudgetPolicy,
+  runWithRetryBudget,
   type CircuitBreaker,
   type FallbackStrategy,
   type RetryBudget,
@@ -225,6 +226,14 @@ export class ToolPlanStepBlockedError extends Error {
   }
 }
 
+function recordRetryBudgetSpanAttributes(span: SpanHandle, budget: RetryBudget): void {
+  const snapshot = budget.snapshot();
+  span.setAttribute("retry.budget.max_retries", snapshot.maxRetries);
+  span.setAttribute("retry.budget.max_backoff_ms", snapshot.maxBackoffMs);
+  span.setAttribute("retry.budget.used_retries", snapshot.usedRetries);
+  span.setAttribute("retry.budget.used_backoff_ms", snapshot.usedBackoffMs);
+}
+
 export class AgentRuntime {
   private readonly modelProvider?: ModelProvider;
   private readonly modelRegistry?: ModelProviderRegistry;
@@ -413,7 +422,7 @@ export class AgentRuntime {
 
     try {
       const { cached, cacheKey, inboxGroundingSources, layeredContext, playbookInjectedIds, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
-        await this.prepareInvocation(context, runSpan);
+        await this.prepareInvocation(context, runSpan, retryBudget);
       seedEgressAuthorityFromMessages(context.egressAuthority, preparedRequest.request.messages);
 
       if (cached) {
@@ -464,6 +473,7 @@ export class AgentRuntime {
       await this.handleRunError(context, runSpan, error, startedAtMs);
       throw error;
     } finally {
+      recordRetryBudgetSpanAttributes(runSpan, retryBudget);
       runSpan.end();
     }
   }
@@ -488,7 +498,7 @@ export class AgentRuntime {
 
     try {
       const { cached, cacheKey, layeredContext, playbookInjectedIds, preparedRequest, promptBudget, selected, summaryAppliedMessageCount, tools } =
-        await this.prepareInvocation(context, runSpan);
+        await this.prepareInvocation(context, runSpan, retryBudget);
       seedEgressAuthorityFromMessages(context.egressAuthority, preparedRequest.request.messages);
 
       if (cached) {
@@ -552,13 +562,15 @@ export class AgentRuntime {
       await this.handleRunError(context, runSpan, error, startedAtMs);
       throw error;
     } finally {
+      recordRetryBudgetSpanAttributes(runSpan, retryBudget);
       runSpan.end();
     }
   }
 
   private async prepareInvocation(
     context: AgentRunContext,
-    runSpan: SpanHandle
+    runSpan: SpanHandle,
+    retryBudget: RetryBudget
   ): Promise<{
     readonly cached: CachedResponse | undefined;
     readonly cacheKey: string;
@@ -646,12 +658,15 @@ export class AgentRuntime {
     // result leaves the deterministic summary untouched (no aux call when
     // unconfigured, so existing behavior is byte-identical).
     if (this.contextSummarizer && preparedRequest.contextWindow?.summaryInserted && preparedRequest.dropped && preparedRequest.dropped.length > 0) {
-      const auxSummary = await summarizeDroppedContextInStages(preparedRequest.dropped, this.contextSummarizer, {
-        fallback: "",
-        maxChars: this.contextSummaryMaxChars,
-        chunkMaxChars: DEFAULT_CHUNK_MAX_CHARS,
-        ...(this.contextWindow?.focusTopic ? { focusTopic: this.contextWindow.focusTopic } : {})
-      });
+      const auxSummary = await runWithRetryBudget(retryBudget, () =>
+        summarizeDroppedContextInStages(preparedRequest.dropped!, this.contextSummarizer, {
+          fallback: "",
+          maxChars: this.contextSummaryMaxChars,
+          chunkMaxChars: DEFAULT_CHUNK_MAX_CHARS,
+          ...(this.contextWindow?.focusTopic ? { focusTopic: this.contextWindow.focusTopic } : {}),
+          ...(summaryAppliedContext.input.signal ? { signal: summaryAppliedContext.input.signal } : {})
+        })
+      );
       if (auxSummary.length > 0) {
         // Fail-close quality gate (deterministic, no LLM): a generated aux
         // summary that drops too many hard anchors — or ANY anchor the user
@@ -841,7 +856,7 @@ export class AgentRuntime {
     }
   }
 
-  async executeToolPlanGated(plan: ToolPlan, context: AgentRunContext): Promise<ToolPlanResult> {
+  async executeToolPlanGated(plan: ToolPlan, context: AgentRunContext, retryBudget?: RetryBudget): Promise<ToolPlanResult> {
     const activeTools = this.modelTools(context);
     let stepIndex = 0;
     const executor: ToolPlanExecutor = async (tool, args) => {
@@ -851,7 +866,7 @@ export class AgentRuntime {
         id: `${context.runId}-ptc-${stepIndex.toString()}`,
         name: tool
       };
-      const executed = await this.executeToolCall(context, toolCall, activeTools);
+      const executed = await this.executeToolCall(context, toolCall, activeTools, retryBudget);
       if (executed.result.status !== "completed") {
         throw new ToolPlanStepBlockedError(tool, executed.result.status, executed.result.output);
       }
@@ -883,7 +898,8 @@ export class AgentRuntime {
   private async runToolPlanTool(
     context: AgentRunContext,
     toolCall: ModelToolCall,
-    activeTools: readonly ModelTool[]
+    activeTools: readonly ModelTool[],
+    retryBudget?: RetryBudget
   ): Promise<ExecutedToolResult> {
     const knownTools = new Set(
       activeTools.map((tool) => tool.name).filter((name) => name !== RUN_TOOL_PLAN_TOOL_NAME)
@@ -897,7 +913,7 @@ export class AgentRuntime {
 
     let planResult: ToolPlanResult;
     try {
-      planResult = await this.executeToolPlanGated(parsed, context);
+      planResult = await this.executeToolPlanGated(parsed, context, retryBudget);
     } catch (error) {
       if (isCancellationLikeError(error)) {
         throw error;
@@ -1059,7 +1075,7 @@ export class AgentRuntime {
   private modelLoopRunner(compactionOccurred?: boolean, retryBudget?: RetryBudget): ModelLoopRunner {
     return {
       ...(compactionOccurred ? { compactionOccurred } : {}),
-      executeToolCall: (context, toolCall, activeTools) => this.executeToolCall(context, toolCall, activeTools),
+      executeToolCall: (context, toolCall, activeTools) => this.executeToolCall(context, toolCall, activeTools, retryBudget),
       generateWithTracing: (context, provider, request) => this.generateWithTracing(context, provider, request, retryBudget),
       prepareContextAdmittedRequest: (provider, request) => prepareContextAdmittedRequest(this.contextWindow, provider, request),
       maxRunWallclockMs: this.maxRunWallclockMs,
@@ -1082,14 +1098,16 @@ export class AgentRuntime {
   private async executeToolCall(
     context: AgentRunContext,
     proposedToolCall: ModelToolCall,
-    activeTools: readonly ModelTool[]
+    activeTools: readonly ModelTool[],
+    retryBudget?: RetryBudget
   ): Promise<ExecutedToolResult> {
     return executeToolCallGated(
       {
         afterTool: (ctx, executed) => this.invokeHooks("afterTool", ctx, executed),
         beforeTool: (ctx, call) => this.invokeHooks("beforeTool", ctx, call),
         resolveToolRisk: (name) => this.resolveToolRisk(name),
-        runToolPlanTool: (ctx, call, tools) => this.runToolPlanTool(ctx, call, tools),
+        runToolPlanTool: (ctx, call, tools) => this.runToolPlanTool(ctx, call, tools, retryBudget),
+        ...(retryBudget ? { retryBudget } : {}),
         ...(this.toolApprovalGate ? { toolApprovalGate: this.toolApprovalGate } : {}),
         ...(this.toolExecutor ? { toolExecutor: this.toolExecutor } : {}),
         ...(this.toolOpportunityObserver ? { toolOpportunityObserver: this.toolOpportunityObserver } : {}),

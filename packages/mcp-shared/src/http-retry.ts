@@ -1,3 +1,4 @@
+import { currentRetryBudget, type RetryBudget, type RetryReservation } from "@muse/resilience";
 import { sleep } from "@muse/shared";
 
 const DEFAULT_RETRIES = 2;
@@ -66,6 +67,8 @@ export interface RetryOptions {
    * existing resilient-read behaviour; HTTP 429/5xx retry policy is unchanged.
    */
   readonly retryOnNetworkError?: boolean;
+  /** Explicit aggregate ledger; otherwise the current foreground scope is used. */
+  readonly budget?: RetryBudget;
 }
 
 /**
@@ -115,19 +118,33 @@ export async function fetchWithRetry(
   const delay = options.sleep ?? sleep;
   const timeoutMs = normalizeTimerDelay(options.timeoutMs, DEFAULT_TIMEOUT_MS);
   const maxRetryAfterMs = normalizeTimerDelay(options.maxRetryAfterMs, DEFAULT_MAX_RETRY_AFTER_MS);
+  const retryBudget = options.budget ?? currentRetryBudget();
 
   let lastError: unknown;
+  let pendingReservation: RetryReservation | undefined;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     // Keep this outside the fetch try/catch. A policy guard is not a transient
     // network failure, and must surface as the original error without a sleep,
     // retry, or physical request after it throws.
-    await options.beforeAttempt?.({ attempt, url });
+    try {
+      await options.beforeAttempt?.({ attempt, url });
+    } catch (error) {
+      pendingReservation?.cancel();
+      throw error;
+    }
 
     let retryAfterMs: number | undefined;
+    let retryCause: "transient_http_network" | "transient_http_status" = "transient_http_status";
     const externalSignal = options.init?.signal ?? undefined;
     // Treat cancellation as terminal before issuing a request. In particular,
     // do not let a pre-aborted caller signal become a retryable fetch failure.
-    externalSignal?.throwIfAborted();
+    try {
+      externalSignal?.throwIfAborted();
+    } catch (error) {
+      pendingReservation?.cancel();
+      throw error;
+    }
+    pendingReservation?.commit();
     const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
     const signal = externalSignal && timeoutSignal ? AbortSignal.any([externalSignal, timeoutSignal]) : (externalSignal ?? timeoutSignal);
     const requestInit = signal ? { ...(options.init ?? {}), signal } : options.init;
@@ -155,9 +172,17 @@ export async function fetchWithRetry(
       if (options.retryOnNetworkError === false || attempt === retries) {
         throw attemptError;
       }
+      retryCause = "transient_http_network";
     }
     const backoffMs = baseDelayMs * 2 ** attempt;
-    await waitForRetry(delay, retryAfterMs !== undefined ? Math.min(retryAfterMs, maxRetryAfterMs) : backoffMs, externalSignal);
+    const waitMs = retryAfterMs !== undefined ? Math.min(retryAfterMs, maxRetryAfterMs) : backoffMs;
+    pendingReservation = retryBudget?.reserve({ backoffMs: waitMs, cause: retryCause });
+    try {
+      await waitForRetry(delay, waitMs, externalSignal);
+    } catch (error) {
+      pendingReservation?.cancel();
+      throw error;
+    }
   }
   throw lastError ?? new Error("fetchWithRetry: retries exhausted");
 }

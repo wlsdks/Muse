@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { createRetryBudget, currentRetryBudget, retry } from "@muse/resilience";
 import {
   createMuseTools,
   createRustRunnerTool,
@@ -119,6 +120,42 @@ describe("nearestToolName", () => {
 });
 
 describe("ToolExecutor", () => {
+  it("scopes the request retry ledger to the resolved tool handler", async () => {
+    const budget = createRetryBudget({ maxBackoffMs: 10, maxRetries: 1 });
+    let attempts = 0;
+    let seenScope = false;
+    const readTool: MuseTool = {
+      definition: { description: "Retrying read.", inputSchema: { type: "object" }, name: "retrying_read", risk: "read" },
+      execute: async () => {
+        seenScope = currentRetryBudget() !== undefined;
+        return retry(
+          () => {
+            attempts += 1;
+            if (attempts === 1) throw new Error("transient");
+            return "ok";
+          },
+          { initialDelayMs: 2, maxAttempts: 2, maxDelayMs: 2, sleep: async () => {} }
+        );
+      }
+    };
+    const executor = new ToolExecutor({ registry: new ToolRegistry([readTool]) });
+
+    const result = await executor.execute({
+      arguments: {},
+      context: { runId: "run-retry" },
+      id: "call-retry",
+      name: "retrying_read",
+      retryBudget: budget
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toContain("ok");
+    expect(seenScope).toBe(true);
+    expect(currentRetryBudget()).toBeUndefined();
+    expect(attempts).toBe(2);
+    expect(budget.snapshot()).toMatchObject({ usedBackoffMs: 2, usedRetries: 1 });
+  });
+
   it("executes and sanitizes tool output", async () => {
     const executor = new ToolExecutor({
       registry: new ToolRegistry([writeTool])

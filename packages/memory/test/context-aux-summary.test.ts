@@ -63,6 +63,25 @@ describe("summarizeDroppedContext (CMP-2 aux compaction)", () => {
     await summarizeDroppedContext(dropped, summarizer, { fallback: "DET" });
     expect(seenOptions).toBeUndefined();
   });
+
+  it("forwards the caller signal without coupling the memory package to retry types", async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    await summarizeDroppedContext(dropped, async (_messages, options) => {
+      seen = options?.signal;
+      return "ok";
+    }, { fallback: "DET", signal: controller.signal });
+    expect(seen).toBe(controller.signal);
+  });
+
+  it("rethrows caller cancellation instead of laundering it into deterministic fallback", async () => {
+    const controller = new AbortController();
+    const cancellation = new Error("cancel compaction");
+    controller.abort(cancellation);
+    await expect(summarizeDroppedContext(dropped, async () => {
+      throw cancellation;
+    }, { fallback: "DET", signal: controller.signal })).rejects.toBe(cancellation);
+  });
 });
 
 describe("chunkDroppedOnToolPairs", () => {
@@ -189,6 +208,26 @@ describe("summarizeDroppedContextInStages (staged CMP-2 aux compaction)", () => 
       fallback: "OVERALL_FALLBACK"
     });
     expect(out).toBe("OVERALL_FALLBACK");
+  });
+
+  it("stops staged summarization when a later chunk cancels", async () => {
+    const controller = new AbortController();
+    const cancellation = new Error("cancel later chunk");
+    let calls = 0;
+    await expect(summarizeDroppedContextInStages(bigSequence, async (_messages, options) => {
+      calls += 1;
+      expect(options?.signal).toBe(controller.signal);
+      if (calls === 2) {
+        controller.abort(cancellation);
+        throw cancellation;
+      }
+      return `chunk-${calls.toString()}`;
+    }, {
+      chunkMaxChars: 60,
+      fallback: "DET",
+      signal: controller.signal
+    })).rejects.toBe(cancellation);
+    expect(calls).toBe(2);
   });
 
   it("returns the fallback for an empty dropped context (no chunks)", async () => {

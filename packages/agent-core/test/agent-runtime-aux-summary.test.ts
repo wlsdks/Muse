@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { DiagnosticModelProvider, type ModelMessage, type ModelRequest, type ModelEvent } from "@muse/model";
 import { COMPACTION_SUMMARY_PREFIX, type ConversationMessage } from "@muse/memory";
+import { InMemoryMuseTracer } from "@muse/observability";
+import { retry } from "@muse/resilience";
 
 import { AgentRuntime, augmentCompactionSummary } from "../src/index.js";
 
@@ -47,6 +49,98 @@ function compactingMessages(): ConversationMessage[] {
 }
 
 describe("CMP-2 runtime wiring", () => {
+  it("scopes only auxiliary summarization to the foreground run retry ledger", async () => {
+    const tracer = new InMemoryMuseTracer();
+    let calls = 0;
+    const runtime = new AgentRuntime({
+      contextWindow: { maxContextWindowTokens: 60, outputReserveTokens: 10 },
+      contextSummarizer: () => retry(
+        () => {
+          calls += 1;
+          if (calls === 1) throw new Error("transient aux failure");
+          return Promise.resolve("aux recap with the older facts");
+        },
+        { initialDelayMs: 2, maxAttempts: 2, maxDelayMs: 2, sleep: async () => {} }
+      ),
+      modelProvider: new CapturingDiagnostic({ defaultModel: "diagnostic/smoke" }),
+      runRetryBudget: { maxBackoffMs: 10, maxRetries: 1 },
+      tracer
+    });
+
+    await runtime.run({ messages: compactingMessages(), model: "diagnostic/smoke" });
+
+    expect(calls).toBe(2);
+    const runSpan = tracer.recordedSpans().find((span) => span.name === "muse.agent.run");
+    expect(runSpan?.attributes).toMatchObject({
+      "retry.budget.used_backoff_ms": 2,
+      "retry.budget.used_retries": 1
+    });
+  });
+
+  it("passes cancellation into auxiliary summarization and terminates before primary dispatch", async () => {
+    const controller = new AbortController();
+    const cancellation = new Error("cancel compacting run");
+    const provider = new CapturingDiagnostic({ defaultModel: "diagnostic/smoke" });
+    let seenSignal: AbortSignal | undefined;
+    const runtime = new AgentRuntime({
+      contextWindow: { maxContextWindowTokens: 60, outputReserveTokens: 10 },
+      contextSummarizer: async (_dropped, options) => {
+        seenSignal = options?.signal;
+        controller.abort(cancellation);
+        throw cancellation;
+      },
+      modelProvider: provider
+    });
+
+    await expect(runtime.run({
+      messages: compactingMessages(),
+      model: "diagnostic/smoke",
+      signal: controller.signal
+    })).rejects.toBe(cancellation);
+    expect(seenSignal).toBe(controller.signal);
+    expect(provider.captured).toHaveLength(0);
+  });
+
+  it("shares one retry cap across every staged auxiliary chunk", async () => {
+    const tracer = new InMemoryMuseTracer();
+    let chunks = 0;
+    let physicalCalls = 0;
+    const runtime = new AgentRuntime({
+      contextWindow: { maxContextWindowTokens: 80, outputReserveTokens: 10 },
+      contextSummarizer: () => {
+        chunks += 1;
+        let attempt = 0;
+        return retry(
+          () => {
+            attempt += 1;
+            physicalCalls += 1;
+            if (attempt === 1) throw new Error("transient per chunk");
+            return Promise.resolve(`chunk ${chunks.toString()} recap`);
+          },
+          { initialDelayMs: 1, maxAttempts: 2, maxDelayMs: 1, sleep: async () => {} }
+        );
+      },
+      modelProvider: new CapturingDiagnostic({ defaultModel: "diagnostic/smoke" }),
+      runRetryBudget: { maxBackoffMs: 10, maxRetries: 1 },
+      tracer
+    });
+    const messages: ConversationMessage[] = Array.from({ length: 8 }, (_, index) => ({
+      content: `old-${index.toString()}-${"x".repeat(3_000)}`,
+      role: index % 2 === 0 ? "user" : "assistant"
+    }));
+    messages.push({ content: "latest", role: "user" });
+
+    await runtime.run({ messages, model: "diagnostic/smoke" });
+
+    expect(chunks).toBeGreaterThan(1);
+    expect(physicalCalls).toBe(chunks + 1);
+    const runSpan = tracer.recordedSpans().find((span) => span.name === "muse.agent.run");
+    expect(runSpan?.attributes).toMatchObject({
+      "retry.budget.used_backoff_ms": 1,
+      "retry.budget.used_retries": 1
+    });
+  });
+
   it("appends an aux dropped-context summary when a compaction fires and a summarizer is configured", async () => {
     const provider = new CapturingDiagnostic({ defaultModel: "diagnostic/smoke" });
     const runtime = new AgentRuntime({
