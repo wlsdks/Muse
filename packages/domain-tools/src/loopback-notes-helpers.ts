@@ -1,5 +1,5 @@
-import { readdir as nodeReaddir } from "node:fs/promises";
-import { resolve as nodePathResolve, sep as nodePathSep } from "node:path";
+import { readdir as nodeReaddir, realpath as nodeRealpath } from "node:fs/promises";
+import { basename as nodePathBasename, dirname as nodePathDirname, join as nodePathJoin, resolve as nodePathResolve, sep as nodePathSep } from "node:path";
 
 /**
  * Path-validation, markdown-walk, and mirror-title helpers for the
@@ -53,8 +53,37 @@ export interface NotesPathSafe {
  * held inline becomes one relocatable unit — the validation logic below is
  * byte-identical to the original `resolveSafe` closure in `loopback-notes.ts`.
  */
-export function createNotesPathResolver(root: string): (input: string) => NotesPathSafe | string {
-  return function resolveSafe(input: string): NotesPathSafe | string {
+/**
+ * Collapse symlinks the way `@muse/fs` does: realpath the deepest EXISTING
+ * ancestor and re-append the missing tail, so a not-yet-created note is handled
+ * without requiring the leaf to exist. Without this, a symlink planted at
+ * `<notesDir>/x.md` → `~/.ssh/id_rsa` passes the lexical containment check
+ * (it resolves textually under the notes dir) and `readFile` then follows the
+ * link and returns the target's bytes.
+ */
+async function canonicalizeUnderRoot(absolute: string): Promise<string> {
+  let current = absolute;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      const real = await nodeRealpath(current);
+      return tail.length > 0 ? nodePathJoin(real, ...tail.reverse()) : real;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      const parent = nodePathDirname(current);
+      if (parent === current) {
+        return absolute;
+      }
+      tail.push(nodePathBasename(current));
+      current = parent;
+    }
+  }
+}
+
+export function createNotesPathResolver(root: string): (input: string) => Promise<NotesPathSafe | string> {
+  return async function resolveSafe(input: string): Promise<NotesPathSafe | string> {
     const trimmed = input.trim();
     if (trimmed.length === 0) {
       return "path must not be empty";
@@ -62,12 +91,19 @@ export function createNotesPathResolver(root: string): (input: string) => NotesP
     if (trimmed.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(trimmed)) {
       return "path must be relative to the notes directory";
     }
-    const absolute = nodePathResolve(root, trimmed);
-    if (absolute !== root && !absolute.startsWith(root + nodePathSep)) {
+    const lexical = nodePathResolve(root, trimmed);
+    if (lexical !== root && !lexical.startsWith(root + nodePathSep)) {
+      return "path escapes the notes directory";
+    }
+    // Re-check containment AFTER collapsing symlinks — the lexical check above
+    // is defeated by a symlink whose target is outside the notes dir.
+    const canonicalRoot = await canonicalizeUnderRoot(root);
+    const absolute = await canonicalizeUnderRoot(lexical);
+    if (absolute !== canonicalRoot && !absolute.startsWith(canonicalRoot + nodePathSep)) {
       return "path escapes the notes directory";
     }
     // Note paths are portable: forward-slash on every OS (matches the provider convention).
-    const relative = absolute === root ? "" : absolute.slice(root.length + 1).split(nodePathSep).join("/");
+    const relative = absolute === canonicalRoot ? "" : absolute.slice(canonicalRoot.length + 1).split(nodePathSep).join("/");
     return { absolute, relative };
   };
 }

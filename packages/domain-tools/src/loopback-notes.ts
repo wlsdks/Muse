@@ -176,7 +176,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
         execute: async (args): Promise<JsonObject> => {
           const subdirInput = readString(args, "subdir");
           const target = subdirInput && subdirInput.trim().length > 0 ? subdirInput : "";
-          const safe = target.length === 0 ? { absolute: root, relative: "" } : resolveSafe(target);
+          const safe = target.length === 0 ? { absolute: root, relative: "" } : await resolveSafe(target);
           if (typeof safe === "string") {
             return { error: safe };
           }
@@ -292,7 +292,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
             return { error: pathResult.error };
           }
           const path = pathResult.value;
-          const safe = resolveSafe(path);
+          const safe = await resolveSafe(path);
           if (typeof safe === "string") {
             return { error: safe };
           }
@@ -543,7 +543,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
             return { error: `content exceeds maxFileBytes ${maxFileBytes}` };
           }
           const overwrite = args["overwrite"] === true;
-          const safe = resolveSafe(path);
+          const safe = await resolveSafe(path);
           if (typeof safe === "string") {
             return { error: safe };
           }
@@ -628,7 +628,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           if (!guard.safe) {
             return { blocked: true, error: guard.notice, kinds: guard.kinds as JsonValue };
           }
-          const safe = resolveSafe(path);
+          const safe = await resolveSafe(path);
           if (typeof safe === "string") {
             return { error: safe };
           }
@@ -680,7 +680,7 @@ export function createNotesMcpServer(options: NotesMcpServerOptions): LoopbackMc
           if (path === undefined) {
             return { error: "path is required" };
           }
-          const safe = resolveSafe(path);
+          const safe = await resolveSafe(path);
           if (typeof safe === "string") {
             return { error: safe };
           }
