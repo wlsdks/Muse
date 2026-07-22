@@ -26,3 +26,18 @@ export {
   isCanonicalCheckpointStep,
   type LocalCheckpointReference
 } from "./local-checkpoint-reference.js";
+export {
+  ATTUNEMENT_OUTCOME_FRESHNESS_MS,
+  RUN_GROUNDING_FRESHNESS_MS,
+  admitDecisionMetric,
+  type DecisionMetric,
+  type DecisionMetricActionId,
+  type DecisionMetricAdmission,
+  type DecisionMetricClaim,
+  type DecisionMetricEvidenceClass,
+  type DecisionMetricExclusionReason,
+  type DecisionMetricFreshnessStatus,
+  type DecisionMetricInput,
+  type DecisionMetricSource,
+  type DecisionMetricUnit
+} from "./decision-metric.js";
