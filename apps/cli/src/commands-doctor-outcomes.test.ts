@@ -13,6 +13,7 @@ describe("formatRunOutcomes", () => {
       topFailingTopics: []
     });
     expect(out).toContain("no graded runs yet");
+    expect(out).toContain("technical grounding diagnostics, not personal usefulness");
   });
 
   it("renders the fail-rate head with the grounded/abstain/ungrounded split", () => {
@@ -27,6 +28,7 @@ describe("formatRunOutcomes", () => {
     expect(out).toContain("4 graded runs");
     expect(out).toContain("fail-rate 25%");
     expect(out).toContain("3 grounded");
+    expect(out).toContain("technical grounding diagnostics, not personal usefulness");
     expect(out).not.toContain("top failing topics");
   });
 
@@ -42,5 +44,6 @@ describe("formatRunOutcomes", () => {
     expect(out).toContain("top failing topics");
     expect(out).toContain("vpn");
     expect(out).toContain("2×");
+    expect(out).toContain("technical grounding diagnostics, not personal usefulness");
   });
 });

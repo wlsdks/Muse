@@ -11,19 +11,20 @@ import type { ProgramIO } from "./program.js";
  * "improving" from "just more usage".
  */
 export function formatRunOutcomes(summary: RunOutcomeSummary): string {
+  const scope = "technical grounding diagnostics, not personal usefulness";
   if (summary.labelled === 0) {
-    return "📉 Run outcomes: no graded runs yet — ask a few grounded questions and check back.\n";
+    return `📉 Run grounding diagnostics: no graded runs yet — ask a few grounded questions and check back. (${scope})\n`;
   }
   const pct = (n: number): string => `${(n * 100).toFixed(0)}%`;
-  const head = `📉 Run outcomes over ${summary.labelled.toString()} graded run${summary.labelled === 1 ? "" : "s"}: `
+  const head = `📉 Run grounding diagnostics over ${summary.labelled.toString()} graded run${summary.labelled === 1 ? "" : "s"}: `
     + `fail-rate ${pct(summary.failRate)} (${summary.grounded} grounded · ${summary.abstain} abstain · ${summary.ungrounded} ungrounded)`;
   if (summary.topFailingTopics.length === 0) {
-    return `${head}\n`;
+    return `${head}\n  scope: ${scope}\n`;
   }
   const topics = summary.topFailingTopics
     .map((t) => `  • ${t.topic} (${t.count.toString()}×)`)
     .join("\n");
-  return `${head}\n  top failing topics:\n${topics}\n`;
+  return `${head}\n  scope: ${scope}\n  top failing topics:\n${topics}\n`;
 }
 
 /** Read the run-log outcome entries from `.muse/runs/*.jsonl` (best-effort; a missing dir / bad line is skipped). */

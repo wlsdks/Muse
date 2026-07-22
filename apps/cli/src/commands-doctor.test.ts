@@ -405,6 +405,7 @@ describe("formatRunOutcomes — the failure-RATE the cumulative ledger lacks", (
     expect(out).toContain("4 graded runs");
     expect(out).toContain("fail-rate 50%");
     expect(out).toContain("2 grounded · 1 abstain · 1 ungrounded");
+    expect(out).toContain("technical grounding diagnostics, not personal usefulness");
     expect(out).toContain("office vpn mtu (2×)");
     expect(out).toContain("dentist (1×)");
   });
