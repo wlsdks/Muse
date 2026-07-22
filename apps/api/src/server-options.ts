@@ -89,6 +89,9 @@ export interface ServerOptions {
   readonly sessionTagStore?: SessionTagStore;
   readonly taskMemoryMaintenance?: TaskMemoryMaintenance;
   readonly userMemoryStore?: UserMemoryStore;
+  /** Read-only personal-status projection inputs; defaults stay under the owner-scoped Muse home. */
+  readonly pendingApprovalsFile?: string;
+  readonly proposedActionsFile?: string;
   readonly conversationSummaryStore?: ConversationSummaryStore;
   readonly agentCardIdentity?: {
     readonly name?: string;

@@ -54,6 +54,8 @@ export interface ResidentDaemonInspectionOptions {
   readonly run?: ReadOnlyProcessRunner;
   readonly uid?: number;
   readonly daemonTemporaryRoots?: readonly string[];
+  /** API status reads disable the broader orphan scan to keep their process probe allowlist narrow. */
+  readonly inspectOrphans?: boolean;
 }
 
 interface ProcessRow {
@@ -404,7 +406,9 @@ export async function inspectResidentDaemon(
       }
     : { ...env, ...(diskEnvironment ?? {}) };
   const heartbeat = await inspectHeartbeat(heartbeatFile(effectiveRuntimeEnv), nowMs, await processStart(livePid, run), livePid);
-  const orphan = await inspectResidentOrphanApiProcesses(platform, run);
+  const orphan = options.inspectOrphans === false
+    ? { orphanProbe: "unverified" as const, orphanProcessCount: 0, orphanRootCount: 0 }
+    : await inspectResidentOrphanApiProcesses(platform, run);
   return {
     diskArguments,
     effectiveRuntimeEnv,

@@ -126,4 +126,28 @@ describe("resident daemon read-only authority", () => {
       plist: fingerprint(state.plistFile)
     }).toEqual(before);
   });
+
+  it("can keep API inspection to launchctl and one PID start-time probe", async () => {
+    const state = fixture();
+    const commands: string[] = [];
+    const run: ReadOnlyProcessRunner = async (executable, args, options) => {
+      commands.push(`${executable} ${args.join(" ")}`);
+      return state.run(executable, args, options);
+    };
+    await inspectResidentDaemon({
+      daemonTemporaryRoots: [],
+      env: { HOME: state.root, MUSE_DAEMON_PLIST_FILE: state.plistFile },
+      inspectOrphans: false,
+      now: () => NOW,
+      platform: "darwin",
+      run,
+      uid: 501
+    });
+
+    expect(commands).toEqual([
+      "launchctl list com.muse.daemon",
+      "launchctl print gui/501/com.muse.daemon",
+      "ps -p 4321 -o lstart="
+    ]);
+  });
 });

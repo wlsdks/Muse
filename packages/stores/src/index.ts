@@ -121,7 +121,16 @@ export { compareRemindersByDueAt, filterReminders, fireReminder, mutateReminders
 export type { PersistedReminder, ReminderRecurrence } from "./personal-reminders-store.js";
 export { compareTasksByDueDate, mutateTasks, parseTaskDueAt, readTaskById, readTaskByIdStrict, readTasks, readTaskStatusFilter, resolveTaskRef, resolveTasksDueLine, selectTasksDueWithin, serializeTask, serializeTaskForModel, TaskStoreUnavailableError, writeTasks } from "./personal-tasks-store.js";
 export type { PersistedTask } from "./personal-tasks-store.js";
-export { hasVeto, queryVetoes, readVetoes, recordVeto, removeVeto, serializeVeto } from "./personal-veto-store.js";
+export {
+  hasVeto,
+  inspectVetoesSource,
+  queryVetoes,
+  readVetoes,
+  recordVeto,
+  removeVeto,
+  serializeVeto,
+  type VetoSourceSnapshot
+} from "./personal-veto-store.js";
 export type { ActionVeto } from "./personal-veto-store.js";
 export {
   readRejectedProposals,

@@ -225,7 +225,13 @@ function cardRow(value: unknown, generatedAt: string): value is PersonalStatusCa
 
 export function comparePersonalStatusCards(left: PersonalStatusCard, right: PersonalStatusCard): number {
   return left.priority - right.priority
-    || (left.deadline === null ? 1 : right.deadline === null ? -1 : left.deadline.localeCompare(right.deadline))
+    || (left.deadline === null && right.deadline === null
+      ? 0
+      : left.deadline === null
+        ? 1
+        : right.deadline === null
+          ? -1
+          : left.deadline.localeCompare(right.deadline))
     || right.observedAt.localeCompare(left.observedAt)
     || left.kind.localeCompare(right.kind)
     || left.id.localeCompare(right.id);
