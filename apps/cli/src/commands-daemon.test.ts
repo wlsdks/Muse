@@ -835,6 +835,47 @@ describe("muse daemon — one-process launcher fires real ticks", () => {
     }
   });
 
+  it("--install --safe persists a contained activation profile without changing ambient owner input", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muse-install-safe-"));
+    const plistFile = join(dir, "com.muse.daemon.plist");
+    const env: NodeJS.ProcessEnv = {
+      ...tmpEnv(),
+      MUSE_DAEMON_DELIVERY_ENABLED: "true",
+      MUSE_DAEMON_PLIST_FILE: plistFile,
+      MUSE_DAEMON_PROVIDER_LOCK: "",
+      MUSE_LOCAL_ONLY: "false",
+      MUSE_SELFLEARN_ENABLED: "true"
+    };
+    const result = await runDaemon(["--install", "--safe"], {
+      env,
+      platform: "darwin",
+      registry: new MessagingProviderRegistry([capturingProvider([])]),
+      runLaunchctl: async (args) => args[0] === "list"
+        ? { code: 0, stderr: "", stdout: '{\n\t"PID" = 777;\n};\n' }
+        : { code: 0, stderr: "", stdout: "" }
+    });
+
+    const plist = readFileSync(plistFile, "utf8");
+    expect(result.exitCode).toBeUndefined();
+    expect(plist).toContain("<key>MUSE_LOCAL_ONLY</key>\n    <string>true</string>");
+    expect(plist).toContain("<key>MUSE_DAEMON_PROVIDER_LOCK</key>\n    <string>log</string>");
+    expect(plist).toContain("<key>MUSE_DAEMON_DELIVERY_ENABLED</key>\n    <string>false</string>");
+    expect(plist).toContain("<key>MUSE_SELFLEARN_ENABLED</key>\n    <string>false</string>");
+    expect(env.MUSE_LOCAL_ONLY).toBe("false");
+    expect(env.MUSE_DAEMON_DELIVERY_ENABLED).toBe("true");
+    expect(env.MUSE_SELFLEARN_ENABLED).toBe("true");
+  });
+
+  it("rejects --safe without --install", async () => {
+    const result = await runDaemon(["--safe"], {
+      env: tmpEnv(),
+      registry: new MessagingProviderRegistry([capturingProvider([])])
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("only valid with --install");
+  });
+
   it("--install rejects a temporary CLI entry before writing a plist or invoking launchctl", async () => {
     const cliTempRoot = mkdtempSync(join(tmpdir(), "muse-install-temp-entry-"));
     const cliEntry = join(cliTempRoot, "dbg.mjs");

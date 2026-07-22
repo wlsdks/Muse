@@ -528,6 +528,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
     .option("--status", "Print which daemon ticks are enabled for the current config, then exit")
     .option("--init", "Write the resolved provider + destination to the daemon config file, then exit")
     .option("--install", "Write a macOS LaunchAgent plist AND load it via launchctl so the daemon survives logout/reboot, then exit")
+    .option("--safe", "With --install, persist local-only + log lock + delivery brake + self-learning off for controlled activation")
     .option("--uninstall", "Unload the macOS LaunchAgent (or remove the Windows scheduled task) and delete its file, then exit")
     .option("--interval <seconds>", "Tick interval in seconds (default 60)", "60")
     .option("--lead-minutes <minutes>", "Imminent-window lead in minutes (default 10)", "10")
@@ -539,6 +540,7 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       readonly status?: boolean;
       readonly init?: boolean;
       readonly install?: boolean;
+      readonly safe?: boolean;
       readonly uninstall?: boolean;
       readonly interval: string;
       readonly leadMinutes: string;
@@ -546,6 +548,11 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       readonly destination?: string;
     }) => {
       const e = env();
+      if (options.safe && !options.install) {
+        io.stderr("muse daemon --safe is only valid with --install; it persists a contained LaunchAgent activation profile.\n");
+        process.exitCode = 1;
+        return;
+      }
       const deliveryBrakeEngaged = !parseBoolean(e.MUSE_DAEMON_DELIVERY_ENABLED, true);
       // `helpers.env` is a test/composition seam, not an escape hatch. A
       // supplied false cannot downgrade the ambient local-only posture.
@@ -611,7 +618,18 @@ export function registerDaemonCommands(program: Command, io: ProgramIO, helpers:
       }
 
       if (options.install) {
-        const result = await installDaemonAutostart(io, e, {
+        // Keep the host shell and owner config untouched. `--safe` only
+        // changes the allowlisted variables persisted into the new service.
+        const installEnvironment: NodeJS.ProcessEnv = options.safe
+          ? {
+              ...e,
+              MUSE_DAEMON_DELIVERY_ENABLED: "false",
+              MUSE_DAEMON_PROVIDER_LOCK: "log",
+              MUSE_LOCAL_ONLY: "true",
+              MUSE_SELFLEARN_ENABLED: "false"
+            }
+          : e;
+        const result = await installDaemonAutostart(io, installEnvironment, {
           ...(helpers.daemonCliEntry !== undefined ? { daemonCliEntry: helpers.daemonCliEntry } : {}),
           ...(helpers.daemonTemporaryRoots ? { daemonTemporaryRoots: helpers.daemonTemporaryRoots } : {}),
           ...(helpers.platform ? { platform: helpers.platform } : {}),
