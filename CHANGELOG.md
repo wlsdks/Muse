@@ -8,6 +8,12 @@ move from `Unreleased` to dated/versioned headings. Version policy:
 
 ## [Unreleased]
 
+- Added process-local foreground model admission to the existing runtime model
+  budget: bounded concurrency, FIFO queueing, timeout/cancellation cleanup,
+  foreground-before-background scheduling, resident-safe owner overrides, and
+  privacy-safe saturation counters. Cross-process provider admission remains an
+  explicit limitation.
+
 - Added a default-on, per-run retry count/backoff budget for AgentRuntime blocking model, fallback, and read-plan recovery paths, including cancellable backoff reservations and fail-closed exhaustion.
 
 ### Added

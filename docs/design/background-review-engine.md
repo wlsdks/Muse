@@ -168,11 +168,15 @@ STAY as on-demand surfaces.
 
 The preference and skill arms are genuine fire-and-forget work, so production
 wires them through a shared background view of the configured model provider.
-It defaults to one active call and two queued calls. A new foreground model
-call never waits for that queue: it cooperatively cancels active review calls,
-while an adapter that ignores cancellation continues to occupy its background
-slot until it actually settles. The queue never starts work while any
-foreground call is active.
+It defaults to one active call and two queued calls. Foreground calls share the
+same process-local coordinator and default to one active call, eight FIFO
+waiters, and a 15-second queue timeout. A valid foreground demand never waits
+for the background queue: it cooperatively cancels active review calls, while
+an adapter that ignores cancellation continues to occupy its background lease
+until it actually settles. This can briefly make the privacy-safe lease counts
+overlap; it is not a claim about exact physical provider concurrency. A queued
+foreground call always wins the next released foreground slot, and background
+work resumes only after both active and queued foreground demand reach zero.
 
 Background requests also have a 64 KiB provider-bound input ceiling and a
 512-token output ceiling. Oversized input is rejected rather than silently
@@ -180,12 +184,20 @@ truncated. Owners can tune the bounded ranges with
 `MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY`,
 `MUSE_BACKGROUND_MODEL_MAX_QUEUE`,
 `MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES`, and
-`MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS`. Their exact ranges/defaults are
+`MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS`. Foreground admission uses
+`MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY`,
+`MUSE_FOREGROUND_MODEL_MAX_QUEUE`, and
+`MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS`. Their exact foreground
+ranges/defaults are `1..8`/`1`, `0..64`/`8`, and
+`1..120000`/`15000` milliseconds. The exact background ranges/defaults are
 `1..4`/`1`, `0..32`/`2`, `1024..1048576`/`65536`, and `1..4096`/`512`,
 respectively. Unset, blank, non-decimal-integer, and out-of-range values return
 to those safe defaults; only valid explicit values enter the resident
 LaunchAgent allowlist. Runtime observability exposes only fixed-size counters
-and queue/cancellation state, never prompt contents.
+and queue/cancellation state, never prompt contents. This boundary coordinates
+one assembled Muse runtime; separate CLI/API/daemon processes still need a
+future cross-process provider lease before the limit can be described as a
+machine-wide cap.
 
 ## 6. Incremental build plan (each slice verifiable)
 

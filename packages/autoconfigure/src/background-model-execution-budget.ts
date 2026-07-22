@@ -12,16 +12,24 @@ export const DEFAULT_BACKGROUND_MODEL_MAX_CONCURRENCY = 1;
 export const DEFAULT_BACKGROUND_MODEL_MAX_QUEUE = 2;
 export const DEFAULT_BACKGROUND_MODEL_MAX_INPUT_BYTES = 65_536;
 export const DEFAULT_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS = 512;
+export const DEFAULT_FOREGROUND_MODEL_MAX_CONCURRENCY = 1;
+export const DEFAULT_FOREGROUND_MODEL_MAX_QUEUE = 8;
+export const DEFAULT_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS = 15_000;
 
 const MAX_BACKGROUND_MODEL_MAX_CONCURRENCY = 4;
 const MAX_BACKGROUND_MODEL_MAX_QUEUE = 32;
 const MIN_BACKGROUND_MODEL_MAX_INPUT_BYTES = 1_024;
 const MAX_BACKGROUND_MODEL_MAX_INPUT_BYTES = 1_048_576;
 const MAX_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS = 4_096;
+const MAX_FOREGROUND_MODEL_MAX_CONCURRENCY = 8;
+const MAX_FOREGROUND_MODEL_MAX_QUEUE = 64;
+const MAX_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS = 120_000;
 
 export type BackgroundModelExecutionBudgetErrorCode =
   | "INPUT_TOO_LARGE"
   | "QUEUE_FULL"
+  | "FOREGROUND_QUEUE_FULL"
+  | "FOREGROUND_QUEUE_TIMEOUT"
   | "REQUEST_ABORTED";
 
 export class BackgroundModelExecutionBudgetError extends ModelProviderError {
@@ -39,6 +47,9 @@ export interface BackgroundModelExecutionBudgetOptions {
   readonly maxQueue?: number;
   readonly maxInputBytes?: number;
   readonly maxOutputTokens?: number;
+  readonly maxForegroundConcurrency?: number;
+  readonly maxForegroundQueue?: number;
+  readonly foregroundQueueTimeoutMs?: number;
   /** Monotonic milliseconds. */
   readonly now?: () => number;
 }
@@ -48,10 +59,18 @@ export interface ResolvedBackgroundModelExecutionBudgetOptions {
   readonly maxQueue: number;
   readonly maxInputBytes: number;
   readonly maxOutputTokens: number;
+  readonly maxForegroundConcurrency: number;
+  readonly maxForegroundQueue: number;
+  readonly foregroundQueueTimeoutMs: number;
 }
 
 export interface BackgroundModelExecutionBudgetSnapshot {
   readonly activeForeground: number;
+  readonly queuedForeground: number;
+  readonly foregroundRejected: number;
+  readonly foregroundTimedOut: number;
+  readonly foregroundCancelled: number;
+  readonly maxObservedActiveForeground: number;
   readonly activeBackground: number;
   readonly queuedBackground: number;
   readonly pendingBackgroundSettlements: number;
@@ -93,10 +112,16 @@ export function backgroundModelExecutionBudgetEnvironment(env: BudgetEnv): Reado
   const queue = explicitIntegerInRange(env.MUSE_BACKGROUND_MODEL_MAX_QUEUE, 0, MAX_BACKGROUND_MODEL_MAX_QUEUE);
   const inputBytes = explicitIntegerInRange(env.MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES, MIN_BACKGROUND_MODEL_MAX_INPUT_BYTES, MAX_BACKGROUND_MODEL_MAX_INPUT_BYTES);
   const outputTokens = explicitIntegerInRange(env.MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS, 1, MAX_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS);
+  const foregroundConcurrency = explicitIntegerInRange(env.MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY, 1, MAX_FOREGROUND_MODEL_MAX_CONCURRENCY);
+  const foregroundQueue = explicitIntegerInRange(env.MUSE_FOREGROUND_MODEL_MAX_QUEUE, 0, MAX_FOREGROUND_MODEL_MAX_QUEUE);
+  const foregroundQueueTimeoutMs = explicitIntegerInRange(env.MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS, 1, MAX_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS);
   if (concurrency !== undefined) variables.MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY = String(concurrency);
   if (queue !== undefined) variables.MUSE_BACKGROUND_MODEL_MAX_QUEUE = String(queue);
   if (inputBytes !== undefined) variables.MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES = String(inputBytes);
   if (outputTokens !== undefined) variables.MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS = String(outputTokens);
+  if (foregroundConcurrency !== undefined) variables.MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY = String(foregroundConcurrency);
+  if (foregroundQueue !== undefined) variables.MUSE_FOREGROUND_MODEL_MAX_QUEUE = String(foregroundQueue);
+  if (foregroundQueueTimeoutMs !== undefined) variables.MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS = String(foregroundQueueTimeoutMs);
   return variables;
 }
 
@@ -127,6 +152,24 @@ export function resolveBackgroundModelExecutionBudgetOptions(
       DEFAULT_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS,
       1,
       MAX_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS
+    ),
+    maxForegroundConcurrency: integerInRange(
+      env.MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY,
+      DEFAULT_FOREGROUND_MODEL_MAX_CONCURRENCY,
+      1,
+      MAX_FOREGROUND_MODEL_MAX_CONCURRENCY
+    ),
+    maxForegroundQueue: integerInRange(
+      env.MUSE_FOREGROUND_MODEL_MAX_QUEUE,
+      DEFAULT_FOREGROUND_MODEL_MAX_QUEUE,
+      0,
+      MAX_FOREGROUND_MODEL_MAX_QUEUE
+    ),
+    foregroundQueueTimeoutMs: integerInRange(
+      env.MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS,
+      DEFAULT_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS,
+      1,
+      MAX_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS
     )
   };
 }
@@ -138,7 +181,10 @@ function normalizeOptions(options: BackgroundModelExecutionBudgetOptions): Resol
     MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY: asEnv(options.maxConcurrency),
     MUSE_BACKGROUND_MODEL_MAX_QUEUE: asEnv(options.maxQueue),
     MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES: asEnv(options.maxInputBytes),
-    MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS: asEnv(options.maxOutputTokens)
+    MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS: asEnv(options.maxOutputTokens),
+    MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY: asEnv(options.maxForegroundConcurrency),
+    MUSE_FOREGROUND_MODEL_MAX_QUEUE: asEnv(options.maxForegroundQueue),
+    MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS: asEnv(options.foregroundQueueTimeoutMs)
   });
 }
 
@@ -177,6 +223,11 @@ interface BackgroundLease {
   release(failed: boolean): void;
 }
 
+interface ForegroundLease {
+  cancelBeforeDispatch(): void;
+  release(): void;
+}
+
 interface ActiveBackground {
   readonly controller: AbortController;
   readonly callerSignal?: AbortSignal;
@@ -193,13 +244,27 @@ interface QueuedBackground {
   onCallerAbort?: () => void;
 }
 
+interface QueuedForeground {
+  readonly callerSignal?: AbortSignal;
+  readonly reject: (error: BackgroundModelExecutionBudgetError) => void;
+  readonly resolve: (lease: ForegroundLease) => void;
+  state: "pending" | "admitted" | "aborted" | "timedOut";
+  onCallerAbort?: () => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
 class BackgroundModelExecutionCoordinator {
   readonly #providerId: string;
   readonly #options: ResolvedBackgroundModelExecutionBudgetOptions;
   readonly #now: () => number;
   readonly #activeBackground = new Set<ActiveBackground>();
   readonly #queue: QueuedBackground[] = [];
+  readonly #foregroundQueue: QueuedForeground[] = [];
   #activeForeground = 0;
+  #foregroundRejected = 0;
+  #foregroundTimedOut = 0;
+  #foregroundCancelled = 0;
+  #maxObservedActiveForeground = 0;
   #pendingBackgroundSettlements = 0;
   #started = 0;
   #completed = 0;
@@ -215,21 +280,38 @@ class BackgroundModelExecutionCoordinator {
     this.#now = options.now ?? (() => performance.now());
   }
 
-  enterForeground(): () => void {
-    const wasIdle = this.#activeForeground === 0;
-    this.#activeForeground += 1;
-    if (wasIdle) {
-      for (const active of this.#activeBackground) {
-        this.#requestCancellation(active, true);
-      }
+  acquireForeground(callerSignal?: AbortSignal): Promise<ForegroundLease> {
+    if (callerSignal?.aborted) {
+      this.#foregroundCancelled = saturatingBackgroundBudgetIncrement(this.#foregroundCancelled);
+      return Promise.reject(this.#foregroundAbortedError());
     }
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.#activeForeground = Math.max(0, this.#activeForeground - 1);
-      if (this.#activeForeground === 0) this.#pump();
-    };
+    if (this.#activeForeground < this.#options.maxForegroundConcurrency) {
+      this.#preemptBackground();
+      return Promise.resolve(this.#startForeground());
+    }
+    if (this.#foregroundQueue.length >= this.#options.maxForegroundQueue) {
+      this.#foregroundRejected = saturatingBackgroundBudgetIncrement(this.#foregroundRejected);
+      return Promise.reject(new BackgroundModelExecutionBudgetError(
+        this.#providerId,
+        "FOREGROUND_QUEUE_FULL",
+        "foreground model execution queue is full"
+      ));
+    }
+    this.#preemptBackground();
+    return new Promise<ForegroundLease>((resolve, reject) => {
+      const queued: QueuedForeground = { callerSignal, reject, resolve, state: "pending" };
+      if (callerSignal) {
+        const onCallerAbort = (): void => {
+          this.#settleQueuedForeground(queued, "aborted");
+        };
+        queued.onCallerAbort = onCallerAbort;
+        callerSignal.addEventListener("abort", onCallerAbort, { once: true });
+      }
+      queued.timer = setTimeout(() => {
+        this.#settleQueuedForeground(queued, "timedOut");
+      }, this.#options.foregroundQueueTimeoutMs);
+      this.#foregroundQueue.push(queued);
+    });
   }
 
   acquireBackground(callerSignal?: AbortSignal): Promise<BackgroundLease> {
@@ -278,6 +360,11 @@ class BackgroundModelExecutionCoordinator {
   snapshot(): BackgroundModelExecutionBudgetSnapshot {
     return {
       activeForeground: this.#activeForeground,
+      queuedForeground: this.#foregroundQueue.length,
+      foregroundRejected: this.#foregroundRejected,
+      foregroundTimedOut: this.#foregroundTimedOut,
+      foregroundCancelled: this.#foregroundCancelled,
+      maxObservedActiveForeground: this.#maxObservedActiveForeground,
       activeBackground: this.#activeBackground.size,
       queuedBackground: this.#queue.length,
       pendingBackgroundSettlements: this.#pendingBackgroundSettlements,
@@ -296,7 +383,39 @@ class BackgroundModelExecutionCoordinator {
   }
 
   #canStartBackground(): boolean {
-    return this.#activeForeground === 0 && this.#activeBackground.size < this.#options.maxConcurrency;
+    return this.#activeForeground === 0
+      && this.#foregroundQueue.length === 0
+      && this.#activeBackground.size < this.#options.maxConcurrency;
+  }
+
+  #startForeground(): ForegroundLease {
+    this.#activeForeground += 1;
+    this.#maxObservedActiveForeground = Math.max(
+      this.#maxObservedActiveForeground,
+      this.#activeForeground
+    );
+    let released = false;
+    return {
+      cancelBeforeDispatch: (): void => {
+        if (released) return;
+        this.#foregroundCancelled = saturatingBackgroundBudgetIncrement(this.#foregroundCancelled);
+        released = true;
+        this.#activeForeground = Math.max(0, this.#activeForeground - 1);
+        this.#pump();
+      },
+      release: (): void => {
+        if (released) return;
+        released = true;
+        this.#activeForeground = Math.max(0, this.#activeForeground - 1);
+        this.#pump();
+      }
+    };
+  }
+
+  #preemptBackground(): void {
+    for (const active of this.#activeBackground) {
+      this.#requestCancellation(active, true);
+    }
   }
 
   #startBackground(callerSignal?: AbortSignal): BackgroundLease {
@@ -346,6 +465,17 @@ class BackgroundModelExecutionCoordinator {
   }
 
   #pump(): void {
+    while (
+      this.#foregroundQueue.length > 0
+      && this.#activeForeground < this.#options.maxForegroundConcurrency
+    ) {
+      const queued = this.#foregroundQueue[0]!;
+      if (queued.callerSignal?.aborted) {
+        this.#settleQueuedForeground(queued, "aborted");
+        continue;
+      }
+      this.#settleQueuedForeground(queued, "admitted");
+    }
     while (this.#queue.length > 0 && this.#canStartBackground()) {
       const queued = this.#queue.shift()!;
       if (queued.callerSignal && queued.onCallerAbort) {
@@ -360,11 +490,50 @@ class BackgroundModelExecutionCoordinator {
     }
   }
 
+  #settleQueuedForeground(
+    queued: QueuedForeground,
+    state: Exclude<QueuedForeground["state"], "pending">
+  ): void {
+    if (queued.state !== "pending") return;
+    const index = this.#foregroundQueue.indexOf(queued);
+    if (index < 0) return;
+    this.#foregroundQueue.splice(index, 1);
+    if (queued.timer !== undefined) clearTimeout(queued.timer);
+    if (queued.callerSignal && queued.onCallerAbort) {
+      queued.callerSignal.removeEventListener("abort", queued.onCallerAbort);
+    }
+    queued.state = state;
+    if (state === "admitted") {
+      queued.resolve(this.#startForeground());
+      return;
+    }
+    if (state === "aborted") {
+      this.#foregroundCancelled = saturatingBackgroundBudgetIncrement(this.#foregroundCancelled);
+      queued.reject(this.#foregroundAbortedError());
+    } else {
+      this.#foregroundTimedOut = saturatingBackgroundBudgetIncrement(this.#foregroundTimedOut);
+      queued.reject(new BackgroundModelExecutionBudgetError(
+        this.#providerId,
+        "FOREGROUND_QUEUE_TIMEOUT",
+        "foreground model execution queue timed out"
+      ));
+    }
+    this.#pump();
+  }
+
   #abortedError(): BackgroundModelExecutionBudgetError {
     return new BackgroundModelExecutionBudgetError(
       this.#providerId,
       "REQUEST_ABORTED",
       "background model execution was cancelled"
+    );
+  }
+
+  #foregroundAbortedError(): BackgroundModelExecutionBudgetError {
+    return new BackgroundModelExecutionBudgetError(
+      this.#providerId,
+      "REQUEST_ABORTED",
+      "foreground model execution was cancelled"
     );
   }
 }
@@ -396,11 +565,40 @@ async function* foregroundStream(
   coordinator: BackgroundModelExecutionCoordinator,
   request: ModelRequest
 ): AsyncIterable<ModelEvent> {
-  const leave = coordinator.enterForeground();
+  const lease = await coordinator.acquireForeground(request.signal);
+  if (request.signal?.aborted) {
+    lease.cancelBeforeDispatch();
+    throw new BackgroundModelExecutionBudgetError(
+      provider.id,
+      "REQUEST_ABORTED",
+      "foreground model execution was cancelled"
+    );
+  }
   try {
     yield* managedProviderStream(provider, request);
   } finally {
-    leave();
+    lease.release();
+  }
+}
+
+async function runForegroundGenerate(
+  provider: ModelProvider,
+  coordinator: BackgroundModelExecutionCoordinator,
+  request: ModelRequest
+): Promise<ModelResponse> {
+  const lease = await coordinator.acquireForeground(request.signal);
+  if (request.signal?.aborted) {
+    lease.cancelBeforeDispatch();
+    throw new BackgroundModelExecutionBudgetError(
+      provider.id,
+      "REQUEST_ABORTED",
+      "foreground model execution was cancelled"
+    );
+  }
+  try {
+    return await provider.generate(request);
+  } finally {
+    lease.release();
   }
 }
 
@@ -478,14 +676,7 @@ export function createBackgroundModelExecutionBudgetProviders(
   const foreground: ModelProvider = {
     id: provider.id,
     listModels: () => provider.listModels(),
-    generate: async (request) => {
-      const leave = coordinator.enterForeground();
-      try {
-        return await provider.generate(request);
-      } finally {
-        leave();
-      }
-    },
+    generate: (request) => runForegroundGenerate(provider, coordinator, request),
     stream: (request) => foregroundStream(provider, coordinator, request)
   };
   const background: ModelProvider = {

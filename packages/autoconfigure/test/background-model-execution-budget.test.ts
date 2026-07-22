@@ -50,6 +50,9 @@ describe("resolveBackgroundModelExecutionBudgetOptions", () => {
   it("uses exact defaults and accepts only in-range decimal integer owner overrides", () => {
     expect(resolveBackgroundModelExecutionBudgetOptions({})).toEqual({
       maxConcurrency: 1,
+      maxForegroundConcurrency: 1,
+      maxForegroundQueue: 8,
+      foregroundQueueTimeoutMs: 15_000,
       maxInputBytes: 65_536,
       maxOutputTokens: 512,
       maxQueue: 2
@@ -58,14 +61,36 @@ describe("resolveBackgroundModelExecutionBudgetOptions", () => {
       MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY: "4",
       MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES: "1048576",
       MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS: "4096",
-      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "0"
-    })).toEqual({ maxConcurrency: 4, maxInputBytes: 1_048_576, maxOutputTokens: 4_096, maxQueue: 0 });
+      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "0",
+      MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY: "8",
+      MUSE_FOREGROUND_MODEL_MAX_QUEUE: "0",
+      MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS: "120000"
+    })).toEqual({
+      foregroundQueueTimeoutMs: 120_000,
+      maxConcurrency: 4,
+      maxForegroundConcurrency: 8,
+      maxForegroundQueue: 0,
+      maxInputBytes: 1_048_576,
+      maxOutputTokens: 4_096,
+      maxQueue: 0
+    });
     expect(resolveBackgroundModelExecutionBudgetOptions({
       MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY: "0",
       MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES: "1e6",
       MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS: "4097",
-      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "-1"
-    })).toEqual({ maxConcurrency: 1, maxInputBytes: 65_536, maxOutputTokens: 512, maxQueue: 2 });
+      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "-1",
+      MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY: "0",
+      MUSE_FOREGROUND_MODEL_MAX_QUEUE: "65",
+      MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS: "0"
+    })).toEqual({
+      foregroundQueueTimeoutMs: 15_000,
+      maxConcurrency: 1,
+      maxForegroundConcurrency: 1,
+      maxForegroundQueue: 8,
+      maxInputBytes: 65_536,
+      maxOutputTokens: 512,
+      maxQueue: 2
+    });
   });
 
   it("persists only valid explicit overrides across the resident launchd boundary", () => {
@@ -73,11 +98,17 @@ describe("resolveBackgroundModelExecutionBudgetOptions", () => {
       MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY: " 2 ",
       MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES: "32768",
       MUSE_BACKGROUND_MODEL_MAX_OUTPUT_TOKENS: "0",
-      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "0"
+      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "0",
+      MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY: "2",
+      MUSE_FOREGROUND_MODEL_MAX_QUEUE: "0",
+      MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS: "5000"
     })).toEqual({
       MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY: "2",
       MUSE_BACKGROUND_MODEL_MAX_INPUT_BYTES: "32768",
-      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "0"
+      MUSE_BACKGROUND_MODEL_MAX_QUEUE: "0",
+      MUSE_FOREGROUND_MODEL_MAX_CONCURRENCY: "2",
+      MUSE_FOREGROUND_MODEL_MAX_QUEUE: "0",
+      MUSE_FOREGROUND_MODEL_QUEUE_TIMEOUT_MS: "5000"
     });
     expect(backgroundModelExecutionBudgetEnvironment({
       MUSE_BACKGROUND_MODEL_MAX_CONCURRENCY: "bad",
@@ -207,10 +238,11 @@ describe("background model execution budget", () => {
       if (input.model === "fg-two") return foregroundTwo.promise;
       return response(input.model);
     });
-    const views = createBackgroundModelExecutionBudgetProviders(provider);
+    const views = createBackgroundModelExecutionBudgetProviders(provider, { maxForegroundConcurrency: 2 });
     const one = views.foreground.generate(request("fg-one"));
     const two = views.foreground.generate(request("fg-two"));
     const queued = views.background.generate(request("background"));
+    await flush();
     expect(starts).toEqual(["fg-one", "fg-two"]);
     foregroundOne.resolve(response("fg-one"));
     await one;
@@ -220,6 +252,364 @@ describe("background model execution budget", () => {
     await two;
     await queued;
     expect(starts).toEqual(["fg-one", "fg-two", "background"]);
+  });
+
+  it("admits foreground generate calls FIFO with a bounded queue and a fixed overflow error", async () => {
+    const pending = new Map<string, ReturnType<typeof deferred<ModelResponse>>>();
+    const starts: string[] = [];
+    const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+      starts.push(input.model);
+      const work = deferred<ModelResponse>();
+      pending.set(input.model, work);
+      return work.promise;
+    }), { maxForegroundConcurrency: 1, maxForegroundQueue: 2 });
+
+    const one = views.foreground.generate(request("one"));
+    const two = views.foreground.generate(request("two"));
+    const three = views.foreground.generate(request("three"));
+    await expect(views.foreground.generate(request("overflow"))).rejects.toMatchObject({
+      code: "FOREGROUND_QUEUE_FULL",
+      message: "foreground model execution queue is full",
+      retryable: false
+    });
+    expect(starts).toEqual(["one"]);
+    expect(views.snapshot()).toMatchObject({
+      activeForeground: 1,
+      foregroundRejected: 1,
+      maxObservedActiveForeground: 1,
+      queuedForeground: 2
+    });
+
+    pending.get("one")!.resolve(response("one"));
+    await one;
+    await flush();
+    expect(starts).toEqual(["one", "two"]);
+    pending.get("two")!.resolve(response("two"));
+    await two;
+    await flush();
+    expect(starts).toEqual(["one", "two", "three"]);
+    pending.get("three")!.resolve(response("three"));
+    await three;
+    expect(views.snapshot()).toMatchObject({ activeForeground: 0, queuedForeground: 0 });
+  });
+
+  it("admits queued foreground before resuming queued background", async () => {
+    const first = deferred<ModelResponse>();
+    const second = deferred<ModelResponse>();
+    const starts: string[] = [];
+    const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+      starts.push(input.model);
+      if (input.model === "foreground-one") return first.promise;
+      if (input.model === "foreground-two") return second.promise;
+      return response(input.model);
+    }), { maxForegroundConcurrency: 1 });
+
+    const foregroundOne = views.foreground.generate(request("foreground-one"));
+    const foregroundTwo = views.foreground.generate(request("foreground-two"));
+    const background = views.background.generate(request("background"));
+    await flush();
+    expect(starts).toEqual(["foreground-one"]);
+
+    first.resolve(response("foreground-one"));
+    await foregroundOne;
+    await flush();
+    expect(starts).toEqual(["foreground-one", "foreground-two"]);
+    second.resolve(response("foreground-two"));
+    await foregroundTwo;
+    await background;
+    expect(starts).toEqual(["foreground-one", "foreground-two", "background"]);
+  });
+
+  it("puts a failed caller retry behind foreground work that was already queued", async () => {
+    const firstAttempt = deferred<ModelResponse>();
+    const queued = deferred<ModelResponse>();
+    const retry = deferred<ModelResponse>();
+    const starts: string[] = [];
+    let attempts = 0;
+    const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+      starts.push(input.model);
+      if (input.model === "A") {
+        attempts += 1;
+        return attempts === 1 ? firstAttempt.promise : retry.promise;
+      }
+      return queued.promise;
+    }), { maxForegroundConcurrency: 1 });
+
+    const a = views.foreground.generate(request("A"));
+    const b = views.foreground.generate(request("B"));
+    const failedExpectation = expect(a).rejects.toThrow("retry me");
+    firstAttempt.reject(new Error("retry me"));
+    await failedExpectation;
+    const retriedA = views.foreground.generate(request("A"));
+    await flush();
+    expect(starts).toEqual(["A", "B"]);
+
+    queued.resolve(response("B"));
+    await b;
+    await flush();
+    expect(starts).toEqual(["A", "B", "A"]);
+    retry.resolve(response("A-retry"));
+    await retriedA;
+  });
+
+  it("removes an aborted foreground waiter and never dispatches it", async () => {
+    const first = deferred<ModelResponse>();
+    const starts: string[] = [];
+    const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+      starts.push(input.model);
+      return input.model === "first" ? first.promise : response(input.model);
+    }), { maxForegroundConcurrency: 1, maxForegroundQueue: 2 });
+    const running = views.foreground.generate(request("first"));
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const clearTimer = vi.spyOn(globalThis, "clearTimeout");
+    const cancelled = views.foreground.generate(request("cancelled", { signal: controller.signal }));
+    controller.abort("private caller reason");
+
+    const error = await cancelled.catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: "REQUEST_ABORTED",
+      message: "foreground model execution was cancelled",
+      retryable: false
+    });
+    expect(JSON.stringify(error)).not.toContain("private caller reason");
+    expect(remove).toHaveBeenCalled();
+    expect(clearTimer).toHaveBeenCalledTimes(1);
+    first.resolve(response("first"));
+    await running;
+    expect(starts).toEqual(["first"]);
+    expect(views.snapshot()).toMatchObject({ foregroundCancelled: 1, queuedForeground: 0 });
+    clearTimer.mockRestore();
+  });
+
+  it("times out a foreground waiter exactly once without dispatching it", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = deferred<ModelResponse>();
+      const starts: string[] = [];
+      const controller = new AbortController();
+      const remove = vi.spyOn(controller.signal, "removeEventListener");
+      const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+        starts.push(input.model);
+        return input.model === "first" ? first.promise : response(input.model);
+      }), {
+        foregroundQueueTimeoutMs: 25,
+        maxForegroundConcurrency: 1,
+        maxForegroundQueue: 1
+      });
+      const running = views.foreground.generate(request("first"));
+      const timedOut = views.foreground.generate(request("timed-out", { signal: controller.signal }));
+      const timedOutExpectation = expect(timedOut).rejects.toMatchObject({
+        code: "FOREGROUND_QUEUE_TIMEOUT",
+        message: "foreground model execution queue timed out",
+        retryable: false
+      });
+      await vi.advanceTimersByTimeAsync(25);
+      await timedOutExpectation;
+      expect(remove).toHaveBeenCalledTimes(1);
+      controller.abort("too late");
+      first.resolve(response("first"));
+      await running;
+      expect(starts).toEqual(["first"]);
+      expect(views.snapshot()).toMatchObject({
+        foregroundCancelled: 0,
+        foregroundTimedOut: 1,
+        queuedForeground: 0
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refunds an admitted foreground lease when abort wins before physical dispatch", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = deferred<ModelResponse>();
+      const starts: string[] = [];
+      const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+        starts.push(input.model);
+        return first.promise;
+      }), { maxForegroundConcurrency: 1 });
+      const controller = new AbortController();
+      vi.spyOn(controller.signal, "aborted", "get")
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+      const remove = vi.spyOn(controller.signal, "removeEventListener");
+      const clearTimer = vi.spyOn(globalThis, "clearTimeout");
+
+      const running = views.foreground.generate(request("first"));
+      const admitted = views.foreground.generate(request("admitted", { signal: controller.signal }));
+      const admittedExpectation = expect(admitted).rejects.toMatchObject({
+        code: "REQUEST_ABORTED",
+        message: "foreground model execution was cancelled"
+      });
+      first.resolve(response("first"));
+      await running;
+      await admittedExpectation;
+      expect(starts).toEqual(["first"]);
+      expect(clearTimer).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenCalledTimes(1);
+
+      controller.abort("late competing abort");
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(views.snapshot()).toMatchObject({
+        activeForeground: 0,
+        foregroundCancelled: 1,
+        foregroundTimedOut: 0,
+        queuedForeground: 0
+      });
+      clearTimer.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds an aborted physical foreground call until an uncooperative provider settles", async () => {
+    const first = deferred<ModelResponse>();
+    const starts: string[] = [];
+    const controller = new AbortController();
+    const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+      starts.push(input.model);
+      return input.model === "first" ? first.promise : response(input.model);
+    }), { maxForegroundConcurrency: 1 });
+
+    const running = views.foreground.generate(request("first", { signal: controller.signal }));
+    const next = views.foreground.generate(request("next"));
+    await flush();
+    controller.abort("ignored by provider");
+    await flush();
+    expect(starts).toEqual(["first"]);
+    expect(views.snapshot()).toMatchObject({
+      activeForeground: 1,
+      foregroundCancelled: 0,
+      queuedForeground: 1
+    });
+
+    first.resolve(response("late"));
+    await running;
+    await next;
+    expect(starts).toEqual(["first", "next"]);
+    expect(views.snapshot()).toMatchObject({ activeForeground: 0, queuedForeground: 0 });
+  });
+
+  it("does not preempt background for a pre-aborted or queue-full foreground request", async () => {
+    const background = deferred<ModelResponse>();
+    let backgroundSignal: AbortSignal | undefined;
+    const foreground = deferred<ModelResponse>();
+    const views = createBackgroundModelExecutionBudgetProviders(providerWithGenerate(async (input) => {
+      if (input.model === "background") {
+        backgroundSignal = input.signal;
+        return background.promise;
+      }
+      return foreground.promise;
+    }), { maxForegroundConcurrency: 1, maxForegroundQueue: 0 });
+    const runningBackground = views.background.generate(request("background"));
+    await flush();
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(views.foreground.generate(request("pre-aborted", { signal: controller.signal })))
+      .rejects.toMatchObject({ code: "REQUEST_ABORTED" });
+    expect(backgroundSignal?.aborted).toBe(false);
+
+    const runningForeground = views.foreground.generate(request("foreground"));
+    expect(backgroundSignal?.aborted).toBe(true);
+    await expect(views.foreground.generate(request("queue-full"))).rejects.toMatchObject({
+      code: "FOREGROUND_QUEUE_FULL"
+    });
+    expect(views.snapshot()).toMatchObject({ foregroundCancelled: 1, foregroundRejected: 1, preemptions: 1 });
+
+    foreground.resolve(response("foreground"));
+    background.resolve(response("late"));
+    await runningForeground;
+    await expect(runningBackground).rejects.toMatchObject({ code: "REQUEST_ABORTED" });
+  });
+
+  it("shares foreground admission across generate and lazy stream construction", async () => {
+    const generated = deferred<ModelResponse>();
+    let streamStarts = 0;
+    const provider: ModelProvider = {
+      generate: async () => generated.promise,
+      id: "foreground-mixed-provider",
+      listModels: async () => [],
+      stream: () => (async function* (): AsyncIterable<ModelEvent> {
+        streamStarts += 1;
+        yield { response: response("stream"), type: "done" };
+      })()
+    };
+    const views = createBackgroundModelExecutionBudgetProviders(provider, {
+      maxForegroundConcurrency: 1,
+      maxForegroundQueue: 1
+    });
+    const running = views.foreground.generate(request("generate"));
+    const iterator = views.foreground.stream(request("stream"))[Symbol.asyncIterator]();
+    const next = iterator.next();
+    await flush();
+    expect(streamStarts).toBe(0);
+    expect(views.snapshot()).toMatchObject({ activeForeground: 1, queuedForeground: 1 });
+    generated.resolve(response("generate"));
+    await running;
+    await expect(next).resolves.toMatchObject({ value: { type: "done" } });
+    expect(streamStarts).toBe(1);
+    await iterator.return?.();
+    expect(views.snapshot()).toMatchObject({ activeForeground: 0, queuedForeground: 0 });
+  });
+
+  it("releases foreground admission when stream construction throws and pumps the next waiter", async () => {
+    const generate = vi.fn(async () => response("next"));
+    const provider: ModelProvider = {
+      generate,
+      id: "foreground-construction-provider",
+      listModels: async () => [],
+      stream: () => { throw new Error("construction failed"); }
+    };
+    const views = createBackgroundModelExecutionBudgetProviders(provider, {
+      maxForegroundConcurrency: 1
+    });
+    const failed = views.foreground.stream(request("stream"))[Symbol.asyncIterator]().next();
+    const next = views.foreground.generate(request("next"));
+
+    await expect(failed).rejects.toThrow("construction failed");
+    await expect(next).resolves.toMatchObject({ output: "next" });
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(views.snapshot()).toMatchObject({ activeForeground: 0, queuedForeground: 0 });
+  });
+
+  it("returns a foreground provider iterator exactly once before pumping a queued waiter", async () => {
+    let returns = 0;
+    const starts: string[] = [];
+    const provider: ModelProvider = {
+      generate: async (input) => {
+        starts.push(input.model);
+        return response(input.model);
+      },
+      id: "foreground-return-provider",
+      listModels: async () => [],
+      stream: () => (async function* (): AsyncIterable<ModelEvent> {
+        starts.push("stream");
+        try {
+          yield { text: "one", type: "text-delta" };
+          yield { response: response("done"), type: "done" };
+        } finally {
+          returns += 1;
+        }
+      })()
+    };
+    const views = createBackgroundModelExecutionBudgetProviders(provider, {
+      maxForegroundConcurrency: 1
+    });
+    const iterator = views.foreground.stream(request("stream"))[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({ done: false });
+    const next = views.foreground.generate(request("next"));
+    await flush();
+    expect(starts).toEqual(["stream"]);
+
+    await iterator.return?.();
+    await next;
+    expect(returns).toBe(1);
+    expect(starts).toEqual(["stream", "next"]);
+    expect(views.snapshot()).toMatchObject({ activeForeground: 0, queuedForeground: 0 });
   });
 
   it("removes a queued caller abort from FIFO and never calls the provider for it", async () => {
@@ -515,10 +905,15 @@ describe("background model execution budget", () => {
       "cancelled",
       "completed",
       "failed",
+      "foregroundCancelled",
+      "foregroundRejected",
+      "foregroundTimedOut",
       "lastCancellationSettleMs",
+      "maxObservedActiveForeground",
       "pendingBackgroundSettlements",
       "preemptions",
       "queuedBackground",
+      "queuedForeground",
       "rejected",
       "started"
     ]);

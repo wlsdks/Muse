@@ -102,13 +102,19 @@ states say what evidence is missing; they do not render zero as success.
   idle; correctness/security work never silently degrades.
 - [ ] Put budgets around model concurrency, context/KV cache size, indexing
   batches, browser work, and retry loops. Queue one bounded unit at a time.
-  Background model execution and automatic notes indexing are now bounded.
+  Background model execution and process-local foreground execution are now
+  bounded through one shared coordinator. Foreground defaults to one active
+  provider lease, eight FIFO waiters, and a 15-second queue timeout; queued
+  foreground work has priority over background resumption, and fixed-size
+  counters distinguish queue rejection, timeout, and pre-dispatch cancellation.
   Notes refresh uses one attempted embedding by default, persists exact
   resumable progress, publishes only complete files through immutable vector
   generations, and leaves explicit full reindex unlimited. AgentRuntime model,
   fallback, and read-plan retries now share one per-run count/backoff allowance
   with cooperative cancellation. HTTP/MCP/auxiliary retries and Context/KV
-  budgets remain open.
+  budgets remain open. Cross-process model admission also remains open: the
+  current coordinator is shared within one assembled runtime, not across
+  independently running CLI, API, and daemon processes.
 - [x] Emit only decision-grade telemetry: work admitted/deferred/cancelled and
   the policy reason. Do not sample a costly always-on dashboard.
 - [x] Aggregate claimed-unit duration, CPU delta, maximum positive RSS growth,
@@ -123,8 +129,9 @@ depth, duration, and truthful cooperative stop-boundary latency. The broader
 inventory item stays open until model load is measured directly. Its bounded
 aggregate now survives daemon restarts and makes comparative dogfooding
 possible without adding a dashboard or an unbounded telemetry log; thermal
-production support and the wider model/cache/index/browser budgets also remain
-open rather than being inferred from this daemon-only governor.
+production support, cross-process model admission, and the wider
+context/KV-cache and browser budgets also remain open rather than being inferred
+from this daemon-only governor or the new process-local execution coordinator.
 
 **Gate:** under an injected constrained-resource state, background work starts
 zero new model/tool jobs, records a bounded deferral reason, and foreground chat
